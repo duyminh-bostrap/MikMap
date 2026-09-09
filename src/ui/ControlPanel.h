@@ -160,6 +160,18 @@ private:
 
     /// Yeu cau mo file browser, ghi nhan trong luc ve luoi clip roi
     /// chuyen ra UiActions o cuoi draw().
+    // ── Cua so nao dang mo ─────────────────────────────────────────────
+    // Advanced Output la cong cu CHINH cua phan mem nay nen mo san.
+    // Sensor thi dong: chua co phan cung, mo ra chi chiem cho.
+    bool m_showAdvancedOutput = true;
+    bool m_showSensor = false;
+    bool m_showPerf = true;
+    bool m_showClip = true;
+    bool m_showPreview = true;
+
+    /// Phan chieu tu PerfStats, de menu bar hien duoc trang thai sensor.
+    bool m_sensorRunning = false;
+
     int m_triggerCount = 0;
     std::string m_lastTriggerName;
     int m_selZone = -1;

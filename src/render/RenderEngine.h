@@ -105,7 +105,18 @@ private:
     ofShader m_sliceShader;
     bool     m_shaderReady = false;
 
+    /// Chuyen YCoCg -> RGB cho HAP Q, viet lai bang #version 150.
+    ///
+    /// ★ KHONG dung duoc shader co san cua ofxHapPlayer: no viet bang
+    ///   GLSL 120 fixed-function (ftransform, gl_TexCoord, gl_FragColor,
+    ///   texture2D). Tat ca deu bi LOAI BO trong GL 3.2 core profile —
+    ///   ma app nay chay dung profile do. Shader do van link duoc nhung
+    ///   khong ve ra gi, cho ra man hinh den.
+    ofShader m_ycocgShader;
+    bool     m_ycocgReady = false;
+
     bool buildSliceShader();
+    bool buildYCoCgShader();
 
     ofFbo m_canvas;
     Vec2  m_canvasSize{1920.0, 1080.0};

@@ -60,58 +60,73 @@ void ControlPanel::draw(Project& project,
     if (!m_ready) return;
 
     m_statusTimer = std::max(0.0f, m_statusTimer - static_cast<float>(ofGetLastFrameTime()));
+    m_sensorRunning = stats.sensorConnected;
 
     m_gui.begin();
 
     drawMenuBar(actions);
 
+    // Composition la cua so CHINH — khong co nut dong. Dong no di thi
+    // khong con gi de lam.
     ImGui::SetNextWindowPos(ImVec2(8, 30), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(560, 420), ImGuiCond_FirstUseEver);
-    if (ImGui::Begin("Composition")) {
+    if (ImGui::Begin("Composition", nullptr, ImGuiWindowFlags_NoCollapse)) {
         drawClipGrid(project);
         ImGui::Separator();
         drawLayerPanel(project);
     }
     ImGui::End();
 
-    ImGui::SetNextWindowPos(ImVec2(576, 30), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(400, 420), ImGuiCond_FirstUseEver);
-    if (ImGui::Begin("Output - Screen & Slice")) {
-        drawScreenPanel(project, edit, actions);
+    // ── Advanced Output — mo tu menu Output ────────────────────────────
+    if (m_showAdvancedOutput) {
+        ImGui::SetNextWindowPos(ImVec2(576, 30), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(400, 420), ImGuiCond_FirstUseEver);
+        if (ImGui::Begin("Advanced Output - Screen & Slice", &m_showAdvancedOutput)) {
+            drawScreenPanel(project, edit, actions);
+        }
+        ImGui::End();
     }
-    ImGui::End();
 
-    ImGui::SetNextWindowPos(ImVec2(8, 458), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(560, 380), ImGuiCond_FirstUseEver);
-    if (ImGui::Begin("Preview")) {
-        drawPreview(canvasPreview);
+    if (m_showPreview) {
+        ImGui::SetNextWindowPos(ImVec2(8, 458), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(560, 380), ImGuiCond_FirstUseEver);
+        if (ImGui::Begin("Preview", &m_showPreview)) {
+            drawPreview(canvasPreview);
+        }
+        ImGui::End();
     }
-    ImGui::End();
 
-    ImGui::SetNextWindowPos(ImVec2(576, 458), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(400, 380), ImGuiCond_FirstUseEver);
-    if (ImGui::Begin("Sensor & Calibration")) {
-        drawSensorPanel(project, stats, actions);
-        ImGui::Separator();
-        drawCalibrationPanel(project, stats, actions);
-        ImGui::Separator();
-        drawTriggerZonePanel(project, actions);
+    // ── Sensor — mo tu menu Sensor ─────────────────────────────────────
+    if (m_showSensor) {
+        ImGui::SetNextWindowPos(ImVec2(576, 458), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(400, 380), ImGuiCond_FirstUseEver);
+        if (ImGui::Begin("Sensor & Calibration", &m_showSensor)) {
+            drawSensorPanel(project, stats, actions);
+            ImGui::Separator();
+            drawCalibrationPanel(project, stats, actions);
+            ImGui::Separator();
+            drawTriggerZonePanel(project, actions);
+        }
+        ImGui::End();
     }
-    ImGui::End();
 
-    ImGui::SetNextWindowPos(ImVec2(984, 30), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(300, 320), ImGuiCond_FirstUseEver);
-    if (ImGui::Begin("Performance")) {
-        drawPerfPanel(stats);
+    if (m_showPerf) {
+        ImGui::SetNextWindowPos(ImVec2(984, 30), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(300, 320), ImGuiCond_FirstUseEver);
+        if (ImGui::Begin("Performance", &m_showPerf)) {
+            drawPerfPanel(stats);
+        }
+        ImGui::End();
     }
-    ImGui::End();
 
-    ImGui::SetNextWindowPos(ImVec2(984, 358), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(300, 480), ImGuiCond_FirstUseEver);
-    if (ImGui::Begin("Clip")) {
-        drawClipPanel(project);
+    if (m_showClip) {
+        ImGui::SetNextWindowPos(ImVec2(984, 358), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(300, 480), ImGuiCond_FirstUseEver);
+        if (ImGui::Begin("Clip", &m_showClip)) {
+            drawClipPanel(project);
+        }
+        ImGui::End();
     }
-    ImGui::End();
 
     if (m_pendingBrowse) {
         actions.browseForClip = true;
@@ -126,16 +141,64 @@ void ControlPanel::draw(Project& project,
 void ControlPanel::drawMenuBar(UiActions& a) {
     if (!ImGui::BeginMainMenuBar()) return;
 
+    // ── Project ────────────────────────────────────────────────────────
     if (ImGui::BeginMenu("Project")) {
-        if (ImGui::MenuItem("New"))            a.newProject = true;
+        if (ImGui::MenuItem("New"))               a.newProject  = true;
         if (ImGui::MenuItem("Open...", "Ctrl+O")) a.loadProject = true;
         if (ImGui::MenuItem("Save",    "Ctrl+S")) a.saveProject = true;
         ImGui::EndMenu();
     }
 
+    // ── Output ─────────────────────────────────────────────────────────
+    // Advanced Output la cua so rieng mo tu day, giong cach Resolume
+    // tach no ra khoi khung lam viec chinh: no la cong cu DUNG SAN KHAU,
+    // dung mot lan luc can chinh, khong phai thu nhin suot buoi dien.
     if (ImGui::BeginMenu("Output")) {
-        if (ImGui::MenuItem("Toggle fullscreen", "F11")) a.toggleFullscreen = true;
+        ImGui::MenuItem("Advanced Output...", nullptr, &m_showAdvancedOutput);
+        ImGui::Separator();
+        if (ImGui::MenuItem("Fullscreen may chieu", "F11")) a.toggleFullscreen = true;
         ImGui::EndMenu();
+    }
+
+    // ── Sensor ─────────────────────────────────────────────────────────
+    // Gom moi thu lien quan sensor vao mot cho. Nhung lenh hay dung
+    // (bat/tat, auto-calibrate) de thang o menu, khong bat mo cua so.
+    if (ImGui::BeginMenu("Sensor")) {
+        ImGui::MenuItem("Sensor & Calibration...", nullptr, &m_showSensor);
+        ImGui::Separator();
+
+        if (ImGui::MenuItem("Chay Mock (gia lap)", "M")) {
+            a.sensorTypeIndex = 0;
+            a.startSensor = true;
+        }
+        if (ImGui::MenuItem("Chay OSC (cong 9000)", "O")) {
+            a.sensorTypeIndex = 1;
+            a.startSensor = true;
+        }
+        if (ImGui::MenuItem("Dung sensor")) a.stopSensor = true;
+
+        ImGui::Separator();
+        if (ImGui::MenuItem("Auto-calibrate (Mock)", "A")) a.calibAutoMock = true;
+        ImGui::MenuItem("Hien dau thap calibration", "C", &m_calibShowTarget);
+        ImGui::EndMenu();
+    }
+
+    // ── View ───────────────────────────────────────────────────────────
+    if (ImGui::BeginMenu("View")) {
+        ImGui::MenuItem("Preview",     nullptr, &m_showPreview);
+        ImGui::MenuItem("Clip",        nullptr, &m_showClip);
+        ImGui::MenuItem("Performance", nullptr, &m_showPerf);
+        ImGui::EndMenu();
+    }
+
+    // ── Chi bao trang thai ben phai ────────────────────────────────────
+    // Hien thang tren menu bar de nguoi van hanh biet sensor co chay
+    // khong ma KHONG phai mo cua so Sensor ra xem.
+    ImGui::Separator();
+    if (m_sensorRunning) {
+        ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.5f, 1.0f), "SENSOR: dang chay");
+    } else {
+        ImGui::TextDisabled("SENSOR: tat");
     }
 
     if (m_statusTimer > 0.0f && !m_status.empty()) {

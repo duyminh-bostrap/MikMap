@@ -85,7 +85,64 @@ void main() {
 }
 )";
 
+// ── Shader YCoCg -> RGB cho HAP Q (#version 150) ───────────────────────
+//
+// Cong thuc lay dung tu ofxHapPlayer, chi viet lai theo cu phap core
+// profile. Shader goc cua addon dung GLSL 120 fixed-function nen khong
+// chay duoc o day.
+const char* kYCoCgVert = R"(#version 150
+uniform mat4 modelViewProjectionMatrix;
+in vec4 position;
+in vec2 texcoord;
+out vec2 vTexCoord;
+void main() {
+    vTexCoord   = texcoord;
+    gl_Position = modelViewProjectionMatrix * position;
+}
+)";
+
+const char* kYCoCgFrag = R"(#version 150
+uniform sampler2D cocgsy_src;
+uniform vec4 globalColor;
+
+in  vec2 vTexCoord;
+out vec4 fragColor;
+
+const vec4 offsets = vec4(-0.50196078431373, -0.50196078431373, 0.0, 0.0);
+
+void main() {
+    vec4 CoCgSY = texture(cocgsy_src, vTexCoord) + offsets;
+
+    // Kenh Z mang he so ti le, khong phai mau. Giai nen truoc khi tach
+    // Co/Cg, neu khong mau se lech han o vung bao hoa cao.
+    float scale = (CoCgSY.z * (255.0 / 8.0)) + 1.0;
+    float Co = CoCgSY.x / scale;
+    float Cg = CoCgSY.y / scale;
+    float Y  = CoCgSY.w;
+
+    fragColor = vec4(Y + Co - Cg,
+                     Y + Cg,
+                     Y - Co - Cg,
+                     1.0) * globalColor;
+}
+)";
+
 } // namespace
+
+bool RenderEngine::buildYCoCgShader() {
+    if (m_ycocgReady) return true;
+
+    m_ycocgShader.setupShaderFromSource(GL_VERTEX_SHADER, kYCoCgVert);
+    m_ycocgShader.setupShaderFromSource(GL_FRAGMENT_SHADER, kYCoCgFrag);
+    m_ycocgShader.bindDefaults();
+    m_ycocgReady = m_ycocgShader.linkProgram();
+
+    if (!m_ycocgReady) {
+        ofLogError("RenderEngine") << "Khong link duoc shader YCoCg — "
+                                      "video HAP Q se sai mau";
+    }
+    return m_ycocgReady;
+}
 
 bool RenderEngine::buildSliceShader() {
     if (m_shaderReady) return true;
@@ -107,6 +164,7 @@ bool RenderEngine::buildSliceShader() {
 bool RenderEngine::setup(const Vec2& canvasSize) {
     resizeCanvas(canvasSize);
     buildSliceShader();
+    buildYCoCgShader();
     return m_canvas.isAllocated();
 }
 
@@ -178,19 +236,29 @@ void RenderEngine::drawClipToCanvas(const Clip& clip, double opacity,
     ofMultMatrix(gl);
 
     // ★ HAP Q luu o khong gian mau YCoCg (HapTextureFormat_YCoCg_DXT5),
-    //   KHONG phai RGB. Ve texture tho ma khong qua shader chuyen doi
-    //   cua addon se cho mau sai hoan toan — do bao hoa vot len va sac
-    //   do lech han. Day chinh la ly do ofxHapPlayer co getShader().
+    //   KHONG phai RGB. Ve texture tho ma khong chuyen doi se cho mau
+    //   sai hoan toan.
     //
-    //   getShader() tra ve nullptr voi HAP thuong (DXT1 la RGB that),
-    //   nen phai kiem tra chu khong gia dinh luon co.
-    ofShader* hapShader = (e->video != nullptr) ? e->video->getShader() : nullptr;
+    //   ofxHapPlayer::getShader() tra ve non-null DUNG KHI codec la HapY,
+    //   nen dung no lam TIN HIEU nhan biet. Nhung KHONG dung chinh shader
+    //   do: no viet bang GLSL 120 fixed-function, khong chay duoc trong
+    //   GL 3.2 core profile — link duoc nhung khong ve ra gi.
+    const bool needsYCoCg =
+        (e->video != nullptr) && (e->video->getShader() != nullptr);
 
-    if (hapShader != nullptr) hapShader->begin();
+    if (needsYCoCg && m_ycocgReady) {
+        m_ycocgShader.begin();
+        m_ycocgShader.setUniformTexture("cocgsy_src", *tex, 0);
+        m_ycocgShader.setUniform4f("globalColor",
+            1.0f, 1.0f, 1.0f,
+            static_cast<float>(ofClamp(opacity, 0.0, 1.0)));
+    }
+
     tex->draw(0.0f, 0.0f,
               static_cast<float>(contentSize.x),
               static_cast<float>(contentSize.y));
-    if (hapShader != nullptr) hapShader->end();
+
+    if (needsYCoCg && m_ycocgReady) m_ycocgShader.end();
 
     ofPopMatrix();
 }
