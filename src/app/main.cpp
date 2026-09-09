@@ -31,17 +31,30 @@ int main(int argc, char** argv) {
     // ── Cửa sổ output ──────────────────────────────────────────────────
     ofGLFWWindowSettings outputSettings;
     outputSettings.setGLVersion(3, 2);
-    outputSettings.setSize(1280, 720);
+
+    // Nho va khong lan cho lam viec. Can chinh mapping gio lam trong cua
+    // so Mapping cua app, nen cua so nay chi de XEM THU truoc khi day ra
+    // may chieu bang menu Output > Dua output ra man hinh N.
+    outputSettings.setSize(854, 480);
     outputSettings.windowMode = OF_WINDOW;
     outputSettings.title = "HexMapping - OUTPUT";
     outputSettings.shareContextWith = controlWindow;   // dùng chung FBO/texture
 
-    // F2 — borderless: máy chiếu không được thấy thanh tiêu đề.
-    outputSettings.decorated = false;
+    // ★ CO thanh tieu de khi o che do cua so.
+    //
+    //   Truoc day tôi dat decorated = false voi ly do "may chieu khong
+    //   duoc thay thanh tieu de". Nhung o che do CUA SO thi khong co
+    //   thanh tieu de = KHONG KEO DI DAU DUOC — nguoi dung bi ket voi
+    //   cua so nam sai cho, khong dua sang man hinh 2 duoc.
+    //
+    //   Luc fullscreen, GLFW tu bo vien, nen khan gia van khong thay gi.
+    //   Dung menu Output > Dua ra man hinh N de day sang may chieu.
+    outputSettings.decorated = true;
 
-    // Đặt BÊN PHẢI cửa sổ control để không bị che khuất. Khi cắm máy
-    // chiếu, kéo sang màn hình 2 rồi bấm F11 để vào fullscreen.
-    outputSettings.setPosition(glm::vec2(1340, 60));
+    // Goc duoi-phai man hinh CHINH. Toa do cu (1340) khien cua so rong
+    // 1280px trai tu 1340 den 2620 — vat qua bien 1920 va nam giua hai
+    // man hinh, khong keo duoc vi luc do con thieu thanh tieu de.
+    outputSettings.setPosition(glm::vec2(1040, 570));
     auto outputWindow = ofCreateWindow(outputSettings);
 
     auto app = std::make_shared<hexmap::AppController>();

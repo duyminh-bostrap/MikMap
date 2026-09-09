@@ -87,6 +87,17 @@ void ControlPanel::draw(Project& project,
         ImGui::End();
     }
 
+    // ★ Cua so Mapping — can chinh ngay trong app, khong phai sang cua
+    //   so output. Dat mac dinh MO vi day la cong viec chinh.
+    if (m_showMapping) {
+        ImGui::SetNextWindowPos(ImVec2(576, 30), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(660, 500), ImGuiCond_FirstUseEver);
+        if (ImGui::Begin("Mapping", &m_showMapping)) {
+            drawMappingEditor(project, edit, canvasPreview);
+        }
+        ImGui::End();
+    }
+
     if (m_showPreview) {
         ImGui::SetNextWindowPos(ImVec2(8, 458), ImGuiCond_FirstUseEver);
         ImGui::SetNextWindowSize(ImVec2(560, 380), ImGuiCond_FirstUseEver);
@@ -154,9 +165,29 @@ void ControlPanel::drawMenuBar(UiActions& a) {
     // tach no ra khoi khung lam viec chinh: no la cong cu DUNG SAN KHAU,
     // dung mot lan luc can chinh, khong phai thu nhin suot buoi dien.
     if (ImGui::BeginMenu("Output")) {
-        ImGui::MenuItem("Advanced Output...", nullptr, &m_showAdvancedOutput);
+        ImGui::MenuItem("Mapping (chinh trong app)...", nullptr, &m_showMapping);
+        ImGui::MenuItem("Advanced Output (thong so)...", nullptr, &m_showAdvancedOutput);
         ImGui::Separator();
-        if (ImGui::MenuItem("Fullscreen may chieu", "F11")) a.toggleFullscreen = true;
+
+        // Liet ke man hinh vat ly. Day la cach dua hinh ra may chieu ma
+        // KHONG phai keo cua so bang tay — thao tac vua kho vua de keo
+        // nham vao khe giua hai man hinh.
+        if (m_displays.empty()) {
+            ImGui::TextDisabled("Khong doc duoc danh sach man hinh");
+        } else {
+            ImGui::TextDisabled("Dua output ra man hinh:");
+            for (const DisplayEntry& d : m_displays) {
+                char label[128];
+                std::snprintf(label, sizeof(label), "  %d. %s  %dx%d%s",
+                              d.index + 1, d.name.c_str(), d.w, d.h,
+                              d.isPrimary ? "  (chinh)" : "");
+                if (ImGui::MenuItem(label)) a.sendOutputToDisplay = d.index;
+            }
+        }
+
+        ImGui::Separator();
+        if (ImGui::MenuItem("Ve che do cua so (de keo)")) a.outputWindowed = true;
+        if (ImGui::MenuItem("Fullscreen / thoat", "F11")) a.toggleFullscreen = true;
         ImGui::EndMenu();
     }
 
@@ -185,6 +216,7 @@ void ControlPanel::drawMenuBar(UiActions& a) {
 
     // ── View ───────────────────────────────────────────────────────────
     if (ImGui::BeginMenu("View")) {
+        ImGui::MenuItem("Mapping",     nullptr, &m_showMapping);
         ImGui::MenuItem("Preview",     nullptr, &m_showPreview);
         ImGui::MenuItem("Clip",        nullptr, &m_showClip);
         ImGui::MenuItem("Performance", nullptr, &m_showPerf);
@@ -904,6 +936,168 @@ void ControlPanel::drawTriggerZonePanel(Project& p, UiActions& a) {
             }
         }
         ImGui::PopID();
+    }
+}
+
+// ── ★ Trinh chinh mapping NGAY TRONG cua so chinh ─────────────────────
+
+void ControlPanel::drawMappingEditor(Project& p, EditState& edit,
+                                     const ofTexture* canvasTex) {
+    if (p.screens.empty()) { ImGui::TextDisabled("Chua co screen nao"); return; }
+
+    m_activeScreen = std::clamp(m_activeScreen, 0,
+                                static_cast<int>(p.screens.size()) - 1);
+    Screen& sc = p.screens[static_cast<size_t>(m_activeScreen)];
+
+    ImGui::Checkbox("Hien noi dung", &m_mapShowContent);
+    ImGui::SameLine();
+    ImGui::TextDisabled("Keo diem de can chinh  |  bam vao slice de chon");
+
+    const ImVec2 avail = ImGui::GetContentRegionAvail();
+    if (avail.x < 40.0f || avail.y < 40.0f) return;
+
+    const float resW = static_cast<float>(std::max(1.0, sc.resolution.x));
+    const float resH = static_cast<float>(std::max(1.0, sc.resolution.y));
+
+    // Vua khung, GIU TI LE. Khong keo gian: xem mapping o ti le sai thi
+    // moi thao tac can chinh deu lech so voi thuc te.
+    const float scale = std::min(avail.x / resW, avail.y / resH);
+    const float drawW = resW * scale;
+    const float drawH = resH * scale;
+
+    const ImVec2 cur = ImGui::GetCursorScreenPos();
+    const ImVec2 origin(cur.x + (avail.x - drawW) * 0.5f,
+                        cur.y + (avail.y - drawH) * 0.5f);
+
+    auto toWidget = [&](const Vec2& v) {
+        return ImVec2(origin.x + static_cast<float>(v.x) * scale,
+                      origin.y + static_cast<float>(v.y) * scale);
+    };
+    auto toScreenSpace = [&](const ImVec2& v) {
+        return Vec2{(v.x - origin.x) / scale, (v.y - origin.y) / scale};
+    };
+
+    ImGui::InvisibleButton("##mapcanvas", avail);
+    const bool hovered = ImGui::IsItemHovered();
+    const bool active  = ImGui::IsItemActive();
+
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+
+    dl->AddRectFilled(origin, ImVec2(origin.x + drawW, origin.y + drawH),
+                      IM_COL32(18, 18, 22, 255));
+
+    // ── Noi dung xem thu ───────────────────────────────────────────────
+    if (m_mapShowContent && canvasTex != nullptr && canvasTex->isAllocated()) {
+        for (const int si : sc.visibleSlices()) {
+            const Slice& s = sc.slices[static_cast<size_t>(si)];
+            const IWarp* w = s.warp();
+            if (w == nullptr) continue;
+
+            const Vec2 uv[4] = {{0.0, 0.0}, {1.0, 0.0}, {1.0, 1.0}, {0.0, 1.0}};
+            ImVec2 pos[4];
+            ImVec2 tc[4];
+            for (int k = 0; k < 4; ++k) {
+                pos[k] = toWidget(w->forward(uv[k]));
+                const Vec2 cv = s.contentToCanvas(uv[k]);
+                tc[k] = ImVec2(static_cast<float>(cv.x) / canvasTex->getWidth(),
+                               static_cast<float>(cv.y) / canvasTex->getHeight());
+            }
+            // AddImageQuad noi suy AFFINE, khong phai phoi canh — nen day
+            // chi la XEM THU cho de hinh dung. Hinh THAT do GPU ve o cua
+            // so output moi dung phoi canh.
+            dl->AddImageQuad(GetImTextureID(*canvasTex),
+                             pos[0], pos[1], pos[2], pos[3],
+                             tc[0], tc[1], tc[2], tc[3]);
+        }
+    }
+
+    dl->AddRect(origin, ImVec2(origin.x + drawW, origin.y + drawH),
+                IM_COL32(110, 110, 120, 255));
+
+    // ── Vien tung slice ────────────────────────────────────────────────
+    for (int i = 0; i < sc.sliceCount(); ++i) {
+        const Slice& s = sc.slices[static_cast<size_t>(i)];
+        const IWarp* w = s.warp();
+        if (w == nullptr) continue;
+
+        const bool isActive = (i == edit.activeSliceIndex);
+
+        ImU32 col = IM_COL32(90, 140, 200, 170);
+        if (!w->isInvertible()) col = IM_COL32(255, 60, 60, 255);
+        else if (isActive)      col = IM_COL32(255, 200, 60, 255);
+        if (!s.enabled)         col = IM_COL32(90, 90, 90, 120);
+
+        const int sub = std::max(1, w->defaultSubdivisions());
+        std::vector<ImVec2> pts;
+        for (int k = 0; k <= sub; ++k)
+            pts.push_back(toWidget(w->forward({static_cast<double>(k) / sub, 0.0})));
+        for (int k = 1; k <= sub; ++k)
+            pts.push_back(toWidget(w->forward({1.0, static_cast<double>(k) / sub})));
+        for (int k = sub - 1; k >= 0; --k)
+            pts.push_back(toWidget(w->forward({static_cast<double>(k) / sub, 1.0})));
+        for (int k = sub - 1; k >= 1; --k)
+            pts.push_back(toWidget(w->forward({0.0, static_cast<double>(k) / sub})));
+
+        dl->AddPolyline(pts.data(), static_cast<int>(pts.size()), col,
+                        ImDrawFlags_Closed, isActive ? 2.5f : 1.5f);
+
+        if (!s.name.empty()) {
+            dl->AddText(ImVec2(pts[0].x + 4.0f, pts[0].y + 2.0f), col, s.name.c_str());
+        }
+    }
+
+    // ── Diem dieu khien cua slice dang chon ────────────────────────────
+    if (edit.activeSliceIndex < 0 || edit.activeSliceIndex >= sc.sliceCount()) {
+        dl->AddText(ImVec2(origin.x + 8.0f, origin.y + 8.0f),
+                    IM_COL32(255, 255, 255, 150),
+                    "Bam vao mot slice de chon");
+        return;
+    }
+
+    Slice& s = sc.slices[static_cast<size_t>(edit.activeSliceIndex)];
+    IWarp* w = s.warp();
+    if (w == nullptr) return;
+
+    const int n = w->controlPointCount();
+    const float r = (n > 25) ? 4.0f : 6.5f;
+
+    int nearest = -1;
+    if (hovered || active) {
+        const ImVec2 m = ImGui::GetIO().MousePos;
+        float best = 14.0f;
+        for (int k = 0; k < n; ++k) {
+            const ImVec2 q = toWidget(w->controlPointAt(k));
+            const float d = std::sqrt((q.x - m.x) * (q.x - m.x)
+                                    + (q.y - m.y) * (q.y - m.y));
+            if (d < best) { best = d; nearest = k; }
+        }
+    }
+
+    if (active && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        m_mapDragPoint = nearest;
+
+        // Bam vao cho trong -> chon slice khac.
+        if (nearest < 0) {
+            const int hit = sc.hitTest(toScreenSpace(ImGui::GetIO().MousePos));
+            if (hit >= 0) edit.activeSliceIndex = hit;
+        }
+    }
+    if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) m_mapDragPoint = -1;
+
+    // setControlPointAt TU CHOI vi tri lam tu giac lom hoac tu cat va giu
+    // nguyen trang thai cu — nguoi dung thay diem "bat nguoc lai", va
+    // vien doi sang DO de hieu vi sao.
+    if (m_mapDragPoint >= 0 && ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
+        w->setControlPointAt(m_mapDragPoint, toScreenSpace(ImGui::GetIO().MousePos));
+    }
+
+    for (int k = 0; k < n; ++k) {
+        const ImVec2 q = toWidget(w->controlPointAt(k));
+        ImU32 c = IM_COL32(255, 200, 60, 255);
+        if (k == m_mapDragPoint)    c = IM_COL32(255, 255, 255, 255);
+        else if (k == nearest)      c = IM_COL32(255, 235, 120, 255);
+        dl->AddCircleFilled(q, r, c);
+        dl->AddCircleFilled(q, r * 0.4f, IM_COL32(20, 20, 20, 255));
     }
 }
 

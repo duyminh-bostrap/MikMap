@@ -6,7 +6,12 @@
 #include "io/sources/MockSource.h"
 #include "io/sources/OscSource.h"
 
+#include <GLFW/glfw3.h>
+
 #include <algorithm>
+#include <fstream>
+#include <iomanip>
+#include <sstream>
 
 namespace hexmap {
 namespace {
@@ -198,6 +203,32 @@ void AppController::update() {
     m_cache.collectGarbage();
 
     updateStats();
+    writePerfLog();
+}
+
+void AppController::writePerfLog() {
+    m_perfLogTimer += static_cast<float>(ofGetLastFrameTime());
+    if (m_perfLogTimer < 5.0f) return;
+    m_perfLogTimer = 0.0f;
+
+    // Bo qua ban ghi dau: giay dau tien luon xau vi con dang nap media,
+    // dung shader va cap phat FBO. Ghi vao chi lam nhieu so lieu.
+    if (m_perfLogCount++ == 0) return;
+
+    std::ostringstream line;
+    line << std::fixed << std::setprecision(2)
+         << "fps=" << m_stats.fps
+         << "  frame_avg=" << m_stats.frameAvgMs << "ms"
+         << "  frame_p99=" << m_stats.frameP99Ms << "ms"
+         << "  layers=" << m_stats.layersDrawn
+         << "  slices=" << m_stats.slicesDrawn
+         << "  media=" << m_stats.mediaLoaded
+         << "  vram=" << (m_stats.vramBytes / (1024 * 1024)) << "MB"
+         << "  sensor=" << (m_stats.sensorConnected ? "on" : "off")
+         << std::endl;
+
+    std::ofstream f(ofToDataPath("perf.log", true), std::ios::app);
+    if (f) f << line.str();
 }
 
 void AppController::pollSensor() {
@@ -313,6 +344,17 @@ void AppController::updateStats() {
 void AppController::draw() {
     m_actions = UiActions{};
     m_panel.setTriggerInfo(m_triggerCount, m_lastTriggerName);
+
+    // Doc lai danh sach man hinh moi frame: nguoi dung co the cam/rut
+    // may chieu giua chung, va menu phai phan anh dung thuc te.
+    std::vector<ControlPanel::DisplayEntry> entries;
+    for (const DisplayInfo& d : enumerateDisplays()) {
+        ControlPanel::DisplayEntry e;
+        e.index = d.index; e.w = d.w; e.h = d.h;
+        e.isPrimary = d.isPrimary; e.name = d.name;
+        entries.push_back(e);
+    }
+    m_panel.setDisplays(std::move(entries));
     m_panel.draw(m_project, m_edit, m_stats,
                  &m_render.canvasFbo().getTexture(), m_actions);
     applyUiActions(m_actions);
@@ -463,6 +505,72 @@ void AppController::executeTrigger(const TriggerHit& hit) {
     }
 }
 
+std::vector<AppController::DisplayInfo> AppController::enumerateDisplays() const {
+    std::vector<DisplayInfo> out;
+
+    // oF chi cho biet man hinh CHINH (ofGetScreenWidth). Muon biet co bao
+    // nhieu man hinh va chung nam o dau thi phai hoi thang GLFW.
+    int count = 0;
+    GLFWmonitor** monitors = glfwGetMonitors(&count);
+    if (monitors == nullptr) return out;
+
+    GLFWmonitor* primary = glfwGetPrimaryMonitor();
+
+    for (int i = 0; i < count; ++i) {
+        DisplayInfo d;
+        d.index = i;
+        glfwGetMonitorPos(monitors[i], &d.x, &d.y);
+
+        if (const GLFWvidmode* mode = glfwGetVideoMode(monitors[i])) {
+            d.w = mode->width;
+            d.h = mode->height;
+        }
+
+        d.isPrimary = (monitors[i] == primary);
+        const char* n = glfwGetMonitorName(monitors[i]);
+        d.name = (n != nullptr) ? n : "Display";
+        out.push_back(d);
+    }
+    return out;
+}
+
+void AppController::sendOutputToDisplay(int displayIndex) {
+    if (!m_outputWindow) return;
+
+    const auto displays = enumerateDisplays();
+    if (displayIndex < 0 || displayIndex >= static_cast<int>(displays.size())) {
+        m_panel.setStatusMessage("Khong thay man hinh so "
+                                 + std::to_string(displayIndex + 1), true);
+        return;
+    }
+
+    const DisplayInfo& d = displays[static_cast<size_t>(displayIndex)];
+
+    // Thoat fullscreen truoc: dang fullscreen thi khong di chuyen duoc.
+    m_outputWindow->setFullscreen(false);
+    m_outputWindow->setWindowPosition(d.x + 40, d.y + 40);
+    m_outputWindow->setWindowShape(std::max(320, d.w - 80),
+                                   std::max(240, d.h - 80));
+
+    // Dong bo do phan giai screen theo man hinh dich — neu khong, slice
+    // se trai ra ngoai vung nhin thay (loi da gap o lan truoc).
+    if (!m_project.screens.empty()) {
+        Screen& sc = m_project.screens[0];
+        const Vec2 res{static_cast<double>(d.w), static_cast<double>(d.h)};
+        const bool wasFullSize =
+            std::abs(sc.resolution.x - static_cast<double>(m_outputWindow->getWidth())) < 2.0;
+        sc.resolution = res;
+        if (wasFullSize) {
+            for (Slice& sl : sc.slices) sl.warp()->resetToRect(Vec2{0.0, 0.0}, res);
+        }
+    }
+
+    m_outputWindow->setFullscreen(true);
+    m_panel.setStatusMessage("Output -> man hinh " + std::to_string(displayIndex + 1)
+                             + " (" + d.name + ", "
+                             + std::to_string(d.w) + "x" + std::to_string(d.h) + ")");
+}
+
 void AppController::autoCalibrateMock() {
     auto* mock = dynamic_cast<MockSource*>(m_sensor.get());
     if (mock == nullptr) {
@@ -508,6 +616,13 @@ void AppController::applyUiActions(UiActions& a) {
 
     if (a.toggleFullscreen && m_outputWindow) {
         m_outputWindow->toggleFullscreen();
+    }
+
+    if (a.sendOutputToDisplay >= 0) sendOutputToDisplay(a.sendOutputToDisplay);
+
+    if (a.outputWindowed && m_outputWindow) {
+        m_outputWindow->setFullscreen(false);
+        m_panel.setStatusMessage("Output ve che do cua so — keo duoc bang thanh tieu de");
     }
 
     if (a.saveProject) {

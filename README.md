@@ -110,12 +110,35 @@ Mở thư mục repo rồi:
 ./bin/HexMapping.exe --demo   # bật mock sensor + auto-calibrate sẵn
 ```
 
-| Thao tác | |
+### Menu bar
+
+```
+Project  |  Output  |  Sensor  |  View  |  SENSOR: tat
+```
+
+| Menu | Nội dung |
+|---|---|
+| **Output** | Mapping · Advanced Output · **Đưa output ra màn hình N** · Về chế độ cửa sổ · Fullscreen |
+| **Sensor** | Sensor & Calibration · Chạy Mock/OSC · Auto-calibrate · Dấu thập |
+| **View** | Mapping · Preview · Clip · Performance |
+
+### Thao tác
+
+| | |
 |---|---|
 | Bấm ô clip | Phát clip đó |
 | Bấm số cột | Phát cả cột trên mọi layer |
 | Bấm ô trống / `Ctrl`+bấm | Chọn file media |
-| Kéo handle ở cửa sổ Output | Keystone / mesh warp |
+| **Kéo điểm trong cửa sổ Mapping** | Keystone / mesh warp — **ngay trong app** |
+| Bấm vào slice trong Mapping | Chọn slice đó |
+
+### Đưa hình ra máy chiếu
+
+`Output` → `Đưa output ra màn hình 2` — tự đẩy cửa sổ sang màn hình đó rồi
+fullscreen, và đồng bộ độ phân giải screen theo màn hình đích.
+
+Không cần kéo cửa sổ bằng tay: thao tác đó dễ làm cửa sổ rơi vào khe giữa
+hai màn hình.
 
 | Phím tắt | |
 |---|---|

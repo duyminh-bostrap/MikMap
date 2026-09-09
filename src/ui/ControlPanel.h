@@ -85,6 +85,12 @@ struct UiActions {
     int  removeTriggerZone = -1;
 
     bool toggleFullscreen = false;
+
+    /// Day cua so output sang man hinh nay roi fullscreen. -1 = khong doi.
+    int  sendOutputToDisplay = -1;
+
+    /// Thoat fullscreen, dua cua so output ve che do cua so (de keo duoc).
+    bool outputWindowed = false;
     bool resetActiveSliceWarp = false;
     int  convertWarpTo = -1;        ///< -1 = không đổi; 0 = CornerPin, 1 = Mesh
     int  addSliceToScreen = -1;
@@ -103,6 +109,15 @@ public:
               const PerfStats& stats,
               const ofTexture* canvasPreview,
               UiActions& actions);
+
+    /// Danh sach man hinh vat ly, de menu Output liet ke.
+    struct DisplayEntry {
+        int index = 0;
+        int w = 0, h = 0;
+        bool isPrimary = false;
+        std::string name;
+    };
+    void setDisplays(std::vector<DisplayEntry> d) { m_displays = std::move(d); }
 
     /// G17 — so lan kich hoat + ten vung gan nhat, de hien tren UI.
     void setTriggerInfo(int count, const std::string& lastName) {
@@ -140,6 +155,14 @@ private:
     /// G17 — danh sach vung cam ung.
     void drawTriggerZonePanel(Project& p, UiActions& a);
 
+    /// ★ Trinh chinh mapping NGAY TRONG cua so chinh.
+    ///
+    /// Truoc day muon keo goc slice phai thao tac tren cua so output —
+    /// nghia la phai nhin sang may chieu, hoac de cua so output nam tren
+    /// man hinh lam viec roi lai phai day sang may chieu luc dien. Cac
+    /// phan mem mapping deu cho chinh ngay trong app; day la ban tuong duong.
+    void drawMappingEditor(Project& p, EditState& edit, const ofTexture* canvasTex);
+
     ofxImGui::Gui m_gui;
     bool m_ready = false;
 
@@ -163,7 +186,13 @@ private:
     // ── Cua so nao dang mo ─────────────────────────────────────────────
     // Advanced Output la cong cu CHINH cua phan mem nay nen mo san.
     // Sensor thi dong: chua co phan cung, mo ra chi chiem cho.
-    bool m_showAdvancedOutput = true;
+    bool m_showAdvancedOutput = false;
+    bool m_showMapping = true;
+
+    /// Trang thai keo trong trinh chinh mapping — RIENG voi cua so output,
+    /// de hai noi khong tranh nhau mot bien.
+    int  m_mapDragPoint = -1;
+    bool m_mapShowContent = true;
     bool m_showSensor = false;
     bool m_showPerf = true;
     bool m_showClip = true;
@@ -171,6 +200,7 @@ private:
 
     /// Phan chieu tu PerfStats, de menu bar hien duoc trang thai sensor.
     bool m_sensorRunning = false;
+    std::vector<DisplayEntry> m_displays;
 
     int m_triggerCount = 0;
     std::string m_lastTriggerName;

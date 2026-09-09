@@ -67,12 +67,33 @@ private:
     void applyUiActions(UiActions& a);
     void updateStats();
 
+    /// Ghi so lieu hieu nang ra file moi vai giay.
+    ///
+    /// Doc FPS bang mat tren man hinh khong dang tin: so nhay lien tuc va
+    /// chinh viec chup man hinh cung lam tut FPS. Co ban ghi thi doi chieu
+    /// duoc giua cac lan chay, va khi chay show that ma bi giat thi co du
+    /// lieu de lan nguoc nguyen nhan.
+    void writePerfLog();
+
     void startSensor(int typeIndex);
     void stopSensor();
 
     /// Suy ra H_s tu pham vi da biet cua MockSource — thu ca chuoi
     /// sensor -> mapping ma khong can phan cung.
     void autoCalibrateMock();
+
+    /// Danh sach man hinh vat ly dang cam.
+    struct DisplayInfo {
+        int  index = 0;
+        int  x = 0, y = 0, w = 0, h = 0;
+        bool isPrimary = false;
+        std::string name;
+    };
+    std::vector<DisplayInfo> enumerateDisplays() const;
+
+    /// Day cua so output sang man hinh N roi vao fullscreen.
+    /// Day la cach dua hinh ra may chieu ma khong phai keo tay.
+    void sendOutputToDisplay(int displayIndex);
 
     /// G17 — thuc thi mot lan kich hoat vung cam ung.
     void executeTrigger(const TriggerHit& hit);
@@ -130,6 +151,9 @@ private:
     uint64_t m_lastFrameNs = 0;
 
     std::string m_projectPath = "bin/data/projects/default.hexmap";
+
+    float m_perfLogTimer = 0.0f;
+    int   m_perfLogCount = 0;
 };
 
 } // namespace hexmap
