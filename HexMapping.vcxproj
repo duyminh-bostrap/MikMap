@@ -82,7 +82,7 @@
 			<PreprocessorDefinitions>%(PreprocessorDefinitions)</PreprocessorDefinitions>
 			<RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
 			<WarningLevel>Level3</WarningLevel>
-			<AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);src;src\app;src\core\calib;src\core\math;src\core\model;src\core\util;src\io;src\io\proto;src\io\sources;src\render;src\ui;..\openFrameworks\addons\ofxHapPlayer\libs;..\openFrameworks\addons\ofxHapPlayer\libs\ffmpeg;..\openFrameworks\addons\ofxHapPlayer\libs\ffmpeg\include;..\openFrameworks\addons\ofxHapPlayer\libs\ffmpeg\lib;..\openFrameworks\addons\ofxHapPlayer\libs\hap;..\openFrameworks\addons\ofxHapPlayer\libs\hap\src;..\openFrameworks\addons\ofxHapPlayer\libs\ofxHap;..\openFrameworks\addons\ofxHapPlayer\libs\ofxHap\include;..\openFrameworks\addons\ofxHapPlayer\libs\ofxHap\include\ofxHap;..\openFrameworks\addons\ofxHapPlayer\libs\ofxHap\src;..\openFrameworks\addons\ofxHapPlayer\libs\snappy;..\openFrameworks\addons\ofxHapPlayer\libs\snappy\include;..\openFrameworks\addons\ofxHapPlayer\libs\snappy\lib;..\openFrameworks\addons\ofxHapPlayer\src;..\openFrameworks\addons\ofxImGui\libs;..\openFrameworks\addons\ofxImGui\libs\imgui;..\openFrameworks\addons\ofxImGui\libs\imgui\backends;..\openFrameworks\addons\ofxImGui\libs\imgui\docs;..\openFrameworks\addons\ofxImGui\libs\imgui\extras;..\openFrameworks\addons\ofxImGui\libs\imgui\src;..\openFrameworks\addons\ofxImGui\src</AdditionalIncludeDirectories>
+			<AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);src;src\app;src\core\calib;src\core\filter;src\core\math;src\core\model;src\core\util;src\io;src\io\proto;src\io\sources;src\render;src\ui;..\openFrameworks\addons\ofxHapPlayer\libs;..\openFrameworks\addons\ofxHapPlayer\libs\ffmpeg;..\openFrameworks\addons\ofxHapPlayer\libs\ffmpeg\include;..\openFrameworks\addons\ofxHapPlayer\libs\ffmpeg\lib;..\openFrameworks\addons\ofxHapPlayer\libs\hap;..\openFrameworks\addons\ofxHapPlayer\libs\hap\src;..\openFrameworks\addons\ofxHapPlayer\libs\ofxHap;..\openFrameworks\addons\ofxHapPlayer\libs\ofxHap\include;..\openFrameworks\addons\ofxHapPlayer\libs\ofxHap\include\ofxHap;..\openFrameworks\addons\ofxHapPlayer\libs\ofxHap\src;..\openFrameworks\addons\ofxHapPlayer\libs\snappy;..\openFrameworks\addons\ofxHapPlayer\libs\snappy\include;..\openFrameworks\addons\ofxHapPlayer\libs\snappy\lib;..\openFrameworks\addons\ofxHapPlayer\src;..\openFrameworks\addons\ofxImGui\libs;..\openFrameworks\addons\ofxImGui\libs\imgui;..\openFrameworks\addons\ofxImGui\libs\imgui\backends;..\openFrameworks\addons\ofxImGui\libs\imgui\docs;..\openFrameworks\addons\ofxImGui\libs\imgui\extras;..\openFrameworks\addons\ofxImGui\libs\imgui\src;..\openFrameworks\addons\ofxImGui\src</AdditionalIncludeDirectories>
 			<CompileAs>CompileAsCpp</CompileAs>
 			<MultiProcessorCompilation>true</MultiProcessorCompilation>
 			<ObjectFileName>$(IntDir)\Build\%(RelativeDir)\$(Configuration)\</ObjectFileName>
@@ -127,7 +127,7 @@
 			<PreprocessorDefinitions>%(PreprocessorDefinitions)</PreprocessorDefinitions>
 			<RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
 			<WarningLevel>Level3</WarningLevel>
-			<AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);src;src\app;src\core\calib;src\core\math;src\core\model;src\core\util;src\io;src\io\proto;src\io\sources;src\render;src\ui;..\openFrameworks\addons\ofxHapPlayer\libs;..\openFrameworks\addons\ofxHapPlayer\libs\ffmpeg;..\openFrameworks\addons\ofxHapPlayer\libs\ffmpeg\include;..\openFrameworks\addons\ofxHapPlayer\libs\ffmpeg\lib;..\openFrameworks\addons\ofxHapPlayer\libs\hap;..\openFrameworks\addons\ofxHapPlayer\libs\hap\src;..\openFrameworks\addons\ofxHapPlayer\libs\ofxHap;..\openFrameworks\addons\ofxHapPlayer\libs\ofxHap\include;..\openFrameworks\addons\ofxHapPlayer\libs\ofxHap\include\ofxHap;..\openFrameworks\addons\ofxHapPlayer\libs\ofxHap\src;..\openFrameworks\addons\ofxHapPlayer\libs\snappy;..\openFrameworks\addons\ofxHapPlayer\libs\snappy\include;..\openFrameworks\addons\ofxHapPlayer\libs\snappy\lib;..\openFrameworks\addons\ofxHapPlayer\src;..\openFrameworks\addons\ofxImGui\libs;..\openFrameworks\addons\ofxImGui\libs\imgui;..\openFrameworks\addons\ofxImGui\libs\imgui\backends;..\openFrameworks\addons\ofxImGui\libs\imgui\docs;..\openFrameworks\addons\ofxImGui\libs\imgui\extras;..\openFrameworks\addons\ofxImGui\libs\imgui\src;..\openFrameworks\addons\ofxImGui\src</AdditionalIncludeDirectories>
+			<AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);src;src\app;src\core\calib;src\core\filter;src\core\math;src\core\model;src\core\util;src\io;src\io\proto;src\io\sources;src\render;src\ui;..\openFrameworks\addons\ofxHapPlayer\libs;..\openFrameworks\addons\ofxHapPlayer\libs\ffmpeg;..\openFrameworks\addons\ofxHapPlayer\libs\ffmpeg\include;..\openFrameworks\addons\ofxHapPlayer\libs\ffmpeg\lib;..\openFrameworks\addons\ofxHapPlayer\libs\hap;..\openFrameworks\addons\ofxHapPlayer\libs\hap\src;..\openFrameworks\addons\ofxHapPlayer\libs\ofxHap;..\openFrameworks\addons\ofxHapPlayer\libs\ofxHap\include;..\openFrameworks\addons\ofxHapPlayer\libs\ofxHap\include\ofxHap;..\openFrameworks\addons\ofxHapPlayer\libs\ofxHap\src;..\openFrameworks\addons\ofxHapPlayer\libs\snappy;..\openFrameworks\addons\ofxHapPlayer\libs\snappy\include;..\openFrameworks\addons\ofxHapPlayer\libs\snappy\lib;..\openFrameworks\addons\ofxHapPlayer\src;..\openFrameworks\addons\ofxImGui\libs;..\openFrameworks\addons\ofxImGui\libs\imgui;..\openFrameworks\addons\ofxImGui\libs\imgui\backends;..\openFrameworks\addons\ofxImGui\libs\imgui\docs;..\openFrameworks\addons\ofxImGui\libs\imgui\extras;..\openFrameworks\addons\ofxImGui\libs\imgui\src;..\openFrameworks\addons\ofxImGui\src</AdditionalIncludeDirectories>
 			<CompileAs>CompileAsCpp</CompileAs>
 			<ObjectFileName>$(IntDir)\Build\%(RelativeDir)\$(Configuration)\</ObjectFileName>
 			<LanguageStandard>stdcpplatest</LanguageStandard>
@@ -230,6 +230,8 @@
 		<ClCompile Include="src\app\main.cpp" />
 		<ClCompile Include="src\core\calib\CalibrationProfile.cpp" />
 		<ClCompile Include="src\core\calib\SensorMapper.cpp" />
+		<ClCompile Include="src\core\filter\OneEuroFilter.cpp" />
+		<ClCompile Include="src\core\filter\PointTracker.cpp" />
 		<ClCompile Include="src\core\math\BilinearInverse.cpp" />
 		<ClCompile Include="src\core\math\Homography.cpp" />
 		<ClCompile Include="src\core\math\LinearSolver.cpp" />
@@ -288,6 +290,8 @@
 		<ClInclude Include="src\app\AppController.h" />
 		<ClInclude Include="src\core\calib\CalibrationProfile.h" />
 		<ClInclude Include="src\core\calib\SensorMapper.h" />
+		<ClInclude Include="src\core\filter\OneEuroFilter.h" />
+		<ClInclude Include="src\core\filter\PointTracker.h" />
 		<ClInclude Include="src\core\math\BilinearInverse.h" />
 		<ClInclude Include="src\core\math\Homography.h" />
 		<ClInclude Include="src\core\math\LinearSolver.h" />

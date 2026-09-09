@@ -234,8 +234,32 @@ void AppController::pollSensor() {
     // ★ Biến đổi toạ độ ở ĐÂY, trên render thread — architecture.md §3.5.
     m_edit.sensorOutputPoints.clear();
 
+    const double tSec = Clock::nsToSec(Clock::nowNs());
+
+    // ── G12 rồi G11: gán ID bền vững TRƯỚC, lọc SAU ────────────────────
+    // Thứ tự này bắt buộc. Lọc mà không có ID ổn định sẽ trộn quỹ đạo
+    // của hai ngón tay vào nhau — mỗi frame bộ lọc lại nhận một điểm
+    // khác và tưởng đó là cùng một vật đang nhảy loạn.
+    std::vector<Vec2> observed;
+    observed.reserve(static_cast<size_t>(f.count));
     for (int i = 0; i < f.count; ++i) {
-        const Vec2 raw{f.points[i].x, f.points[i].y};
+        observed.push_back(Vec2{f.points[i].x, f.points[i].y});
+    }
+
+    m_tracker.update(observed, tSec);
+    m_trackCount = static_cast<int>(m_tracker.activeTracks().size());
+
+    // Giải phóng bộ lọc của điểm đã biến mất hẳn — nếu không, map này
+    // phình ra vô hạn trong một show dài.
+    for (const uint32_t lostId : m_tracker.justLost()) {
+        m_filters.erase(lostId);
+    }
+
+    for (const TrackedPoint& tp : m_tracker.activeTracks()) {
+        Vec2 raw = tp.position;
+        if (m_filterEnabled) {
+            raw = m_filters[tp.id].filter(tp.position, tSec);
+        }
         m_rawPoints.push_back(raw);
 
         const MappedPoint mp = m_mapper.map(raw);
@@ -266,6 +290,8 @@ void AppController::updateStats() {
     m_stats.sensorLatencyAvgMs = average(m_sensorLatencies);
     m_stats.sensorLatencyP99Ms = percentile(m_sensorLatencies, 0.99);
     m_stats.touchCount = static_cast<int>(m_rawPoints.size());
+    m_stats.trackedCount = m_trackCount;
+    m_stats.filterEnabled = m_filterEnabled;
 
     if (m_sensor) {
         m_stats.framesDropped = m_sensor->frames().droppedCount();
@@ -412,6 +438,9 @@ void AppController::stopSensor() {
     m_rawPoints.clear();
     m_edit.sensorOutputPoints.clear();
     m_project.triggerZones.resetRuntimeState();
+    m_tracker.reset();
+    m_filters.clear();
+    m_trackCount = 0;
 }
 
 void AppController::executeTrigger(const TriggerHit& hit) {
@@ -705,6 +734,12 @@ void AppController::keyPressed(int key) {
 
     case 'a':
         autoCalibrateMock();
+        break;
+
+    case 'f':
+        // G11 — bat/tat loc, de so sanh truc tiep muc rung.
+        m_filterEnabled = !m_filterEnabled;
+        m_panel.setStatusMessage(m_filterEnabled ? "Loc nhieu: BAT" : "Loc nhieu: TAT");
         break;
 
     default:

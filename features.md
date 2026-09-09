@@ -146,10 +146,60 @@ Ba bất biến của A10 được test khoá lại:
 - Tổng độ mờ luôn `= 1.0` ở mọi mốc → không sáng vọt/tối sụp giữa chừng
 - Clip cũ **vẫn tiến đầu phát** trong lúc tắt dần (đứng hình sẽ lộ ra là ảnh tĩnh mờ dần)
 
+### 🎯 P1 đợt 3 — G17: điểm đến của cả dự án
+
+**Chạm vào vật thể thật → clip phát.** Mọi thứ đã xây tồn tại để phục vụ điều này.
+
+| Mục | Nội dung |
+|---|---|
+| **G17** | `TriggerZone` — vùng cảm ứng trong **không gian canvas**, nên chỉnh keystone không làm lệch vùng |
+| — | Vẽ vùng lên máy chiếu, tô xanh khi có điểm bên trong |
+| — | Panel tạo/sửa vùng: vị trí, kích thước, hành động, layer/cột đích, chống dội |
+| — | Cấu hình VS Code: 4 launch config, 9 task, IntelliSense |
+
+**Kết quả:** `258/258 test xanh · 2643 assertion` — và đã kiểm chứng bằng ảnh chụp
+cửa sổ máy chiếu: 16 lần kích hoạt, vùng tô xanh khi có điểm.
+
+#### Một lỗi thiết kế phải sửa
+
+Ban đầu tôi cho vùng nghe **sự kiện Down**. Nhưng sensor tracking liên tục
+(Kinect, LiDAR, MockSource) chỉ phát Down **một lần** khi điểm xuất hiện, sau
+đó toàn Move — nên điểm *di chuyển vào* vùng sẽ **không bao giờ** kích hoạt.
+
+Đổi sang phát hiện **cạnh lên** (không có điểm → có điểm) phủ được cả hai loại:
+sensor chạm thì Down bên trong vùng cũng làm vùng chuyển sang "có điểm".
+Giá phải trả: trễ tối đa một frame (~16 ms) — không đáng kể so với input lag
+16–80 ms của máy chiếu.
+
+### 🟢 P1 đợt 4 — làm sạch dữ liệu sensor
+
+Hai module `architecture.md` đã liệt kê từ đầu nhưng chưa làm. Cả hai
+**bắt buộc khi dùng sensor thật** vì dữ liệu thô luôn rung.
+
+| Mục | Nội dung |
+|---|---|
+| **G11** `OneEuroFilter` | Khử nhiễu **không thêm độ trễ**: lọc mạnh khi đứng yên, nới lỏng khi di chuyển nhanh |
+| **G12** `PointTracker` | Gán ID bền vững qua các frame, có thời gian ân hạn khi sensor mất dấu |
+
+**Kết quả:** `278/278 test xanh · 2748 assertion`
+
+Bốn test đo được hành vi thật chứ không chỉ kiểm API:
+- Đứng yên: độ rung sau lọc **< 25%** so với tín hiệu thô
+- Di chuyển 600 đơn vị/giây: sai số bám **< 15 đơn vị** (~25 ms)
+- `beta` cao bám tốt hơn `beta` thấp — chứng minh cơ chế thích nghi hoạt động
+- Đảo thứ tự điểm đầu vào **không làm đổi ID**
+
+#### Thứ tự bắt buộc: gán ID TRƯỚC, lọc SAU
+
+Lọc mà không có ID ổn định sẽ **trộn quỹ đạo hai ngón tay vào nhau** — mỗi
+frame bộ lọc nhận một điểm khác và tưởng đó là cùng một vật đang nhảy loạn.
+Mỗi ID có bộ lọc riêng; dùng chung một bộ lọc sẽ làm các điểm kéo nhau về
+phía trung bình.
+
 ### Xây tiếp
 
 `E1` FX chain · `F12` bezier mask · `F19` color correction per-slice ·
-`G17` sensor trigger clip · `A13` group · `C9` cue points
+`A13` group · `C9` cue points · `G14` TUIO
 
 ### 📊 R1 — băng thông HAP 4K đo thật (3840×2160 @30fps)
 

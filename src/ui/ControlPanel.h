@@ -40,6 +40,8 @@ struct PerfStats {
     uint64_t ringOverflow = 0;
     uint64_t packetsMalformed = 0;
     int      touchCount = 0;
+    int      trackedCount = 0;   ///< G12 — so diem co ID ben vung
+    bool     filterEnabled = true;
 
     int    layersDrawn = 0;
     int    slicesDrawn = 0;

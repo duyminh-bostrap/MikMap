@@ -434,7 +434,8 @@ void ControlPanel::drawSensorPanel(Project& p, const PerfStats& s, UiActions& a)
         ImGui::TextDisabled("dang dung");
     }
 
-    ImGui::Text("Diem cham: %d", s.touchCount);
+    ImGui::Text("Diem cham: %d   (co ID ben vung: %d)", s.touchCount, s.trackedCount);
+    ImGui::TextDisabled("Loc nhieu (phim F): %s", s.filterEnabled ? "BAT" : "TAT");
 }
 
 // ── G6 G10: wizard calibration ─────────────────────────────────────────

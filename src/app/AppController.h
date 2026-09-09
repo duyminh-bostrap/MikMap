@@ -16,6 +16,8 @@
 #pragma once
 
 #include "core/calib/SensorMapper.h"
+#include "core/filter/OneEuroFilter.h"
+#include "core/filter/PointTracker.h"
 #include "core/model/ProjectIO.h"
 #include "io/ISensorSource.h"
 #include "render/MediaCache.h"
@@ -25,6 +27,7 @@
 #include "ofMain.h"
 
 #include <deque>
+#include <map>
 #include <memory>
 #include <vector>
 
@@ -105,6 +108,18 @@ private:
     /// G17 — thong ke de hien tren UI.
     int m_triggerCount = 0;
     std::string m_lastTriggerName;
+
+    // ── G11 G12: lam sach du lieu sensor ───────────────────────────────
+    /// Gan ID ben vung truoc, roi moi loc. Thu tu nay BAT BUOC: loc ma
+    /// khong co ID on dinh se tron quy dao cua hai ngon tay vao nhau.
+    PointTracker m_tracker;
+
+    /// Mot bo loc RIENG cho tung ID. Dung chung mot bo loc cho moi diem
+    /// se lam chung keo nhau ve phia trung binh.
+    std::map<uint32_t, OneEuroFilter2D> m_filters;
+
+    bool m_filterEnabled = true;
+    int  m_trackCount = 0;
 
     std::shared_ptr<ofAppBaseWindow> m_outputWindow;
 
