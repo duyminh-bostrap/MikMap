@@ -1,6 +1,10 @@
-# HexMapping
+# MikMap
 
 Projection mapping engine kết hợp hệ thống calibration sensor.
+
+> **Lưu ý về tên:** repo tên `MikMap`, nhưng mã nguồn dùng tên nội bộ
+> **HexMapping** — namespace `hexmap`, `HexMapping.sln`, `bin/HexMapping.exe`.
+> Hai tên này chỉ khác nhau ở nhãn, không phải hai thứ khác nhau.
 
 Lưới clip kiểu Resolume (deck · layer · column) → composition canvas ảo →
 slice có keystone/mesh warp → máy chiếu. Kèm chuỗi ánh xạ ngược từ sensor
@@ -37,8 +41,11 @@ D:\...\Mike\
 │       ├── ofxHapPlayer\  ← git clone --recursive
 │       └── ofxImGui\      ← git clone --recursive
 ├── tools\ffmpeg\          ← bản build có --enable-libsnappy
-└── HexMapping\            ← repo này
+└── MikMap\                ← repo này (tên thư mục đặt gì cũng được)
 ```
+
+Tên thư mục repo không quan trọng — điều bắt buộc là `openFrameworks` và
+`tools` phải nằm **cùng cấp** với nó, vì `.vcxproj` trỏ tới `../openFrameworks`.
 
 ### Cài đặt
 
