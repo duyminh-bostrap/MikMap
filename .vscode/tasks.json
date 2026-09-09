@@ -1,0 +1,143 @@
+{
+  // ══════════════════════════════════════════════════════════════════════
+  //  Dự án có HAI hệ build (xem architecture.md §7):
+  //
+  //    · App chính   → MSBuild, file .vcxproj do oF Project Generator sinh
+  //    · core/+tests → CMake thuần, KHÔNG cần openFrameworks
+  //
+  //  Task ở đây phủ cả hai. Ctrl+Shift+B chạy task mặc định (build app).
+  // ══════════════════════════════════════════════════════════════════════
+  "version": "2.0.0",
+
+  "inputs": [
+    {
+      "id": "videoFile",
+      "type": "promptString",
+      "description": "Duong dan file video can chuyen sang HAP"
+    },
+    {
+      "id": "hapFormat",
+      "type": "pickString",
+      "description": "Dinh dang HAP",
+      "options": ["hap", "hap_q", "hap_alpha", "hap_q_alpha"],
+      "default": "hap_q"
+    }
+  ],
+
+  "tasks": [
+    // ── App chính ──────────────────────────────────────────────────────
+    {
+      "label": "App: Build (Release)",
+      "type": "shell",
+      "command": "&",
+      "args": [
+        "'C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe'",
+        "HexMapping.sln",
+        "/p:Configuration=Release",
+        "/p:Platform=x64",
+        "/m",
+        "/v:minimal"
+      ],
+      "options": { "cwd": "${workspaceFolder}" },
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": "$msCompile",
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true }
+    },
+    {
+      "label": "App: Build (Debug)",
+      "type": "shell",
+      "command": "&",
+      "args": [
+        "'C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe'",
+        "HexMapping.sln",
+        "/p:Configuration=Debug",
+        "/p:Platform=x64",
+        "/m",
+        "/v:minimal"
+      ],
+      "options": { "cwd": "${workspaceFolder}" },
+      "group": "build",
+      "problemMatcher": "$msCompile",
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true }
+    },
+    {
+      "label": "App: Run (Release)",
+      "type": "shell",
+      "command": "./HexMapping.exe",
+      "options": { "cwd": "${workspaceFolder}/bin" },
+      "dependsOn": "App: Build (Release)",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated" }
+    },
+    {
+      "label": "App: Run demo (mock sensor + auto-calibrate)",
+      "type": "shell",
+      "command": "./HexMapping.exe",
+      "args": ["--demo"],
+      "options": { "cwd": "${workspaceFolder}/bin" },
+      "dependsOn": "App: Build (Release)",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated" }
+    },
+
+    // ── core/ + tests (CMake, không cần oF) ────────────────────────────
+    {
+      "label": "Core: Configure (CMake)",
+      "type": "shell",
+      "command": "cmake",
+      "args": ["-S", ".", "-B", "build", "-G", "Visual Studio 17 2022", "-A", "x64"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "Core: Build tests",
+      "type": "shell",
+      "command": "cmake",
+      "args": ["--build", "build", "--config", "Debug"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "group": "build",
+      "problemMatcher": "$msCompile",
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true }
+    },
+    {
+      "label": "Core: Run tests",
+      "type": "shell",
+      "command": "./build/Debug/hexmap_tests.exe",
+      "options": { "cwd": "${workspaceFolder}" },
+      "dependsOn": "Core: Build tests",
+      "group": { "kind": "test", "isDefault": true },
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true }
+    },
+
+    // ── Công cụ ────────────────────────────────────────────────────────
+    {
+      "label": "Tools: Sinh lai oF project (+ va .vcxproj)",
+      "detail": "Chay sau khi THEM/XOA file nguon hoac doi addon.",
+      "type": "shell",
+      "command": "& '${workspaceFolder}/../openFrameworks/projectGenerator/resources/app/app/projectGenerator.exe' -o'${workspaceFolder}/../openFrameworks' -p'vs' -a'ofxHapPlayer, ofxImGui' '${workspaceFolder}'; & '${workspaceFolder}/tools/fix_project.ps1'",
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true }
+    },
+    {
+      "label": "Tools: Chuyen video sang HAP",
+      "detail": "Bat buoc voi moi video dua vao app — file khong phai HAP se lam tut fps.",
+      "type": "shell",
+      "command": "& '${workspaceFolder}/../tools/ffmpeg/bin/ffmpeg.exe' -y -i '${input:videoFile}' -c:v hap -format ${input:hapFormat} -chunks 8 '${workspaceFolder}/bin/data/media/converted_${input:hapFormat}.mov'",
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "Tools: Kiem tra quy tac phan tang",
+      "detail": "core/ khong duoc include GL, oF hay ImGui (architecture.md §1).",
+      "type": "shell",
+      "command": "$bad = Select-String -Path '${workspaceFolder}/src/core/*.h','${workspaceFolder}/src/core/*.cpp','${workspaceFolder}/src/core/**/*.h','${workspaceFolder}/src/core/**/*.cpp' -Pattern '#include\\s*[\"<](ofMain|of[A-Z]|GL/|imgui|ofx)' -ErrorAction SilentlyContinue; if ($bad) { Write-Host 'VI PHAM PHAN TANG:' -ForegroundColor Red; $bad; exit 1 } else { Write-Host 'core/ sach: khong include GL/oF/ImGui' -ForegroundColor Green }",
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true }
+    }
+  ]
+}

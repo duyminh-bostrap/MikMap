@@ -1,0 +1,62 @@
+# ── Build outputs ────────────────────────────────────────────────
+build/
+out/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+*.obj
+*.pdb
+*.ilk
+*.exp
+*.lib
+*.dll
+*.exe
+
+# ── Visual Studio ────────────────────────────────────────────────
+.vs/
+*.user
+*.suo
+*.VC.db
+*.VC.opendb
+ipch/
+Backup*/
+UpgradeLog*.XML
+
+# ── CMake ────────────────────────────────────────────────────────
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+cmake_install.cmake
+CTestTestfile.cmake
+_deps/
+*.cmake.stamp*
+
+# ── openFrameworks ───────────────────────────────────────────────
+# Addons are pulled as submodules; do not commit their contents.
+addons/*/
+!addons/.gitkeep
+obj/
+bin/*.dll
+bin/*.exe
+bin/libs/
+
+# ── Media (lớn — không đưa vào git) ──────────────────────────────
+bin/data/media/*
+!bin/data/media/.gitkeep
+*.mov
+*.mp4
+*.mkv
+*.avi
+
+# ── Runtime artifacts giữ lại cấu trúc, bỏ nội dung ─────────────
+bin/data/projects/*
+!bin/data/projects/.gitkeep
+bin/data/calib/*
+!bin/data/calib/.gitkeep
+
+# ── Logs & temp ──────────────────────────────────────────────────
+*.log
+*.tmp
+.DS_Store
+Thumbs.db

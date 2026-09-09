@@ -1,0 +1,52 @@
+{
+  // ══════════════════════════════════════════════════════════════════════
+  //  IntelliSense. Chi anh huong trinh soan thao — build that su van do
+  //  MSBuild (app) va CMake (core+tests) quyet dinh.
+  //
+  //  Dung glob dang ** thay vi liet ke tung thu muc nhu .vcxproj: oF co
+  //  hang chuc thu muc include, va danh sach do doi moi lan chay Project
+  //  Generator. Glob thi khong can bao tri.
+  // ══════════════════════════════════════════════════════════════════════
+  "version": 4,
+  "configurations": [
+    {
+      "name": "Win32-MSVC",
+      "includePath": [
+        "${workspaceFolder}/src/**",
+
+        // openFrameworks core
+        "${workspaceFolder}/../openFrameworks/libs/openFrameworks/**",
+        "${workspaceFolder}/../openFrameworks/libs/**",
+
+        // Addon dang dung
+        "${workspaceFolder}/../openFrameworks/addons/ofxHapPlayer/**",
+        "${workspaceFolder}/../openFrameworks/addons/ofxImGui/**"
+      ],
+      "defines": [
+        "_WINDOWS",
+        "_UNICODE",
+        "UNICODE",
+        "WIN32",
+        "_WIN32",
+        "NOMINMAX",
+        "WIN32_LEAN_AND_MEAN",
+        "OF_USING_GTK",
+        "POCO_STATIC"
+      ],
+      "cStandard": "c17",
+      "cppStandard": "c++20",
+      "intelliSenseMode": "windows-msvc-x64",
+      "compilerPath": "C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.44.35207/bin/Hostx64/x64/cl.exe",
+
+      // core/ + tests co compile_commands rieng tu CMake — chinh xac hon
+      // glob. Neu file chua ton tai, chay task "Core: Configure (CMake)".
+      "browse": {
+        "path": [
+          "${workspaceFolder}/src",
+          "${workspaceFolder}/tests"
+        ],
+        "limitSymbolsToIncludedHeaders": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,132 @@
+<?xml version="1.0"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+	<ItemGroup>
+		<ClCompile Include="src\ofApp.cpp">
+			<Filter>src</Filter>
+		</ClCompile>
+		<ClCompile Include="src\main.cpp">
+			<Filter>src</Filter>
+		</ClCompile>
+		<ClCompile Include="..\..\..\openFrameworks\addons\ofxHapPlayer\src\ofxHapPlayer.cpp">
+			<Filter>addons\ofxHapPlayer\src</Filter>
+		</ClCompile>
+		<ClCompile Include="..\..\..\openFrameworks\addons\ofxHapPlayer\libs\hap\src\hap.c">
+			<Filter>addons\ofxHapPlayer\libs\hap\src</Filter>
+		</ClCompile>
+		<ClCompile Include="..\..\..\openFrameworks\addons\ofxHapPlayer\libs\ofxHap\src\AudioDecoder.cpp">
+			<Filter>addons\ofxHapPlayer\libs\ofxHap\src</Filter>
+		</ClCompile>
+		<ClCompile Include="..\..\..\openFrameworks\addons\ofxHapPlayer\libs\ofxHap\src\AudioParameters.cpp">
+			<Filter>addons\ofxHapPlayer\libs\ofxHap\src</Filter>
+		</ClCompile>
+		<ClCompile Include="..\..\..\openFrameworks\addons\ofxHapPlayer\libs\ofxHap\src\AudioResampler.cpp">
+			<Filter>addons\ofxHapPlayer\libs\ofxHap\src</Filter>
+		</ClCompile>
+		<ClCompile Include="..\..\..\openFrameworks\addons\ofxHapPlayer\libs\ofxHap\src\AudioThread.cpp">
+			<Filter>addons\ofxHapPlayer\libs\ofxHap\src</Filter>
+		</ClCompile>
+		<ClCompile Include="..\..\..\openFrameworks\addons\ofxHapPlayer\libs\ofxHap\src\Clock.cpp">
+			<Filter>addons\ofxHapPlayer\libs\ofxHap\src</Filter>
+		</ClCompile>
+		<ClCompile Include="..\..\..\openFrameworks\addons\ofxHapPlayer\libs\ofxHap\src\Demuxer.cpp">
+			<Filter>addons\ofxHapPlayer\libs\ofxHap\src</Filter>
+		</ClCompile>
+		<ClCompile Include="..\..\..\openFrameworks\addons\ofxHapPlayer\libs\ofxHap\src\MovieTime.cpp">
+			<Filter>addons\ofxHapPlayer\libs\ofxHap\src</Filter>
+		</ClCompile>
+		<ClCompile Include="..\..\..\openFrameworks\addons\ofxHapPlayer\libs\ofxHap\src\PacketCache.cpp">
+			<Filter>addons\ofxHapPlayer\libs\ofxHap\src</Filter>
+		</ClCompile>
+		<ClCompile Include="..\..\..\openFrameworks\addons\ofxHapPlayer\libs\ofxHap\src\RingBuffer.cpp">
+			<Filter>addons\ofxHapPlayer\libs\ofxHap\src</Filter>
+		</ClCompile>
+		<ClCompile Include="..\..\..\openFrameworks\addons\ofxHapPlayer\libs\ofxHap\src\TimeRangeSet.cpp">
+			<Filter>addons\ofxHapPlayer\libs\ofxHap\src</Filter>
+		</ClCompile>
+	</ItemGroup>
+	<ItemGroup>
+		<Filter Include="src">
+			<UniqueIdentifier>{d8376475-7454-4a24-b08a-aac121d3ad6f}</UniqueIdentifier>
+		</Filter>
+		<Filter Include="addons">
+			<UniqueIdentifier>{2B0A505B--D83-1-44-37-8-BCA-8D0BD7D06001}</UniqueIdentifier>
+		</Filter>
+		<Filter Include="addons\ofxHapPlayer">
+			<UniqueIdentifier>{C595A8AC--C9C-3-47-3A-8-3CA-4E750F9A78F4}</UniqueIdentifier>
+		</Filter>
+		<Filter Include="addons\ofxHapPlayer\src">
+			<UniqueIdentifier>{B4878A3F--C1B-2-4C-70-A-9B5-6A215649B421}</UniqueIdentifier>
+		</Filter>
+		<Filter Include="addons\ofxHapPlayer\libs">
+			<UniqueIdentifier>{94307ACE--CAA-1-40-FF-8-26E-75E0D9325529}</UniqueIdentifier>
+		</Filter>
+		<Filter Include="addons\ofxHapPlayer\libs\hap">
+			<UniqueIdentifier>{C74425DF--A4C-7-43-2F-B-8F7-0725909B1BAB}</UniqueIdentifier>
+		</Filter>
+		<Filter Include="addons\ofxHapPlayer\libs\hap\src">
+			<UniqueIdentifier>{D4E553CA--359-3-41-16-8-4C9-096E95226638}</UniqueIdentifier>
+		</Filter>
+		<Filter Include="addons\ofxHapPlayer\libs\ofxHap">
+			<UniqueIdentifier>{F37F6A72--772-F-47-A0-A-394-E98E4F16DAE4}</UniqueIdentifier>
+		</Filter>
+		<Filter Include="addons\ofxHapPlayer\libs\ofxHap\include">
+			<UniqueIdentifier>{94B0B265--4D5-3-4E-4E-8-2A5-9F1539018A96}</UniqueIdentifier>
+		</Filter>
+		<Filter Include="addons\ofxHapPlayer\libs\ofxHap\include\ofxHap">
+			<UniqueIdentifier>{0FEA4C1F--0BA-F-4B-0D-8-D94-22402F0D3234}</UniqueIdentifier>
+		</Filter>
+		<Filter Include="addons\ofxHapPlayer\libs\ofxHap\src">
+			<UniqueIdentifier>{E0FEA861--1E9-1-49-EF-A-8BC-854065839715}</UniqueIdentifier>
+		</Filter>
+	</ItemGroup>
+	<ItemGroup>
+		<ClInclude Include="src\ofApp.h">
+			<Filter>src</Filter>
+		</ClInclude>
+		<ClInclude Include="..\..\..\openFrameworks\addons\ofxHapPlayer\src\ofxHapPlayer.h">
+			<Filter>addons\ofxHapPlayer\src</Filter>
+		</ClInclude>
+		<ClInclude Include="..\..\..\openFrameworks\addons\ofxHapPlayer\libs\hap\src\hap.h">
+			<Filter>addons\ofxHapPlayer\libs\hap\src</Filter>
+		</ClInclude>
+		<ClInclude Include="..\..\..\openFrameworks\addons\ofxHapPlayer\libs\ofxHap\include\ofxHap\AudioDecoder.h">
+			<Filter>addons\ofxHapPlayer\libs\ofxHap\include\ofxHap</Filter>
+		</ClInclude>
+		<ClInclude Include="..\..\..\openFrameworks\addons\ofxHapPlayer\libs\ofxHap\include\ofxHap\AudioParameters.h">
+			<Filter>addons\ofxHapPlayer\libs\ofxHap\include\ofxHap</Filter>
+		</ClInclude>
+		<ClInclude Include="..\..\..\openFrameworks\addons\ofxHapPlayer\libs\ofxHap\include\ofxHap\AudioResampler.h">
+			<Filter>addons\ofxHapPlayer\libs\ofxHap\include\ofxHap</Filter>
+		</ClInclude>
+		<ClInclude Include="..\..\..\openFrameworks\addons\ofxHapPlayer\libs\ofxHap\include\ofxHap\AudioThread.h">
+			<Filter>addons\ofxHapPlayer\libs\ofxHap\include\ofxHap</Filter>
+		</ClInclude>
+		<ClInclude Include="..\..\..\openFrameworks\addons\ofxHapPlayer\libs\ofxHap\include\ofxHap\Clock.h">
+			<Filter>addons\ofxHapPlayer\libs\ofxHap\include\ofxHap</Filter>
+		</ClInclude>
+		<ClInclude Include="..\..\..\openFrameworks\addons\ofxHapPlayer\libs\ofxHap\include\ofxHap\Common.h">
+			<Filter>addons\ofxHapPlayer\libs\ofxHap\include\ofxHap</Filter>
+		</ClInclude>
+		<ClInclude Include="..\..\..\openFrameworks\addons\ofxHapPlayer\libs\ofxHap\include\ofxHap\Demuxer.h">
+			<Filter>addons\ofxHapPlayer\libs\ofxHap\include\ofxHap</Filter>
+		</ClInclude>
+		<ClInclude Include="..\..\..\openFrameworks\addons\ofxHapPlayer\libs\ofxHap\include\ofxHap\ErrorReceiving.h">
+			<Filter>addons\ofxHapPlayer\libs\ofxHap\include\ofxHap</Filter>
+		</ClInclude>
+		<ClInclude Include="..\..\..\openFrameworks\addons\ofxHapPlayer\libs\ofxHap\include\ofxHap\MovieTime.h">
+			<Filter>addons\ofxHapPlayer\libs\ofxHap\include\ofxHap</Filter>
+		</ClInclude>
+		<ClInclude Include="..\..\..\openFrameworks\addons\ofxHapPlayer\libs\ofxHap\include\ofxHap\PacketCache.h">
+			<Filter>addons\ofxHapPlayer\libs\ofxHap\include\ofxHap</Filter>
+		</ClInclude>
+		<ClInclude Include="..\..\..\openFrameworks\addons\ofxHapPlayer\libs\ofxHap\include\ofxHap\RingBuffer.h">
+			<Filter>addons\ofxHapPlayer\libs\ofxHap\include\ofxHap</Filter>
+		</ClInclude>
+		<ClInclude Include="..\..\..\openFrameworks\addons\ofxHapPlayer\libs\ofxHap\include\ofxHap\TimeRangeSet.h">
+			<Filter>addons\ofxHapPlayer\libs\ofxHap\include\ofxHap</Filter>
+		</ClInclude>
+	</ItemGroup>
+	<ItemGroup>
+		<ResourceCompile Include="icon.rc" />
+	</ItemGroup>
+</Project>

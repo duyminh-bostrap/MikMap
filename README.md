@@ -1,0 +1,173 @@
+# HexMapping
+
+Projection mapping engine kết hợp hệ thống calibration sensor.
+
+Lưới clip kiểu Resolume (deck · layer · column) → composition canvas ảo →
+slice có keystone/mesh warp → máy chiếu. Kèm chuỗi ánh xạ ngược từ sensor
+về toạ độ nội dung: **chạm vào vật thể thật, hiệu ứng nổ đúng chỗ đó**.
+
+```
+C++20 · openFrameworks 0.12.x · OpenGL · Dear ImGui · Windows / MSVC 2022
+```
+
+---
+
+## Trạng thái
+
+| | |
+|---|---|
+| Unit test | **239 passed, 0 failed** · 2580 assertion · 0 cảnh báo `/W4` |
+| Hiệu năng | 60 fps · frame p99 ~17 ms · độ trễ sensor p99 ~9 ms |
+| Video | 4K HAP Q — 1–5 luồng giữ đúng tốc độ gốc (đo thật, xem `features.md`) |
+
+Xem [`features.md`](features.md) để biết tiến độ từng tính năng và
+[`architecture.md`](architecture.md) để biết vì sao mọi thứ được đặt ở đó.
+
+---
+
+## Bố cục thư mục BẮT BUỘC
+
+openFrameworks phải là **thư mục anh em** của repo này. File `.vcxproj`
+trỏ tới `../openFrameworks` bằng đường dẫn tương đối.
+
+```
+D:\...\Mike\
+├── openFrameworks\        ← tải từ openframeworks.cc (bản vs)
+│   └── addons\
+│       ├── ofxHapPlayer\  ← git clone --recursive
+│       └── ofxImGui\      ← git clone --recursive
+├── tools\ffmpeg\          ← bản build có --enable-libsnappy
+└── HexMapping\            ← repo này
+```
+
+### Cài đặt
+
+```powershell
+# 1. openFrameworks (bản vs, ~717 MB)
+#    https://openframeworks.cc/download/  → giải nén thành ../openFrameworks
+
+# 2. Addon
+cd ../openFrameworks/addons
+git clone --recursive --depth 1 https://github.com/bangnoise/ofxHapPlayer.git
+git clone --recursive --depth 1 https://github.com/Daandelange/ofxImGui.git
+
+# 3. ffmpeg có encoder HAP (bắt buộc: --enable-libsnappy)
+#    https://github.com/BtbN/FFmpeg-Builds/releases → giải nén thành ../tools/ffmpeg
+```
+
+---
+
+## Build
+
+Dự án có **hai hệ build** (lý do ở `architecture.md` §7):
+
+### `core/` + unit test — CMake thuần, KHÔNG cần openFrameworks
+
+```powershell
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+cmake --build build --config Debug
+./build/Debug/hexmap_tests.exe
+```
+
+Chạy được trên máy trắng, không cần GPU. Toàn bộ toán học mapping và
+calibration nằm ở đây.
+
+### App chính — MSBuild
+
+```powershell
+& "C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe" `
+  HexMapping.sln /p:Configuration=Release /p:Platform=x64 /m
+./bin/HexMapping.exe
+```
+
+> ⚠️ Sau **mỗi lần** chạy oF Project Generator, phải chạy lại
+> `tools/fix_project.ps1`. PG chèn hai stub không tồn tại và bỏ sót `src`
+> trong include path — script vá cả hai.
+
+### VS Code
+
+Mở thư mục repo rồi:
+
+| Phím | Việc |
+|---|---|
+| `Ctrl+Shift+B` | Build app (Release) |
+| `F5` | Chạy app — chọn cấu hình ở panel Run and Debug |
+| `Ctrl+Shift+P` → *Run Task* | Toàn bộ task: build, test, đổi video sang HAP, sinh lại project |
+
+---
+
+## Dùng
+
+```powershell
+./bin/HexMapping.exe          # bình thường
+./bin/HexMapping.exe --demo   # bật mock sensor + auto-calibrate sẵn
+```
+
+| Thao tác | |
+|---|---|
+| Bấm ô clip | Phát clip đó |
+| Bấm số cột | Phát cả cột trên mọi layer |
+| Bấm ô trống / `Ctrl`+bấm | Chọn file media |
+| Kéo handle ở cửa sổ Output | Keystone / mesh warp |
+
+| Phím tắt | |
+|---|---|
+| `Space` | Show Mode — tắt/bật overlay chỉnh sửa |
+| `G` | Lưới test card |
+| `M` / `O` | Bật/tắt sensor Mock / OSC (cổng 9000) |
+| `A` | Auto-calibrate cho Mock |
+| `C` | Dấu thập calibration trên máy chiếu |
+| `P` | Chấm sensor trên output |
+| `F11` | Fullscreen máy chiếu |
+
+---
+
+## ⚠️ Video phải là HAP
+
+Đây là nguyên nhân số một khiến show tụt fps: kéo một file `.mp4` vào và
+không hiểu vì sao từ 60 xuống 12 fps.
+
+```powershell
+../tools/ffmpeg/bin/ffmpeg.exe -i input.mp4 -c:v hap -format hap_q -chunks 8 output.mov
+```
+
+Băng thông đo thật, 4K @30fps:
+
+| Nội dung | Codec | 1 luồng | 4 luồng |
+|---|---|---:|---:|
+| Đồ hoạ / animation | HAP Q | 20 MB/s | 81 MB/s |
+| Quay thật, chi tiết cao | HAP Q | 237 MB/s | 949 MB/s |
+
+Nội dung đồ hoạ nén tốt hơn ~12 lần. **NVMe chỉ bắt buộc khi chiếu footage
+quay thật độ chi tiết cao** — nội dung mapping điển hình thì SATA SSD đủ.
+
+---
+
+## Kiến trúc
+
+```
+app/      AppController — nơi DUY NHẤT bốn tầng gặp nhau
+ui/       Dear ImGui — chỉ đọc model và phát lệnh
+render/   OpenGL + oF — chỉ đọc model
+io/       Thread sensor — không biết model tồn tại
+core/     C++20 THUẦN — math, model, calib. Zero GL / oF / ImGui
+```
+
+`core/` không phụ thuộc gì ngoài STL. Nhờ vậy toàn bộ toán học mapping và
+calibration test được trong ~2 giây mà không cần GPU hay openFrameworks.
+
+Công thức trung tâm:
+
+```
+p_content = H_w⁻¹ · H_s · p_sensor
+```
+
+`H_s` (calibration sensor) và `H_w` (keystone của slice) là **hai ma trận
+tách rời** — chỉnh lại keystone không làm hỏng calibration. Chi tiết ở
+`architecture.md` §4.
+
+---
+
+## Giấy phép
+
+Chưa chọn.
