@@ -94,6 +94,8 @@ void ControlPanel::draw(Project& project,
         drawSensorPanel(project, stats, actions);
         ImGui::Separator();
         drawCalibrationPanel(project, stats, actions);
+        ImGui::Separator();
+        drawTriggerZonePanel(project, actions);
     }
     ImGui::End();
 
@@ -685,6 +687,90 @@ void ControlPanel::drawClipPanel(Project& p) {
     int bl = static_cast<int>(c->blend);
     if (ImGui::Combo("Blend", &bl, kBlendNames, IM_ARRAYSIZE(kBlendNames))) {
         c->blend = static_cast<BlendMode>(bl);
+    }
+}
+
+// ── G17: vung cam ung ──────────────────────────────────────────────────
+
+void ControlPanel::drawTriggerZonePanel(Project& p, UiActions& a) {
+    ImGui::Text("Vung cam ung (G17)   -   da kich hoat: %d", m_triggerCount);
+    if (!m_lastTriggerName.empty()) {
+        ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.6f, 1.0f),
+                           "Gan nhat: %s", m_lastTriggerName.c_str());
+    }
+
+    if (ImGui::Button("+ Them vung")) a.addTriggerZone = true;
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Vung dinh nghia trong khong gian CANVAS. "
+                          "Chinh lai keystone khong lam lech vung.");
+    }
+
+    auto& zones = p.triggerZones.zones;
+    if (zones.empty()) {
+        ImGui::TextDisabled("Chua co vung nao. Cham vao vat the se khong lam gi.");
+        return;
+    }
+
+    const char* actionNames[] = {"Khong", "Phat clip", "Phat ca cot",
+                                 "Dung layer", "Dung het"};
+
+    for (int i = 0; i < static_cast<int>(zones.size()); ++i) {
+        TriggerZone& z = zones[static_cast<size_t>(i)];
+        ImGui::PushID(7000 + i);
+
+        // To sang khi dang co ngon tay trong vung — phan hoi truc quan
+        // quan trong nhat khi can chinh.
+        if (z.occupied) ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.1f, 0.6f, 0.35f, 1.0f));
+
+        const bool open = ImGui::CollapsingHeader(
+            (z.name + (z.occupied ? "   [DANG CHAM]" : "")).c_str());
+
+        if (z.occupied) ImGui::PopStyleColor();
+
+        if (open) {
+            ImGui::Checkbox("Bat", &z.enabled);
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Xoa vung")) a.removeTriggerZone = i;
+
+            char nb[64];
+            std::snprintf(nb, sizeof(nb), "%s", z.name.c_str());
+            if (ImGui::InputText("Ten", nb, sizeof(nb))) z.name = nb;
+
+            float o[2] = {static_cast<float>(z.origin.x), static_cast<float>(z.origin.y)};
+            if (ImGui::DragFloat2("Vi tri", o, 1.0f)) z.origin = Vec2{o[0], o[1]};
+
+            float sz[2] = {static_cast<float>(z.size.x), static_cast<float>(z.size.y)};
+            if (ImGui::DragFloat2("Kich thuoc", sz, 1.0f, 1.0f, 16384.0f)) {
+                z.size = Vec2{std::max(1.0f, sz[0]), std::max(1.0f, sz[1])};
+            }
+
+            int act = static_cast<int>(z.action);
+            if (ImGui::Combo("Hanh dong", &act, actionNames, 5)) {
+                z.action = static_cast<TriggerAction>(act);
+            }
+
+            if (z.action == TriggerAction::TriggerClip
+                || z.action == TriggerAction::ClearLayer) {
+                ImGui::DragInt("Layer", &z.targetLayer, 0.1f, 0,
+                               std::max(0, p.composition.layerCount() - 1));
+            }
+            if (z.action == TriggerAction::TriggerClip
+                || z.action == TriggerAction::TriggerColumn) {
+                ImGui::DragInt("Cot", &z.targetColumn, 0.1f, 0,
+                               std::max(0, p.composition.columnCount() - 1));
+            }
+
+            float cd = static_cast<float>(z.cooldownSec);
+            if (ImGui::DragFloat("Chong doi", &cd, 0.01f, 0.0f, 5.0f, "%.2fs")) {
+                z.cooldownSec = std::max(0.0f, cd);
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("BAT BUOC voi sensor that. Mot cu cham sinh ra "
+                                  "hang chuc su kien Down; khong chan doi thi clip "
+                                  "bi trigger lai 30 lan/giay.");
+            }
+        }
+        ImGui::PopID();
     }
 }
 

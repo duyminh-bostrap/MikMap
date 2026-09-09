@@ -235,6 +235,73 @@ void RenderEngine::drawCalibTarget(const Screen& screen, const EditState& edit) 
     ofPopStyle();
 }
 
+// ── G17: vung cam ung ──────────────────────────────────────────────────
+
+void RenderEngine::drawTriggerZones(const Screen& screen,
+                                    const TriggerZoneSet& zones,
+                                    const EditState& edit) const {
+    if (!edit.showOverlay || zones.zones.empty()) return;
+
+    ofPushStyle();
+    ofSetLineWidth(2.0f);
+
+    for (const int si : screen.visibleSlices()) {
+        const Slice& slice = screen.slices[static_cast<size_t>(si)];
+        if (!slice.isUsable()) continue;
+
+        for (const TriggerZone& z : zones.zones) {
+            if (!z.enabled) continue;
+
+            // Goc vung trong khong gian canvas -> contentUV cua slice này
+            // -> pixel may chieu. Vung nam ngoai vung lay cua slice se co
+            // UV ngoai [0,1] va bi bo qua — dung, vi slice do khong chieu
+            // phan canvas do.
+            const Vec2 corners[4] = {
+                {z.origin.x,            z.origin.y},
+                {z.origin.x + z.size.x, z.origin.y},
+                {z.origin.x + z.size.x, z.origin.y + z.size.y},
+                {z.origin.x,            z.origin.y + z.size.y},
+            };
+
+            ofPolyline poly;
+            bool anyInside = false;
+            for (int k = 0; k < 4; ++k) {
+                const Vec2 uv = slice.canvasToContent(corners[k]);
+                if (uv.x >= -0.02 && uv.x <= 1.02 && uv.y >= -0.02 && uv.y <= 1.02) {
+                    anyInside = true;
+                }
+                poly.addVertex(toOf(slice.contentToOutput(uv)));
+            }
+            if (!anyInside) continue;
+            poly.close();
+
+            // Vung dang co ngon tay -> to sang. Day la phan hoi truc quan
+            // quan trong nhat khi can chinh: nhin la biet cham co trung
+            // vung khong.
+            if (z.occupied) {
+                ofFill();
+                ofSetColor(0, 255, 150, 60);
+                ofBeginShape();
+                for (const auto& v : poly.getVertices()) ofVertex(v);
+                ofEndShape(true);
+                ofNoFill();
+                ofSetColor(0, 255, 150);
+            } else {
+                ofNoFill();
+                ofSetColor(120, 190, 255, 170);
+            }
+            poly.draw();
+
+            if (!z.name.empty()) {
+                const auto& v0 = poly.getVertices().front();
+                ofDrawBitmapString(z.name, v0.x + 6.0f, v0.y + 16.0f);
+            }
+        }
+    }
+
+    ofPopStyle();
+}
+
 // ── G13: diem sensor tren output ───────────────────────────────────────
 
 void RenderEngine::drawSensorPointsOnOutput(const EditState& edit) const {

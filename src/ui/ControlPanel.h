@@ -78,6 +78,10 @@ struct UiActions {
     int  browseLayer = -1;
     int  browseColumn = -1;
 
+    /// G17 — them / xoa vung cam ung.
+    bool addTriggerZone = false;
+    int  removeTriggerZone = -1;
+
     bool toggleFullscreen = false;
     bool resetActiveSliceWarp = false;
     int  convertWarpTo = -1;        ///< -1 = không đổi; 0 = CornerPin, 1 = Mesh
@@ -97,6 +101,12 @@ public:
               const PerfStats& stats,
               const ofTexture* canvasPreview,
               UiActions& actions);
+
+    /// G17 — so lan kich hoat + ten vung gan nhat, de hien tren UI.
+    void setTriggerInfo(int count, const std::string& lastName) {
+        m_triggerCount = count;
+        m_lastTriggerName = lastName;
+    }
 
     /// Chỉ số điểm calibration wizard đang yêu cầu người dùng chạm.
     int  calibTargetIndex() const { return m_calibTarget; }
@@ -125,6 +135,9 @@ private:
     /// C3-C8 + D1-D6 — thuoc tinh cua clip DANG CHON.
     void drawClipPanel(Project& p);
 
+    /// G17 — danh sach vung cam ung.
+    void drawTriggerZonePanel(Project& p, UiActions& a);
+
     ofxImGui::Gui m_gui;
     bool m_ready = false;
 
@@ -145,6 +158,10 @@ private:
 
     /// Yeu cau mo file browser, ghi nhan trong luc ve luoi clip roi
     /// chuyen ra UiActions o cuoi draw().
+    int m_triggerCount = 0;
+    std::string m_lastTriggerName;
+    int m_selZone = -1;
+
     bool m_pendingBrowse = false;
     int  m_browseLayer = -1;
     int  m_browseColumn = -1;

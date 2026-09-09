@@ -17,6 +17,7 @@
 
 #include "core/model/Composition.h"
 #include "core/model/Screen.h"
+#include "core/model/TriggerZone.h"
 #include "render/MediaCache.h"
 
 #include "ofMain.h"
@@ -63,6 +64,13 @@ public:
     /// Pass 2 + 3 — vẽ canvas lên một screen qua các slice.
     /// Gọi trong ngữ cảnh cửa sổ output.
     void renderScreen(const Screen& screen, const EditState& edit);
+
+    /// G17 — ve vung cam ung len may chieu.
+    /// Vung dinh nghia trong khong gian CANVAS nen phai di qua slice de
+    /// ra khong gian output. Goi SAU renderScreen.
+    void drawTriggerZones(const Screen& screen,
+                          const TriggerZoneSet& zones,
+                          const EditState& edit) const;
 
     /// Vẽ preview canvas thu nhỏ (cho cửa sổ control — I3).
     void drawCanvasPreview(float x, float y, float w, float h) const;

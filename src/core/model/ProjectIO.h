@@ -19,6 +19,7 @@
 #include "core/calib/CalibrationProfile.h"
 #include "core/model/Composition.h"
 #include "core/model/Screen.h"
+#include "core/model/TriggerZone.h"
 
 #include <string>
 #include <vector>
@@ -35,6 +36,9 @@ struct Project {
     Composition composition;
     std::vector<Screen> screens;
     std::vector<CalibrationProfile> calibrations;
+
+    /// G17 — vung cam ung tren canvas.
+    TriggerZoneSet triggerZones;
 };
 
 /// Kết quả nạp — phân biệt "hỏng hoàn toàn" với "nạp được nhưng có vấn đề".

@@ -242,6 +242,7 @@
 		<ClCompile Include="src\core\model\Slice.cpp" />
 		<ClCompile Include="src\core\model\Transform2D.cpp" />
 		<ClCompile Include="src\core\model\Transport.cpp" />
+		<ClCompile Include="src\core\model\TriggerZone.cpp" />
 		<ClCompile Include="src\core\model\WarpCornerPin.cpp" />
 		<ClCompile Include="src\core\model\WarpMesh.cpp" />
 		<ClCompile Include="src\core\util\Json.cpp" />
@@ -303,6 +304,7 @@
 		<ClInclude Include="src\core\model\Slice.h" />
 		<ClInclude Include="src\core\model\Transform2D.h" />
 		<ClInclude Include="src\core\model\Transport.h" />
+		<ClInclude Include="src\core\model\TriggerZone.h" />
 		<ClInclude Include="src\core\model\WarpCornerPin.h" />
 		<ClInclude Include="src\core\model\WarpMesh.h" />
 		<ClInclude Include="src\core\util\Clock.h" />

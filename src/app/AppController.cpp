@@ -90,6 +90,35 @@ void AppController::setup() {
     if (m_demoMode) {
         startSensor(0);
         autoCalibrateMock();
+
+        // Dung san hai vung cam ung de --demo the hien duoc CA CHUOI,
+        // ke ca G17.
+        //
+        // ★ Vi tri phai nam TREN DUONG DI cua diem mock, khong phai o
+        //   giua canvas. MockPattern::Circle chay quy dao ban kinh 35%
+        //   quanh tam, nen mot vung o giua se KHONG BAO GIO bi di vao —
+        //   quy dao luon nam ngoai no.
+        if (m_project.triggerZones.zones.empty()
+            && m_project.composition.columnCount() > 2) {
+            const Vec2 cs = m_project.composition.canvasSize;
+
+            // Diem mock o canvas: (0.5 + 0.35·cos θ, 0.5 + 0.35·sin θ)
+            // theo ti le. Dat vung ngay tren quy dao, o hai ben trai/phai.
+            auto addZone = [&](const char* name, double cxRatio, int col) {
+                TriggerZone z;
+                z.name = name;
+                z.size   = Vec2{cs.x * 0.14, cs.y * 0.26};
+                z.origin = Vec2{cs.x * cxRatio - z.size.x * 0.5,
+                                cs.y * 0.5     - z.size.y * 0.5};
+                z.action = TriggerAction::TriggerColumn;
+                z.targetColumn = col;
+                z.cooldownSec = 0.8;
+                m_project.triggerZones.zones.push_back(z);
+            };
+
+            addZone("Zone phai", 0.85, 1);   // quy dao di qua o theta ~ 0
+            addZone("Zone trai", 0.15, 2);   // ... va o theta ~ 180 do
+        }
     }
 }
 
@@ -178,11 +207,16 @@ void AppController::pollSensor() {
 
     // ── Kênh sự kiện: rút hết, có GIỚI HẠN ─────────────────────────────
     // Không giới hạn thì một trận bão sự kiện sẽ kéo dài frame này vô hạn.
+    // Kenh su kien: rut het co GIOI HAN. Khong gioi han thi mot tran bao
+    // su kien se keo dai frame nay vo han.
+    //
+    // G17 KHONG dung kenh nay: vung cam ung phat hien "diem DI VAO vung"
+    // tu kenh trang thai, vi sensor tracking chi phat Down mot lan duy
+    // nhat khi diem xuat hien. Xem TriggerZone.h.
     TouchEvent ev;
     int drained = 0;
     while (drained < 256 && m_sensor->events().pop(ev)) {
         ++drained;
-        // TODO(P1 — G17): nối sự kiện Down vào trigger clip / FX.
     }
 
     // ── Kênh trạng thái: chỉ lấy frame MỚI NHẤT ────────────────────────
@@ -212,6 +246,14 @@ void AppController::pollSensor() {
         // kiem chung calibration bang MAT: cham vao vat the, thay cham roi
         // dung cho tay minh.
         m_edit.sensorOutputPoints.push_back(mp.outputPx);
+    }
+
+    // ★ G17 — DAY LA DIEM DEN CUA CA DU AN.
+    // Diem da o trong khong gian canvas; tim vung nao vua duoc di vao
+    // roi thuc thi hanh dong.
+    const double nowSec = Clock::nsToSec(Clock::nowNs());
+    for (const TriggerHit& hit : m_project.triggerZones.update(m_mappedPoints, nowSec)) {
+        executeTrigger(hit);
     }
 }
 
@@ -244,6 +286,7 @@ void AppController::updateStats() {
 
 void AppController::draw() {
     m_actions = UiActions{};
+    m_panel.setTriggerInfo(m_triggerCount, m_lastTriggerName);
     m_panel.draw(m_project, m_edit, m_stats,
                  &m_render.canvasFbo().getTexture(), m_actions);
     applyUiActions(m_actions);
@@ -252,6 +295,7 @@ void AppController::draw() {
 void AppController::drawOutput(ofEventArgs&) {
     if (m_project.screens.empty()) { ofClear(0, 0, 0, 255); return; }
     m_render.renderScreen(m_project.screens[0], m_edit);
+    m_render.drawTriggerZones(m_project.screens[0], m_project.triggerZones, m_edit);
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -366,6 +410,28 @@ void AppController::stopSensor() {
     m_sensor.reset();
     m_mappedPoints.clear();
     m_rawPoints.clear();
+    m_edit.sensorOutputPoints.clear();
+    m_project.triggerZones.resetRuntimeState();
+}
+
+void AppController::executeTrigger(const TriggerHit& hit) {
+    Composition& comp = m_project.composition;
+
+    switch (hit.action) {
+    case TriggerAction::TriggerClip:   comp.triggerClip(hit.layer, hit.column); break;
+    case TriggerAction::TriggerColumn: comp.triggerColumn(hit.column);          break;
+    case TriggerAction::ClearLayer:    comp.layer(hit.layer).clear();           break;
+    case TriggerAction::ClearAll:      comp.clearAll();                         break;
+    case TriggerAction::None:
+    default:
+        return;
+    }
+
+    ++m_triggerCount;
+    if (hit.zoneIndex >= 0 && hit.zoneIndex < m_project.triggerZones.count()) {
+        m_lastTriggerName =
+            m_project.triggerZones.zones[static_cast<size_t>(hit.zoneIndex)].name;
+    }
 }
 
 void AppController::autoCalibrateMock() {
@@ -436,6 +502,9 @@ void AppController::applyUiActions(UiActions& a) {
                                     ? nullptr : &m_project.calibrations[0]);
             m_mapper.setScreen(m_project.screens.empty() ? nullptr : &m_project.screens[0]);
             m_edit.activeSliceIndex = 0;
+            m_project.triggerZones.resetRuntimeState();
+            m_triggerCount = 0;
+            m_lastTriggerName.clear();
 
             std::string msg = "Da nap project";
             if (!r.warnings.empty()) {
@@ -489,6 +558,24 @@ void AppController::applyUiActions(UiActions& a) {
             s->convertWarp(a.convertWarpTo == 1 ? WarpType::Mesh : WarpType::CornerPin,
                            6, 6);
         }
+    }
+
+    // ── G17: them / xoa vung cam ung ───────────────────────────────────
+    if (a.addTriggerZone) {
+        TriggerZone z;
+        z.name = "Zone " + std::to_string(m_project.triggerZones.count() + 1);
+        // Dat giua canvas, kich thuoc 1/4 — de nhin thay ngay va keo chinh.
+        const Vec2 cs = m_project.composition.canvasSize;
+        z.size   = Vec2{cs.x * 0.25, cs.y * 0.25};
+        z.origin = Vec2{(cs.x - z.size.x) * 0.5, (cs.y - z.size.y) * 0.5};
+        z.action = TriggerAction::TriggerClip;
+        m_project.triggerZones.zones.push_back(z);
+    }
+
+    if (a.removeTriggerZone >= 0
+        && a.removeTriggerZone < m_project.triggerZones.count()) {
+        auto& zs = m_project.triggerZones.zones;
+        zs.erase(zs.begin() + a.removeTriggerZone);
     }
 
     // ── I6: chon file gan vao o clip ───────────────────────────────────

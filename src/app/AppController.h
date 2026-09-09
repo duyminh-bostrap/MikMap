@@ -71,6 +71,9 @@ private:
     /// sensor -> mapping ma khong can phan cung.
     void autoCalibrateMock();
 
+    /// G17 — thuc thi mot lan kich hoat vung cam ung.
+    void executeTrigger(const TriggerHit& hit);
+
     /// Tìm handle góc gần con trỏ nhất trong bán kính cho trước.
     int  pickHandle(const Vec2& mouse, double radiusPx) const;
     Slice* activeSlice();
@@ -98,6 +101,10 @@ private:
     std::vector<Vec2> m_mappedPoints;
     /// Điểm sensor THÔ mới nhất — wizard calibration cần giá trị này.
     std::vector<Vec2> m_rawPoints;
+
+    /// G17 — thong ke de hien tren UI.
+    int m_triggerCount = 0;
+    std::string m_lastTriggerName;
 
     std::shared_ptr<ofAppBaseWindow> m_outputWindow;
 

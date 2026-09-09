@@ -374,6 +374,35 @@ CalibrationProfile calibFromJson(const JsonValue& j, std::vector<std::string>& w
     return c;
 }
 
+// ── G17: TriggerZone ───────────────────────────────────────────────────
+JsonValue zoneToJson(const TriggerZone& z) {
+    JsonValue o = JsonValue::object();
+    o.set("name",     JsonValue(z.name));
+    o.set("enabled",  JsonValue(z.enabled));
+    o.set("origin",   vecToJson(z.origin));
+    o.set("size",     vecToJson(z.size));
+    o.set("action",   JsonValue(triggerActionName(z.action)));
+    o.set("layer",    JsonValue(z.targetLayer));
+    o.set("column",   JsonValue(z.targetColumn));
+    o.set("cooldown", JsonValue(z.cooldownSec));
+    // KHONG luu lastFiredSec/occupied: trang thai luc chay, khong phai
+    // cau hinh. Luu vao thi mo project len vung se "dang trong cooldown".
+    return o;
+}
+
+TriggerZone zoneFromJson(const JsonValue& j) {
+    TriggerZone z;
+    z.name         = j["name"].asString("Zone");
+    z.enabled      = j["enabled"].asBool(true);
+    z.origin       = jsonToVec(j["origin"], Vec2{0.0, 0.0});
+    z.size         = jsonToVec(j["size"],   Vec2{200.0, 200.0});
+    z.action       = triggerActionFromName(j["action"].asString("TriggerClip").c_str());
+    z.targetLayer  = j["layer"].asInt(0);
+    z.targetColumn = j["column"].asInt(0);
+    z.cooldownSec  = j["cooldown"].asNumber(0.35);
+    return z;
+}
+
 } // namespace
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -436,6 +465,11 @@ std::string toJson(const Project& p) {
     JsonValue calibs = JsonValue::array();
     for (const CalibrationProfile& c : p.calibrations) calibs.push(calibToJson(c));
     root.set("calibrations", std::move(calibs));
+
+    // ── G17: trigger zones ─────────────────────────────────────────────
+    JsonValue zones = JsonValue::array();
+    for (const TriggerZone& z : p.triggerZones.zones) zones.push(zoneToJson(z));
+    root.set("triggerZones", std::move(zones));
 
     return root.dump(2);
 }
@@ -522,6 +556,12 @@ LoadResult fromJson(const std::string& text, Project& out) {
     const JsonValue& calibsJ = root["calibrations"];
     for (size_t i = 0; i < calibsJ.size(); ++i) {
         out.calibrations.push_back(calibFromJson(calibsJ.at(i), res.warnings));
+    }
+
+    // ── G17: trigger zones ─────────────────────────────────────────────
+    const JsonValue& zonesJ = root["triggerZones"];
+    for (size_t i = 0; i < zonesJ.size(); ++i) {
+        out.triggerZones.zones.push_back(zoneFromJson(zonesJ.at(i)));
     }
 
     res.ok = true;

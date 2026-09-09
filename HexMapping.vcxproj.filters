@@ -55,6 +55,9 @@
 		<ClCompile Include="src\core\model\Transport.cpp">
 			<Filter>src\core\model</Filter>
 		</ClCompile>
+		<ClCompile Include="src\core\model\TriggerZone.cpp">
+			<Filter>src\core\model</Filter>
+		</ClCompile>
 		<ClCompile Include="src\core\model\WarpCornerPin.cpp">
 			<Filter>src\core\model</Filter>
 		</ClCompile>
@@ -181,88 +184,88 @@
 			<UniqueIdentifier>{d8376475-7454-4a24-b08a-aac121d3ad6f}</UniqueIdentifier>
 		</Filter>
 		<Filter Include="src\app">
-			<UniqueIdentifier>{EDED1CCF--22A-1-44-EB-B-E1A-43607ECB02BD}</UniqueIdentifier>
+			<UniqueIdentifier>{79B8D7B8--BEF-5-48-6A-8-3D7-774919EC27B6}</UniqueIdentifier>
 		</Filter>
 		<Filter Include="src\core">
-			<UniqueIdentifier>{0DC21F48--26B-0-4F-15-B-4DC-2C2A8A4DBE3F}</UniqueIdentifier>
+			<UniqueIdentifier>{096A0B32--F04-7-4C-60-B-39D-E398859198F3}</UniqueIdentifier>
 		</Filter>
 		<Filter Include="src\core\calib">
-			<UniqueIdentifier>{3F7E0281--35B-0-46-C0-B-182-C20B2FB50FD7}</UniqueIdentifier>
+			<UniqueIdentifier>{AE90E1F3--511-3-46-25-9-179-FB1EDA473215}</UniqueIdentifier>
 		</Filter>
 		<Filter Include="src\core\math">
-			<UniqueIdentifier>{950A93E6--235-8-4F-C5-9-6DF-738030EED9E4}</UniqueIdentifier>
+			<UniqueIdentifier>{AAEA8F63--F3B-F-40-4C-8-83D-7029D19AE50F}</UniqueIdentifier>
 		</Filter>
 		<Filter Include="src\core\model">
-			<UniqueIdentifier>{F46FBEF6--F42-7-41-E0-9-E1F-72E0481A5A28}</UniqueIdentifier>
+			<UniqueIdentifier>{74E41573--99E-1-4C-85-8-0DF-C6C3CF3F21A3}</UniqueIdentifier>
 		</Filter>
 		<Filter Include="src\core\util">
-			<UniqueIdentifier>{08C5D345--CD6-A-47-82-B-1B1-CA4589DEEC02}</UniqueIdentifier>
+			<UniqueIdentifier>{483EE539--32A-4-47-72-8-73E-178DDC7B5DE5}</UniqueIdentifier>
 		</Filter>
 		<Filter Include="src\io">
-			<UniqueIdentifier>{FDE4965B--C15-4-44-23-A-5AE-42A3698816C8}</UniqueIdentifier>
+			<UniqueIdentifier>{C4506CBA--82D-6-44-A9-9-BED-C90E370DFB77}</UniqueIdentifier>
 		</Filter>
 		<Filter Include="src\io\proto">
-			<UniqueIdentifier>{0AC8E106--DCB-3-4C-9C-B-926-F2FB1CA852CB}</UniqueIdentifier>
+			<UniqueIdentifier>{0F0FB48F--E00-6-4E-E8-9-06A-54413AD9CCE8}</UniqueIdentifier>
 		</Filter>
 		<Filter Include="src\io\sources">
-			<UniqueIdentifier>{B740CACF--367-6-4C-E3-8-346-15BF6A4119AD}</UniqueIdentifier>
+			<UniqueIdentifier>{A11B0ECB--DF2-6-4D-60-9-833-B62AAF0DA2C7}</UniqueIdentifier>
 		</Filter>
 		<Filter Include="src\render">
-			<UniqueIdentifier>{7D4B5E20--B3B-E-4A-F5-8-C7C-9B612398A162}</UniqueIdentifier>
+			<UniqueIdentifier>{1CF6CC4D--F42-9-40-00-B-6F4-25E13707EAAB}</UniqueIdentifier>
 		</Filter>
 		<Filter Include="src\ui">
-			<UniqueIdentifier>{920BCEBB--ED8-9-4D-D5-8-166-260E25DC28BA}</UniqueIdentifier>
+			<UniqueIdentifier>{CC5E2914--459-3-42-5D-8-5E8-172280A798DC}</UniqueIdentifier>
 		</Filter>
 		<Filter Include="addons">
-			<UniqueIdentifier>{A1E81C33--F29-B-4B-74-A-2EA-79B8E55F1064}</UniqueIdentifier>
+			<UniqueIdentifier>{B0D1AA6B--1D5-2-4D-7F-B-F0E-518572B29F3A}</UniqueIdentifier>
 		</Filter>
 		<Filter Include="addons\ofxHapPlayer">
-			<UniqueIdentifier>{8CE47458--657-A-46-7B-A-323-75B7E1D5FE52}</UniqueIdentifier>
+			<UniqueIdentifier>{E3663875--F97-A-4E-88-B-6C0-841021DC49ED}</UniqueIdentifier>
 		</Filter>
 		<Filter Include="addons\ofxHapPlayer\src">
-			<UniqueIdentifier>{CE6DBDB5--D49-2-4F-A1-A-A50-B972F41BCB1C}</UniqueIdentifier>
+			<UniqueIdentifier>{2BA85CD8--DB2-9-45-58-9-8E5-663B490B3E27}</UniqueIdentifier>
 		</Filter>
 		<Filter Include="addons\ofxHapPlayer\libs">
-			<UniqueIdentifier>{D5FD6A3C--300-9-4E-37-8-1C4-998782251B34}</UniqueIdentifier>
+			<UniqueIdentifier>{B85852C2--28C-0-46-96-A-23A-4158966812A7}</UniqueIdentifier>
 		</Filter>
 		<Filter Include="addons\ofxHapPlayer\libs\hap">
-			<UniqueIdentifier>{AD83F7CF--4E2-B-41-93-A-085-14BF74C9D4E7}</UniqueIdentifier>
+			<UniqueIdentifier>{7B8DBFC9--140-A-43-4D-8-9BD-350B72736474}</UniqueIdentifier>
 		</Filter>
 		<Filter Include="addons\ofxHapPlayer\libs\hap\src">
-			<UniqueIdentifier>{4F1E2223--14F-7-45-85-B-F3B-7A6BC75B2BD9}</UniqueIdentifier>
+			<UniqueIdentifier>{81134A7F--09E-2-41-BD-8-486-295E85763EF4}</UniqueIdentifier>
 		</Filter>
 		<Filter Include="addons\ofxHapPlayer\libs\ofxHap">
-			<UniqueIdentifier>{8DB7853E--1CA-F-4E-FB-8-5C3-856C7E9BA099}</UniqueIdentifier>
+			<UniqueIdentifier>{39564659--6F4-B-4E-6B-8-FB8-1FAB84667861}</UniqueIdentifier>
 		</Filter>
 		<Filter Include="addons\ofxHapPlayer\libs\ofxHap\include">
-			<UniqueIdentifier>{AF464E7D--EE9-9-44-19-B-BE2-586868B29F82}</UniqueIdentifier>
+			<UniqueIdentifier>{B8C6B4E6--AC2-1-43-F7-A-E82-EE191A591DA7}</UniqueIdentifier>
 		</Filter>
 		<Filter Include="addons\ofxHapPlayer\libs\ofxHap\include\ofxHap">
-			<UniqueIdentifier>{C5355B63--12D-4-4B-AF-8-44E-B5B41A60BEE6}</UniqueIdentifier>
+			<UniqueIdentifier>{BB4DB08E--664-5-46-15-B-D0F-E5C7A72662B6}</UniqueIdentifier>
 		</Filter>
 		<Filter Include="addons\ofxHapPlayer\libs\ofxHap\src">
-			<UniqueIdentifier>{1EC7A72F--FFA-0-4A-D0-A-21B-E2A1B8AA71E3}</UniqueIdentifier>
+			<UniqueIdentifier>{1A26A1B9--BDB-9-4A-06-9-C61-C59A61B0EA10}</UniqueIdentifier>
 		</Filter>
 		<Filter Include="addons\ofxImGui">
-			<UniqueIdentifier>{8F550AE2--06F-6-4C-87-A-501-A064820E8175}</UniqueIdentifier>
+			<UniqueIdentifier>{E4D90033--2E6-7-4D-FD-9-012-3695AF2FA186}</UniqueIdentifier>
 		</Filter>
 		<Filter Include="addons\ofxImGui\src">
-			<UniqueIdentifier>{7E0B8276--7E8-2-4C-48-9-F21-0D9B1C00A372}</UniqueIdentifier>
+			<UniqueIdentifier>{ED64BFB8--49A-F-42-C9-8-CAC-3037EC19F46B}</UniqueIdentifier>
 		</Filter>
 		<Filter Include="addons\ofxImGui\libs">
-			<UniqueIdentifier>{AEEC59CF--9D6-7-4D-18-8-8E0-FEF50C9B49DF}</UniqueIdentifier>
+			<UniqueIdentifier>{3C866B22--050-2-4A-32-8-34A-CD854113DFB8}</UniqueIdentifier>
 		</Filter>
 		<Filter Include="addons\ofxImGui\libs\imgui">
-			<UniqueIdentifier>{BC7DB010--7D8-8-40-E3-9-1ED-5DC17BEE049A}</UniqueIdentifier>
+			<UniqueIdentifier>{D4DEF07D--404-A-49-30-B-A8C-82CC4F71C769}</UniqueIdentifier>
 		</Filter>
 		<Filter Include="addons\ofxImGui\libs\imgui\backends">
-			<UniqueIdentifier>{82CA24C7--431-8-41-01-8-2ED-9A6E38E3C039}</UniqueIdentifier>
+			<UniqueIdentifier>{8296EE0F--B78-6-42-40-B-CA1-F82D2EAD6A1A}</UniqueIdentifier>
 		</Filter>
 		<Filter Include="addons\ofxImGui\libs\imgui\extras">
-			<UniqueIdentifier>{35F92EBA--10A-8-4E-9F-B-60E-E6098BBF9BAC}</UniqueIdentifier>
+			<UniqueIdentifier>{4BC1BBEB--20F-9-4F-52-8-DBF-272F26685F70}</UniqueIdentifier>
 		</Filter>
 		<Filter Include="addons\ofxImGui\libs\imgui\src">
-			<UniqueIdentifier>{DF83A98B--382-0-4E-97-9-FC1-472648267137}</UniqueIdentifier>
+			<UniqueIdentifier>{121C6E7A--493-7-48-EA-B-A63-7E66B196852C}</UniqueIdentifier>
 		</Filter>
 	</ItemGroup>
 	<ItemGroup>
@@ -324,6 +327,9 @@
 			<Filter>src\core\model</Filter>
 		</ClInclude>
 		<ClInclude Include="src\core\model\Transport.h">
+			<Filter>src\core\model</Filter>
+		</ClInclude>
+		<ClInclude Include="src\core\model\TriggerZone.h">
 			<Filter>src\core\model</Filter>
 		</ClInclude>
 		<ClInclude Include="src\core\model\WarpCornerPin.h">
