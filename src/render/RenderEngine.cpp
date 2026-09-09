@@ -385,17 +385,24 @@ void RenderEngine::renderScreen(const Screen& screen, const EditState& edit) {
         drawSliceGeometry(screen.slices[static_cast<size_t>(i)]);
     }
 
-    // ★ Overlay CHỈ hiện khi edit mode bật. Lúc chạy show phải tắt hoàn
-    //   toàn — khán giả không được thấy handle và lưới (I5).
+    // ★ FULLSCREEN = dang chieu cho khan gia xem: CHI noi dung.
+    //   Khong vien slice, khong handle, khong luoi, khong vung cam ung,
+    //   khong cham sensor. Bat cu thu gi khac deu la loi hien ra man anh.
+    //
+    //   Ngoai le DUY NHAT: dau thap calibration. Calibration bat buoc
+    //   phai nhin thay TREN VAT THE THAT de nguoi van hanh cham vao, nen
+    //   khong the an no. No lai co cong tac rieng (phim C) nen chi hien
+    //   khi nguoi dung chu dong bat.
+    if (edit.outputIsFullscreen) {
+        if (edit.calibrating) drawCalibTarget(screen, edit);
+        return;
+    }
+
     if (edit.showOverlay) {
         if (edit.showGrid) drawTestGrid(screen);
         drawEditOverlay(screen, edit);
     }
 
-    // G6 va G13 ve NGAY CA khi overlay chinh sua bi tat.
-    //   · dau thap calibration: dang calibrate thi phai thay no
-    //   · diem sensor: de kiem chung calibration bang mat, va de debug
-    //     giua show ma khong phai bat lai toan bo handle
     if (edit.calibrating)      drawCalibTarget(screen, edit);
     if (edit.showSensorPoints) drawSensorPointsOnOutput(edit);
 }

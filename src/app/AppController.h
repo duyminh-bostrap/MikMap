@@ -95,6 +95,13 @@ private:
     /// Day la cach dua hinh ra may chieu ma khong phai keo tay.
     void sendOutputToDisplay(int displayIndex);
 
+    /// Cua so output doi kich thuoc (vao/thoat fullscreen, keo vien, doi
+    /// man hinh) -> co gian mapping theo TI LE de giu nguyen hinh dang.
+    ///
+    /// Khong lam viec nay thi vao fullscreen 1920x1080 tu cua so 854x480
+    /// se de lai 3/4 may chieu MAU DEN — va khong co thong bao loi nao.
+    void syncScreenToOutputSize();
+
     /// G17 — thuc thi mot lan kich hoat vung cam ung.
     void executeTrigger(const TriggerHit& hit);
 
@@ -120,6 +127,9 @@ private:
     /// Project duoc NAP tu file hay moi dung mac dinh. Quyet dinh co
     /// duoc phep tu dieu chinh do phan giai screen theo cua so hay khong.
     bool m_projectWasLoaded = false;
+
+    /// Kich thuoc cua so output lan truoc, de phat hien thay doi.
+    Vec2 m_lastOutputSize{0.0, 0.0};
 
     /// Điểm sensor đã ánh xạ sang canvas — để vẽ overlay (G13).
     std::vector<Vec2> m_mappedPoints;

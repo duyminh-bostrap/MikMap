@@ -86,6 +86,11 @@ void AppController::setup() {
         }
     }
 
+    if (m_outputWindow) {
+        m_lastOutputSize = Vec2{static_cast<double>(m_outputWindow->getWidth()),
+                                static_cast<double>(m_outputWindow->getHeight())};
+    }
+
     m_edit.activeSliceIndex = 0;
     m_lastFrameNs = static_cast<uint64_t>(Clock::nowNs());
 
@@ -195,6 +200,8 @@ void AppController::update() {
     }
 
     const double dtSec = ofGetLastFrameTime();
+
+    syncScreenToOutputSize();
 
     pollSensor();
     m_project.composition.update(dtSec);
@@ -362,8 +369,19 @@ void AppController::draw() {
 
 void AppController::drawOutput(ofEventArgs&) {
     if (m_project.screens.empty()) { ofClear(0, 0, 0, 255); return; }
+
+    // Doc trang thai THAT cua cua so moi frame, khong dua vao co noi bo.
+    // Nguoi dung co the vao/thoat fullscreen bang F11, bang menu, hoac
+    // bang phim he thong — chi co ban than cua so biet chac.
+    m_edit.outputIsFullscreen =
+        (m_outputWindow && m_outputWindow->getWindowMode() == OF_FULLSCREEN);
+
     m_render.renderScreen(m_project.screens[0], m_edit);
-    m_render.drawTriggerZones(m_project.screens[0], m_project.triggerZones, m_edit);
+
+    // Vung cam ung cung la overlay chinh sua — an khi dang chieu.
+    if (!m_edit.outputIsFullscreen) {
+        m_render.drawTriggerZones(m_project.screens[0], m_project.triggerZones, m_edit);
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -505,6 +523,48 @@ void AppController::executeTrigger(const TriggerHit& hit) {
     }
 }
 
+void AppController::syncScreenToOutputSize() {
+    if (!m_outputWindow || m_project.screens.empty()) return;
+
+    const Vec2 now{static_cast<double>(m_outputWindow->getWidth()),
+                   static_cast<double>(m_outputWindow->getHeight())};
+    if (now.x < 2.0 || now.y < 2.0) return;
+
+    // Frame dau: chi ghi nhan, khong co gian (chua co moc de so).
+    if (m_lastOutputSize.x < 2.0) { m_lastOutputSize = now; return; }
+    if (std::abs(now.x - m_lastOutputSize.x) < 1.0
+        && std::abs(now.y - m_lastOutputSize.y) < 1.0) return;
+
+    Screen& sc = m_project.screens[0];
+
+    const double sx = now.x / std::max(1.0, sc.resolution.x);
+    const double sy = now.y / std::max(1.0, sc.resolution.y);
+
+    // Co gian TUNG DIEM DIEU KHIEN theo ti le, thay vi dat lai hinh chu
+    // nhat. Nguoi van hanh co the da mat nua tieng can chinh tren cua so
+    // nho; vao fullscreen ma mat het cong do thi khong dung duoc.
+    for (Slice& sl : sc.slices) {
+        IWarp* w = sl.warp();
+        if (w == nullptr) continue;
+        const int n = w->controlPointCount();
+        for (int k = 0; k < n; ++k) {
+            const Vec2 p = w->controlPointAt(k);
+            w->setControlPointAt(k, Vec2{p.x * sx, p.y * sy});
+        }
+    }
+
+    sc.resolution = now;
+    m_lastOutputSize = now;
+
+    // Calibration H_s anh xa sang KHONG GIAN OUTPUT, nen doi do phan giai
+    // lam no sai. Bao cho nguoi dung biet thay vi de ho phat hien luc
+    // cham vao vat the ma hieu ung ra sai cho.
+    if (!m_project.calibrations.empty() && m_project.calibrations[0].isValid()) {
+        m_panel.setStatusMessage(
+            "Do phan giai output doi -> calibration sensor can lam lai", true);
+    }
+}
+
 std::vector<AppController::DisplayInfo> AppController::enumerateDisplays() const {
     std::vector<DisplayInfo> out;
 
@@ -552,19 +612,9 @@ void AppController::sendOutputToDisplay(int displayIndex) {
     m_outputWindow->setWindowShape(std::max(320, d.w - 80),
                                    std::max(240, d.h - 80));
 
-    // Dong bo do phan giai screen theo man hinh dich — neu khong, slice
-    // se trai ra ngoai vung nhin thay (loi da gap o lan truoc).
-    if (!m_project.screens.empty()) {
-        Screen& sc = m_project.screens[0];
-        const Vec2 res{static_cast<double>(d.w), static_cast<double>(d.h)};
-        const bool wasFullSize =
-            std::abs(sc.resolution.x - static_cast<double>(m_outputWindow->getWidth())) < 2.0;
-        sc.resolution = res;
-        if (wasFullSize) {
-            for (Slice& sl : sc.slices) sl.warp()->resetToRect(Vec2{0.0, 0.0}, res);
-        }
-    }
-
+    // Khong tu dat do phan giai o day: syncScreenToOutputSize() se thay
+    // cua so doi kich thuoc va co gian mapping theo ti le. Mot cho lo
+    // viec nay thay vi hai, de hai cho khong cho ra ket qua khac nhau.
     m_outputWindow->setFullscreen(true);
     m_panel.setStatusMessage("Output -> man hinh " + std::to_string(displayIndex + 1)
                              + " (" + d.name + ", "

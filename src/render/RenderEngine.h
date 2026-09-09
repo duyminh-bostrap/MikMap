@@ -28,6 +28,18 @@ namespace hexmap {
 
 /// Trạng thái tương tác của overlay chỉnh sửa.
 struct EditState {
+    /// ★ Cua so output dang fullscreen tren may chieu.
+    ///
+    /// Khi bat, output CHI ve noi dung — khong vien slice, khong handle,
+    /// khong luoi, khong vung cam ung, khong cham sensor. Day la thu
+    /// khan gia nhin thay, nen bat cu thu gi khong phai noi dung deu la
+    /// loi hien ra man anh.
+    ///
+    /// Co nay do AppController dat theo trang thai THAT cua cua so, khong
+    /// phai do nguoi dung tich. Quen tat overlay truoc khi dien la loi
+    /// rat de mac, nen de phan mem tu lo.
+    bool outputIsFullscreen = false;
+
     bool showOverlay = true;     ///< I5 — tắt hoàn toàn khi chạy show
     bool showGrid = false;       ///< F14 — lưới test card
     int  activeSliceIndex = -1;

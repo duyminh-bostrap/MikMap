@@ -961,7 +961,17 @@ void ControlPanel::drawMappingEditor(Project& p, EditState& edit,
 
     // Vua khung, GIU TI LE. Khong keo gian: xem mapping o ti le sai thi
     // moi thao tac can chinh deu lech so voi thuc te.
-    const float scale = std::min(avail.x / resW, avail.y / resH);
+    //
+    // ★ Chua LE quanh vung ve.
+    //   Can chinh mapping thuong xuyen phai keo goc RA NGOAI mep man hinh
+    //   — vd hinh chieu len vat the lon hon khung chieu. Neu ve vua khit
+    //   khung thi diem keo ra ngoai se bien mat khoi vung nhin va khong
+    //   bam lai duoc: nguoi dung ket, phai bam Reset lam lai tu dau.
+    constexpr float kMargin = 0.22f;   // 22% moi ben
+    const float usableW = avail.x * (1.0f - kMargin);
+    const float usableH = avail.y * (1.0f - kMargin);
+
+    const float scale = std::min(usableW / resW, usableH / resH);
     const float drawW = resW * scale;
     const float drawH = resH * scale;
 
@@ -1088,16 +1098,48 @@ void ControlPanel::drawMappingEditor(Project& p, EditState& edit,
     // nguyen trang thai cu — nguoi dung thay diem "bat nguoc lai", va
     // vien doi sang DO de hieu vi sao.
     if (m_mapDragPoint >= 0 && ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
-        w->setControlPointAt(m_mapDragPoint, toScreenSpace(ImGui::GetIO().MousePos));
+        Vec2 target = toScreenSpace(ImGui::GetIO().MousePos);
+
+        // Kep vao pham vi mo rong. Cho phep RA NGOAI man hinh — day la
+        // nhu cau that khi chieu len vat the lon hon khung chieu — nhung
+        // khong cho bay di vo han: keo qua nhanh ra ngoai cua so la diem
+        // di xa hang nghin pixel va khong tim lai duoc.
+        const double limX = sc.resolution.x * 0.5;
+        const double limY = sc.resolution.y * 0.5;
+        target.x = std::clamp(target.x, -limX, sc.resolution.x + limX);
+        target.y = std::clamp(target.y, -limY, sc.resolution.y + limY);
+
+        w->setControlPointAt(m_mapDragPoint, target);
     }
 
+    int outsideCount = 0;
     for (int k = 0; k < n; ++k) {
-        const ImVec2 q = toWidget(w->controlPointAt(k));
+        const Vec2  cp = w->controlPointAt(k);
+        const ImVec2 q = toWidget(cp);
+
+        // Diem nam ngoai khung may chieu: phan noi dung o do se KHONG
+        // duoc chieu ra. Danh dau bang vong tron rong de nguoi dung biet
+        // day la co y hay lo tay.
+        const bool outside = (cp.x < 0.0 || cp.y < 0.0
+                              || cp.x > sc.resolution.x || cp.y > sc.resolution.y);
+        if (outside) ++outsideCount;
+
         ImU32 c = IM_COL32(255, 200, 60, 255);
         if (k == m_mapDragPoint)    c = IM_COL32(255, 255, 255, 255);
         else if (k == nearest)      c = IM_COL32(255, 235, 120, 255);
+        else if (outside)           c = IM_COL32(255, 140, 60, 255);
+
         dl->AddCircleFilled(q, r, c);
         dl->AddCircleFilled(q, r * 0.4f, IM_COL32(20, 20, 20, 255));
+        if (outside) dl->AddCircle(q, r + 3.5f, IM_COL32(255, 140, 60, 220), 0, 1.5f);
+    }
+
+    if (outsideCount > 0) {
+        char msg[96];
+        std::snprintf(msg, sizeof(msg),
+                      "%d diem nam NGOAI khung may chieu", outsideCount);
+        dl->AddText(ImVec2(origin.x + 6.0f, origin.y + drawH + 6.0f),
+                    IM_COL32(255, 140, 60, 255), msg);
     }
 }
 
