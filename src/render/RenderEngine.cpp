@@ -15,8 +15,68 @@ glm::vec3 toOf(const Vec2& v) {
 
 } // namespace
 
+namespace {
+
+const char* kSliceVert = R"(#version 150
+uniform mat4 modelViewProjectionMatrix;
+in vec4 position;
+in vec2 texcoord;
+out vec2 vTexCoord;
+void main() {
+    vTexCoord   = texcoord;
+    gl_Position = modelViewProjectionMatrix * position;
+}
+)";
+
+const char* kSliceFrag = R"(#version 150
+uniform sampler2D tex0;
+uniform float uBrightness;
+uniform float uContrast;
+uniform float uInvGamma;
+uniform vec3  uGain;
+uniform float uOpacity;
+
+in  vec2 vTexCoord;
+out vec4 fragColor;
+
+void main() {
+    vec4 c = texture(tex0, vTexCoord);
+    vec3 rgb = c.rgb;
+
+    // Tuong phan quanh diem giua 0.5, roi cong do sang.
+    rgb = (rgb - 0.5) * uContrast + 0.5 + uBrightness;
+
+    // Gamma. max() de pow() khong nhan so am -> NaN.
+    rgb = pow(max(rgb, vec3(0.0)), vec3(uInvGamma));
+
+    rgb *= uGain;
+
+    fragColor = vec4(clamp(rgb, 0.0, 1.0), c.a * uOpacity);
+}
+)";
+
+} // namespace
+
+bool RenderEngine::buildSliceShader() {
+    if (m_shaderReady) return true;
+
+    m_sliceShader.setupShaderFromSource(GL_VERTEX_SHADER, kSliceVert);
+    m_sliceShader.setupShaderFromSource(GL_FRAGMENT_SHADER, kSliceFrag);
+    m_sliceShader.bindDefaults();
+    m_shaderReady = m_sliceShader.linkProgram();
+
+    if (!m_shaderReady) {
+        // Khong dung duoc shader thi van ve duoc, chi mat hieu chinh mau.
+        // Mat mau con hon mat hinh giua show.
+        ofLogError("RenderEngine") << "Khong link duoc slice shader — "
+                                      "se ve khong co hieu chinh mau (F19)";
+    }
+    return m_shaderReady;
+}
+
 bool RenderEngine::setup(const Vec2& canvasSize) {
     resizeCanvas(canvasSize);
+    buildSliceShader();
     return m_canvas.isAllocated();
 }
 
@@ -161,9 +221,30 @@ void RenderEngine::drawSliceGeometry(const Slice& slice) const {
         m_sliceMesh.addIndex(static_cast<ofIndexType>(idx));
     }
 
-    m_canvas.getTexture().bind();
-    m_sliceMesh.draw();
-    m_canvas.getTexture().unbind();
+    // F19 — ap hieu chinh mau qua shader. Neu shader khong dung duoc,
+    // ve theo duong mac dinh: mat mau con hon mat hinh.
+    if (m_shaderReady) {
+        const ColorAdjust& c = slice.color;
+
+        m_sliceShader.begin();
+        m_sliceShader.setUniformTexture("tex0", m_canvas.getTexture(), 0);
+        m_sliceShader.setUniform1f("uBrightness", static_cast<float>(c.brightness));
+        m_sliceShader.setUniform1f("uContrast",   static_cast<float>(c.contrast));
+        m_sliceShader.setUniform1f("uInvGamma",
+            static_cast<float>(1.0 / std::max(0.05, c.gamma)));
+        m_sliceShader.setUniform3f("uGain",
+            static_cast<float>(c.gainR),
+            static_cast<float>(c.gainG),
+            static_cast<float>(c.gainB));
+        m_sliceShader.setUniform1f("uOpacity", static_cast<float>(c.opacity));
+
+        m_sliceMesh.draw();
+        m_sliceShader.end();
+    } else {
+        m_canvas.getTexture().bind();
+        m_sliceMesh.draw();
+        m_canvas.getTexture().unbind();
+    }
 }
 
 void RenderEngine::renderScreen(const Screen& screen, const EditState& edit) {

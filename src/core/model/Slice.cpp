@@ -22,6 +22,7 @@ Slice::Slice(const Slice& other)
     : name(other.name),
       enabled(other.enabled),
       solo(other.solo),
+      color(other.color),
       inputOrigin(other.inputOrigin),
       inputSize(other.inputSize),
       // ★ clone() chứ không copy con trỏ. Quên bước này thì sao chép
@@ -33,6 +34,7 @@ Slice& Slice::operator=(const Slice& other) {
     name        = other.name;
     enabled     = other.enabled;
     solo        = other.solo;
+    color       = other.color;
     inputOrigin = other.inputOrigin;
     inputSize   = other.inputSize;
     m_warp      = other.m_warp ? other.m_warp->clone() : nullptr;

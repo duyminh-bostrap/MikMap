@@ -381,6 +381,39 @@ void ControlPanel::drawScreenPanel(Project& p, EditState& edit, UiActions& a) {
     ImGui::SameLine();
     if (ImGui::Button("Reset")) a.resetActiveSliceWarp = true;
 
+    // ── F19: hieu chinh mau rieng cho slice ────────────────────────────
+    if (ImGui::TreeNode("Mau (F19)")) {
+        ImGui::TextDisabled("Can khi ghep nhieu may chieu: moi may mot sac do.");
+
+        float br = static_cast<float>(s.color.brightness);
+        if (ImGui::SliderFloat("Do sang", &br, -1.0f, 1.0f)) s.color.brightness = br;
+
+        float ct = static_cast<float>(s.color.contrast);
+        if (ImGui::SliderFloat("Tuong phan", &ct, 0.0f, 3.0f)) s.color.contrast = ct;
+
+        float gm = static_cast<float>(s.color.gamma);
+        if (ImGui::SliderFloat("Gamma", &gm, 0.1f, 4.0f)) s.color.gamma = gm;
+
+        float gain[3] = {static_cast<float>(s.color.gainR),
+                         static_cast<float>(s.color.gainG),
+                         static_cast<float>(s.color.gainB)};
+        if (ImGui::ColorEdit3("Can bang RGB", gain,
+                              ImGuiColorEditFlags_Float | ImGuiColorEditFlags_HDR)) {
+            s.color.gainR = gain[0];
+            s.color.gainG = gain[1];
+            s.color.gainB = gain[2];
+        }
+
+        float op = static_cast<float>(s.color.opacity);
+        if (ImGui::SliderFloat("Do mo slice", &op, 0.0f, 1.0f)) s.color.opacity = op;
+
+        if (ImGui::Button("Reset mau")) s.color.reset();
+        ImGui::SameLine();
+        ImGui::TextDisabled(s.color.isIdentity() ? "(mac dinh)" : "(da chinh)");
+
+        ImGui::TreePop();
+    }
+
     // F15 — nhập toạ độ góc bằng SỐ, không chỉ kéo chuột.
     // Cần thiết khi căn chính xác theo bản vẽ, hoặc khi máy chiếu ở xa
     // không với tay tới được.

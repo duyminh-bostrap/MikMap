@@ -96,6 +96,17 @@ private:
     void drawCalibTarget(const Screen& screen, const EditState& edit) const;
     void drawSensorPointsOnOutput(const EditState& edit) const;
 
+    /// Shader ve slice, co hieu chinh mau (F19).
+    ///
+    /// Nhung SOURCE thang vao code chu khong doc tu bin/data/shaders:
+    /// shader la mot phan cua CHUONG TRINH, khong phai tai san cua nguoi
+    /// dung. Doc tu file nghia la app co the khoi dong voi shader thieu
+    /// hoac lech phien ban — mot loi chi lo ra luc chay show.
+    ofShader m_sliceShader;
+    bool     m_shaderReady = false;
+
+    bool buildSliceShader();
+
     ofFbo m_canvas;
     Vec2  m_canvasSize{1920.0, 1080.0};
 

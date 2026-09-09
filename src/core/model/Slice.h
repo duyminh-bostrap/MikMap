@@ -33,6 +33,31 @@
 
 namespace hexmap {
 
+/// F19 — hieu chinh mau cho tung slice.
+///
+/// ── Vi sao CAN o muc slice, khong phai muc composition ──────────────
+/// Ghep nhieu may chieu thi moi may co do sang va sac do khac nhau —
+/// khac nhau ca theo tuoi bong den. Hieu chinh o muc composition khong
+/// giai quyet duoc: phai chinh RIENG tung vung chieu.
+///
+/// Gia tri mac dinh la "khong lam gi", nen slice moi tao khong bi doi mau.
+struct ColorAdjust {
+    double brightness = 0.0;    ///< cong them, [-1, 1]
+    double contrast   = 1.0;    ///< nhan quanh diem giua, [0, 3]
+    double gamma      = 1.0;    ///< [0.1, 4]
+    double gainR      = 1.0;
+    double gainG      = 1.0;
+    double gainB      = 1.0;
+    double opacity    = 1.0;    ///< de lam mo mep khi ghep tay
+
+    bool isIdentity() const {
+        return brightness == 0.0 && contrast == 1.0 && gamma == 1.0
+            && gainR == 1.0 && gainG == 1.0 && gainB == 1.0 && opacity == 1.0;
+    }
+
+    void reset() { *this = ColorAdjust{}; }
+};
+
 class Slice {
 public:
     Slice();
@@ -53,6 +78,9 @@ public:
 
     /// F16 — chỉ hiện slice này. Screen quyết định, không phải slice.
     bool solo = false;
+
+    /// F19 — hiệu chỉnh màu riêng cho slice này.
+    ColorAdjust color;
 
     // ── F4: vùng lấy trên Composition Canvas ───────────────────────────
     Vec2 inputOrigin{0.0, 0.0};

@@ -293,3 +293,38 @@ TEST_CASE("★ F7: slice dung MESH van hitTest duoc") {
     REQUIRE(sc.hitTest({600.0, 450.0}) == 0);
     REQUIRE(sc.hitTest({50.0, 50.0}) == -1);
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+//  F19 — hieu chinh mau per-slice
+// ═══════════════════════════════════════════════════════════════════════
+
+TEST_CASE("F19: mac dinh la khong lam gi") {
+    Slice s;
+    REQUIRE(s.color.isIdentity());
+}
+
+TEST_CASE("F19: doi mot gia tri thi khong con la mac dinh") {
+    Slice s;
+    s.color.gamma = 2.2;
+    REQUIRE(!s.color.isIdentity());
+    s.color.reset();
+    REQUIRE(s.color.isIdentity());
+}
+
+TEST_CASE("★ F19: SAO CHEP slice phai mang theo hieu chinh mau") {
+    // Quen chep truong nay thi nhan doi slice se mat cong can mau —
+    // cung loai loi voi viec quen clone() warp.
+    Slice a;
+    a.color.brightness = 0.3;
+    a.color.gainR = 1.2;
+    a.color.gamma = 1.8;
+
+    Slice b = a;
+    CHECK_NEAR(b.color.brightness, 0.3, 1e-12);
+    CHECK_NEAR(b.color.gainR, 1.2, 1e-12);
+    CHECK_NEAR(b.color.gamma, 1.8, 1e-12);
+
+    Slice c;
+    c = a;
+    CHECK_NEAR(c.color.gamma, 1.8, 1e-12);
+}

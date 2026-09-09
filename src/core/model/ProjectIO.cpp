@@ -258,6 +258,19 @@ JsonValue sliceToJson(const Slice& s) {
     o.set("inputOrigin", vecToJson(s.inputOrigin));
     o.set("inputSize",   vecToJson(s.inputSize));
     o.set("warp",        warpToJson(s.warp()));
+
+    // F19 — chi ghi khi KHAC mac dinh, de file project gon.
+    if (!s.color.isIdentity()) {
+        JsonValue c = JsonValue::object();
+        c.set("brightness", JsonValue(s.color.brightness));
+        c.set("contrast",   JsonValue(s.color.contrast));
+        c.set("gamma",      JsonValue(s.color.gamma));
+        c.set("gainR",      JsonValue(s.color.gainR));
+        c.set("gainG",      JsonValue(s.color.gainG));
+        c.set("gainB",      JsonValue(s.color.gainB));
+        c.set("opacity",    JsonValue(s.color.opacity));
+        o.set("color", std::move(c));
+    }
     return o;
 }
 
@@ -269,6 +282,15 @@ Slice sliceFromJson(const JsonValue& j, std::vector<std::string>& warn) {
     s.inputOrigin = jsonToVec(j["inputOrigin"], Vec2{0.0, 0.0});
     s.inputSize   = jsonToVec(j["inputSize"],   Vec2{1920.0, 1080.0});
     s.setWarp(warpFromJson(j["warp"], warn));
+
+    const JsonValue& c = j["color"];
+    s.color.brightness = c["brightness"].asNumber(0.0);
+    s.color.contrast   = c["contrast"].asNumber(1.0);
+    s.color.gamma      = c["gamma"].asNumber(1.0);
+    s.color.gainR      = c["gainR"].asNumber(1.0);
+    s.color.gainG      = c["gainG"].asNumber(1.0);
+    s.color.gainB      = c["gainB"].asNumber(1.0);
+    s.color.opacity    = c["opacity"].asNumber(1.0);
     return s;
 }
 
