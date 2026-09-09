@@ -21,9 +21,18 @@ const char* kSliceVert = R"(#version 150
 uniform mat4 modelViewProjectionMatrix;
 in vec4 position;
 in vec2 texcoord;
+
+// UV CUC BO cua slice [0,1]^2, dong goi vao kenh color.
+// texcoord da dung cho toa do canvas (co tinh inputRect), nen soft edge
+// can mot kenh khac. oF khong co attribute tuy y nen muon kenh color.
+in vec4 color;
+
 out vec2 vTexCoord;
+out vec2 vSliceUV;
+
 void main() {
     vTexCoord   = texcoord;
+    vSliceUV    = color.rg;
     gl_Position = modelViewProjectionMatrix * position;
 }
 )";
@@ -36,8 +45,23 @@ uniform float uInvGamma;
 uniform vec3  uGain;
 uniform float uOpacity;
 
+// F20 — soft edge. (trai, phai, tren, duoi) tinh theo ti le slice.
+uniform vec4  uEdge;
+uniform float uEdgeGamma;
+uniform float uEdgeLum;
+
 in  vec2 vTexCoord;
+in  vec2 vSliceUV;
 out vec4 fragColor;
+
+// Duong cong hoa vien. Tong hai duong cong doi dien phai bang 1 o moi
+// diem, neu khong vung chong se sang hon hoac toi hon phan con lai.
+float edgeCurve(float d, float w) {
+    if (w <= 0.0) return 1.0;
+    float t = clamp(d / w, 0.0, 1.0);
+    if (t < 0.5) return uEdgeLum * pow(2.0 * t, uEdgeGamma);
+    return 1.0 - (1.0 - uEdgeLum) * pow(2.0 * (1.0 - t), uEdgeGamma);
+}
 
 void main() {
     vec4 c = texture(tex0, vTexCoord);
@@ -51,7 +75,13 @@ void main() {
 
     rgb *= uGain;
 
-    fragColor = vec4(clamp(rgb, 0.0, 1.0), c.a * uOpacity);
+    float a = c.a * uOpacity;
+    a *= edgeCurve(vSliceUV.x,       uEdge.x);   // trai
+    a *= edgeCurve(1.0 - vSliceUV.x, uEdge.y);   // phai
+    a *= edgeCurve(vSliceUV.y,       uEdge.z);   // tren
+    a *= edgeCurve(1.0 - vSliceUV.y, uEdge.w);   // duoi
+
+    fragColor = vec4(clamp(rgb, 0.0, 1.0), a);
 }
 )";
 
@@ -146,9 +176,22 @@ void RenderEngine::drawClipToCanvas(const Clip& clip, double opacity,
 
     ofPushMatrix();
     ofMultMatrix(gl);
+
+    // ★ HAP Q luu o khong gian mau YCoCg (HapTextureFormat_YCoCg_DXT5),
+    //   KHONG phai RGB. Ve texture tho ma khong qua shader chuyen doi
+    //   cua addon se cho mau sai hoan toan — do bao hoa vot len va sac
+    //   do lech han. Day chinh la ly do ofxHapPlayer co getShader().
+    //
+    //   getShader() tra ve nullptr voi HAP thuong (DXT1 la RGB that),
+    //   nen phai kiem tra chu khong gia dinh luon co.
+    ofShader* hapShader = (e->video != nullptr) ? e->video->getShader() : nullptr;
+
+    if (hapShader != nullptr) hapShader->begin();
     tex->draw(0.0f, 0.0f,
               static_cast<float>(contentSize.x),
               static_cast<float>(contentSize.y));
+    if (hapShader != nullptr) hapShader->end();
+
     ofPopMatrix();
 }
 
@@ -216,6 +259,12 @@ void RenderEngine::drawSliceGeometry(const Slice& slice) const {
         m_sliceMesh.addTexCoord(glm::vec2(
             static_cast<float>(canvasPt.x) / texW,
             static_cast<float>(canvasPt.y) / texH));
+
+        // F20 — UV CUC BO cua slice, doi qua kenh color. Soft edge phai
+        // tinh theo mep SLICE, khong phai theo toa do canvas.
+        m_sliceMesh.addColor(ofFloatColor(static_cast<float>(v.uv.x),
+                                          static_cast<float>(v.uv.y),
+                                          0.0f, 1.0f));
     }
     for (const unsigned int idx : geo.indices) {
         m_sliceMesh.addIndex(static_cast<ofIndexType>(idx));
@@ -237,6 +286,13 @@ void RenderEngine::drawSliceGeometry(const Slice& slice) const {
             static_cast<float>(c.gainG),
             static_cast<float>(c.gainB));
         m_sliceShader.setUniform1f("uOpacity", static_cast<float>(c.opacity));
+
+        const SoftEdge& e = slice.softEdge;
+        m_sliceShader.setUniform4f("uEdge",
+            static_cast<float>(e.left),  static_cast<float>(e.right),
+            static_cast<float>(e.top),   static_cast<float>(e.bottom));
+        m_sliceShader.setUniform1f("uEdgeGamma", static_cast<float>(std::max(0.05, e.gamma)));
+        m_sliceShader.setUniform1f("uEdgeLum",   static_cast<float>(e.luminance));
 
         m_sliceMesh.draw();
         m_sliceShader.end();

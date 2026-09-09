@@ -328,3 +328,30 @@ TEST_CASE("★ F19: SAO CHEP slice phai mang theo hieu chinh mau") {
     c = a;
     CHECK_NEAR(c.color.gamma, 1.8, 1e-12);
 }
+
+TEST_CASE("F20: soft edge mac dinh la tat") {
+    Slice s;
+    REQUIRE(s.softEdge.isIdentity());
+}
+
+TEST_CASE("★ F20: SAO CHEP slice phai mang theo soft edge") {
+    Slice a;
+    a.softEdge.right = 0.15;
+    a.softEdge.gamma = 2.2;
+
+    Slice b = a;
+    CHECK_NEAR(b.softEdge.right, 0.15, 1e-12);
+    CHECK_NEAR(b.softEdge.gamma, 2.2, 1e-12);
+
+    Slice c;
+    c = a;
+    CHECK_NEAR(c.softEdge.right, 0.15, 1e-12);
+}
+
+TEST_CASE("F20: reset tra ve tat") {
+    Slice s;
+    s.softEdge.left = 0.2;
+    REQUIRE(!s.softEdge.isIdentity());
+    s.softEdge.reset();
+    REQUIRE(s.softEdge.isIdentity());
+}

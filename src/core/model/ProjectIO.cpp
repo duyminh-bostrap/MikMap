@@ -271,6 +271,17 @@ JsonValue sliceToJson(const Slice& s) {
         c.set("opacity",    JsonValue(s.color.opacity));
         o.set("color", std::move(c));
     }
+
+    if (!s.softEdge.isIdentity()) {
+        JsonValue e = JsonValue::object();
+        e.set("left",      JsonValue(s.softEdge.left));
+        e.set("right",     JsonValue(s.softEdge.right));
+        e.set("top",       JsonValue(s.softEdge.top));
+        e.set("bottom",    JsonValue(s.softEdge.bottom));
+        e.set("gamma",     JsonValue(s.softEdge.gamma));
+        e.set("luminance", JsonValue(s.softEdge.luminance));
+        o.set("softEdge", std::move(e));
+    }
     return o;
 }
 
@@ -291,6 +302,14 @@ Slice sliceFromJson(const JsonValue& j, std::vector<std::string>& warn) {
     s.color.gainG      = c["gainG"].asNumber(1.0);
     s.color.gainB      = c["gainB"].asNumber(1.0);
     s.color.opacity    = c["opacity"].asNumber(1.0);
+
+    const JsonValue& e = j["softEdge"];
+    s.softEdge.left      = e["left"].asNumber(0.0);
+    s.softEdge.right     = e["right"].asNumber(0.0);
+    s.softEdge.top       = e["top"].asNumber(0.0);
+    s.softEdge.bottom    = e["bottom"].asNumber(0.0);
+    s.softEdge.gamma     = e["gamma"].asNumber(1.0);
+    s.softEdge.luminance = e["luminance"].asNumber(0.5);
     return s;
 }
 

@@ -196,10 +196,39 @@ frame bộ lọc nhận một điểm khác và tưởng đó là cùng một v�
 Mỗi ID có bộ lọc riêng; dùng chung một bộ lọc sẽ làm các điểm kéo nhau về
 phía trung bình.
 
+### 🟢 P1 đợt 5 — ghép nhiều máy chiếu
+
+| Mục | Nội dung |
+|---|---|
+| **F19** | Hiệu chỉnh màu **riêng từng slice**: sáng, tương phản, gamma, cân bằng RGB |
+| **F20** | **Hoà viền** để ghép nhiều máy chiếu liền mạch, có gamma và điểm giữa |
+| — | Shader vẽ slice viết mới; source nhúng thẳng vào code, không đọc từ file |
+
+**Kết quả:** `284/284 test xanh · 2761 assertion`
+
+Hai mục này đi cặp: ghép hai máy chiếu thì phải cho chồng nhau 10–20% (nếu
+không sẽ lộ vệt đen do sai số cơ học), rồi mỗi máy mờ dần về phía mép chồng.
+Tổng hai đường cong phải bằng 1 ở mọi điểm — đó là lý do có tham số `gamma`
+và `luminance`: đường tuyến tính **không** cộng lại thành 1 vì đáp ứng gamma
+của máy chiếu là phi tuyến. Và mỗi máy có sắc độ khác nhau, khác cả theo tuổi
+bóng đèn, nên **F19 phải ở mức slice**, không phải mức composition.
+
+#### 🐞 Lỗi màu HAP Q đã tồn tại từ trước
+
+Khi kiểm chứng F20 bằng ảnh chụp, tôi thấy màu output đổi bất thường và lần
+ra một lỗi **có từ trước, không liên quan tới F20**:
+
+**HAP Q lưu ở không gian màu YCoCg** (`HapTextureFormat_YCoCg_DXT5`), không
+phải RGB. Tôi vẽ `ofTexture` thô nên bỏ qua bước chuyển đổi → màu sai hoàn
+toàn. `ofxHapPlayer::getShader()` tồn tại chính vì việc này: nó trả về shader
+**chỉ khi** codec là `HapY`, và trả `nullptr` cho `Hap1`/`Hap5` (vốn đã là RGB).
+
+Đã sửa: gọi `getShader()` và bind nếu khác null. File demo mặc định là
+`4k_detail_hap_q.mov` nên lỗi này ảnh hưởng trực tiếp.
+
 ### Xây tiếp
 
-`E1` FX chain · `F12` bezier mask · `F19` color correction per-slice ·
-`A13` group · `C9` cue points · `G14` TUIO
+`E1` FX chain · `F12` bezier mask · `A13` group · `C9` cue points · `G14` TUIO
 
 ### 📊 R1 — băng thông HAP 4K đo thật (3840×2160 @30fps)
 

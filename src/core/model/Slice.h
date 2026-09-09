@@ -58,6 +58,36 @@ struct ColorAdjust {
     void reset() { *this = ColorAdjust{}; }
 };
 
+/// F20 — hoa vien de ghep nhieu may chieu lien mach.
+///
+/// ── Bai toan ────────────────────────────────────────────────────────
+/// Hai may chieu ghep canh nhau phai chong len nhau ~10-20%, neu khong
+/// se lo ra mot vet den o giua do sai so co hoc. Nhung vung chong len
+/// se SANG GAP DOI vi hai may cung chieu.
+///
+/// Cach giai: moi may lam mo dan ve phia mep trong vung chong. Tong
+/// hai duong cong phai bang 1 o moi diem — do la ly do co tham so gamma
+/// va luminance: duong cong tuyen tinh KHONG cong lai thanh 1 vi may
+/// chieu co dap ung gamma phi tuyen.
+///
+/// Do rong tinh theo TI LE cua slice (0..0.5), khong theo pixel — nen
+/// doi do phan giai may chieu khong lam hong can chinh.
+struct SoftEdge {
+    double left = 0.0, right = 0.0, top = 0.0, bottom = 0.0;
+
+    /// Do cong. 1.0 = tuyen tinh. May chieu thuc te thuong can 1.8-2.4.
+    double gamma = 1.0;
+
+    /// Diem giua duong cong. 0.5 = can bang.
+    double luminance = 0.5;
+
+    bool isIdentity() const {
+        return left == 0.0 && right == 0.0 && top == 0.0 && bottom == 0.0;
+    }
+
+    void reset() { *this = SoftEdge{}; }
+};
+
 class Slice {
 public:
     Slice();
@@ -81,6 +111,9 @@ public:
 
     /// F19 — hiệu chỉnh màu riêng cho slice này.
     ColorAdjust color;
+
+    /// F20 — hoà viền để ghép nhiều máy chiếu.
+    SoftEdge softEdge;
 
     // ── F4: vùng lấy trên Composition Canvas ───────────────────────────
     Vec2 inputOrigin{0.0, 0.0};

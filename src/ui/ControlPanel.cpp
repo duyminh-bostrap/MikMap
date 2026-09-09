@@ -414,6 +414,42 @@ void ControlPanel::drawScreenPanel(Project& p, EditState& edit, UiActions& a) {
         ImGui::TreePop();
     }
 
+    // ── F20: hoa vien de ghep nhieu may chieu ─────────────────────────
+    if (ImGui::TreeNode("Hoa vien (F20)")) {
+        ImGui::TextDisabled("Ghep 2 may chieu: cho chong nhau 10-20%%,");
+        ImGui::TextDisabled("moi may lam mo dan ve phia mep chong.");
+
+        float e[4] = {static_cast<float>(s.softEdge.left),
+                      static_cast<float>(s.softEdge.right),
+                      static_cast<float>(s.softEdge.top),
+                      static_cast<float>(s.softEdge.bottom)};
+        bool changed = false;
+        changed |= ImGui::SliderFloat("Trai",  &e[0], 0.0f, 0.5f, "%.3f");
+        changed |= ImGui::SliderFloat("Phai",  &e[1], 0.0f, 0.5f, "%.3f");
+        changed |= ImGui::SliderFloat("Tren",  &e[2], 0.0f, 0.5f, "%.3f");
+        changed |= ImGui::SliderFloat("Duoi",  &e[3], 0.0f, 0.5f, "%.3f");
+        if (changed) {
+            s.softEdge.left = e[0]; s.softEdge.right = e[1];
+            s.softEdge.top  = e[2]; s.softEdge.bottom = e[3];
+        }
+
+        float g = static_cast<float>(s.softEdge.gamma);
+        if (ImGui::SliderFloat("Do cong", &g, 0.2f, 4.0f)) s.softEdge.gamma = g;
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("1.0 = tuyen tinh. May chieu that thuong can 1.8-2.4 "
+                              "vi dap ung gamma cua chung phi tuyen.");
+        }
+
+        float lum = static_cast<float>(s.softEdge.luminance);
+        if (ImGui::SliderFloat("Diem giua", &lum, 0.0f, 1.0f)) s.softEdge.luminance = lum;
+
+        if (ImGui::Button("Reset vien")) s.softEdge.reset();
+        ImGui::SameLine();
+        ImGui::TextDisabled(s.softEdge.isIdentity() ? "(tat)" : "(dang bat)");
+
+        ImGui::TreePop();
+    }
+
     // F15 — nhập toạ độ góc bằng SỐ, không chỉ kéo chuột.
     // Cần thiết khi căn chính xác theo bản vẽ, hoặc khi máy chiếu ở xa
     // không với tay tới được.
