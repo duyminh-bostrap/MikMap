@@ -102,12 +102,35 @@ bool pointInQuad(const Vec2& p00, const Vec2& p10,
                  const Vec2& P) {
     // Chia tứ giác thành 2 tam giác theo đường chéo p00–p11.
     // Cách này đúng cả với tứ giác lõm, khác với kiểm tra nửa mặt phẳng.
+    //
+    // ★ Phép thử dấu PHẢI có dung sai, và dung sai phải theo TỈ LỆ.
+    //
+    //   Điểm nằm đúng trên đường chéo p00–p11 cho tích có hướng bằng 0 về
+    //   mặt toán học, nhưng dấu phẩy động trả về một số nhiễu cỡ 1e-13 —
+    //   có thể ÂM trong khi hai số kia dương. So dấu chặt với 0 thì cả hai
+    //   tam giác đều nói "điểm nằm ngoài", và tứ giác từ chối một điểm
+    //   nằm chính giữa nó.
+    //
+    //   Đây không phải chuyện lý thuyết: tâm của một ô hình bình hành nằm
+    //   ĐÚNG trên đường chéo, mà lưới warp phẳng hoặc uốn đều thì mọi ô
+    //   đều là hình bình hành. Hậu quả trong buổi diễn là một VỆT CHẠM
+    //   CHẾT chạy chéo qua từng ô lưới: chạm vào đúng đó thì không có
+    //   phản ứng gì, còn lệch một pixel lại chạy bình thường.
+    //
+    //   Ngưỡng lấy theo độ lớn của chính tam giác vì tích có hướng có đơn
+    //   vị DIỆN TÍCH: một hằng số tuyệt đối sẽ quá chặt với lưới toạ độ
+    //   lớn và quá lỏng với lưới nhỏ.
     auto inTriangle = [&](const Vec2& a, const Vec2& b, const Vec2& c) {
         const double d1 = cross3(a, b, P);
         const double d2 = cross3(b, c, P);
         const double d3 = cross3(c, a, P);
-        const bool hasNeg = (d1 < 0.0) || (d2 < 0.0) || (d3 < 0.0);
-        const bool hasPos = (d1 > 0.0) || (d2 > 0.0) || (d3 > 0.0);
+
+        const double scale = std::max({std::abs(d1), std::abs(d2), std::abs(d3)});
+        if (!(scale > 0.0)) return false;   // tam giác suy biến
+
+        const double eps = scale * 1e-9;
+        const bool hasNeg = (d1 < -eps) || (d2 < -eps) || (d3 < -eps);
+        const bool hasPos = (d1 >  eps) || (d2 >  eps) || (d3 >  eps);
         return !(hasNeg && hasPos);   // cùng dấu ⇒ nằm trong
     };
 
