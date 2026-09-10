@@ -375,7 +375,7 @@ trước đây **chỉ nằm trong ghi chú**, không có lớp nào cả.
 |---|---|
 | G3 Serial / Arduino | không có lớp nguồn nào; chỉ được nhắc trong ghi chú của `OscSource.h` |
 | G15 Kinect / Femto | không có; `Kinect` chỉ xuất hiện trong ghi chú giải thích của 5 file |
-| G16 Ghi log + replay | không có lớp ghi/phát lại phiên sensor |
+| G16 Ghi log + replay | không có lớp ghi/phát lại phiên sensor. **→ đã làm phần lõi, xem mục G16 bên dưới** |
 | G18 Nhiều sensor cho nhiều screen | `AppController` hardcode `calibrations[0]` ở **6 chỗ** — một sensor duy nhất |
 | G19 LiDAR (Livox / Ouster) | không có |
 
@@ -419,6 +419,46 @@ phần lớn bộ tracking chỉ cho đổi địa chỉ, không cho đổi cổ
 dựng **gói UDP đúng byte** (bundle: set + alive + fseq) chạy qua cả
 `parseOscPacket` lẫn `TuioDecoder` lẫn `OscSource`, và bài chứng minh nhấc
 tay sinh sự kiện `Up` **ngay** chứ không đợi hết hạn 1 giây.
+
+### 🟢 G16 — Ghi log & phát lại phiên sensor (2026-09-10)
+
+`[~]`: **lõi xong** (định dạng, ghi, đọc, chọn gói tới hạn) — còn phần nối
+vào UI để bấm nút ghi/phát lại lúc đang chạy.
+
+**Vấn đề nó giải:** lỗi sensor gần như không bao giờ tái hiện được ở bàn
+làm việc. Nó xảy ra lúc 11 giờ đêm, giữa buổi diễn, với đúng cái LiDAR đó,
+đúng cách người ta bước qua vùng quét đó. Hôm sau mở máy ra thì mọi thứ
+chạy hoàn hảo. Ghi lại gói thô nghĩa là **mang được nguyên hiện trường về**.
+
+★ **Ghi GÓI THÔ, không ghi `SensorFrame` đã xử lý.** Ghi frame thì chỉ
+phát lại được phần SAU bộ giải mã — mà phần lớn lỗi nằm đúng ở đó: gói dị
+dạng, thứ tự đảo, id trùng, `alive` thiếu. Byte thô giữ được đúng thứ
+người thật đã gửi, kể cả những gói mà bản hiện tại còn đang hiểu sai.
+Đổi lại file to hơn (~60 MB cho 2 giờ ở 40 Hz), không đáng để đánh đổi.
+
+★ **Mốc thời gian là ĐỘ LỆCH, không phải giờ tuyệt đối** — file phát lại
+được ở bất kỳ thời điểm nào, và không vô tình mang theo thông tin lúc nào
+ở đâu.
+
+★ **File cụt vì mất điện vẫn đọc được phần lành**, kèm cảnh báo — và đó
+chính là loại phiên hay cần xem lại nhất. Vứt cả file là vứt đúng bằng
+chứng mình cần.
+
+★ **Trần 64 KB cho một gói.** File hỏng khai độ dài 4 tỉ byte sẽ làm
+`resize()` cố cấp phát 4 GB — chương trình chết vì hết bộ nhớ khi người
+dùng chỉ định *mở* một file. Đọc file là chỗ dữ liệu KHÔNG đáng tin, kể cả
+khi chính mình đã ghi nó ra.
+
+★ **`collectDuePackets` bơm được NHIỀU gói mỗi lần gọi.** Sensor 40 Hz với
+render 60 fps thường là một gói mỗi frame, nhưng chỉ cần một lần khựng
+(nạp media, đổi cửa sổ) là dồn hàng chục gói. Bơm mỗi lần một gói thì bản
+phát lại tụt hậu dần và không bao giờ đuổi kịp — mất đúng tính chất quan
+trọng nhất của replay.
+
+**Kiểm chứng:** `386/386 test xanh` — 10 test cho G16, gồm bài chạy **cả
+vòng**: ghi một phiên → đọc lại → bơm vào `OscSource` thật đúng mốc thời
+gian → ra đúng điểm chạm. (`OscSource::feedPacket` tồn tại sẵn cho việc
+này từ đầu, chỉ chưa ai xây phần còn lại.)
 
 ### Xây tiếp
 
@@ -630,7 +670,7 @@ ctest --test-dir build -C Debug --output-on-failure
 | [x] | **G13** | Overlay debug điểm sensor lên output | S | 🟠 P1 |
 | [x] | **G14** | TUIO source | M | 🟠 P1 |
 | [ ] | **G15** | Kinect / Femto Bolt depth source + blob detect | L | 🟠 P1 |
-| [ ] | **G16** | Ghi log + replay phiên sensor để debug | M | 🟡 P2 |
+| [~] | **G16** | Ghi log + replay phiên sensor để debug | M | 🟡 P2 |
 | [x] | **G17** | Trigger clip / FX từ sự kiện sensor | M | 🟠 P1 |
 | [ ] | **G18** | Calibration nhiều sensor cho nhiều screen | M | 🟡 P2 |
 | [ ] | **G19** | LiDAR source (Livox / Ouster) | L | 🟡 P2 |
