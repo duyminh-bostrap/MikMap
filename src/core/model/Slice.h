@@ -135,6 +135,43 @@ public:
     Vec2 inputOrigin{0.0, 0.0};
     Vec2 inputSize{1920.0, 1080.0};
 
+    // ── F22: lấy nội dung từ đâu ───────────────────────────────────────
+    //
+    // Mặc định slice lấy từ Composition đã trộn xong — mọi slice nhìn
+    // thấy cùng một hình. Đó là điều đúng khi nhiều máy chiếu ghép lại
+    // thành MỘT bề mặt lớn.
+    //
+    // Nhưng khi các bề mặt ĐỘC LẬP nhau — màn sau lưng DJ chạy nội dung
+    // này, hai cột hai bên chạy nội dung khác — thì mỗi slice cần một
+    // nguồn riêng. Trước F22 việc đó chỉ làm được bằng cách xếp nội dung
+    // vào các góc khác nhau của canvas rồi cắt ra, tức là phải dựng nội
+    // dung theo đúng bố cục sân khấu và không đổi được nữa.
+    enum class SourceKind {
+        Composition = 0,   ///< toàn bộ composition đã trộn (mặc định)
+        Layer,             ///< chỉ một layer, chưa trộn với layer khác
+    };
+
+    SourceKind sourceKind = SourceKind::Composition;
+
+    /// Chỉ có nghĩa khi sourceKind == Layer. −1 = chưa chọn.
+    int sourceLayer = -1;
+
+    /// Layer thực sự sẽ được lấy, sau khi kiểm tra tính hợp lệ.
+    ///
+    /// ★ Trả về −1 nghĩa là "dùng composition" — kể cả khi sourceKind là
+    ///   Layer nhưng chỉ số trỏ vào layer không tồn tại.
+    ///
+    ///   Vì sao không để render tự xử: một slice trỏ vào layer đã bị xoá
+    ///   mà im lặng cho ra màn ĐEN là kiểu hỏng tệ nhất trong buổi diễn —
+    ///   không có thông báo, không có log, chỉ một máy chiếu tắt ngóm.
+    ///   Lùi về composition thì vẫn sai ý người dùng, nhưng SAI THẤY ĐƯỢC:
+    ///   họ nhìn ra ngay là nó đang chiếu nhầm nguồn và sửa được.
+    int effectiveSourceLayer(int layerCount) const {
+        if (sourceKind != SourceKind::Layer) return -1;
+        if (sourceLayer < 0 || sourceLayer >= layerCount) return -1;
+        return sourceLayer;
+    }
+
     // ── Warp ───────────────────────────────────────────────────────────
     void setWarp(std::unique_ptr<IWarp> w);
     IWarp*       warp()       { return m_warp.get(); }

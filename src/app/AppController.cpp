@@ -246,7 +246,14 @@ void AppController::update() {
     pollSensor();
     m_project.composition.update(dtSec);
     m_cache.update();
-    m_render.renderComposition(m_project.composition, m_cache);
+
+    // F22 — layer nào đang được slice lấy làm nguồn riêng thì render mới
+    // nướng FBO cho nó. Tính mỗi frame vì người dùng đổi được lúc đang
+    // chạy; hàm này chỉ duyệt vài chục slice nên rẻ hơn nhiều so với việc
+    // giữ một bộ nhớ đệm phải nhớ làm mất hiệu lực đúng chỗ.
+    m_render.renderComposition(m_project.composition, m_cache,
+                               layersUsedAsSource(m_project.screens,
+                                                  m_project.composition.layerCount()));
     m_cache.collectGarbage();
 
     updateStats();

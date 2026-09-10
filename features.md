@@ -240,7 +240,7 @@ lại từng mục bằng cách tìm trong source và bỏ tick:
 |---|---|
 | F18 Polygon slice | `WarpType` chỉ có `CornerPin`, `Mesh`, `Bezier` |
 | F21 Snapping | không có gì trong `core/` lẫn `ui/` (chỉ có `PixelSnapH` của font ImGui, không liên quan) |
-| F22 Slice input từ Layer | `Slice` chỉ có `inputOrigin`/`inputSize` — một hình chữ nhật trên canvas, không có trường chọn nguồn |
+| F22 Slice input từ Layer | `Slice` chỉ có `inputOrigin`/`inputSize` — một hình chữ nhật trên canvas, không có trường chọn nguồn. **→ đã làm nửa Layer, xem mục F22 bên dưới** |
 | F23 Spout / NDI | `ScreenOutputType` có sẵn hai giá trị enum nhưng **không nơi nào dùng tới**; `render/` và `app/` không nhắc đến |
 | F24 Art-Net / sACN | không có |
 | F25 SDI | không có |
@@ -286,6 +286,46 @@ chéo qua từng ô**: chạm đúng đó không phản ứng, lệch một pixe
 Đã sửa bằng ngưỡng **theo tỉ lệ** độ lớn tam giác (tích có hướng có đơn vị
 diện tích nên hằng số tuyệt đối sẽ sai với lưới toạ độ lớn hoặc nhỏ).
 Chỉ ảnh hưởng `WarpMesh`; `WarpCornerPin` dùng nghịch đảo homography.
+
+### 🟢 F22 — Slice lấy nội dung từ một Layer riêng (2026-09-10)
+
+`[~]` chứ không phải `[x]`: **nửa Layer đã xong, nửa Group chờ A13** (Group
+chưa tồn tại trong model, xem mục "Xây tiếp").
+
+**Vấn đề F22 giải:** trước đây mọi slice đều lấy từ Composition đã trộn —
+đúng khi nhiều máy chiếu ghép thành MỘT bề mặt lớn. Nhưng khi các bề mặt
+độc lập nhau (màn sau lưng DJ chạy nội dung này, hai cột hai bên chạy nội
+dung khác) thì cách duy nhất trước đây là xếp nội dung vào các góc khác
+nhau của canvas rồi cắt ra — tức là phải dựng nội dung theo đúng bố cục
+sân khấu, và không đổi được nữa.
+
+**Ba quyết định đáng ghi lại:**
+
+★ **Chỉ số trỏ vào layer đã xoá thì LÙI VỀ Composition, không cho ra màn
+đen.** Người dùng trỏ slice vào Layer 3 rồi xoá bớt layer là chuyện thường.
+Màn đen im lặng là kiểu hỏng tệ nhất trong buổi diễn — không thông báo,
+không log, chỉ một máy chiếu tắt ngóm. Lùi về composition vẫn sai ý người
+dùng nhưng **sai thấy được**, và UI hiện cảnh báo vàng ngay cạnh ô chọn.
+
+★ **Chỉ nướng FBO cho layer THẬT SỰ có slice dùng tới** (`layersUsedAsSource`).
+Mỗi FBO ở 4K là ~32 MB VRAM cộng một lần clear + vẽ mỗi frame; nướng cho
+mọi layer là cách chắc chắn làm tụt fps vì một tính năng đa số project
+không dùng. Bộ đệm không còn ai dùng được giải phóng ngay trong frame đó.
+
+★ **Slice/screen đang TẮT vẫn giữ bộ đệm.** Bỏ qua cho đỡ tốn nghe hợp lý,
+nhưng hậu quả là bật lên giữa buổi diễn thì layer nguồn chưa được nướng ở
+frame đó — máy chiếu loé một frame đen rồi mới có hình.
+
+Và trong bộ đệm riêng, clip được vẽ bằng **alpha thường chứ không dùng
+blend mode của layer**: blend mode mô tả cách hoà với layer BÊN DƯỚI, mà
+trong bộ đệm riêng thì không có gì bên dưới.
+
+**Kiểm chứng:** `345/345 test xanh` — 12 test riêng cho F22, gồm chỉ số
+rác, gom layer từ nhiều screen, và file bản cũ thiếu khoá phải ra
+Composition chứ không thành Layer với chỉ số rác.
+
+⚠️ Phần `render/` (nướng FBO theo layer) **chưa được biên dịch** — máy đang
+làm không có openFrameworks. Phải build trên Windows để xác nhận.
 
 ### Xây tiếp
 
@@ -471,7 +511,7 @@ ctest --test-dir build -C Debug --output-on-failure
 | [x] | **F19** | Color correction per-slice (brightness/gamma/RGB) | M | 🟡 P2 |
 | [x] | **F20** | **Soft edge blending** (ghép nhiều máy chiếu) | L | 🟡 P2 |
 | [ ] | **F21** | Snapping / đường gióng khi kéo | M | 🟡 P2 |
-| [ ] | **F22** | Slice input từ Layer / Group cụ thể | M | 🟡 P2 |
+| [~] | **F22** | Slice input từ Layer / Group cụ thể | M | 🟡 P2 |
 | [ ] | **F23** | Output ra Spout / NDI (screen ảo) | M | 🟡 P2 |
 | [ ] | **F24** | LED mapping qua Art-Net / sACN | XL | ⚪ P3 |
 | [ ] | **F25** | Output SDI qua capture card | L | ⚪ P3 |

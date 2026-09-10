@@ -82,4 +82,17 @@ public:
                         Vec2& outCanvasPx) const;
 };
 
+/// F22 — những layer đang được ít nhất một slice lấy làm nguồn riêng.
+///
+/// ★ RenderEngine phải nướng MỘT FBO riêng cho mỗi layer như vậy, và ở
+///   4K thì mỗi FBO là ~32 MB VRAM cộng một lần clear + vẽ mỗi frame.
+///   Nướng cho MỌI layer là cách chắc chắn làm tụt fps của một tính năng
+///   mà đa số project không dùng tới. Danh sách này cho render biết đúng
+///   phần tối thiểu cần làm.
+///
+/// Chỉ trả về chỉ số HỢP LỆ (đã lọc qua `Slice::effectiveSourceLayer`),
+/// đã sắp xếp và không trùng lặp.
+std::vector<int> layersUsedAsSource(const std::vector<Screen>& screens,
+                                    int layerCount);
+
 } // namespace hexmap

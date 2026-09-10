@@ -1558,6 +1558,46 @@ void ControlPanel::drawScreenPanel(Project& p, EditState& edit, UiActions& a) {
     ImGui::Separator();
     ImGui::TextWrapped(TR("adv.selected"), s.name.c_str());
 
+    // ── F22: lấy nội dung từ đâu ───────────────────────────────────────
+    {
+        const int layerCount = p.composition.layerCount();
+
+        int kind = (s.sourceKind == Slice::SourceKind::Layer) ? 1 : 0;
+        const char* kinds[] = {TR("adv.src.comp"), TR("adv.src.layer")};
+        labelAbove(TR("adv.source"));
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        if (ImGui::Combo("##srckind", &kind, kinds, 2)) {
+            s.sourceKind = (kind == 1) ? Slice::SourceKind::Layer
+                                       : Slice::SourceKind::Composition;
+            // Lần đầu chọn Layer mà chưa có chỉ số thì lấy layer trên
+            // cùng — đó là layer người dùng hay đang làm việc nhất.
+            if (s.sourceKind == Slice::SourceKind::Layer && s.sourceLayer < 0) {
+                s.sourceLayer = std::max(0, layerCount - 1);
+            }
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("adv.source.tip"));
+
+        if (s.sourceKind == Slice::SourceKind::Layer) {
+            int layer = std::clamp(s.sourceLayer, 0, std::max(0, layerCount - 1));
+            labelAbove(TR("adv.src.which"));
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            if (ImGui::DragInt("##srclayer", &layer, 0.1f, 0,
+                               std::max(0, layerCount - 1))) {
+                s.sourceLayer = layer;
+            }
+
+            // ★ Cảnh báo khi chỉ số trỏ vào layer không còn tồn tại.
+            //   Không có dòng này thì slice lặng lẽ lùi về composition và
+            //   người vận hành thấy "nó chiếu nhầm hình" mà không hiểu vì
+            //   sao — trong khi nguyên nhân chỉ là đã xoá bớt layer.
+            if (s.effectiveSourceLayer(layerCount) < 0) {
+                ImGui::PushStyleColor(ImGuiCol_Text, theme::v4(theme::Warning));
+                ImGui::TextWrapped("%s", TR("adv.src.missing"));
+                ImGui::PopStyleColor();
+            }
+        }
+    }
+
     // F4 — vùng lấy trên canvas
     float ox[2] = {static_cast<float>(s.inputOrigin.x), static_cast<float>(s.inputOrigin.y)};
     labelAbove(TR("adv.inputorigin"));
