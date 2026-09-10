@@ -20,7 +20,7 @@ C++20 · openFrameworks 0.12.x · OpenGL · Dear ImGui · Windows / MSVC 2022
 
 | | |
 |---|---|
-| Unit test | **313 passed, 0 failed** · 3686 assertion · 0 cảnh báo `/W4` |
+| Unit test | **313 passed, 0 failed** · 3829 assertion · 0 cảnh báo `/W4` |
 | Hiệu năng | 60 fps · frame p99 ~17 ms · độ trễ sensor p99 ~9 ms |
 | Video | 4K HAP Q — 1–5 luồng giữ đúng tốc độ gốc (đo thật, xem `features.md`) |
 | Giao diện | Tiếng Việt / English, đổi ngay trong **Cài đặt** |
@@ -181,9 +181,22 @@ ngôn ngữ, màn hình nào làm output, ngân sách cache. File project thì m
 của đồng nghiệp sẽ đổi ngôn ngữ giao diện của bạn và đẩy output ra một màn
 hình không tồn tại.
 
-Font đóng gói kèm là **Inter** (SIL Open Font License, xem
-`bin/data/fonts/Inter-OFL.txt`). Font mặc định của Dear ImGui chỉ có ASCII
-và Latin-1 — đó là lý do giao diện trước đây phải viết không dấu.
+Font đóng gói kèm (xem `bin/data/fonts/LICENSES.txt`):
+
+| File | Giấy phép | Dùng cho |
+|---|---|---|
+| `Inter.ttf` | OFL 1.1 | chữ giao diện — menu, tiêu đề, nhãn nút |
+| `RobotoMono.ttf` | Apache 2.0 | **riêng cho số liệu** — toạ độ, FPS, độ phân giải |
+| `lucide.ttf` | ISC | bộ icon, ghim ở phiên bản trong `lucide-version.txt` |
+
+Font mặc định của Dear ImGui chỉ có ASCII và Latin-1 — đó là lý do giao diện
+trước đây phải viết không dấu. Số liệu dùng font **mono** vì chữ số của font
+tỉ lệ có bề rộng khác nhau, nên một giá trị đổi 60 lần/giây sẽ nhảy qua nhảy
+lại và rất khó đọc lướt — đúng lúc cần liếc nhanh xem fps có tụt không.
+
+Icon dùng **đúng bộ Lucide** mà bản thiết kế giao diện dùng (`lucide-react`),
+nạp từ TTF chính thức và ghép thẳng vào font atlas, nên nét vẽ khớp chính xác
+chứ không phải "gần giống".
 
 Thêm ngôn ngữ mới: chép một bảng trong `src/ui/Localization.cpp`, dịch phần
 giá trị, thêm vào `enum class Language`. `tests/test_localization.cpp` sẽ

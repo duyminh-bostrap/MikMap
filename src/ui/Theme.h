@@ -46,6 +46,7 @@ constexpr float TopBarH     = 46.0f;   ///< thanh điều hướng trên cùng
 constexpr float ToolBarH    = 42.0f;   ///< thanh công cụ của trang Mapping
 constexpr float BrowserW    = 240.0f;
 constexpr float InspectorW  = 280.0f;
+constexpr float TreeW       = 260.0f;   ///< cây SCREEN SETUP
 constexpr float LayerCtrlW  = 220.0f;  ///< cột điều khiển bên trái mỗi layer
 constexpr float ClipW       = 120.0f;
 constexpr float LayerRowH   = 90.0f;
@@ -77,6 +78,29 @@ bool outlineButton(const char* label, ImU32 accent,
 
 /// Chấm tròn trạng thái có quầng sáng. Vẽ tại vị trí con trỏ hiện tại.
 void statusDot(ImU32 c, bool glow = true);
+
+/// Thanh tiêu đề của một bảng: dải nền #1a1a1a chạy hết chiều ngang.
+///
+/// Bản thiết kế cho mỗi bảng một dải tiêu đề riêng thay vì để chữ trôi
+/// trên nền bảng. Nó phân tách các bảng rõ hơn hẳn một dòng chữ suông —
+/// nhất là khi ba bảng nằm cạnh nhau và đều cùng màu nền.
+void panelHeader(const char* icon, const char* title, ImU32 accent = Text);
+
+/// Một hàng trong cây SCREEN SETUP.
+///
+/// @param depth  0 = screen, 1 = slice, 2 = mask
+/// @param accent màu khi được chọn — mỗi cấp một màu, xem `Theme.cpp`
+/// @return true nếu vừa được bấm
+bool treeRow(const char* icon, const char* label, int depth,
+             bool selected, ImU32 accent);
+
+/// Nút chỉ có icon, vuông.
+bool iconButton(const char* icon, bool active, ImU32 accent = Text);
+
+/// Nút NỀN ĐẶC — dành cho hành động chính duy nhất của một thanh công cụ.
+/// Bản thiết kế chỉ dùng cho "Apply"; dùng nhiều thì mất hết trọng số.
+bool filledButton(const char* label, ImU32 bg,
+                  const ImVec2& size = ImVec2(0, 0));
 
 /// Khung nền + viền cho một "thẻ" bao quanh vùng vừa vẽ.
 /// Dùng cặp: beginCard() … endCard().

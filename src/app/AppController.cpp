@@ -4,6 +4,12 @@
 #include "core/model/WarpMesh.h"
 #include "core/util/Clock.h"
 #include "ui/Localization.h"
+
+// Cac chuoi dung trong applyUiActions — dinh nghia gon de dong lenh o
+// duoi khong bi dai ra.
+#define T_MASK_NOSLICE TR("mask.noslice")
+#define T_MASK_EXISTS  TR("mask.exists")
+#define T_MASK_CREATED TR("mask.created")
 #include "io/sources/MockSource.h"
 #include "io/sources/OscSource.h"
 
@@ -740,6 +746,23 @@ void AppController::applyUiActions(UiActions& a) {
 
     if (a.toggleFullscreen && m_outputWindow) {
         m_outputWindow->toggleFullscreen();
+    }
+
+    if (a.addMask) {
+        Screen* sc = m_project.screens.empty() ? nullptr : &m_project.screens[0];
+        const int si = m_edit.activeSliceIndex;
+        if (sc == nullptr || si < 0 || si >= sc->sliceCount()) {
+            m_panel.setStatusMessage(T_MASK_NOSLICE, true);
+        } else if (!sc->slices[static_cast<size_t>(si)].mask.nodes.empty()) {
+            m_panel.setStatusMessage(T_MASK_EXISTS, true);
+        } else {
+            // Hinh chu nhat thut vao 15%: nguoi dung keo tung goc vao cho
+            // khop vat the. Bat dau tu hinh rong bang ca slice thi bon nut
+            // nam dung tren vien slice va rat kho bam trung.
+            sc->slices[static_cast<size_t>(si)].mask = BezierMask::rectangle(0.15);
+            m_edit.maskEditMode = true;
+            m_panel.setStatusMessage(T_MASK_CREATED);
+        }
     }
 
     if (a.settingsChanged) applySettings();

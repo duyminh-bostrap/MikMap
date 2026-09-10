@@ -182,6 +182,86 @@ void statusDot(ImU32 c, bool glow) {
     ImGui::Dummy(ImVec2(r * 2.0f, ImGui::GetTextLineHeight()));
 }
 
+void panelHeader(const char* icon, const char* title, ImU32 accent) {
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+
+    const float h  = ImGui::GetFrameHeight() + 6.0f;
+    const ImVec2 p = ImGui::GetCursorScreenPos();
+
+    // Dai nen chay het chieu ngang cua BANG, khong phai chi rong bang chu.
+    const float w = ImGui::GetContentRegionAvail().x
+                  + ImGui::GetStyle().WindowPadding.x * 2.0f;
+    const ImVec2 a(p.x - ImGui::GetStyle().WindowPadding.x, p.y - ImGui::GetStyle().WindowPadding.y);
+    const ImVec2 b(a.x + w, a.y + h);
+
+    dl->AddRectFilled(a, b, BgCard);
+    dl->AddLine(ImVec2(a.x, b.y - 1.0f), ImVec2(b.x, b.y - 1.0f), Border);
+
+    ImGui::SetCursorScreenPos(ImVec2(p.x, a.y + (h - ImGui::GetTextLineHeight()) * 0.5f));
+    if (icon != nullptr && icon[0] != 0) {
+        ImGui::PushStyleColor(ImGuiCol_Text, v4(accent));
+        ImGui::TextUnformatted(icon);
+        ImGui::PopStyleColor();
+        ImGui::SameLine(0.0f, 7.0f);
+    }
+    ImGui::TextUnformatted(title);
+
+    ImGui::SetCursorScreenPos(ImVec2(p.x, b.y + 8.0f));
+}
+
+bool treeRow(const char* icon, const char* label, int depth,
+             bool selected, ImU32 accent) {
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+
+    const float rowH   = ImGui::GetTextLineHeight() + 8.0f;
+    const float indent = 10.0f + static_cast<float>(depth) * 18.0f;
+    const float w      = ImGui::GetContentRegionAvail().x;
+
+    const ImVec2 p0 = ImGui::GetCursorScreenPos();
+    const ImVec2 p1(p0.x + w, p0.y + rowH);
+
+    ImGui::InvisibleButton(label, ImVec2(w, rowH));
+    const bool hovered = ImGui::IsItemHovered();
+    const bool clicked = ImGui::IsItemClicked();
+
+    if (selected) {
+        dl->AddRectFilled(p0, p1, alpha(accent, 0.20f));
+        // Vach mau ben trai: cho biet CAP nao dang duoc chon ngay ca khi
+        // hang bi cuon che mat mot phan.
+        dl->AddRectFilled(p0, ImVec2(p0.x + 2.0f, p1.y), accent);
+    } else if (hovered) {
+        dl->AddRectFilled(p0, p1, BgCard);
+    }
+
+    const ImU32 fg = selected ? accent : (hovered ? Text : TextDim);
+    float x = p0.x + indent;
+    const float ty = p0.y + 4.0f;
+
+    if (icon != nullptr && icon[0] != 0) {
+        dl->AddText(ImVec2(x, ty), fg, icon);
+        x += 20.0f;
+    }
+    dl->AddText(ImVec2(x, ty), fg, label);
+
+    return clicked;
+}
+
+bool iconButton(const char* icon, bool active, ImU32 accent) {
+    const float sz = ImGui::GetFrameHeight();
+    return tabButton(icon, active, ImVec2(sz + 6.0f, sz), accent);
+}
+
+bool filledButton(const char* label, ImU32 bg, const ImVec2& size) {
+    ImGui::PushStyleColor(ImGuiCol_Button,        v4(bg));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, v4(Warning));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive,  v4(alpha(bg, 0.8f)));
+    ImGui::PushStyleColor(ImGuiCol_Text,          v4(IM_COL32(10, 10, 10, 255)));
+    ImGui::PushStyleColor(ImGuiCol_Border,        ImVec4(0, 0, 0, 0));
+    const bool hit = ImGui::Button(label, size);
+    ImGui::PopStyleColor(5);
+    return hit;
+}
+
 void beginCard(const char* id, const ImVec2& size, ImU32 border) {
     ImGui::PushStyleColor(ImGuiCol_ChildBg, v4(BgCard));
     ImGui::PushStyleColor(ImGuiCol_Border,  v4(border));

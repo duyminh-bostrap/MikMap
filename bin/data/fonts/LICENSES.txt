@@ -1,0 +1,20 @@
+Font dong goi kem MikMap
+========================
+
+Inter.ttf          SIL Open Font License 1.1
+                   https://github.com/rsms/inter
+                   Chu giao dien: menu, tieu de, nhan nut.
+
+RobotoMono.ttf     Apache License 2.0
+                   https://github.com/googlefonts/RobotoMono
+                   RIENG cho so lieu (toa do, FPS, do phan giai).
+                   Be rong ky tu co dinh nen con so khong bi rung/nhay
+                   khi cap nhat 60 lan/giay.
+
+lucide.ttf         ISC License
+                   https://github.com/lucide-icons/lucide
+                   Bo icon. Dung dung bo ma ban thiet ke giao dien dung
+                   (lucide-react), nen net ve khop chinh xac.
+
+Codepoint icon lay tu IconFontCppHeaders (zlib License)
+https://github.com/juliettef/IconFontCppHeaders  ->  src/ui/IconsLucide.h

@@ -107,6 +107,9 @@ struct UiActions {
     bool resetSettings = false;
     /// Cai dat vua doi -> AppController ap dung (vsync, cache budget...).
     bool settingsChanged = false;
+    /// F12 — tạo mặt nạ cho slice đang chọn (nếu chưa có).
+    bool addMask = false;
+
     bool resetActiveSliceWarp = false;
     int  convertWarpTo = -1;        ///< -1 = không đổi; 0 = CornerPin, 1 = Mesh
     int  addSliceToScreen = -1;
@@ -217,10 +220,21 @@ private:
     /// Quét lại thư mục media. Gọi thưa, không phải mỗi frame.
     void rescanMedia();
 
+    /// Chuyển sang / rời khỏi font mono cho số liệu.
+    /// An toàn khi font mono không nạp được (nullptr) — khi đó không làm gì.
+    void pushMono();
+    void popMono();
+
     void drawScreenPanel(Project& p, EditState& edit, UiActions& a);
 
     /// F12 — bảng mặt nạ bezier của slice đang chọn.
     void drawMaskPanel(Slice& s, EditState& edit);
+
+    /// Cây SCREEN SETUP: Screen → Slice → Mask.
+    void drawScreenTree(Project& p, EditState& edit, UiActions& a);
+
+    /// Thuộc tính của một Screen (khác với thuộc tính Slice).
+    void drawScreenProperties(Screen& sc, EditState& edit, UiActions& a);
 
     /// F12 — phần tương tác chuột với nút mặt nạ, tách khỏi
     /// drawMappingEditor để hàm đó không phình ra khó đọc.
@@ -265,6 +279,16 @@ private:
     enum class MapMode { Input = 0, Output };
     MapMode m_mapMode = MapMode::Output;
     bool m_showMapSidebar = true;
+    bool m_showMapTree = true;
+
+    /// ★ Item đang chọn trong cây — quyết định bảng bên phải hiện gì.
+    ///
+    /// Trước đây danh sách slice nằm lẫn trong bảng thuộc tính và mặt nạ
+    /// là một mục gấp trong đó. Nghĩa là không có chỗ nào nhìn được TOÀN
+    /// BỘ cấu trúc một lần — mà đó lại chính là thứ người vận hành cần
+    /// khi dùng nhiều máy chiếu: cái gì đang chiếu ra đâu.
+    enum class SelKind { Screen = 0, Slice, Mask };
+    SelKind m_selKind = SelKind::Slice;
 
     /// Trình duyệt media — danh sách file trong bin/data/media.
     /// Quét đĩa là thao tác I/O nên KHÔNG làm mỗi frame; chỉ khi mở trang
@@ -302,6 +326,14 @@ private:
 
     int m_activeOutputDisplay = -1;
     std::vector<Vec2> m_sensorPoints;
+
+    /// Font mono cho SỐ LIỆU (fps, toạ độ, độ phân giải).
+    ///
+    /// Chữ số của font tỉ lệ có bề rộng khác nhau, nên một giá trị đang
+    /// đổi liên tục sẽ nhảy qua nhảy lại và rất khó đọc lướt. Font mono
+    /// giữ chúng thẳng cột. nullptr nếu nạp không được — lúc đó dùng font
+    /// mặc định, xấu hơn nhưng vẫn chạy.
+    ImFont* m_fontMono = nullptr;
 
     /// Phan chieu tu PerfStats, de menu bar hien duoc trang thai sensor.
     bool m_sensorRunning = false;
