@@ -327,13 +327,7 @@ private:
     int m_activeOutputDisplay = -1;
     std::vector<Vec2> m_sensorPoints;
 
-    /// Font mono cho SỐ LIỆU (fps, toạ độ, độ phân giải).
-    ///
-    /// Chữ số của font tỉ lệ có bề rộng khác nhau, nên một giá trị đang
-    /// đổi liên tục sẽ nhảy qua nhảy lại và rất khó đọc lướt. Font mono
-    /// giữ chúng thẳng cột. nullptr nếu nạp không được — lúc đó dùng font
-    /// mặc định, xấu hơn nhưng vẫn chạy.
-    ImFont* m_fontMono = nullptr;
+
 
     /// Phan chieu tu PerfStats, de menu bar hien duoc trang thai sensor.
     bool m_sensorRunning = false;

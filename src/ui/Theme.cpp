@@ -5,6 +5,25 @@
 namespace hexmap {
 namespace theme {
 
+namespace { Fonts g_fonts; }
+
+void setFonts(const Fonts& f) { g_fonts = f; }
+const Fonts& fonts() { return g_fonts; }
+
+void pushRegular(float size)  { ImGui::PushFont(g_fonts.regular,  size); }
+void pushSemiBold(float size) { ImGui::PushFont(g_fonts.semibold, size); }
+void pushBold(float size)     { ImGui::PushFont(g_fonts.bold,     size); }
+void pushMono(float size)     { ImGui::PushFont(g_fonts.mono,     size); }
+void popFont()                { ImGui::PopFont(); }
+
+void text(ImFont* f, float size, ImU32 col, const char* txt) {
+    ImGui::PushFont(f, size);
+    ImGui::PushStyleColor(ImGuiCol_Text, v4(col));
+    ImGui::TextUnformatted(txt);
+    ImGui::PopStyleColor();
+    ImGui::PopFont();
+}
+
 ImVec4 v4(ImU32 c) {
     return ImVec4(static_cast<float>((c >> IM_COL32_R_SHIFT) & 0xFF) / 255.0f,
                   static_cast<float>((c >> IM_COL32_G_SHIFT) & 0xFF) / 255.0f,
@@ -123,10 +142,12 @@ void apply() {
 //  Mảnh giao diện
 // ═══════════════════════════════════════════════════════════════════════
 
-void sectionLabel(const char* text) {
+void sectionLabel(const char* txt) {
+    pushBold(fs::Tiny);
     ImGui::PushStyleColor(ImGuiCol_Text, v4(TextFaint));
-    ImGui::TextUnformatted(text);
+    ImGui::TextUnformatted(txt);
     ImGui::PopStyleColor();
+    popFont();
 
     // Gạch chân mảnh chạy hết chiều rộng: tách mục mà không tốn một dòng
     // Separator đầy đủ, vốn quá nặng cho các mục nhỏ liên tiếp.
@@ -197,6 +218,7 @@ void panelHeader(const char* icon, const char* title, ImU32 accent) {
     dl->AddRectFilled(a, b, BgCard);
     dl->AddLine(ImVec2(a.x, b.y - 1.0f), ImVec2(b.x, b.y - 1.0f), Border);
 
+    pushBold(fs::Body);
     ImGui::SetCursorScreenPos(ImVec2(p.x, a.y + (h - ImGui::GetTextLineHeight()) * 0.5f));
     if (icon != nullptr && icon[0] != 0) {
         ImGui::PushStyleColor(ImGuiCol_Text, v4(accent));
@@ -205,6 +227,7 @@ void panelHeader(const char* icon, const char* title, ImU32 accent) {
         ImGui::SameLine(0.0f, 7.0f);
     }
     ImGui::TextUnformatted(title);
+    popFont();
 
     ImGui::SetCursorScreenPos(ImVec2(p.x, b.y + 8.0f));
 }
@@ -237,13 +260,26 @@ bool treeRow(const char* icon, const char* label, int depth,
     float x = p0.x + indent;
     const float ty = p0.y + 4.0f;
 
+    // Cap 0 (screen) dam va to hon; cap duoi thuong va nho hon. Thu bac
+    // nay lam cau truc cay doc duoc ma khong can them duong ke.
+    ImFont* f  = (depth == 0) ? g_fonts.bold : g_fonts.regular;
+    const float sz = (depth == 0) ? fs::Body : fs::Small;
+
     if (icon != nullptr && icon[0] != 0) {
-        dl->AddText(ImVec2(x, ty), fg, icon);
+        dl->AddText(g_fonts.regular, fs::Body, ImVec2(x, ty), fg, icon);
         x += 20.0f;
     }
-    dl->AddText(ImVec2(x, ty), fg, label);
+    dl->AddText(f, sz, ImVec2(x, ty + (depth == 0 ? 0.0f : 1.0f)), fg, label);
 
     return clicked;
+}
+
+bool toolButton(const char* icon, const char* tooltip, ImU32 accent, bool active) {
+    const bool hit = iconButton(icon, active, accent);
+    if (tooltip != nullptr && ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("%s", tooltip);
+    }
+    return hit;
 }
 
 bool iconButton(const char* icon, bool active, ImU32 accent) {

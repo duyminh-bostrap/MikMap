@@ -185,18 +185,26 @@ Font đóng gói kèm (xem `bin/data/fonts/LICENSES.txt`):
 
 | File | Giấy phép | Dùng cho |
 |---|---|---|
-| `Inter.ttf` | OFL 1.1 | chữ giao diện — menu, tiêu đề, nhãn nút |
+| `Inter-Regular/SemiBold/Bold.ttf` | OFL 1.1 | chữ giao diện, ba độ đậm 400/600/700 |
 | `RobotoMono.ttf` | Apache 2.0 | **riêng cho số liệu** — toạ độ, FPS, độ phân giải |
 | `lucide.ttf` | ISC | bộ icon, ghim ở phiên bản trong `lucide-version.txt` |
 
-Font mặc định của Dear ImGui chỉ có ASCII và Latin-1 — đó là lý do giao diện
-trước đây phải viết không dấu. Số liệu dùng font **mono** vì chữ số của font
-tỉ lệ có bề rộng khác nhau, nên một giá trị đổi 60 lần/giây sẽ nhảy qua nhảy
-lại và rất khó đọc lướt — đúng lúc cần liếc nhanh xem fps có tụt không.
+Ba độ đậm được **cắt ra từ `Inter.ttf`** (font variable, trục `wght`) bằng
+`fontTools`, nên không phải tải thêm file nào.
 
-Icon dùng **đúng bộ Lucide** mà bản thiết kế giao diện dùng (`lucide-react`),
-nạp từ TTF chính thức và ghép thẳng vào font atlas, nên nét vẽ khớp chính xác
-chứ không phải "gần giống".
+Thang cỡ chữ lấy đúng từ bản thiết kế: **9 / 10 / 11 / 12 / 14 / 18 px**.
+Một cỡ chữ duy nhất cho cả giao diện là sai theo kiểu khó thấy — chính sự
+chênh lệch giữa các cỡ tạo ra thứ bậc, liếc mắt là biết đâu là tiêu đề
+bảng, đâu là nhãn mục, đâu là giá trị.
+
+Số liệu dùng font **mono** vì chữ số của font tỉ lệ có bề rộng khác nhau,
+nên một giá trị đổi 60 lần/giây sẽ nhảy qua nhảy lại và rất khó đọc lướt —
+đúng lúc cần liếc nhanh xem fps có tụt không.
+
+Icon dùng **đúng bộ Lucide** mà bản thiết kế dùng (`lucide-react`), nạp từ
+TTF chính thức và ghép thẳng vào từng độ đậm, nên nét vẽ khớp chính xác.
+Nút chỉ có icon **luôn kèm tooltip** — một icon không nhãn chỉ đọc được nếu
+người dùng đã biết nó là gì.
 
 Thêm ngôn ngữ mới: chép một bảng trong `src/ui/Localization.cpp`, dịch phần
 giá trị, thêm vào `enum class Language`. `tests/test_localization.cpp` sẽ

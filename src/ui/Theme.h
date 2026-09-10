@@ -54,6 +54,49 @@ constexpr float LayerRowH   = 90.0f;
 /// Tỉ lệ chiều cao dành cho nửa trên trang Composition.
 constexpr float CompTopRatio = 0.55f;
 
+// ── Thang cỡ chữ ───────────────────────────────────────────────────────
+//
+// Lấy đúng từ các lớp Tailwind trong bản thiết kế:
+//   text-[9px] · text-[10px] · text-[11px] · text-xs(12) · text-sm(14) · text-lg(18)
+//
+// ★ Một cỡ chữ duy nhất cho cả giao diện là sai — và sai theo kiểu khó
+//   thấy. Bản thiết kế dùng SÁU cỡ, và chính sự chênh lệch đó tạo ra thứ
+//   bậc: liếc mắt là biết đâu là tiêu đề bảng, đâu là nhãn mục, đâu là
+//   giá trị. Cào bằng hết thì mọi thứ đọc như nhau và phải dừng lại đọc.
+namespace fs {
+constexpr float Micro = 9.0f;    ///< tên clip, số opacity, nhãn cột
+constexpr float Tiny  = 10.0f;   ///< nhãn mục (SECTION LABEL)
+constexpr float Small = 11.0f;   ///< tab, hàng slice/mask trong cây
+constexpr float Body  = 12.0f;   ///< chữ thân, tiêu đề bảng, nút
+constexpr float Head  = 14.0f;   ///< tiêu đề thẻ
+constexpr float Brand = 18.0f;   ///< chữ MIKMAP
+}
+
+// ── Font ───────────────────────────────────────────────────────────────
+//
+// Ba độ đậm cắt từ Inter (font variable, trục wght 100..900) + một font
+// mono cho số liệu. ImGui 1.92 đổi được cỡ lúc chạy nên mỗi độ đậm chỉ
+// cần nạp MỘT lần.
+struct Fonts {
+    ImFont* regular  = nullptr;   ///< wght 400
+    ImFont* semibold = nullptr;   ///< wght 600
+    ImFont* bold     = nullptr;   ///< wght 700
+    ImFont* mono     = nullptr;
+};
+void setFonts(const Fonts& f);
+const Fonts& fonts();
+
+/// Đổi font + cỡ. Luôn đi cặp với popFont().
+/// An toàn khi font chưa nạp được — khi đó chỉ đổi cỡ.
+void pushRegular(float size);
+void pushSemiBold(float size);
+void pushBold(float size);
+void pushMono(float size);
+void popFont();
+
+/// Chữ một dòng với font + cỡ + màu chỉ định. Gọn hơn push/pop 3 dòng.
+void text(ImFont* f, float size, ImU32 col, const char* txt);
+
 // ── Tiện ích ───────────────────────────────────────────────────────────
 ImVec4 v4(ImU32 c);
 ImU32  alpha(ImU32 c, float a);
@@ -65,7 +108,7 @@ void apply();
 // ── Mảnh giao diện dùng lại ────────────────────────────────────────────
 
 /// Nhãn mục nhỏ, chữ hoa, màu mờ — "TRANSFORM", "ACTIVE SENSORS".
-void sectionLabel(const char* text);
+void sectionLabel(const char* txt);
 
 /// Nút tab (thanh trên cùng và các bộ chuyển chế độ).
 /// @param accent màu chữ khi đang chọn
@@ -93,6 +136,14 @@ void panelHeader(const char* icon, const char* title, ImU32 accent = Text);
 /// @return true nếu vừa được bấm
 bool treeRow(const char* icon, const char* label, int depth,
              bool selected, ImU32 accent);
+
+/// Nút chỉ có ICON, kèm tooltip giải thích.
+///
+/// ★ Tooltip là BẮT BUỘC, không phải tuỳ chọn. Một icon không nhãn chỉ
+///   đọc được nếu người dùng đã biết nó là gì; tooltip là chỗ duy nhất
+///   họ tra được. Nút icon không tooltip là nút đố người dùng.
+bool toolButton(const char* icon, const char* tooltip, ImU32 accent = Text,
+                bool active = false);
 
 /// Nút chỉ có icon, vuông.
 bool iconButton(const char* icon, bool active, ImU32 accent = Text);

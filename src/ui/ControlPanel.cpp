@@ -197,8 +197,10 @@ void ControlPanel::drawTopBar(const PerfStats& s, UiActions& a) {
         ImGui::Dummy(ImVec2(22.0f, ImGui::GetFrameHeight()));
     }
     ImGui::SameLine(0.0f, 6.0f);
+    theme::pushBold(theme::fs::Brand);
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted("MIKMAP");
+    theme::popFont();
 
     // ── Project ────────────────────────────────────────────────────────
     //
@@ -251,8 +253,9 @@ void ControlPanel::drawTopBar(const PerfStats& s, UiActions& a) {
         ImGui::BeginChild("##tabs", ImVec2(578.0f, theme::TopBarH - 12.0f),
                           ImGuiChildFlags_Borders, ImGuiWindowFlags_NoScrollbar);
 
-        const ImVec2 tsz(186.0f, 0.0f);
+        const ImVec2 tsz(176.0f, 0.0f);
         char lbl[96];
+        theme::pushBold(theme::fs::Small);
 
         std::snprintf(lbl, sizeof(lbl), "%s  %s", ICON_LC_LAYERS, TR("nav.composition"));
         if (theme::tabButton(lbl, m_view == View::Composition, tsz)) {
@@ -269,6 +272,7 @@ void ControlPanel::drawTopBar(const PerfStats& s, UiActions& a) {
             m_view = View::Sensor;
         }
 
+        theme::popFont();
         ImGui::EndChild();
         ImGui::PopStyleVar();
         ImGui::PopStyleColor();
@@ -309,7 +313,7 @@ void ControlPanel::drawTopBar(const PerfStats& s, UiActions& a) {
 
         // Chip co vien, giong ban thiet ke.
         {
-            pushMono();
+            theme::pushMono(theme::fs::Small);
             const ImVec2 tsz = ImGui::CalcTextSize(fpsBuf);
             const ImVec2 p0  = ImGui::GetCursorScreenPos();
             const float  pad = 9.0f;
@@ -322,16 +326,16 @@ void ControlPanel::drawTopBar(const PerfStats& s, UiActions& a) {
             dl->AddText(ImVec2(p0.x + pad, p0.y + (h - tsz.y) * 0.5f),
                         ok ? theme::Success : theme::Warning, fpsBuf);
             ImGui::Dummy(ImVec2(tsz.x + pad * 2.0f, h));
-            popMono();
+            theme::popFont();
         }
 
         ImGui::SameLine(0.0f, 18.0f);
         theme::statusDot(m_activeOutputDisplay >= 0 ? theme::Success : theme::TextFaint);
         ImGui::SameLine(0.0f, 6.0f);
         ImGui::AlignTextToFramePadding();
-        pushMono();
+        theme::pushMono(theme::fs::Small);
         ImGui::TextDisabled("%s", outBuf.c_str());
-        popMono();
+        theme::popFont();
 
         ImGui::SameLine(0.0f, 12.0f);
         if (theme::tabButton(ICON_LC_SETTINGS_2, m_showSettings, ImVec2(gearW, 0))) {
@@ -426,12 +430,8 @@ void ControlPanel::drawCompositionView(Project& p, EditState& edit,
 
 // ── Trinh duyet media ──────────────────────────────────────────────────
 
-void ControlPanel::pushMono() {
-    if (m_fontMono != nullptr) ImGui::PushFont(m_fontMono);
-}
-void ControlPanel::popMono() {
-    if (m_fontMono != nullptr) ImGui::PopFont();
-}
+void ControlPanel::pushMono() { theme::pushMono(theme::fs::Body); }
+void ControlPanel::popMono()  { theme::popFont(); }
 
 void ControlPanel::rescanMedia() {
     m_mediaFiles.clear();
@@ -487,8 +487,13 @@ void ControlPanel::drawBrowserPanel(Project& p, UiActions& a) {
         ImGui::PushStyleColor(ImGuiCol_Text,
             theme::v4(likelyHap ? theme::Text : theme::Warning));
 
+        const bool isImage = (ext == "png" || ext == "jpg" || ext == "jpeg");
+        char row[192];
+        std::snprintf(row, sizeof(row), "%s  %s",
+                      isImage ? ICON_LC_IMAGE : ICON_LC_FILM, name.c_str());
+
         ImGui::PushID(static_cast<int>(i));
-        if (ImGui::Selectable(name.c_str(), false, 0, ImVec2(0, 20))) {
+        if (ImGui::Selectable(row, false, 0, ImVec2(0, 20))) {
             if (hasTarget) {
                 a.assignMediaPath = m_mediaFiles[i];
                 a.assignLayer     = m_selLayer;
@@ -514,8 +519,10 @@ void ControlPanel::drawBrowserPanel(Project& p, UiActions& a) {
         ImGui::TextDisabled("%s", TR("browser.noTarget"));
     }
 
-    if (theme::outlineButton(TR("browser.browse"), theme::Info,
-                             ImVec2(-FLT_MIN, 0))) {
+    char browseLbl[96];
+    std::snprintf(browseLbl, sizeof(browseLbl), "%s  %s",
+                  ICON_LC_FOLDER_OPEN, TR("browser.browse"));
+    if (theme::outlineButton(browseLbl, theme::Info, ImVec2(-FLT_MIN, 0))) {
         if (hasTarget) {
             m_pendingBrowse = true;
             m_browseLayer   = m_selLayer;
@@ -645,7 +652,17 @@ void ControlPanel::drawLayersDeck(Project& p) {
     }
 
     ImGui::SameLine(0.0f, 18.0f);
-    if (theme::outlineButton(TR("comp.clearall"), theme::Danger, ImVec2(90, 0))) {
+    // ★ Nut nay GIU NGUYEN chu, khong rut thanh icon tran.
+    //
+    //   No dung MOI layer cung luc — khan gia thay ngay. Mot icon khong
+    //   nhan chi doc duoc neu nguoi dung da biet no la gi, va "da biet"
+    //   khong phai thu dang dat cuoc khi hau qua la man hinh den giua
+    //   buoi dien. Icon hop voi thao tac lap lai va co the hoan tac;
+    //   khong hop voi thao tac pha huy.
+    char clearLbl[64];
+    std::snprintf(clearLbl, sizeof(clearLbl), "%s  %s",
+                  ICON_LC_SQUARE, TR("comp.clearall"));
+    if (theme::outlineButton(clearLbl, theme::Danger, ImVec2(0, 0))) {
         comp.clearAll();
     }
     ImGui::SameLine(0.0f, 14.0f);
@@ -687,7 +704,11 @@ void ControlPanel::drawLayersDeck(Project& p) {
             ImGui::PushID(20000 + c);
             char lbl[24];
             std::snprintf(lbl, sizeof(lbl), "COL %d", c + 1);
-            if (theme::tabButton(lbl, false, ImVec2(-FLT_MIN, 18.0f), theme::Primary)) {
+            theme::pushBold(theme::fs::Micro);
+            const bool hitCol = theme::tabButton(lbl, false, ImVec2(-FLT_MIN, 18.0f),
+                                                 theme::Primary);
+            theme::popFont();
+            if (hitCol) {
                 comp.triggerColumn(c);
             }
             if (ImGui::IsItemHovered()) ImGui::SetTooltip(TR("comp.triggercol"), c + 1);
@@ -713,22 +734,30 @@ void ControlPanel::drawLayersDeck(Project& p) {
                 char nameBuf[16];
                 std::snprintf(nameBuf, sizeof(nameBuf), "%-9.9s", layer.name.c_str());
 
+                theme::pushBold(theme::fs::Body);
                 ImGui::AlignTextToFramePadding();
                 ImGui::TextUnformatted(nameBuf);
+                theme::popFont();
 
                 constexpr float kBtnBlockW = 24.0f * 3.0f + 3.0f * 2.0f;
                 constexpr float kBtnAnchor = 132.0f;   // < LayerCtrlW - kBtnBlockW
                 ImGui::SameLine(0.0f, std::max(6.0f,
                     kBtnAnchor - ImGui::CalcTextSize(nameBuf).x));
 
+                // Chu cai S/B/X chi doc duoc neu da biet chung la gi. Icon
+                // + tooltip vua gon hon vua tu giai thich.
                 const ImVec2 bs(24.0f, 20.0f);
-                if (theme::tabButton("S", layer.solo, bs, theme::Info)) layer.solo = !layer.solo;
+                if (theme::tabButton(ICON_LC_FOCUS, layer.solo, bs, theme::Info)) {
+                    layer.solo = !layer.solo;
+                }
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("layer.solo.tip"));
                 ImGui::SameLine(0.0f, 3.0f);
-                if (theme::tabButton("B", layer.bypass, bs, theme::Danger)) layer.bypass = !layer.bypass;
+                if (theme::tabButton(ICON_LC_EYE_OFF, layer.bypass, bs, theme::Danger)) {
+                    layer.bypass = !layer.bypass;
+                }
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("layer.bypass.tip"));
                 ImGui::SameLine(0.0f, 3.0f);
-                if (theme::tabButton("X", false, bs, theme::Danger)) layer.clear();
+                if (theme::tabButton(ICON_LC_SQUARE, false, bs, theme::Danger)) layer.clear();
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("layer.clear.tip"));
 
                 // ★ Model luu 0..1 nhung nguoi van hanh nghi bang PHAN TRAM.
@@ -818,7 +847,8 @@ void ControlPanel::drawLayersDeck(Project& p) {
                                              : theme::alpha(theme::Success, 0.25f);
                     dl->AddRectFilledMultiColor(r0, r1, c0, c1, c1, c0);
                     dl->PushClipRect(r0, r1, true);
-                    dl->AddText(ImVec2(r0.x + 5.0f, r0.y + 4.0f), theme::Text,
+                    dl->AddText(theme::fonts().bold, theme::fs::Micro,
+                                ImVec2(r0.x + 5.0f, r0.y + 4.0f), theme::Text,
                                 clip.name.c_str());
                     dl->PopClipRect();
 
@@ -1089,6 +1119,7 @@ void ControlPanel::drawMapToolbar(Project& p, EditState& edit, UiActions& a) {
                           ImGuiChildFlags_Borders, ImGuiWindowFlags_NoScrollbar);
 
         const ImVec2 msz(157.0f, 0.0f);
+        theme::pushBold(theme::fs::Small);
         if (theme::tabButton(TR("map.mode.input"), m_mapMode == MapMode::Input,
                              msz, theme::Success)) {
             m_mapMode = MapMode::Input;
@@ -1099,6 +1130,7 @@ void ControlPanel::drawMapToolbar(Project& p, EditState& edit, UiActions& a) {
             m_mapMode = MapMode::Output;
         }
 
+        theme::popFont();
         ImGui::EndChild();
         ImGui::PopStyleVar();
         ImGui::PopStyleColor();
@@ -1504,7 +1536,9 @@ void ControlPanel::drawScreenPanel(Project& p, EditState& edit, UiActions& a) {
         ImGui::SameLine();
         ImGui::Checkbox(TR("adv.solo"), &s.solo);
         ImGui::SameLine();
-        if (ImGui::SmallButton(TR("adv.delete"))) a.removeSliceIndex = i;
+        if (theme::toolButton(ICON_LC_TRASH_2, TR("adv.delete"), theme::Danger)) {
+            a.removeSliceIndex = i;
+        }
         ImGui::Unindent(22.0f);
 
         if (!s.warp()->isInvertible()) {
@@ -1527,14 +1561,16 @@ void ControlPanel::drawScreenPanel(Project& p, EditState& edit, UiActions& a) {
     // F4 — vùng lấy trên canvas
     float ox[2] = {static_cast<float>(s.inputOrigin.x), static_cast<float>(s.inputOrigin.y)};
     labelAbove(TR("adv.inputorigin"));
-    if (ImGui::DragFloat2("##inorg", ox, 1.0f)) {
-        s.inputOrigin = Vec2{ox[0], ox[1]};
-    }
+    theme::pushMono(theme::fs::Body);
+    const bool inorg = ImGui::DragFloat2("##inorg", ox, 1.0f);
+    theme::popFont();
+    if (inorg) s.inputOrigin = Vec2{ox[0], ox[1]};
     float sz[2] = {static_cast<float>(s.inputSize.x), static_cast<float>(s.inputSize.y)};
     labelAbove(TR("adv.inputsize"));
-    if (ImGui::DragFloat2("##insz", sz, 1.0f, 1.0f, 16384.0f)) {
-        s.inputSize = Vec2{std::max(1.0f, sz[0]), std::max(1.0f, sz[1])};
-    }
+    theme::pushMono(theme::fs::Body);
+    const bool insz = ImGui::DragFloat2("##insz", sz, 1.0f, 1.0f, 16384.0f);
+    theme::popFont();
+    if (insz) s.inputSize = Vec2{std::max(1.0f, sz[0]), std::max(1.0f, sz[1])};
 
     // Đổi loại warp
     int warpType = (s.warp()->type() == WarpType::Mesh) ? 1 : 0;
@@ -1543,7 +1579,9 @@ void ControlPanel::drawScreenPanel(Project& p, EditState& edit, UiActions& a) {
     if (ImGui::Combo("##warptype", &warpType, warpNames, 2)) {
         a.convertWarpTo = warpType;
     }
-    if (ImGui::Button(TR("adv.reset"), ImVec2(-FLT_MIN, 0))) a.resetActiveSliceWarp = true;
+    char rlbl[64];
+    std::snprintf(rlbl, sizeof(rlbl), "%s  %s", ICON_LC_ROTATE_CCW, TR("adv.reset"));
+    if (ImGui::Button(rlbl, ImVec2(-FLT_MIN, 0))) a.resetActiveSliceWarp = true;
 
     // ── F19: hieu chinh mau rieng cho slice ────────────────────────────
     if (ImGui::TreeNode(TR("adv.color"))) {
@@ -1649,7 +1687,10 @@ void ControlPanel::drawScreenPanel(Project& p, EditState& edit, UiActions& a) {
             float c[2] = {static_cast<float>(cp->corner(k).x),
                           static_cast<float>(cp->corner(k).y)};
                 labelAbove(cornerNames[k]);
-            if (ImGui::DragFloat2("##corner", c, 0.5f)) {
+            theme::pushMono(theme::fs::Body);
+            const bool moved = ImGui::DragFloat2("##corner", c, 0.5f);
+            theme::popFont();
+            if (moved) {
                 if (!cp->setCorner(k, Vec2{c[0], c[1]})) {
                     // Bị từ chối vì tứ giác sẽ lõm hoặc tự cắt.
                     setStatusMessage(TR("adv.corner.rejected"), true);
@@ -1709,19 +1750,23 @@ void ControlPanel::drawMaskPanel(Slice& s, EditState& edit) {
 
     ImGui::Separator();
 
-    if (ImGui::Button(TR("mask.shape.rect"), ImVec2(-FLT_MIN, 0))) {
+    char mlbl[64];
+    std::snprintf(mlbl, sizeof(mlbl), "%s  %s", ICON_LC_SQUARE, TR("mask.shape.rect"));
+    if (ImGui::Button(mlbl, ImVec2(-FLT_MIN, 0))) {
         const bool inv = m.invert; const double ft = m.feather;
         m = BezierMask::rectangle(0.10);
         m.invert = inv; m.feather = ft;
         edit.maskEditMode = true;
     }
-    if (ImGui::Button(TR("mask.shape.ellipse"), ImVec2(-FLT_MIN, 0))) {
+    std::snprintf(mlbl, sizeof(mlbl), "%s  %s", ICON_LC_CIRCLE, TR("mask.shape.ellipse"));
+    if (ImGui::Button(mlbl, ImVec2(-FLT_MIN, 0))) {
         const bool inv = m.invert; const double ft = m.feather;
         m = BezierMask::ellipse(4);
         m.invert = inv; m.feather = ft;
         edit.maskEditMode = true;
     }
-    if (ImGui::Button(TR("mask.clear"), ImVec2(-FLT_MIN, 0))) {
+    std::snprintf(mlbl, sizeof(mlbl), "%s  %s", ICON_LC_TRASH_2, TR("mask.clear"));
+    if (ImGui::Button(mlbl, ImVec2(-FLT_MIN, 0))) {
         m.reset();
         edit.maskEditMode = false;
         edit.maskDraggedNode = -1;
@@ -1758,7 +1803,9 @@ void ControlPanel::drawSensorPanel(Project& p, const PerfStats& s, UiActions& a)
     if (ImGui::Combo("##sensrc", &sensorType, types, 2)) a.sensorTypeIndex = sensorType;
 
     if (s.sensorConnected) {
-        if (theme::outlineButton(TR("sen.stop"), theme::Danger, ImVec2(-FLT_MIN, 0))) {
+        char lbl[64];
+        std::snprintf(lbl, sizeof(lbl), "%s  %s", ICON_LC_POWER, TR("sen.stop"));
+        if (theme::outlineButton(lbl, theme::Danger, ImVec2(-FLT_MIN, 0))) {
             a.stopSensor = true;
         }
         theme::statusDot(theme::Success);
@@ -1766,7 +1813,9 @@ void ControlPanel::drawSensorPanel(Project& p, const PerfStats& s, UiActions& a)
         ImGui::AlignTextToFramePadding();
         ImGui::TextColored(theme::v4(theme::Success), "%s", TR("sen.running"));
     } else {
-        if (theme::outlineButton(TR("sen.run"), theme::Success, ImVec2(-FLT_MIN, 0))) {
+        char lbl[64];
+        std::snprintf(lbl, sizeof(lbl), "%s  %s", ICON_LC_POWER, TR("sen.run"));
+        if (theme::outlineButton(lbl, theme::Success, ImVec2(-FLT_MIN, 0))) {
             a.startSensor = true;
         }
         theme::statusDot(theme::TextFaint, false);
@@ -1816,13 +1865,21 @@ void ControlPanel::drawCalibrationPanel(Project& p, const PerfStats& s, UiAction
     }
     ImGui::Separator();
 
-    if (ImGui::Button(TR("cal.add"))) a.calibAddPoint = true;
-    ImGui::SameLine();
-    if (ImGui::Button(TR("cal.skip"))) a.calibNextTarget = true;
-    ImGui::SameLine();
-    if (ImGui::Button(TR("cal.solve"))) a.calibSolve = true;
-    ImGui::SameLine();
-    if (ImGui::Button(TR("cal.clear"))) a.calibClear = true;
+    if (theme::toolButton(ICON_LC_CROSSHAIR, TR("cal.add"), theme::Success)) {
+        a.calibAddPoint = true;
+    }
+    ImGui::SameLine(0.0f, 4.0f);
+    if (theme::toolButton(ICON_LC_SKIP_FORWARD, TR("cal.skip"), theme::TextDim)) {
+        a.calibNextTarget = true;
+    }
+    ImGui::SameLine(0.0f, 4.0f);
+    if (theme::toolButton(ICON_LC_CHECK, TR("cal.solve"), theme::Primary)) {
+        a.calibSolve = true;
+    }
+    ImGui::SameLine(0.0f, 4.0f);
+    if (theme::toolButton(ICON_LC_TRASH_2, TR("cal.clear"), theme::Danger)) {
+        a.calibClear = true;
+    }
 
     ImGui::Text(TR("cal.recorded"),
                 static_cast<int>(cal.pairCount()),
@@ -1946,11 +2003,22 @@ void ControlPanel::drawClipPanel(Project& p) {
     // ── C1 C8: transport ───────────────────────────────────────────────
     ImGui::SeparatorText(TR("clip.transport"));
 
-    if (ImGui::Button(c->transport.isPlaying() ? TR("clip.pause") : TR("clip.play"))) {
+    // Ba nut dieu khien phat la ky hieu QUOC TE — tam giac, hai gach,
+    // hinh vuong. Viet chu ra chi ton cho ma khong ro hon.
+    const bool playing = c->transport.isPlaying();
+    if (theme::toolButton(playing ? ICON_LC_PAUSE : ICON_LC_PLAY,
+                          playing ? TR("clip.pause") : TR("clip.play"),
+                          playing ? theme::Warning : theme::Success)) {
         c->transport.togglePlay();
     }
-    ImGui::SameLine();
-    if (ImGui::Button(TR("clip.stop"))) c->transport.stop();
+    ImGui::SameLine(0.0f, 4.0f);
+    if (theme::toolButton(ICON_LC_SQUARE, TR("clip.stop"), theme::Danger)) {
+        c->transport.stop();
+    }
+    ImGui::SameLine(0.0f, 4.0f);
+    if (theme::toolButton(ICON_LC_ROTATE_CCW, TR("clip.resetxform"), theme::Info)) {
+        c->transform.reset();
+    }
 
     // C8 — keo tua. Chi ghi khi nguoi dung THUC SU keo; neu ghi moi frame
     // thi se de len dau phat dang chay va clip dung yen tai cho.
@@ -2023,8 +2091,6 @@ void ControlPanel::drawClipPanel(Project& p) {
     ImGui::SameLine();
     ImGui::Checkbox(TR("clip.flipv"), &c->transform.flipV);
 
-    if (ImGui::Button(TR("clip.resetxform"))) c->transform.reset();
-
     // ── D3 D4: hoa tron ────────────────────────────────────────────────
     ImGui::SeparatorText(TR("clip.blending"));
 
@@ -2046,7 +2112,11 @@ void ControlPanel::drawTriggerZonePanel(Project& p, UiActions& a) {
                            TR("zone.last"), m_lastTriggerName.c_str());
     }
 
-    if (ImGui::Button(TR("zone.add"))) a.addTriggerZone = true;
+    char zlbl[64];
+    std::snprintf(zlbl, sizeof(zlbl), "%s  %s", ICON_LC_PLUS, TR("zone.add"));
+    if (theme::outlineButton(zlbl, theme::Success, ImVec2(-FLT_MIN, 0))) {
+        a.addTriggerZone = true;
+    }
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("%s", TR("zone.add.tip"));
     }
@@ -2077,7 +2147,9 @@ void ControlPanel::drawTriggerZonePanel(Project& p, UiActions& a) {
         if (open) {
             ImGui::Checkbox(TR("zone.enabled"), &z.enabled);
             ImGui::SameLine();
-            if (ImGui::SmallButton(TR("zone.delete"))) a.removeTriggerZone = i;
+            if (theme::toolButton(ICON_LC_TRASH_2, TR("zone.delete"), theme::Danger)) {
+                a.removeTriggerZone = i;
+            }
 
             char nb[64];
             std::snprintf(nb, sizeof(nb), "%s", z.name.c_str());
@@ -2553,16 +2625,9 @@ void ControlPanel::loadFont() {
     if (m_fontLoaded) return;
 
     ImGuiIO& io = ImGui::GetIO();
-
-    // ── 1. Font nền: Inter, kèm dải glyph tiếng Việt ───────────────────
     const ImWchar* viRanges = io.Fonts->GetGlyphRangesVietnamese();
 
-    ImFontConfig base;
-    base.OversampleH = 2;
-    base.OversampleV = 1;
-    base.PixelSnapH  = true;
-
-    // ★★ Loai vung PRIVATE USE khoi font chu.
+    // ★★ Loai vung PRIVATE USE khoi cac font CHU.
     //
     //   Inter chua 745 glyph o vung private-use (U+E000..F8FF) — bien the
     //   kieu chu ma du an nay khong dung. Lucide dat icon CUNG vung do.
@@ -2576,90 +2641,88 @@ void ControlPanel::loadFont() {
     //
     //   Trieu chung cuc ky de doc nham: MOT SO icon dung, mot so ra ky tu
     //   la — nhin nhu font icon hong hoac lech phien ban, trong khi ca hai
-    //   font deu hoan toan binh thuong. Da di kiem tra cmap cua ca hai
-    //   file moi tim ra.
+    //   font deu hoan toan binh thuong. Phai doc cmap ca hai file moi ra.
     //
-    //   GlyphExcludeRanges sinh ra dung cho viec nay. Mang phai SONG LAU
-    //   bang font nen phai static.
+    //   Mang phai SONG LAU bang font nen phai static.
     static const ImWchar kNoPrivateUse[] = { 0xE000, 0xF8FF, 0 };
-    base.GlyphExcludeRanges = kNoPrivateUse;
+    static const ImWchar kIconRanges[]   = { ICON_MIN_LC, ICON_MAX_16_LC, 0 };
 
-    const std::string candidates[] = {
-        ofToDataPath("fonts/Inter.ttf", true),
-        "C:/Windows/Fonts/segoeui.ttf",
-        "C:/Windows/Fonts/tahoma.ttf",
-    };
+    ImFontConfig txt;
+    txt.OversampleH = 2;
+    txt.OversampleV = 1;
+    txt.PixelSnapH  = true;
+    txt.GlyphExcludeRanges = kNoPrivateUse;
 
-    for (const std::string& path : candidates) {
-        if (!ofFile::doesFileExist(path)) continue;
+    ImFontConfig ico;
+    ico.MergeMode        = true;
+    ico.PixelSnapH       = true;
+    ico.OversampleH      = 2;
+    ico.OversampleV      = 1;
+    ico.GlyphOffset      = ImVec2(0.0f, 2.0f);   // khop duong chan chu
+    ico.GlyphMinAdvanceX = 16.0f;                // moi icon rong bang nhau
+
+    // ── Nap MOT do dam: font chu + icon ghep vao chinh no ──────────────
+    //
+    // ★ Icon phai ghep vao TUNG do dam. MergeMode ghep vao font NAP GAN
+    //   NHAT, nen neu chi ghep vao Regular thi moi cho dung chu dam se
+    //   mat sach icon — va mat mot cach lang le, chi hien o vuong.
+    auto loadWeight = [&](const char* file, bool asDefault) -> ImFont* {
+        const std::string path = ofToDataPath(std::string("fonts/") + file, true);
+        if (!ofFile::doesFileExist(path)) return nullptr;
 
         // ★ PHAI di qua m_gui.addFont(), khong duoc goi thang
-        //   io.Fonts->AddFontFromFileTTF().
-        //
-        //   Goi thang thi font VAO duoc atlas nhung atlas khong bao gio
-        //   duoc build lai va nap len GPU, va no cung khong duoc dat lam
-        //   font mac dinh — nen ImGui van ve bang font ProggyClean cu.
-        //   Trieu chung rat de doc nham: ProggyClean co Latin-1 nen "Cai"
-        //   hien dung dau `a`, chi rieng `d` va `at` (ngoai Latin-1) moi
-        //   thanh dau hoi. Nhin qua tuong la font thieu glyph, that ra la
-        //   font moi chua he duoc dung.
-        if (m_gui.addFont(path, 16.0f, &base, viRanges, /*setAsDefault*/ true) != nullptr) {
-            m_fontLoaded = true;
-            ofLogNotice("ControlPanel") << "Font: " << path;
-            break;
-        }
-    }
+        //   io.Fonts->AddFontFromFileTTF(): goi thang thi font vao duoc
+        //   atlas nhung atlas khong bao gio duoc build lai va nap len GPU.
+        ImFont* f = m_gui.addFont(path, theme::fs::Body, &txt, viRanges, asDefault);
+        if (f == nullptr) return nullptr;
 
-    if (!m_fontLoaded) {
+        const std::string iconPath = ofToDataPath("fonts/lucide.ttf", true);
+        if (ofFile::doesFileExist(iconPath)) {
+            m_gui.addFont(iconPath, theme::fs::Body, &ico, kIconRanges, false);
+        }
+        return f;
+    };
+
+    theme::Fonts fonts;
+    fonts.regular  = loadWeight("Inter-Regular.ttf",  true);
+    fonts.semibold = loadWeight("Inter-SemiBold.ttf", false);
+    fonts.bold     = loadWeight("Inter-Bold.ttf",     false);
+
+    if (fonts.regular == nullptr) {
+        // Luoi an toan: font he thong. Mat do dam va mat icon, nhung van
+        // doc duoc tieng Viet va van chay.
+        ImFont* sys = nullptr;
+        for (const char* p2 : { "C:/Windows/Fonts/segoeui.ttf",
+                                "C:/Windows/Fonts/tahoma.ttf" }) {
+            if (!ofFile::doesFileExist(p2)) continue;
+            sys = m_gui.addFont(p2, theme::fs::Body, &txt, viRanges, true);
+            if (sys != nullptr) break;
+        }
+        fonts.regular = fonts.semibold = fonts.bold = sys;
         ofLogWarning("ControlPanel")
-            << "Khong nap duoc font co glyph tieng Viet - dau se hien sai. "
-               "Kiem tra bin/data/fonts/Inter.ttf";
-        return;
+            << "Thieu bin/data/fonts/Inter-*.ttf - dung font he thong, mat icon";
     }
 
-    // ── 2. Icon Lucide, GHÉP vào chính font nền ────────────────────────
+    // ── Font mono cho SO LIEU ──────────────────────────────────────────
     //
-    // ★ MergeMode = true thi glyph icon nam CHUNG mot font voi chu, nen
-    //   viet duoc ICON_LC_MONITOR " Main LED Wall" trong MOT chuoi, icon
-    //   va chu tu can hang voi nhau. Neu tach thanh hai font thi moi cho
-    //   dat icon deu phai PushFont/PopFont roi tu can le bang tay.
-    //
-    // Dung dung bo icon ma ban thiet ke dung (lucide-react), nen net ve
-    // khop chinh xac chu khong phai "gan giong".
-    const std::string iconPath = ofToDataPath("fonts/lucide.ttf", true);
-    if (ofFile::doesFileExist(iconPath)) {
-        static const ImWchar iconRanges[] = { ICON_MIN_LC, ICON_MAX_16_LC, 0 };
-
-        ImFontConfig icons;
-        icons.MergeMode        = true;
-        icons.PixelSnapH       = true;
-        icons.OversampleH      = 2;
-        icons.OversampleV      = 1;
-
-        // Day icon xuong mot chut cho khop duong chan chu cua Inter.
-        icons.GlyphOffset      = ImVec2(0.0f, 3.0f);
-        icons.GlyphMinAdvanceX = 18.0f;   // moi icon rong bang nhau
-
-        if (m_gui.addFont(iconPath, 15.0f, &icons, iconRanges, false) == nullptr) {
-            ofLogWarning("ControlPanel") << "Khong nap duoc lucide.ttf - icon se hien o vuong";
-        }
-    } else {
-        ofLogWarning("ControlPanel") << "Thieu bin/data/fonts/lucide.ttf - icon se hien o vuong";
-    }
-
-    // ── 3. Font mono cho số liệu ───────────────────────────────────────
+    // Chu so cua font ti le co be rong khac nhau, nen mot gia tri doi 60
+    // lan/giay se nhay qua nhay lai va rat kho doc luot — dung luc can
+    // liec nhanh xem fps co tut khong.
     const std::string monoPath = ofToDataPath("fonts/RobotoMono.ttf", true);
     if (ofFile::doesFileExist(monoPath)) {
-        ImFontConfig mono;
-        mono.OversampleH = 2;
-        mono.OversampleV = 1;
-        mono.PixelSnapH  = true;
-        mono.GlyphExcludeRanges = kNoPrivateUse;   // cung ly do nhu tren
-        m_fontMono = m_gui.addFont(monoPath, 15.0f, &mono, viRanges, false);
+        ImFontConfig mono = txt;
+        fonts.mono = m_gui.addFont(monoPath, theme::fs::Body, &mono, viRanges, false);
     }
-    if (m_fontMono == nullptr) {
-        ofLogWarning("ControlPanel")
-            << "Khong nap duoc RobotoMono.ttf - so lieu se dung font ti le";
+    if (fonts.mono == nullptr) fonts.mono = fonts.regular;
+
+    theme::setFonts(fonts);
+    m_fontLoaded = (fonts.regular != nullptr);
+
+    if (m_fontLoaded) {
+        ofLogNotice("ControlPanel")
+            << "Font: Inter 400/600/700 + lucide + RobotoMono";
+    } else {
+        ofLogError("ControlPanel") << "Khong nap duoc font nao";
     }
 }
 
@@ -2756,9 +2819,15 @@ void ControlPanel::drawSettingsPanel(UiActions& a) {
 
     // ── Luu ────────────────────────────────────────────────────────────
     ImGui::Separator();
-    if (ImGui::Button(TR("set.save")))  a.saveSettings = true;
-    ImGui::SameLine();
-    if (ImGui::Button(TR("set.reset"))) a.resetSettings = true;
+    char slbl[64];
+    std::snprintf(slbl, sizeof(slbl), "%s  %s", ICON_LC_SAVE, TR("set.save"));
+    if (theme::outlineButton(slbl, theme::Success, ImVec2(-FLT_MIN, 0))) {
+        a.saveSettings = true;
+    }
+    std::snprintf(slbl, sizeof(slbl), "%s  %s", ICON_LC_ROTATE_CCW, TR("set.reset"));
+    if (theme::outlineButton(slbl, theme::TextDim, ImVec2(-FLT_MIN, 0))) {
+        a.resetSettings = true;
+    }
 }
 
 
