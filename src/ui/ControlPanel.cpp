@@ -1572,13 +1572,19 @@ void ControlPanel::drawScreenPanel(Project& p, EditState& edit, UiActions& a) {
     theme::popFont();
     if (insz) s.inputSize = Vec2{std::max(1.0f, sz[0]), std::max(1.0f, sz[1])};
 
-    // Đổi loại warp
-    int warpType = (s.warp()->type() == WarpType::Mesh) ? 1 : 0;
-    const char* warpNames[] = {"Corner pin", "Mesh"};
+    // Đổi loại warp. Thứ tự PHẢI khớp với AppController::applyUiActions.
+    int warpType = 0;
+    switch (s.warp()->type()) {
+    case WarpType::Mesh:   warpType = 1; break;
+    case WarpType::Bezier: warpType = 2; break;
+    default:               warpType = 0; break;
+    }
+    const char* warpNames[] = {"Corner pin", "Mesh", "Bezier"};
     labelAbove(TR("adv.warptype"));
-    if (ImGui::Combo("##warptype", &warpType, warpNames, 2)) {
+    if (ImGui::Combo("##warptype", &warpType, warpNames, 3)) {
         a.convertWarpTo = warpType;
     }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("adv.warptype.tip"));
     char rlbl[64];
     std::snprintf(rlbl, sizeof(rlbl), "%s  %s", ICON_LC_ROTATE_CCW, TR("adv.reset"));
     if (ImGui::Button(rlbl, ImVec2(-FLT_MIN, 0))) a.resetActiveSliceWarp = true;

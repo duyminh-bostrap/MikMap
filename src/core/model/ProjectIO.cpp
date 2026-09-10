@@ -2,6 +2,7 @@
 
 #include "core/model/WarpCornerPin.h"
 #include "core/model/WarpMesh.h"
+#include "core/model/WarpBezier.h"
 #include "core/util/Json.h"
 
 #include <cstdio>
@@ -62,6 +63,17 @@ JsonValue warpToJson(const IWarp* w) {
             }
         }
         o.set("points", std::move(pts));
+
+    } else if (w->type() == WarpType::Bezier) {
+        // F10 — 16 điểm điều khiển, thứ tự hàng-trước giống mesh.
+        const auto* b = static_cast<const WarpBezier*>(w);
+        JsonValue pts = JsonValue::array();
+        for (int cy = 0; cy < WarpBezier::kDim; ++cy) {
+            for (int cx = 0; cx < WarpBezier::kDim; ++cx) {
+                pts.push(vecToJson(b->controlPoint(cx, cy)));
+            }
+        }
+        o.set("points", std::move(pts));
     }
 
     return o;
@@ -92,6 +104,31 @@ std::unique_ptr<IWarp> warpFromJson(const JsonValue& j, std::vector<std::string>
             }
         }
         return m;
+    }
+
+    if (type == "Bezier") {
+        auto b = std::make_unique<WarpBezier>(Vec2{0.0, 0.0}, Vec2{1920.0, 1080.0});
+
+        const JsonValue& pts = j["points"];
+        if (pts.size() != static_cast<size_t>(WarpBezier::kPointCount)) {
+            // ★ Giữ nguyên mặt phẳng mặc định thay vì nhét bừa số điểm có
+            //   được. Một mặt Bézier thiếu điểm là hình dạng RÁC — người
+            //   vận hành sẽ thấy nội dung méo mó và tưởng file hỏng nặng,
+            //   trong khi thứ họ cần là biết đúng một dòng cảnh báo này.
+            warn.push_back("Bezier warp: so diem dieu khien khong khop ("
+                           + std::to_string(pts.size()) + " thay vi "
+                           + std::to_string(WarpBezier::kPointCount)
+                           + "), dung mat phang mac dinh");
+            return b;
+        }
+
+        size_t i = 0;
+        for (int cy = 0; cy < WarpBezier::kDim; ++cy) {
+            for (int cx = 0; cx < WarpBezier::kDim; ++cx) {
+                b->setControlPoint(cx, cy, jsonToVec(pts.at(i++)));
+            }
+        }
+        return b;
     }
 
     if (type != "CornerPin") {

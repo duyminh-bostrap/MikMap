@@ -231,6 +231,62 @@ toàn. `ofxHapPlayer::getShader()` tồn tại chính vì việc này: nó trả
 Đã sửa: gọi `getShader()` và bind nếu khác null. File demo mặc định là
 `4k_detail_hap_q.mov` nên lỗi này ảnh hưởng trực tiếp.
 
+### ⚠️ Đính chính bảng F (2026-09-10)
+
+Bảng F trước đây tick `[x]` cho **sáu mục chưa có dòng code nào**. Đã kiểm
+lại từng mục bằng cách tìm trong source và bỏ tick:
+
+| Mục | Bằng chứng |
+|---|---|
+| F18 Polygon slice | `WarpType` chỉ có `CornerPin`, `Mesh`, `Bezier` |
+| F21 Snapping | không có gì trong `core/` lẫn `ui/` (chỉ có `PixelSnapH` của font ImGui, không liên quan) |
+| F22 Slice input từ Layer | `Slice` chỉ có `inputOrigin`/`inputSize` — một hình chữ nhật trên canvas, không có trường chọn nguồn |
+| F23 Spout / NDI | `ScreenOutputType` có sẵn hai giá trị enum nhưng **không nơi nào dùng tới**; `render/` và `app/` không nhắc đến |
+| F24 Art-Net / sACN | không có |
+| F25 SDI | không có |
+
+★ Một bảng tick sai còn tệ hơn không có bảng: nó khiến người lập kế hoạch
+tin là đã xong và không phân bổ thời gian, rồi vỡ ra vào lúc dựng sân khấu.
+
+### 🟢 F10 — Bezier warping (ĐÃ XONG THẬT, 2026-09-10)
+
+Mặt Bézier song bậc ba 4×4 (16 điểm điều khiển) cho bề mặt cong THẬT:
+cột tròn, vòm, tượng, vải rủ.
+
+**Vì sao cần, khi đã có mesh:** mesh nội suy song tuyến tính từng ô nên
+đạo hàm gãy ở biên ô — chiếu lên cột tròn thấy rõ vệt gấp chạy dọc đường
+lưới. Muốn giấu phải tăng mật độ lưới rất cao, và khi đó người vận hành
+phải kéo hàng trăm điểm. Bézier cho bề mặt trơn tuyệt đối với 16 điểm.
+
+**Nghịch đảo** (đường đi của điểm chạm sensor — architecture.md §10.3)
+không có dạng đóng, nên làm hai bước: đoán thô trên lưới mẫu 8×8 rồi nắn
+bằng Newton với Jacobian giải tích.
+
+| Kiểm chứng | Kết quả |
+|---|---|
+| Round-trip trên mặt cong, 3721 điểm | **3721/3721**, sai số lớn nhất **8.88e-16** (≈ 4 ULP) |
+| Bốn góc sau khi uốn | khớp chính xác (Bernstein nội suy hai đầu) |
+| Bề mặt gấp | `isInvertible()` báo false → UI hiện cảnh báo đỏ |
+| Lưu / nạp `.hexmap` | 16 điểm sống sót nguyên vẹn |
+| Đổi từ CornerPin/Mesh sang Bezier | giữ **nguyên bốn góc** đã căn |
+
+**Kết quả:** `333/333 test xanh · 5250 assertion`
+
+### 🐞 Lỗi có sẵn tìm được khi làm F10
+
+Test `Mesh: round-trip trên lưới ĐÃ BIẾN DẠNG` hỏng từ lâu, hoá ra không
+phải sai số vặt mà là **lỗi thật**: `pointInQuad` so dấu tích có hướng với
+0 **không dung sai**, nên điểm nằm đúng trên đường chéo ô lưới bị từ chối.
+Mà tâm hình bình hành nằm đúng trên đường chéo, và lưới warp phẳng hoặc
+uốn đều thì **mọi ô đều là hình bình hành** ⇒ một **vệt chạm chết chạy
+chéo qua từng ô**: chạm đúng đó không phản ứng, lệch một pixel lại chạy.
+
+Đo được: `d3 = -6.82e-13` trong khi hai giá trị kia là `+7.5e+03`.
+
+Đã sửa bằng ngưỡng **theo tỉ lệ** độ lớn tam giác (tích có hướng có đơn vị
+diện tích nên hằng số tuyệt đối sẽ sai với lưới toạ độ lớn hoặc nhỏ).
+Chỉ ảnh hưởng `WarpMesh`; `WarpCornerPin` dùng nghịch đảo homography.
+
 ### Xây tiếp
 
 `E1` FX chain · `A13` group · `C9` cue points · `G14` TUIO
@@ -411,14 +467,14 @@ ctest --test-dir build -C Debug --output-on-failure
 | [x] | **F15** | Nhập toạ độ bằng số (không chỉ kéo chuột) | S | 🟠 P1 |
 | [x] | **F16** | Slice enable / disable / solo | S | 🟠 P1 |
 | [x] | **F17** | Multi-screen (nhiều máy chiếu) | M | 🟠 P1 |
-| [x] | **F18** | Polygon slice (không chỉ hình chữ nhật) | L | 🟡 P2 |
+| [ ] | **F18** | Polygon slice (không chỉ hình chữ nhật) | L | 🟡 P2 |
 | [x] | **F19** | Color correction per-slice (brightness/gamma/RGB) | M | 🟡 P2 |
 | [x] | **F20** | **Soft edge blending** (ghép nhiều máy chiếu) | L | 🟡 P2 |
-| [x] | **F21** | Snapping / đường gióng khi kéo | M | 🟡 P2 |
-| [x] | **F22** | Slice input từ Layer / Group cụ thể | M | 🟡 P2 |
-| [x] | **F23** | Output ra Spout / NDI (screen ảo) | M | 🟡 P2 |
-| [x] | **F24** | LED mapping qua Art-Net / sACN | XL | ⚪ P3 |
-| [x] | **F25** | Output SDI qua capture card | L | ⚪ P3 |
+| [ ] | **F21** | Snapping / đường gióng khi kéo | M | 🟡 P2 |
+| [ ] | **F22** | Slice input từ Layer / Group cụ thể | M | 🟡 P2 |
+| [ ] | **F23** | Output ra Spout / NDI (screen ảo) | M | 🟡 P2 |
+| [ ] | **F24** | LED mapping qua Art-Net / sACN | XL | ⚪ P3 |
+| [ ] | **F25** | Output SDI qua capture card | L | ⚪ P3 |
 
 ---
 

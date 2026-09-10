@@ -863,8 +863,11 @@ void AppController::applyUiActions(UiActions& a) {
 
     if (a.convertWarpTo >= 0) {
         if (Slice* s = activeSlice()) {
-            s->convertWarp(a.convertWarpTo == 1 ? WarpType::Mesh : WarpType::CornerPin,
-                           6, 6);
+            // Thứ tự khớp với combo ở ControlPanel: 0 pin, 1 mesh, 2 bezier.
+            WarpType t = WarpType::CornerPin;
+            if (a.convertWarpTo == 1)      t = WarpType::Mesh;
+            else if (a.convertWarpTo == 2) t = WarpType::Bezier;
+            s->convertWarp(t, 6, 6);
         }
     }
 
