@@ -87,7 +87,7 @@
 			<MultiProcessorCompilation>true</MultiProcessorCompilation>
 			<ObjectFileName>$(IntDir)\Build\%(RelativeDir)\$(Configuration)\</ObjectFileName>
 			<LanguageStandard>stdcpplatest</LanguageStandard>
-			<AdditionalOptions>/Zc:__cplusplus %(AdditionalOptions) -DofxAddons_ENABLE_IMGUI</AdditionalOptions>
+			<AdditionalOptions>/utf-8 /Zc:__cplusplus %(AdditionalOptions) -DofxAddons_ENABLE_IMGUI</AdditionalOptions>
 		</ClCompile>
 		<PostBuildEvent />
 	</ItemDefinitionGroup>
@@ -131,7 +131,7 @@
 			<CompileAs>CompileAsCpp</CompileAs>
 			<ObjectFileName>$(IntDir)\Build\%(RelativeDir)\$(Configuration)\</ObjectFileName>
 			<LanguageStandard>stdcpplatest</LanguageStandard>
-			<AdditionalOptions>/Zc:__cplusplus %(AdditionalOptions) -DofxAddons_ENABLE_IMGUI</AdditionalOptions>
+			<AdditionalOptions>/utf-8 /Zc:__cplusplus %(AdditionalOptions) -DofxAddons_ENABLE_IMGUI</AdditionalOptions>
 		</ClCompile>
 		<PostBuildEvent />
 	</ItemDefinitionGroup>
@@ -247,6 +247,8 @@
 		<ClCompile Include="src\core\model\TriggerZone.cpp" />
 		<ClCompile Include="src\core\model\WarpCornerPin.cpp" />
 		<ClCompile Include="src\core\model\WarpMesh.cpp" />
+		<ClCompile Include="src\core\util\AppSettings.cpp" />
+
 		<ClCompile Include="src\core\util\Json.cpp" />
 		<ClCompile Include="src\io\proto\OscMessage.cpp" />
 		<ClCompile Include="src\io\sources\MockSource.cpp" />
@@ -254,6 +256,8 @@
 		<ClCompile Include="src\render\MediaCache.cpp" />
 		<ClCompile Include="src\render\RenderEngine.cpp" />
 		<ClCompile Include="src\ui\ControlPanel.cpp" />
+
+		<ClCompile Include="src\ui\Localization.cpp" />
 		<ClCompile Include="..\openFrameworks\addons\ofxHapPlayer\src\ofxHapPlayer.cpp" />
 		<ClCompile Include="..\openFrameworks\addons\ofxHapPlayer\libs\hap\src\hap.c" />
 		<ClCompile Include="..\openFrameworks\addons\ofxHapPlayer\libs\ofxHap\src\AudioDecoder.cpp" />

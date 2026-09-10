@@ -45,6 +45,22 @@ if ($text -match '%\(AdditionalIncludeDirectories\);src;') {
     Write-Output "  [OK] Da them 'src' vao include path"
 }
 
+# -- 3. Them /utf-8 -----------------------------------------------------
+#
+# KHONG PHAI tuy chon cho dep. Khong co no, MSVC doc file .cpp theo
+# codepage ANSI cua may (1252 o day, 1258 tren Windows tieng Viet, 932
+# tren Windows Nhat). Bang chuoi trong src/ui/Localization.cpp la UTF-8,
+# nen thieu co nay thi giao dien hien sai dau -- va sai KHAC NHAU tuy may,
+# tuc la may nay chay dung con may dong nghiep thi hong.
+#
+# CMakeLists.txt da co /utf-8 san; day la ban tuong duong cho MSBuild.
+if ($text -match '/utf-8') {
+    Write-Output "  [--] '/utf-8' da co trong AdditionalOptions"
+} else {
+    $text = $text -replace '<AdditionalOptions>/Zc:__cplusplus', '<AdditionalOptions>/utf-8 /Zc:__cplusplus'
+    Write-Output "  [OK] Da them '/utf-8' vao AdditionalOptions"
+}
+
 if ($text -ne $original) {
     Set-Content -Path $proj -Value $text -Encoding UTF8 -NoNewline
     Write-Output "  Da ghi: $proj"

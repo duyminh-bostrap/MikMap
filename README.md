@@ -20,9 +20,10 @@ C++20 · openFrameworks 0.12.x · OpenGL · Dear ImGui · Windows / MSVC 2022
 
 | | |
 |---|---|
-| Unit test | **239 passed, 0 failed** · 2580 assertion · 0 cảnh báo `/W4` |
+| Unit test | **290 passed, 0 failed** · 3462 assertion · 0 cảnh báo `/W4` |
 | Hiệu năng | 60 fps · frame p99 ~17 ms · độ trễ sensor p99 ~9 ms |
 | Video | 4K HAP Q — 1–5 luồng giữ đúng tốc độ gốc (đo thật, xem `features.md`) |
+| Giao diện | Tiếng Việt / English, đổi ngay trong **Cài đặt** |
 
 Xem [`features.md`](features.md) để biết tiến độ từng tính năng và
 [`architecture.md`](architecture.md) để biết vì sao mọi thứ được đặt ở đó.
@@ -113,14 +114,15 @@ Mở thư mục repo rồi:
 ### Menu bar
 
 ```
-Project  |  Output  |  Sensor  |  View  |  SENSOR: tat
+Dự án  |  Output  |  Sensor  |  Cài đặt  |  Xem  |  SENSOR: đang chạy
 ```
 
 | Menu | Nội dung |
 |---|---|
 | **Output** | Mapping · Advanced Output · **Đưa output ra màn hình N** · Về chế độ cửa sổ · Fullscreen |
 | **Sensor** | Sensor & Calibration · Chạy Mock/OSC · Auto-calibrate · Dấu thập |
-| **View** | Mapping · Preview · Clip · Performance |
+| **Cài đặt** | Ngôn ngữ · màn hình output mặc định · vsync · cache media · log hiệu năng |
+| **Xem** | Mapping · Xem trước · Clip · Hiệu năng |
 
 ### Thao tác
 
@@ -149,6 +151,27 @@ hai màn hình.
 | `C` | Dấu thập calibration trên máy chiếu |
 | `P` | Chấm sensor trên output |
 | `F11` | Fullscreen máy chiếu |
+
+---
+
+## Ngôn ngữ giao diện
+
+**Cài đặt → Ngôn ngữ**: Tiếng Việt hoặc English, đổi có hiệu lực ngay.
+Lựa chọn được ghi vào `bin/data/settings.json` sau khi bấm **Lưu cài đặt**.
+
+`settings.json` **cố ý không vào git**. Nó mô tả *máy này và người này* —
+ngôn ngữ, màn hình nào làm output, ngân sách cache. File project thì mô tả
+*một buổi diễn* và đi theo người. Trộn hai thứ vào nhau nghĩa là mở project
+của đồng nghiệp sẽ đổi ngôn ngữ giao diện của bạn và đẩy output ra một màn
+hình không tồn tại.
+
+Font đóng gói kèm là **Inter** (SIL Open Font License, xem
+`bin/data/fonts/Inter-OFL.txt`). Font mặc định của Dear ImGui chỉ có ASCII
+và Latin-1 — đó là lý do giao diện trước đây phải viết không dấu.
+
+Thêm ngôn ngữ mới: chép một bảng trong `src/ui/Localization.cpp`, dịch phần
+giá trị, thêm vào `enum class Language`. `tests/test_localization.cpp` sẽ
+báo ngay nếu thiếu khoá hoặc lệch chuỗi định dạng `%d`/`%s` giữa các bảng.
 
 ---
 

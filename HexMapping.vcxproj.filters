@@ -1,4 +1,4 @@
-<?xml version="1.0"?>
+﻿<?xml version="1.0"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
 	<ItemGroup>
 		<ClCompile Include="src\ofApp.cpp">
@@ -88,6 +88,12 @@
 		<ClCompile Include="src\render\RenderEngine.cpp">
 			<Filter>src\render</Filter>
 		</ClCompile>
+		<ClCompile Include="src\core\util\AppSettings.cpp">
+			<Filter>src\core\util</Filter>
+		</ClCompile>
+		<ClCompile Include="src\ui\Localization.cpp">
+			<Filter>src\ui</Filter>
+		</ClCompile>
 		<ClCompile Include="src\ui\ControlPanel.cpp">
 			<Filter>src\ui</Filter>
 		</ClCompile>

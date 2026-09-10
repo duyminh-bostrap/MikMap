@@ -61,6 +61,9 @@
 | `OscMessage` parser — **G4** | ✅ Xong | OSC 1.0 + bundle, kiểm biên chống gói độc |
 | `OscSource` UDP — **G4** | ✅ Xong | có test qua **mạng thật** (loopback) |
 | **Kết quả build** | ✅ **223/223 test xanh · 2507 assertion · 0 cảnh báo /W4** | |
+| **Cài đặt ứng dụng** — `AppSettings` | ✅ Xong | `settings.json`, tách khỏi file project |
+| **Đa ngôn ngữ VI / EN** — `Localization` | ✅ Xong | 214 khoá × 2, đổi ngay không cần khởi động lại |
+| **Font Inter** (OFL) | ✅ Xong | `bin/data/fonts/` — đủ dấu tiếng Việt |
 
 ### 🟢 Tầng ứng dụng oF — ĐÃ CHẠY
 
@@ -502,6 +505,49 @@ Cố tình **hoãn**: FX chain (E), mesh/bezier warp (F9/F10), soft edge (F20), 
 Lý do: chúng làm hệ thống *đẹp hơn*, nhưng không chứng minh được rằng **chuỗi sensor→mapping** hoạt động. Chứng minh cái đó trước.
 
 ---
+
+
+## ⚙️ Cài đặt & đa ngôn ngữ
+
+| Mục | Nội dung |
+|---|---|
+| Cửa sổ **Cài đặt** | ngôn ngữ, màn hình output mặc định, vsync, cache media, log hiệu năng, tự phát clip đầu |
+| **Tiếng Việt / English** | đổi có hiệu lực ngay, không khởi động lại |
+| Font **Inter** (OFL) | thay ProggyClean của ImGui — đủ dấu tiếng Việt và dễ đọc hơn |
+
+**Kết quả:** `290/290 test xanh · 3462 assertion`
+
+### Vì sao cài đặt tách khỏi file project
+
+File project mô tả **một buổi diễn** và đi theo người: mang sang máy khác,
+gửi cho đồng nghiệp. Cài đặt mô tả **máy này và người này**. Nếu nhét ngôn
+ngữ giao diện và chỉ số màn hình output vào project, thì mở project của
+đồng nghiệp sẽ đổi ngôn ngữ giao diện của bạn và đẩy output ra một màn hình
+không tồn tại. Vì vậy `settings.json` nằm riêng và **không vào git**.
+
+### Vì sao chuỗi tra theo khoá, không phải theo tiếng Anh
+
+Cách phổ biến là lấy luôn chuỗi tiếng Anh làm khoá — `TR("Save")`. Nhưng khi
+đó sửa một chữ trong bản tiếng Anh sẽ **âm thầm làm mất bản dịch**, và hai
+chỗ dùng cùng một từ tiếng Anh với nghĩa khác nhau bị buộc phải dịch giống
+nhau. Khoá phân cấp (`clip.stop` vs `sen.stop`) tránh được cả hai. Khoá
+thiếu bản dịch thì **trả về chính khoá** — nhìn thấy `adv.edge.gamma` trên
+màn hình là biết ngay thiếu ở đâu, tốt hơn ô trống hoặc âm thầm rơi về
+tiếng Anh vì cả hai đều lọt qua khâu kiểm tra.
+
+### Cái bẫy mà `tests/test_localization.cpp` chặn
+
+Trước khi có i18n, `ImGui::Text("Ghi %d điểm", n)` được **trình biên dịch**
+kiểm tra `%d` có khớp đối số không. Sau khi chuyển sang `TR("cal.recorded")`
+thì chuỗi được tra cứu **lúc chạy** — trình biên dịch không thấy nó nữa. Một
+bản dịch viết nhầm `%s` chỗ đáng lẽ `%d` sẽ đọc con trỏ rác từ stack, và chỉ
+nổ **khi người dùng đổi sang ngôn ngữ đó** — tức gần như không bao giờ gặp
+lúc phát triển, chỉ gặp ở buổi diễn.
+
+Test đối chiếu hai bảng: cùng bộ khoá, và cùng chuỗi specifier ở mỗi khoá.
+Nó bắt lỗi ngay lần chạy đầu — 8 khoá đã lọt vào bảng tiếng Việt nhưng thiếu
+ở bảng tiếng Anh.
+
 
 ## 📎 Tham chiếu codec
 

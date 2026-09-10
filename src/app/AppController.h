@@ -19,6 +19,7 @@
 #include "core/filter/OneEuroFilter.h"
 #include "core/filter/PointTracker.h"
 #include "core/model/ProjectIO.h"
+#include "core/util/AppSettings.h"
 #include "io/ISensorSource.h"
 #include "render/MediaCache.h"
 #include "render/RenderEngine.h"
@@ -102,6 +103,10 @@ private:
     /// se de lai 3/4 may chieu MAU DEN — va khong co thong bao loi nao.
     void syncScreenToOutputSize();
 
+    /// Ap cai dat xuong cac he thong that (vsync, cache budget, ngon ngu).
+    /// Goi khi khoi dong va moi lan nguoi dung doi cai dat.
+    void applySettings();
+
     /// G17 — thuc thi mot lan kich hoat vung cam ung.
     void executeTrigger(const TriggerHit& hit);
 
@@ -161,6 +166,9 @@ private:
     uint64_t m_lastFrameNs = 0;
 
     std::string m_projectPath = "bin/data/projects/default.hexmap";
+
+    AppSettings m_settings;
+    std::string m_settingsPath = "settings.json";
 
     float m_perfLogTimer = 0.0f;
     int   m_perfLogCount = 0;

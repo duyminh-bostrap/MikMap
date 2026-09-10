@@ -69,6 +69,12 @@ inline bool nearlyEqual(double a, double b, double eps) {
         }                                                                      \
     } while (0)
 
+/// Như CHECK nhưng kèm mô tả tính lúc chạy.
+///
+/// Cần khi thứ đang kiểm là một PHẦN TỬ trong tập hợp: "CHECK(a == b)"
+/// chỉ cho biết có sai, không cho biết KHOÁ NÀO sai trong 190 khoá.
+#define CHECK_MSG(cond, msg)                                                       do {                                                                               ++::hextest::g_checks;                                                         if (!(cond)) {                                                                     ::hextest::reportFailure(__FILE__, __LINE__,                                                            std::string("CHECK(" #cond ") - ")                                             + (msg));                                         }                                                                          } while (0)
+
 #define REQUIRE_NEAR(a, b, eps)                                                \
     do {                                                                       \
         ++::hextest::g_checks;                                                 \

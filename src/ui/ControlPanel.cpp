@@ -1,5 +1,7 @@
 #include "ui/ControlPanel.h"
 
+#include "ui/Localization.h"
+
 #include "core/model/WarpCornerPin.h"
 #include "core/model/WarpMesh.h"
 
@@ -20,6 +22,16 @@ const Vec2 kCalibTargets[4] = {
     {0.15, 0.15}, {0.85, 0.15}, {0.85, 0.85}, {0.15, 0.85},
 };
 
+/// Ghep nhan da dich voi mot ID CO DINH: "Nhan###id".
+///
+/// ★ ImGui lay chuoi tieu de lam ID cua so. Neu de tieu de doi theo ngon
+///   ngu thi doi ngon ngu = ImGui thay mot cua so HOAN TOAN MOI: vi tri,
+///   kich thuoc, trang thai thu gon deu ve mac dinh, va bo cuc nguoi dung
+///   sap xep bi xoa sach. Phan sau `###` la ID that va khong bao gio doi.
+std::string winTitle(const char* key, const char* id) {
+    return std::string(i18n::t(key)) + "###" + id;
+}
+
 std::string formatBytes(size_t b) {
     char buf[48];
     if (b > 1024ull * 1024ull * 1024ull) {
@@ -36,6 +48,11 @@ std::string formatBytes(size_t b) {
 
 void ControlPanel::setup() {
     m_gui.setup(nullptr, true);
+
+    // Nap font SAU gui.setup(): luc do ImGui context da ton tai nen
+    // io.Fonts moi dung duoc. ofxImGui se dung atlas nay o frame dau.
+    loadFont();
+
     m_ready = true;
 }
 
@@ -70,7 +87,8 @@ void ControlPanel::draw(Project& project,
     // khong con gi de lam.
     ImGui::SetNextWindowPos(ImVec2(8, 30), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(560, 420), ImGuiCond_FirstUseEver);
-    if (ImGui::Begin("Composition", nullptr, ImGuiWindowFlags_NoCollapse)) {
+    if (ImGui::Begin(winTitle("win.composition", "composition").c_str(),
+                 nullptr, ImGuiWindowFlags_NoCollapse)) {
         drawClipGrid(project);
         ImGui::Separator();
         drawLayerPanel(project);
@@ -81,7 +99,7 @@ void ControlPanel::draw(Project& project,
     if (m_showAdvancedOutput) {
         ImGui::SetNextWindowPos(ImVec2(576, 30), ImGuiCond_FirstUseEver);
         ImGui::SetNextWindowSize(ImVec2(400, 420), ImGuiCond_FirstUseEver);
-        if (ImGui::Begin("Advanced Output - Screen & Slice", &m_showAdvancedOutput)) {
+        if (ImGui::Begin(winTitle("win.advanced", "advout").c_str(), &m_showAdvancedOutput)) {
             drawScreenPanel(project, edit, actions);
         }
         ImGui::End();
@@ -92,7 +110,7 @@ void ControlPanel::draw(Project& project,
     if (m_showMapping) {
         ImGui::SetNextWindowPos(ImVec2(576, 30), ImGuiCond_FirstUseEver);
         ImGui::SetNextWindowSize(ImVec2(660, 500), ImGuiCond_FirstUseEver);
-        if (ImGui::Begin("Mapping", &m_showMapping)) {
+        if (ImGui::Begin(winTitle("win.mapping", "mapping").c_str(), &m_showMapping)) {
             drawMappingEditor(project, edit, canvasPreview);
         }
         ImGui::End();
@@ -101,7 +119,7 @@ void ControlPanel::draw(Project& project,
     if (m_showPreview) {
         ImGui::SetNextWindowPos(ImVec2(8, 458), ImGuiCond_FirstUseEver);
         ImGui::SetNextWindowSize(ImVec2(560, 380), ImGuiCond_FirstUseEver);
-        if (ImGui::Begin("Preview", &m_showPreview)) {
+        if (ImGui::Begin(winTitle("win.preview", "preview").c_str(), &m_showPreview)) {
             drawPreview(canvasPreview);
         }
         ImGui::End();
@@ -111,7 +129,7 @@ void ControlPanel::draw(Project& project,
     if (m_showSensor) {
         ImGui::SetNextWindowPos(ImVec2(576, 458), ImGuiCond_FirstUseEver);
         ImGui::SetNextWindowSize(ImVec2(400, 380), ImGuiCond_FirstUseEver);
-        if (ImGui::Begin("Sensor & Calibration", &m_showSensor)) {
+        if (ImGui::Begin(winTitle("win.sensor", "sensor").c_str(), &m_showSensor)) {
             drawSensorPanel(project, stats, actions);
             ImGui::Separator();
             drawCalibrationPanel(project, stats, actions);
@@ -121,10 +139,26 @@ void ControlPanel::draw(Project& project,
         ImGui::End();
     }
 
+    if (m_showSettings) {
+        ImGui::SetNextWindowSize(ImVec2(460, 560), ImGuiCond_FirstUseEver);
+
+        // Nen DAC, khac cac panel khac.
+        //
+        // Cac panel lam viec nam canh nhau tren nen toi nen trong suot van
+        // doc duoc. Cua so Cai dat thi luon NOI LEN TREN mot panel khac, va
+        // luoi clip ben duoi xuyen qua lam chu gan nhu khong doc noi.
+        ImGui::SetNextWindowBgAlpha(1.0f);
+
+        if (ImGui::Begin(winTitle("win.settings", "settings").c_str(), &m_showSettings)) {
+            drawSettingsPanel(actions);
+        }
+        ImGui::End();
+    }
+
     if (m_showPerf) {
         ImGui::SetNextWindowPos(ImVec2(984, 30), ImGuiCond_FirstUseEver);
         ImGui::SetNextWindowSize(ImVec2(300, 320), ImGuiCond_FirstUseEver);
-        if (ImGui::Begin("Performance", &m_showPerf)) {
+        if (ImGui::Begin(winTitle("win.perf", "perf").c_str(), &m_showPerf)) {
             drawPerfPanel(stats);
         }
         ImGui::End();
@@ -133,7 +167,7 @@ void ControlPanel::draw(Project& project,
     if (m_showClip) {
         ImGui::SetNextWindowPos(ImVec2(984, 358), ImGuiCond_FirstUseEver);
         ImGui::SetNextWindowSize(ImVec2(300, 480), ImGuiCond_FirstUseEver);
-        if (ImGui::Begin("Clip", &m_showClip)) {
+        if (ImGui::Begin(winTitle("win.clip", "clip").c_str(), &m_showClip)) {
             drawClipPanel(project);
         }
         ImGui::End();
@@ -153,10 +187,10 @@ void ControlPanel::drawMenuBar(UiActions& a) {
     if (!ImGui::BeginMainMenuBar()) return;
 
     // ── Project ────────────────────────────────────────────────────────
-    if (ImGui::BeginMenu("Project")) {
-        if (ImGui::MenuItem("New"))               a.newProject  = true;
-        if (ImGui::MenuItem("Open...", "Ctrl+O")) a.loadProject = true;
-        if (ImGui::MenuItem("Save",    "Ctrl+S")) a.saveProject = true;
+    if (ImGui::BeginMenu(TR("menu.project"))) {
+        if (ImGui::MenuItem(TR("menu.project.new")))               a.newProject  = true;
+        if (ImGui::MenuItem(TR("menu.project.open"), "Ctrl+O")) a.loadProject = true;
+        if (ImGui::MenuItem(TR("menu.project.save"), "Ctrl+S")) a.saveProject = true;
         ImGui::EndMenu();
     }
 
@@ -164,62 +198,67 @@ void ControlPanel::drawMenuBar(UiActions& a) {
     // Advanced Output la cua so rieng mo tu day, giong cach Resolume
     // tach no ra khoi khung lam viec chinh: no la cong cu DUNG SAN KHAU,
     // dung mot lan luc can chinh, khong phai thu nhin suot buoi dien.
-    if (ImGui::BeginMenu("Output")) {
-        ImGui::MenuItem("Mapping (chinh trong app)...", nullptr, &m_showMapping);
-        ImGui::MenuItem("Advanced Output (thong so)...", nullptr, &m_showAdvancedOutput);
+    if (ImGui::BeginMenu(TR("menu.output"))) {
+        ImGui::MenuItem(TR("menu.output.mapping"), nullptr, &m_showMapping);
+        ImGui::MenuItem(TR("menu.output.advanced"), nullptr, &m_showAdvancedOutput);
         ImGui::Separator();
 
         // Liet ke man hinh vat ly. Day la cach dua hinh ra may chieu ma
         // KHONG phai keo cua so bang tay — thao tac vua kho vua de keo
         // nham vao khe giua hai man hinh.
         if (m_displays.empty()) {
-            ImGui::TextDisabled("Khong doc duoc danh sach man hinh");
+            ImGui::TextDisabled("%s", TR("menu.output.nodisplay"));
         } else {
-            ImGui::TextDisabled("Dua output ra man hinh:");
+            ImGui::TextDisabled("%s", TR("menu.output.sendto"));
             for (const DisplayEntry& d : m_displays) {
                 char label[128];
                 std::snprintf(label, sizeof(label), "  %d. %s  %dx%d%s",
                               d.index + 1, d.name.c_str(), d.w, d.h,
-                              d.isPrimary ? "  (chinh)" : "");
+                              d.isPrimary ? TR("menu.output.primary") : "");
                 if (ImGui::MenuItem(label)) a.sendOutputToDisplay = d.index;
             }
         }
 
         ImGui::Separator();
-        if (ImGui::MenuItem("Ve che do cua so (de keo)")) a.outputWindowed = true;
-        if (ImGui::MenuItem("Fullscreen / thoat", "F11")) a.toggleFullscreen = true;
+        if (ImGui::MenuItem(TR("menu.output.windowed"))) a.outputWindowed = true;
+        if (ImGui::MenuItem(TR("menu.output.fullscreen"), "F11")) a.toggleFullscreen = true;
         ImGui::EndMenu();
     }
 
     // ── Sensor ─────────────────────────────────────────────────────────
     // Gom moi thu lien quan sensor vao mot cho. Nhung lenh hay dung
     // (bat/tat, auto-calibrate) de thang o menu, khong bat mo cua so.
-    if (ImGui::BeginMenu("Sensor")) {
-        ImGui::MenuItem("Sensor & Calibration...", nullptr, &m_showSensor);
+    if (ImGui::BeginMenu(TR("menu.sensor"))) {
+        ImGui::MenuItem(TR("menu.sensor.panel"), nullptr, &m_showSensor);
         ImGui::Separator();
 
-        if (ImGui::MenuItem("Chay Mock (gia lap)", "M")) {
+        if (ImGui::MenuItem(TR("menu.sensor.mock"), "M")) {
             a.sensorTypeIndex = 0;
             a.startSensor = true;
         }
-        if (ImGui::MenuItem("Chay OSC (cong 9000)", "O")) {
+        if (ImGui::MenuItem(TR("menu.sensor.osc"), "O")) {
             a.sensorTypeIndex = 1;
             a.startSensor = true;
         }
-        if (ImGui::MenuItem("Dung sensor")) a.stopSensor = true;
+        if (ImGui::MenuItem(TR("menu.sensor.stop"))) a.stopSensor = true;
 
         ImGui::Separator();
-        if (ImGui::MenuItem("Auto-calibrate (Mock)", "A")) a.calibAutoMock = true;
-        ImGui::MenuItem("Hien dau thap calibration", "C", &m_calibShowTarget);
+        if (ImGui::MenuItem(TR("menu.sensor.autocal"), "A")) a.calibAutoMock = true;
+        ImGui::MenuItem(TR("menu.sensor.crosshair"), "C", &m_calibShowTarget);
         ImGui::EndMenu();
     }
 
     // ── View ───────────────────────────────────────────────────────────
-    if (ImGui::BeginMenu("View")) {
-        ImGui::MenuItem("Mapping",     nullptr, &m_showMapping);
-        ImGui::MenuItem("Preview",     nullptr, &m_showPreview);
-        ImGui::MenuItem("Clip",        nullptr, &m_showClip);
-        ImGui::MenuItem("Performance", nullptr, &m_showPerf);
+    if (ImGui::BeginMenu(TR("menu.settings"))) {
+        ImGui::MenuItem(TR("menu.settings.open"), nullptr, &m_showSettings);
+        ImGui::EndMenu();
+    }
+
+    if (ImGui::BeginMenu(TR("menu.view"))) {
+        ImGui::MenuItem(TR("win.mapping"),     nullptr, &m_showMapping);
+        ImGui::MenuItem(TR("win.preview"),     nullptr, &m_showPreview);
+        ImGui::MenuItem(TR("win.clip"),        nullptr, &m_showClip);
+        ImGui::MenuItem(TR("win.perf"),        nullptr, &m_showPerf);
         ImGui::EndMenu();
     }
 
@@ -228,9 +267,9 @@ void ControlPanel::drawMenuBar(UiActions& a) {
     // khong ma KHONG phai mo cua so Sensor ra xem.
     ImGui::Separator();
     if (m_sensorRunning) {
-        ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.5f, 1.0f), "SENSOR: dang chay");
+        ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.5f, 1.0f), "%s", TR("status.sensor.on"));
     } else {
-        ImGui::TextDisabled("SENSOR: tat");
+        ImGui::TextDisabled("%s", TR("status.sensor.off"));
     }
 
     if (m_statusTimer > 0.0f && !m_status.empty()) {
@@ -247,7 +286,7 @@ void ControlPanel::drawMenuBar(UiActions& a) {
 void ControlPanel::drawClipGrid(Project& p) {
     Composition& comp = p.composition;
 
-    ImGui::Text("Deck:");
+    ImGui::Text("%s", TR("comp.deck"));
     ImGui::SameLine();
     for (int d = 0; d < comp.deckCount(); ++d) {
         if (d > 0) ImGui::SameLine();
@@ -264,7 +303,7 @@ void ControlPanel::drawClipGrid(Project& p) {
 
     const int cols = comp.columnCount();
     const int layers = comp.layerCount();
-    if (cols <= 0 || layers <= 0) { ImGui::TextDisabled("Luoi rong"); return; }
+    if (cols <= 0 || layers <= 0) { ImGui::TextDisabled("%s", TR("comp.empty")); return; }
 
     // Hàng tiêu đề cột — bấm để trigger CẢ CỘT (A6).
     ImGui::Dummy(ImVec2(74.0f, 1.0f));
@@ -274,7 +313,7 @@ void ControlPanel::drawClipGrid(Project& p) {
         if (ImGui::Button(std::to_string(c + 1).c_str(), ImVec2(46.0f, 22.0f))) {
             comp.triggerColumn(c);
         }
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Trigger ca cot %d", c + 1);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip(TR("comp.triggercol"), c + 1);
         ImGui::PopID();
     }
 
@@ -328,9 +367,9 @@ void ControlPanel::drawClipGrid(Project& p) {
     }
 
     ImGui::Spacing();
-    if (ImGui::Button("Clear all")) comp.clearAll();
+    if (ImGui::Button(TR("comp.clearall"))) comp.clearAll();
     ImGui::SameLine();
-    ImGui::TextDisabled("Bam o clip = phat  |  Bam so cot = phat ca cot  |  Ctrl+bam o = chon file");
+    ImGui::TextDisabled("%s", TR("comp.hint"));
 }
 
 // ── A7 A8 A11: layer ───────────────────────────────────────────────────
@@ -339,7 +378,7 @@ void ControlPanel::drawLayerPanel(Project& p) {
     Composition& comp = p.composition;
 
     float master = static_cast<float>(comp.masterOpacity);
-    if (ImGui::SliderFloat("Master", &master, 0.0f, 1.0f)) {
+    if (ImGui::SliderFloat(TR("comp.master"), &master, 0.0f, 1.0f)) {
         comp.masterOpacity = master;
     }
 
@@ -360,11 +399,11 @@ void ControlPanel::drawLayerPanel(Project& p) {
 
         ImGui::SameLine();
         ImGui::Checkbox("S", &layer.solo);
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Solo - an moi layer khac");
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("layer.solo.tip"));
 
         ImGui::SameLine();
         ImGui::Checkbox("B", &layer.bypass);
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Bypass - tat layer");
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("layer.bypass.tip"));
 
         ImGui::SameLine();
         ImGui::SetNextItemWidth(70.0f);
@@ -373,14 +412,12 @@ void ControlPanel::drawLayerPanel(Project& p) {
             layer.transitionDuration = std::max(0.0f, tr);
         }
         if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("A10 - thoi luong chuyen clip (crossfade). "
-                              "0 = cat thang. Trong luc chuyen, layer nay "
-                              "phat HAI luong video cung luc.");
+            ImGui::SetTooltip("%s", TR("layer.transition.tip"));
         }
 
         ImGui::SameLine();
         if (ImGui::SmallButton("X")) layer.clear();
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Dung layer");
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("layer.clear.tip"));
 
         ImGui::SameLine();
         ImGui::Text("%s", layer.name.c_str());
@@ -392,7 +429,7 @@ void ControlPanel::drawLayerPanel(Project& p) {
 // ── F1 F3 F5 F15 F16: screen & slice ───────────────────────────────────
 
 void ControlPanel::drawScreenPanel(Project& p, EditState& edit, UiActions& a) {
-    if (p.screens.empty()) { ImGui::TextDisabled("Chua co screen nao"); return; }
+    if (p.screens.empty()) { ImGui::TextDisabled("%s", TR("map.noscreen")); return; }
 
     m_activeScreen = std::clamp(m_activeScreen, 0, static_cast<int>(p.screens.size()) - 1);
 
@@ -409,17 +446,17 @@ void ControlPanel::drawScreenPanel(Project& p, EditState& edit, UiActions& a) {
     Screen& sc = p.screens[static_cast<size_t>(m_activeScreen)];
     ImGui::Separator();
 
-    ImGui::Checkbox("Hien overlay chinh sua", &edit.showOverlay);
+    ImGui::Checkbox(TR("adv.overlay"), &edit.showOverlay);
     if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("TAT khi chay show - khan gia khong duoc thay handle");
+        ImGui::SetTooltip("%s", TR("adv.overlay.tip"));
     }
     ImGui::SameLine();
-    ImGui::Checkbox("Luoi test", &edit.showGrid);
+    ImGui::Checkbox(TR("adv.grid"), &edit.showGrid);
 
-    if (ImGui::Button("+ Them slice")) a.addSliceToScreen = m_activeScreen;
+    if (ImGui::Button(TR("adv.addslice"))) a.addSliceToScreen = m_activeScreen;
 
     ImGui::Separator();
-    ImGui::Text("Slice (tren cung o duoi danh sach):");
+    ImGui::Text("%s", TR("adv.slicelist"));
 
     for (int i = 0; i < sc.sliceCount(); ++i) {
         Slice& s = sc.slices[static_cast<size_t>(i)];
@@ -430,7 +467,7 @@ void ControlPanel::drawScreenPanel(Project& p, EditState& edit, UiActions& a) {
         ImGui::SameLine();
         ImGui::Checkbox("##en", &s.enabled);
         ImGui::SameLine();
-        ImGui::Checkbox("solo", &s.solo);
+        ImGui::Checkbox(TR("adv.solo"), &s.solo);
         ImGui::SameLine();
 
         char nameBuf[64];
@@ -439,60 +476,60 @@ void ControlPanel::drawScreenPanel(Project& p, EditState& edit, UiActions& a) {
         if (ImGui::InputText("##name", nameBuf, sizeof(nameBuf))) s.name = nameBuf;
 
         ImGui::SameLine();
-        if (ImGui::SmallButton("Xoa")) a.removeSliceIndex = i;
+        if (ImGui::SmallButton(TR("adv.delete"))) a.removeSliceIndex = i;
 
         if (!s.warp()->isInvertible()) {
             ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f),
-                               "  ! Warp suy bien — khong dung cho sensor duoc");
+                               "%s", TR("adv.broken"));
         }
         ImGui::PopID();
     }
 
     if (edit.activeSliceIndex < 0 || edit.activeSliceIndex >= sc.sliceCount()) {
-        ImGui::TextDisabled("Chon mot slice de chinh chi tiet");
+        ImGui::TextDisabled("%s", TR("adv.noslice"));
         return;
     }
 
     Slice& s = sc.slices[static_cast<size_t>(edit.activeSliceIndex)];
     ImGui::Separator();
-    ImGui::Text("Slice dang chon: %s", s.name.c_str());
+    ImGui::Text(TR("adv.selected"), s.name.c_str());
 
     // F4 — vùng lấy trên canvas
     float ox[2] = {static_cast<float>(s.inputOrigin.x), static_cast<float>(s.inputOrigin.y)};
-    if (ImGui::DragFloat2("Input origin", ox, 1.0f)) {
+    if (ImGui::DragFloat2(TR("adv.inputorigin"), ox, 1.0f)) {
         s.inputOrigin = Vec2{ox[0], ox[1]};
     }
     float sz[2] = {static_cast<float>(s.inputSize.x), static_cast<float>(s.inputSize.y)};
-    if (ImGui::DragFloat2("Input size", sz, 1.0f, 1.0f, 16384.0f)) {
+    if (ImGui::DragFloat2(TR("adv.inputsize"), sz, 1.0f, 1.0f, 16384.0f)) {
         s.inputSize = Vec2{std::max(1.0f, sz[0]), std::max(1.0f, sz[1])};
     }
 
     // Đổi loại warp
     int warpType = (s.warp()->type() == WarpType::Mesh) ? 1 : 0;
     const char* warpNames[] = {"Corner pin", "Mesh"};
-    if (ImGui::Combo("Loai warp", &warpType, warpNames, 2)) {
+    if (ImGui::Combo(TR("adv.warptype"), &warpType, warpNames, 2)) {
         a.convertWarpTo = warpType;
     }
     ImGui::SameLine();
-    if (ImGui::Button("Reset")) a.resetActiveSliceWarp = true;
+    if (ImGui::Button(TR("adv.reset"))) a.resetActiveSliceWarp = true;
 
     // ── F19: hieu chinh mau rieng cho slice ────────────────────────────
-    if (ImGui::TreeNode("Mau (F19)")) {
-        ImGui::TextDisabled("Can khi ghep nhieu may chieu: moi may mot sac do.");
+    if (ImGui::TreeNode(TR("adv.color"))) {
+        ImGui::TextDisabled("%s", TR("adv.color.note"));
 
         float br = static_cast<float>(s.color.brightness);
-        if (ImGui::SliderFloat("Do sang", &br, -1.0f, 1.0f)) s.color.brightness = br;
+        if (ImGui::SliderFloat(TR("adv.color.brightness"), &br, -1.0f, 1.0f)) s.color.brightness = br;
 
         float ct = static_cast<float>(s.color.contrast);
-        if (ImGui::SliderFloat("Tuong phan", &ct, 0.0f, 3.0f)) s.color.contrast = ct;
+        if (ImGui::SliderFloat(TR("adv.color.contrast"), &ct, 0.0f, 3.0f)) s.color.contrast = ct;
 
         float gm = static_cast<float>(s.color.gamma);
-        if (ImGui::SliderFloat("Gamma", &gm, 0.1f, 4.0f)) s.color.gamma = gm;
+        if (ImGui::SliderFloat(TR("adv.color.gamma"), &gm, 0.1f, 4.0f)) s.color.gamma = gm;
 
         float gain[3] = {static_cast<float>(s.color.gainR),
                          static_cast<float>(s.color.gainG),
                          static_cast<float>(s.color.gainB)};
-        if (ImGui::ColorEdit3("Can bang RGB", gain,
+        if (ImGui::ColorEdit3(TR("adv.color.rgb"), gain,
                               ImGuiColorEditFlags_Float | ImGuiColorEditFlags_HDR)) {
             s.color.gainR = gain[0];
             s.color.gainG = gain[1];
@@ -500,47 +537,48 @@ void ControlPanel::drawScreenPanel(Project& p, EditState& edit, UiActions& a) {
         }
 
         float op = static_cast<float>(s.color.opacity);
-        if (ImGui::SliderFloat("Do mo slice", &op, 0.0f, 1.0f)) s.color.opacity = op;
+        if (ImGui::SliderFloat(TR("adv.color.opacity"), &op, 0.0f, 1.0f)) s.color.opacity = op;
 
-        if (ImGui::Button("Reset mau")) s.color.reset();
+        if (ImGui::Button(TR("adv.color.reset"))) s.color.reset();
         ImGui::SameLine();
-        ImGui::TextDisabled(s.color.isIdentity() ? "(mac dinh)" : "(da chinh)");
+        ImGui::TextDisabled("%s", s.color.isIdentity() ? TR("adv.color.default")
+                                                      : TR("adv.color.edited"));
 
         ImGui::TreePop();
     }
 
     // ── F20: hoa vien de ghep nhieu may chieu ─────────────────────────
-    if (ImGui::TreeNode("Hoa vien (F20)")) {
-        ImGui::TextDisabled("Ghep 2 may chieu: cho chong nhau 10-20%%,");
-        ImGui::TextDisabled("moi may lam mo dan ve phia mep chong.");
+    if (ImGui::TreeNode(TR("adv.softedge"))) {
+        ImGui::TextDisabled(TR("adv.edge.note1"));
+        ImGui::TextDisabled(TR("adv.edge.note2"));
 
         float e[4] = {static_cast<float>(s.softEdge.left),
                       static_cast<float>(s.softEdge.right),
                       static_cast<float>(s.softEdge.top),
                       static_cast<float>(s.softEdge.bottom)};
         bool changed = false;
-        changed |= ImGui::SliderFloat("Trai",  &e[0], 0.0f, 0.5f, "%.3f");
-        changed |= ImGui::SliderFloat("Phai",  &e[1], 0.0f, 0.5f, "%.3f");
-        changed |= ImGui::SliderFloat("Tren",  &e[2], 0.0f, 0.5f, "%.3f");
-        changed |= ImGui::SliderFloat("Duoi",  &e[3], 0.0f, 0.5f, "%.3f");
+        changed |= ImGui::SliderFloat(TR("adv.edge.left"),   &e[0], 0.0f, 0.5f, "%.3f");
+        changed |= ImGui::SliderFloat(TR("adv.edge.right"),  &e[1], 0.0f, 0.5f, "%.3f");
+        changed |= ImGui::SliderFloat(TR("adv.edge.top"),    &e[2], 0.0f, 0.5f, "%.3f");
+        changed |= ImGui::SliderFloat(TR("adv.edge.bottom"), &e[3], 0.0f, 0.5f, "%.3f");
         if (changed) {
             s.softEdge.left = e[0]; s.softEdge.right = e[1];
             s.softEdge.top  = e[2]; s.softEdge.bottom = e[3];
         }
 
         float g = static_cast<float>(s.softEdge.gamma);
-        if (ImGui::SliderFloat("Do cong", &g, 0.2f, 4.0f)) s.softEdge.gamma = g;
+        if (ImGui::SliderFloat(TR("adv.edge.gamma"), &g, 0.2f, 4.0f)) s.softEdge.gamma = g;
         if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("1.0 = tuyen tinh. May chieu that thuong can 1.8-2.4 "
-                              "vi dap ung gamma cua chung phi tuyen.");
+            ImGui::SetTooltip("%s", TR("adv.edge.gamma.tip"));
         }
 
         float lum = static_cast<float>(s.softEdge.luminance);
-        if (ImGui::SliderFloat("Diem giua", &lum, 0.0f, 1.0f)) s.softEdge.luminance = lum;
+        if (ImGui::SliderFloat(TR("adv.edge.mid"), &lum, 0.0f, 1.0f)) s.softEdge.luminance = lum;
 
-        if (ImGui::Button("Reset vien")) s.softEdge.reset();
+        if (ImGui::Button(TR("adv.edge.reset"))) s.softEdge.reset();
         ImGui::SameLine();
-        ImGui::TextDisabled(s.softEdge.isIdentity() ? "(tat)" : "(dang bat)");
+        ImGui::TextDisabled("%s", s.softEdge.isIdentity() ? TR("adv.edge.off")
+                                                        : TR("adv.edge.on"));
 
         ImGui::TreePop();
     }
@@ -550,8 +588,9 @@ void ControlPanel::drawScreenPanel(Project& p, EditState& edit, UiActions& a) {
     // không với tay tới được.
     if (s.warp()->type() == WarpType::CornerPin) {
         auto* cp = static_cast<WarpCornerPin*>(s.warp());
-        ImGui::Text("Goc (nhap so):");
-        const char* cornerNames[4] = {"Tren-trai", "Tren-phai", "Duoi-phai", "Duoi-trai"};
+        ImGui::Text("%s", TR("adv.corners"));
+        const char* cornerNames[4] = {TR("adv.corner.tl"), TR("adv.corner.tr"),
+                                      TR("adv.corner.br"), TR("adv.corner.bl")};
         for (int k = 0; k < 4; ++k) {
             ImGui::PushID(4000 + k);
             float c[2] = {static_cast<float>(cp->corner(k).x),
@@ -560,7 +599,7 @@ void ControlPanel::drawScreenPanel(Project& p, EditState& edit, UiActions& a) {
             if (ImGui::DragFloat2(cornerNames[k], c, 0.5f)) {
                 if (!cp->setCorner(k, Vec2{c[0], c[1]})) {
                     // Bị từ chối vì tứ giác sẽ lõm hoặc tự cắt.
-                    setStatusMessage("Vi tri goc bi tu choi: tu giac se lom hoac tu cat", true);
+                    setStatusMessage(TR("adv.corner.rejected"), true);
                 }
             }
             ImGui::PopID();
@@ -568,10 +607,10 @@ void ControlPanel::drawScreenPanel(Project& p, EditState& edit, UiActions& a) {
     } else {
         auto* mesh = static_cast<WarpMesh*>(s.warp());
         int dims[2] = {mesh->cols(), mesh->rows()};
-        if (ImGui::DragInt2("Luoi (cot x hang)", dims, 0.2f, 1, 32)) {
+        if (ImGui::DragInt2(TR("adv.meshgrid"), dims, 0.2f, 1, 32)) {
             mesh->resize(dims[0], dims[1]);   // F11 — giữ nguyên hình đã kéo
         }
-        ImGui::TextDisabled("Keo diem luoi trong cua so Output");
+        ImGui::TextDisabled("%s", TR("adv.mesh.hint"));
     }
 }
 
@@ -580,26 +619,27 @@ void ControlPanel::drawScreenPanel(Project& p, EditState& edit, UiActions& a) {
 void ControlPanel::drawSensorPanel(Project& p, const PerfStats& s, UiActions& a) {
     (void)p;
 
-    ImGui::Text("Sensor");
+    ImGui::Text("%s", TR("menu.sensor"));
 
     static int sensorType = 0;
-    const char* types[] = {"Mock (gia lap)", "OSC / UDP"};
+    const char* types[] = {TR("sen.type.mock"), TR("sen.type.osc")};
     ImGui::SetNextItemWidth(160.0f);
-    if (ImGui::Combo("Nguon", &sensorType, types, 2)) a.sensorTypeIndex = sensorType;
+    if (ImGui::Combo(TR("sen.source"), &sensorType, types, 2)) a.sensorTypeIndex = sensorType;
 
     ImGui::SameLine();
     if (s.sensorConnected) {
-        if (ImGui::Button("Dung")) a.stopSensor = true;
+        if (ImGui::Button(TR("sen.stop"))) a.stopSensor = true;
         ImGui::SameLine();
-        ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.5f, 1.0f), "dang chay");
+        ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.5f, 1.0f), "%s", TR("sen.running"));
     } else {
-        if (ImGui::Button("Chay")) a.startSensor = true;
+        if (ImGui::Button(TR("sen.run"))) a.startSensor = true;
         ImGui::SameLine();
-        ImGui::TextDisabled("dang dung");
+        ImGui::TextDisabled("%s", TR("sen.stopped"));
     }
 
-    ImGui::Text("Diem cham: %d   (co ID ben vung: %d)", s.touchCount, s.trackedCount);
-    ImGui::TextDisabled("Loc nhieu (phim F): %s", s.filterEnabled ? "BAT" : "TAT");
+    ImGui::Text(TR("sen.points"), s.touchCount, s.trackedCount);
+    ImGui::TextDisabled(TR("sen.filter"),
+                       s.filterEnabled ? TR("common.on.caps") : TR("common.off.caps"));
 }
 
 // ── G6 G10: wizard calibration ─────────────────────────────────────────
@@ -608,7 +648,7 @@ void ControlPanel::drawCalibrationPanel(Project& p, const PerfStats& s, UiAction
     (void)s;
 
     if (p.calibrations.empty()) {
-        ImGui::TextDisabled("Chua co ho so calibration");
+        ImGui::TextDisabled("%s", TR("cal.none"));
         return;
     }
 
@@ -616,37 +656,35 @@ void ControlPanel::drawCalibrationPanel(Project& p, const PerfStats& s, UiAction
                                  static_cast<int>(p.calibrations.size()) - 1);
     CalibrationProfile& cal = p.calibrations[static_cast<size_t>(m_selectedCalib)];
 
-    ImGui::Text("Calibration: %s", cal.name.c_str());
+    ImGui::Text(TR("cal.title"), cal.name.c_str());
 
     // Hướng dẫn từng bước — người vận hành không cần đọc tài liệu.
     m_calibTarget = std::clamp(m_calibTarget, 0, 3);
     ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f),
-                       "Buoc %d/4: cham vao dau thap tren VAT THE THAT",
-                       m_calibTarget + 1);
-    ImGui::TextDisabled("Diem muc tieu: (%.2f, %.2f) cua slice",
+                       TR("cal.step"), m_calibTarget + 1);
+    ImGui::TextDisabled(TR("cal.target"),
                         kCalibTargets[m_calibTarget].x, kCalibTargets[m_calibTarget].y);
 
     // ★ G6 — khong co dau thap thi wizard vo dung: nguoi van hanh khong
     //   biet phai cham vao dau tren vat the that.
-    ImGui::Checkbox("Hien dau thap tren may chieu (phim C)", &m_calibShowTarget);
+    ImGui::Checkbox(TR("cal.crosshair"), &m_calibShowTarget);
     a.calibShowTarget = m_calibShowTarget;
 
-    if (ImGui::Button("Auto-calibrate (Mock)")) a.calibAutoMock = true;
+    if (ImGui::Button(TR("cal.auto"))) a.calibAutoMock = true;
     if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Suy ra H_s tu pham vi da biet cua MockSource. "
-                          "De thu ca chuoi ma khong can phan cung.");
+        ImGui::SetTooltip("%s", TR("cal.auto.tip"));
     }
     ImGui::Separator();
 
-    if (ImGui::Button("Ghi diem nay")) a.calibAddPoint = true;
+    if (ImGui::Button(TR("cal.add"))) a.calibAddPoint = true;
     ImGui::SameLine();
-    if (ImGui::Button("Bo qua")) a.calibNextTarget = true;
+    if (ImGui::Button(TR("cal.skip"))) a.calibNextTarget = true;
     ImGui::SameLine();
-    if (ImGui::Button("Giai")) a.calibSolve = true;
+    if (ImGui::Button(TR("cal.solve"))) a.calibSolve = true;
     ImGui::SameLine();
-    if (ImGui::Button("Xoa het")) a.calibClear = true;
+    if (ImGui::Button(TR("cal.clear"))) a.calibClear = true;
 
-    ImGui::Text("Da ghi: %d diem (%d dang bat)",
+    ImGui::Text(TR("cal.recorded"),
                 static_cast<int>(cal.pairCount()),
                 static_cast<int>(cal.enabledPairCount()));
 
@@ -656,18 +694,18 @@ void ControlPanel::drawCalibrationPanel(Project& p, const PerfStats& s, UiAction
         const bool good = cal.isAccurate(3.0);
         ImGui::TextColored(good ? ImVec4(0.4f, 1.0f, 0.5f, 1.0f)
                                 : ImVec4(1.0f, 0.5f, 0.3f, 1.0f),
-                           "Sai so: %.2f px (max %.2f) - %s",
+                           TR("cal.error"),
                            cal.rmsError(), cal.maxError(),
-                           good ? "TOT" : "NEN CALIBRATE LAI");
-        ImGui::Text("Inlier: %d / %d", cal.inlierCount(),
+                           good ? TR("cal.good") : TR("cal.bad"));
+        ImGui::Text(TR("cal.inlier"), cal.inlierCount(),
                     static_cast<int>(cal.enabledPairCount()));
     } else {
-        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "Chua calibrate");
+        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "%s", TR("cal.notyet"));
         if (!cal.message().empty()) ImGui::TextWrapped("%s", cal.message().c_str());
     }
 
     // Danh sách điểm — tắt được điểm xấu mà không phải chạm lại từ đầu.
-    if (ImGui::TreeNode("Cac diem da ghi")) {
+    if (ImGui::TreeNode(TR("cal.points"))) {
         const auto& flags = cal.outlierFlags();
         for (size_t i = 0; i < cal.pairCount(); ++i) {
             ImGui::PushID(static_cast<int>(5000 + i));
@@ -677,11 +715,11 @@ void ControlPanel::drawCalibrationPanel(Project& p, const PerfStats& s, UiAction
 
             const bool isOutlier = (i < flags.size() && flags[i]);
             if (isOutlier) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
-            ImGui::Text("#%d  sensor(%.0f, %.0f) -> out(%.0f, %.0f)%s",
+            ImGui::Text(TR("cal.pair"),
                         static_cast<int>(i),
                         cal.pairs()[i].src.x, cal.pairs()[i].src.y,
                         cal.pairs()[i].dst.x, cal.pairs()[i].dst.y,
-                        isOutlier ? "   [RAC]" : "");
+                        isOutlier ? TR("cal.outlier") : "");
             if (isOutlier) ImGui::PopStyleColor();
             ImGui::PopID();
         }
@@ -697,43 +735,43 @@ void ControlPanel::drawPerfPanel(const PerfStats& s) {
     ImGui::TextColored(ok60 ? ImVec4(0.4f, 1.0f, 0.5f, 1.0f)
                             : ImVec4(1.0f, 0.6f, 0.3f, 1.0f),
                        "FPS %.1f", s.fps);
-    ImGui::Text("Frame: avg %.2f ms  p99 %.2f ms", s.frameAvgMs, s.frameP99Ms);
+    ImGui::Text(TR("perf.frame"), s.frameAvgMs, s.frameP99Ms);
     ImGui::Separator();
 
     // ★ architecture.md §10.6 — do, khong doan.
     if (s.sensorConnected) {
-        ImGui::Text("Do tre sensor:");
+        ImGui::Text("%s", TR("perf.latency"));
         ImGui::Text("  avg %.2f ms   p99 %.2f ms",
                     s.sensorLatencyAvgMs, s.sensorLatencyP99Ms);
-        ImGui::TextDisabled("(chua ke input lag cua may chieu:");
-        ImGui::TextDisabled(" 16-80ms - bat Low Latency Mode)");
+        ImGui::TextDisabled("%s", TR("perf.latency.note"));
+        ImGui::TextDisabled("%s", TR("perf.latency.note2"));
     } else {
-        ImGui::TextDisabled("Sensor chua chay");
+        ImGui::TextDisabled("%s", TR("perf.nosensor"));
     }
 
     ImGui::Separator();
-    ImGui::Text("Frame sensor bo qua: %llu",
+    ImGui::Text(TR("perf.dropped"),
                 static_cast<unsigned long long>(s.framesDropped));
 
     // Ring overflow khac 0 = render thread qua tai, su kien BI MAT.
     if (s.ringOverflow > 0) {
         ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f),
-                           "! Ring overflow: %llu — MAT su kien",
+                           TR("perf.overflow.bad"),
                            static_cast<unsigned long long>(s.ringOverflow));
     } else {
-        ImGui::Text("Ring overflow: 0");
+        ImGui::Text("%s", TR("perf.overflow"));
     }
 
     if (s.packetsMalformed > 0) {
         ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f),
-                           "Goi OSC hong: %llu",
+                           TR("perf.malformed"),
                            static_cast<unsigned long long>(s.packetsMalformed));
     }
 
     ImGui::Separator();
-    ImGui::Text("Layer ve: %d   Slice ve: %d", s.layersDrawn, s.slicesDrawn);
-    ImGui::Text("Media nap: %d   Da don: %d", s.mediaLoaded, s.mediaEvictions);
-    ImGui::Text("VRAM (uoc tinh): %s", formatBytes(s.vramBytes).c_str());
+    ImGui::Text(TR("perf.drawn"), s.layersDrawn, s.slicesDrawn);
+    ImGui::Text(TR("perf.media"), s.mediaLoaded, s.mediaEvictions);
+    ImGui::Text(TR("perf.vram"), formatBytes(s.vramBytes).c_str());
 }
 
 // ── C3-C8 + D1-D6: thuoc tinh clip dang chon ───────────────────────────
@@ -742,52 +780,52 @@ void ControlPanel::drawClipPanel(Project& p) {
     Composition& comp = p.composition;
 
     if (m_selLayer < 0 || m_selColumn < 0) {
-        ImGui::TextDisabled("Bam vao mot o clip de xem thuoc tinh");
+        ImGui::TextDisabled("%s", TR("clip.nosel"));
         return;
     }
 
     Clip* c = comp.deck(comp.viewedDeck()).clipPtr(m_selLayer, m_selColumn);
     if (c == nullptr || c->isEmpty()) {
-        ImGui::TextDisabled("O nay trong");
+        ImGui::TextDisabled("%s", TR("clip.empty"));
         return;
     }
 
-    ImGui::Text("Layer %d  /  Cot %d", m_selLayer + 1, m_selColumn + 1);
+    ImGui::Text(TR("clip.where"), m_selLayer + 1, m_selColumn + 1);
 
     char nameBuf[96];
     std::snprintf(nameBuf, sizeof(nameBuf), "%s", c->name.c_str());
-    if (ImGui::InputText("Ten", nameBuf, sizeof(nameBuf))) c->name = nameBuf;
+    if (ImGui::InputText(TR("clip.name"), nameBuf, sizeof(nameBuf))) c->name = nameBuf;
 
     ImGui::TextWrapped("%s", c->media.path.c_str());
-    ImGui::TextDisabled("%.0f x %.0f  |  %.2f s",
+    ImGui::TextDisabled(TR("clip.mediainfo"),
                         c->media.size.x, c->media.size.y, c->media.durationSec);
 
     // ── C1 C8: transport ───────────────────────────────────────────────
-    ImGui::SeparatorText("Transport");
+    ImGui::SeparatorText(TR("clip.transport"));
 
-    if (ImGui::Button(c->transport.isPlaying() ? "Pause" : "Play")) {
+    if (ImGui::Button(c->transport.isPlaying() ? TR("clip.pause") : TR("clip.play"))) {
         c->transport.togglePlay();
     }
     ImGui::SameLine();
-    if (ImGui::Button("Stop")) c->transport.stop();
+    if (ImGui::Button(TR("clip.stop"))) c->transport.stop();
 
     // C8 — keo tua. Chi ghi khi nguoi dung THUC SU keo; neu ghi moi frame
     // thi se de len dau phat dang chay va clip dung yen tai cho.
     float pos = static_cast<float>(c->transport.position);
-    if (ImGui::SliderFloat("Playhead", &pos, 0.0f, 1.0f, "%.3f")) {
+    if (ImGui::SliderFloat(TR("clip.playhead"), &pos, 0.0f, 1.0f, "%.3f")) {
         c->transport.seekNormalized(pos);
     }
 
     // ── C4: chieu phat ─────────────────────────────────────────────────
-    const char* dirNames[] = {"Thuan", "Nguoc", "Ping-pong"};
+    const char* dirNames[] = {TR("clip.dir.fwd"), TR("clip.dir.rev"), TR("clip.dir.pp")};
     int dir = static_cast<int>(c->transport.direction);
-    if (ImGui::Combo("Chieu", &dir, dirNames, 3)) {
+    if (ImGui::Combo(TR("clip.direction"), &dir, dirNames, 3)) {
         c->transport.direction = static_cast<PlayDirection>(dir);
     }
 
     // ── C5: toc do ─────────────────────────────────────────────────────
     float sp = static_cast<float>(c->transport.speed);
-    if (ImGui::DragFloat("Toc do", &sp, 0.01f, -4.0f, 4.0f, "%.2fx")) {
+    if (ImGui::DragFloat(TR("clip.speed"), &sp, 0.01f, -4.0f, 4.0f, "%.2fx")) {
         c->transport.speed = sp;
     }
     ImGui::SameLine();
@@ -796,61 +834,62 @@ void ControlPanel::drawClipPanel(Project& p) {
     // ── C6: cat dau/cuoi ───────────────────────────────────────────────
     float trim[2] = {static_cast<float>(c->transport.inPoint),
                      static_cast<float>(c->transport.outPoint)};
-    if (ImGui::DragFloat2("In / Out", trim, 0.005f, 0.0f, 1.0f, "%.3f")) {
+    if (ImGui::DragFloat2(TR("clip.inout"), trim, 0.005f, 0.0f, 1.0f, "%.3f")) {
         // setTrim tu hoan doi khi vao nguoc va giu khoang toi thieu, nen
         // keo hai handle chong len nhau khong gay chia cho 0.
         c->transport.setTrim(trim[0], trim[1]);
     }
 
     // ── C7: autopilot ──────────────────────────────────────────────────
-    const char* endNames[] = {"Loop", "Dung", "Giu khung cuoi",
-                              "Clip ke tiep", "Ngau nhien"};
+    const char* endNames[] = {TR("clip.end.loop"), TR("clip.end.stop"),
+                              TR("clip.end.hold"), TR("clip.end.next"),
+                              TR("clip.end.rand")};
     int ea = static_cast<int>(c->transport.endAction);
-    if (ImGui::Combo("Het clip thi", &ea, endNames, 5)) {
+    if (ImGui::Combo(TR("clip.endaction"), &ea, endNames, 5)) {
         c->transport.endAction = static_cast<EndAction>(ea);
     }
 
     // ── C3: kieu kich hoat ─────────────────────────────────────────────
-    const char* trigNames[] = {"Toggle", "Piano (giu)"};
+    const char* trigNames[] = {TR("clip.trig.toggle"), TR("clip.trig.piano")};
     int ts = static_cast<int>(c->triggerStyle);
-    if (ImGui::Combo("Kieu bam", &ts, trigNames, 2)) {
+    if (ImGui::Combo(TR("clip.trigger"), &ts, trigNames, 2)) {
         c->triggerStyle = static_cast<TriggerStyle>(ts);
     }
 
     // ── D1-D6: bien doi ────────────────────────────────────────────────
-    ImGui::SeparatorText("Transform");
+    ImGui::SeparatorText(TR("clip.transform"));
 
     float posXY[2] = {static_cast<float>(c->transform.position.x),
                       static_cast<float>(c->transform.position.y)};
-    if (ImGui::DragFloat2("Vi tri", posXY, 1.0f)) {
+    if (ImGui::DragFloat2(TR("clip.position"), posXY, 1.0f)) {
         c->transform.position = Vec2{posXY[0], posXY[1]};
     }
 
     float scXY[2] = {static_cast<float>(c->transform.scale.x),
                      static_cast<float>(c->transform.scale.y)};
-    if (ImGui::DragFloat2("Ti le", scXY, 0.01f, -10.0f, 10.0f)) {
+    if (ImGui::DragFloat2(TR("clip.scale"), scXY, 0.01f, -10.0f, 10.0f)) {
         c->transform.scale = Vec2{scXY[0], scXY[1]};
     }
 
     float rotDeg = static_cast<float>(c->transform.rotation * 180.0 / 3.14159265358979);
-    if (ImGui::DragFloat("Xoay", &rotDeg, 0.5f, -360.0f, 360.0f, "%.1f do")) {
+    if (ImGui::DragFloat(TR("clip.rotation"), &rotDeg, 0.5f, -360.0f, 360.0f, "%.1f")) {
         c->transform.rotation = rotDeg * 3.14159265358979 / 180.0;
     }
 
-    ImGui::Checkbox("Lat ngang", &c->transform.flipH);
+    ImGui::Checkbox(TR("clip.fliph"), &c->transform.flipH);
     ImGui::SameLine();
-    ImGui::Checkbox("Lat doc", &c->transform.flipV);
+    ImGui::Checkbox(TR("clip.flipv"), &c->transform.flipV);
 
-    if (ImGui::Button("Reset transform")) c->transform.reset();
+    if (ImGui::Button(TR("clip.resetxform"))) c->transform.reset();
 
     // ── D3 D4: hoa tron ────────────────────────────────────────────────
-    ImGui::SeparatorText("Hoa tron");
+    ImGui::SeparatorText(TR("clip.blending"));
 
     float op = static_cast<float>(c->opacity);
-    if (ImGui::SliderFloat("Do mo", &op, 0.0f, 1.0f)) c->opacity = op;
+    if (ImGui::SliderFloat(TR("clip.opacity"), &op, 0.0f, 1.0f)) c->opacity = op;
 
     int bl = static_cast<int>(c->blend);
-    if (ImGui::Combo("Blend", &bl, kBlendNames, IM_ARRAYSIZE(kBlendNames))) {
+    if (ImGui::Combo(TR("clip.blend"), &bl, kBlendNames, IM_ARRAYSIZE(kBlendNames))) {
         c->blend = static_cast<BlendMode>(bl);
     }
 }
@@ -858,26 +897,26 @@ void ControlPanel::drawClipPanel(Project& p) {
 // ── G17: vung cam ung ──────────────────────────────────────────────────
 
 void ControlPanel::drawTriggerZonePanel(Project& p, UiActions& a) {
-    ImGui::Text("Vung cam ung (G17)   -   da kich hoat: %d", m_triggerCount);
+    ImGui::Text(TR("zone.title"), m_triggerCount);
     if (!m_lastTriggerName.empty()) {
         ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.6f, 1.0f),
-                           "Gan nhat: %s", m_lastTriggerName.c_str());
+                           TR("zone.last"), m_lastTriggerName.c_str());
     }
 
-    if (ImGui::Button("+ Them vung")) a.addTriggerZone = true;
+    if (ImGui::Button(TR("zone.add"))) a.addTriggerZone = true;
     if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Vung dinh nghia trong khong gian CANVAS. "
-                          "Chinh lai keystone khong lam lech vung.");
+        ImGui::SetTooltip("%s", TR("zone.add.tip"));
     }
 
     auto& zones = p.triggerZones.zones;
     if (zones.empty()) {
-        ImGui::TextDisabled("Chua co vung nao. Cham vao vat the se khong lam gi.");
+        ImGui::TextDisabled("%s", TR("zone.none"));
         return;
     }
 
-    const char* actionNames[] = {"Khong", "Phat clip", "Phat ca cot",
-                                 "Dung layer", "Dung het"};
+    const char* actionNames[] = {TR("zone.act.none"), TR("zone.act.clip"),
+                                 TR("zone.act.column"), TR("zone.act.clearlayer"),
+                                 TR("zone.act.clearall")};
 
     for (int i = 0; i < static_cast<int>(zones.size()); ++i) {
         TriggerZone& z = zones[static_cast<size_t>(i)];
@@ -888,51 +927,49 @@ void ControlPanel::drawTriggerZonePanel(Project& p, UiActions& a) {
         if (z.occupied) ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.1f, 0.6f, 0.35f, 1.0f));
 
         const bool open = ImGui::CollapsingHeader(
-            (z.name + (z.occupied ? "   [DANG CHAM]" : "")).c_str());
+            (z.name + (z.occupied ? TR("zone.touching") : "")).c_str());
 
         if (z.occupied) ImGui::PopStyleColor();
 
         if (open) {
-            ImGui::Checkbox("Bat", &z.enabled);
+            ImGui::Checkbox(TR("zone.enabled"), &z.enabled);
             ImGui::SameLine();
-            if (ImGui::SmallButton("Xoa vung")) a.removeTriggerZone = i;
+            if (ImGui::SmallButton(TR("zone.delete"))) a.removeTriggerZone = i;
 
             char nb[64];
             std::snprintf(nb, sizeof(nb), "%s", z.name.c_str());
-            if (ImGui::InputText("Ten", nb, sizeof(nb))) z.name = nb;
+            if (ImGui::InputText(TR("zone.name"), nb, sizeof(nb))) z.name = nb;
 
             float o[2] = {static_cast<float>(z.origin.x), static_cast<float>(z.origin.y)};
-            if (ImGui::DragFloat2("Vi tri", o, 1.0f)) z.origin = Vec2{o[0], o[1]};
+            if (ImGui::DragFloat2(TR("zone.position"), o, 1.0f)) z.origin = Vec2{o[0], o[1]};
 
             float sz[2] = {static_cast<float>(z.size.x), static_cast<float>(z.size.y)};
-            if (ImGui::DragFloat2("Kich thuoc", sz, 1.0f, 1.0f, 16384.0f)) {
+            if (ImGui::DragFloat2(TR("zone.size"), sz, 1.0f, 1.0f, 16384.0f)) {
                 z.size = Vec2{std::max(1.0f, sz[0]), std::max(1.0f, sz[1])};
             }
 
             int act = static_cast<int>(z.action);
-            if (ImGui::Combo("Hanh dong", &act, actionNames, 5)) {
+            if (ImGui::Combo(TR("zone.action"), &act, actionNames, 5)) {
                 z.action = static_cast<TriggerAction>(act);
             }
 
             if (z.action == TriggerAction::TriggerClip
                 || z.action == TriggerAction::ClearLayer) {
-                ImGui::DragInt("Layer", &z.targetLayer, 0.1f, 0,
+                ImGui::DragInt(TR("zone.layer"), &z.targetLayer, 0.1f, 0,
                                std::max(0, p.composition.layerCount() - 1));
             }
             if (z.action == TriggerAction::TriggerClip
                 || z.action == TriggerAction::TriggerColumn) {
-                ImGui::DragInt("Cot", &z.targetColumn, 0.1f, 0,
+                ImGui::DragInt(TR("zone.column"), &z.targetColumn, 0.1f, 0,
                                std::max(0, p.composition.columnCount() - 1));
             }
 
             float cd = static_cast<float>(z.cooldownSec);
-            if (ImGui::DragFloat("Chong doi", &cd, 0.01f, 0.0f, 5.0f, "%.2fs")) {
+            if (ImGui::DragFloat(TR("zone.cooldown"), &cd, 0.01f, 0.0f, 5.0f, "%.2fs")) {
                 z.cooldownSec = std::max(0.0f, cd);
             }
             if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("BAT BUOC voi sensor that. Mot cu cham sinh ra "
-                                  "hang chuc su kien Down; khong chan doi thi clip "
-                                  "bi trigger lai 30 lan/giay.");
+                ImGui::SetTooltip("%s", TR("zone.cooldown.tip"));
             }
         }
         ImGui::PopID();
@@ -943,15 +980,15 @@ void ControlPanel::drawTriggerZonePanel(Project& p, UiActions& a) {
 
 void ControlPanel::drawMappingEditor(Project& p, EditState& edit,
                                      const ofTexture* canvasTex) {
-    if (p.screens.empty()) { ImGui::TextDisabled("Chua co screen nao"); return; }
+    if (p.screens.empty()) { ImGui::TextDisabled("%s", TR("map.noscreen")); return; }
 
     m_activeScreen = std::clamp(m_activeScreen, 0,
                                 static_cast<int>(p.screens.size()) - 1);
     Screen& sc = p.screens[static_cast<size_t>(m_activeScreen)];
 
-    ImGui::Checkbox("Hien noi dung", &m_mapShowContent);
+    ImGui::Checkbox(TR("map.showcontent"), &m_mapShowContent);
     ImGui::SameLine();
-    ImGui::TextDisabled("Keo diem de can chinh  |  bam vao slice de chon");
+    ImGui::TextDisabled("%s", TR("map.hint"));
 
     const ImVec2 avail = ImGui::GetContentRegionAvail();
     if (avail.x < 40.0f || avail.y < 40.0f) return;
@@ -1143,9 +1180,159 @@ void ControlPanel::drawMappingEditor(Project& p, EditState& edit,
     }
 }
 
+// ── Nap font co glyph tieng Viet ──────────────────────────────────────
+
+void ControlPanel::loadFont() {
+    if (m_fontLoaded) return;
+
+    // Dai glyph: ImGui co san GetGlyphRangesVietnamese() — ASCII + Latin mo
+    // rong + toan bo dau tieng Viet. Nap dai rong hon (vd Chinese) se lam
+    // atlas phinh len hang chuc MB ma chua dung toi.
+    const ImWchar* ranges = ImGui::GetIO().Fonts->GetGlyphRangesVietnamese();
+
+    ImFontConfig cfg;
+    cfg.OversampleH = 2;
+    cfg.OversampleV = 1;
+    cfg.PixelSnapH  = true;
+
+    // Thu theo thu tu: font dong goi kem -> font he thong -> font mac dinh.
+    //
+    // Font dong goi kem duoc uu tien vi no giong nhau tren moi may. Font
+    // he thong chi la luoi an toan khi ai do xoa mat thu muc fonts/.
+    const std::string candidates[] = {
+        ofToDataPath("fonts/Inter.ttf", true),
+        "C:/Windows/Fonts/segoeui.ttf",
+        "C:/Windows/Fonts/tahoma.ttf",
+    };
+
+    for (const std::string& path : candidates) {
+        if (!ofFile::doesFileExist(path)) continue;
+
+        // ★ PHAI di qua m_gui.addFont(), khong duoc goi thang
+        //   io.Fonts->AddFontFromFileTTF().
+        //
+        //   Goi thang thi font VAO duoc atlas nhung atlas khong bao gio
+        //   duoc build lai va nap len GPU, va no cung khong duoc dat lam
+        //   font mac dinh — nen ImGui van ve bang font ProggyClean cu.
+        //   Trieu chung rat de doc nham: ProggyClean co Latin-1 nen "Cai"
+        //   hien dung dau `a`, chi rieng `d` va `at` (ngoai Latin-1) moi
+        //   thanh dau hoi. Nhin qua tuong la font thieu glyph, that ra la
+        //   font moi chua he duoc dung.
+        if (m_gui.addFont(path, 16.0f, &cfg, ranges, /*setAsDefault*/ true) != nullptr) {
+            m_fontLoaded = true;
+            ofLogNotice("ControlPanel") << "Font: " << path;
+            return;
+        }
+    }
+
+    // Khong nap duoc font nao: van chay duoc, chi la dau tieng Viet hien
+    // thanh o vuong. Bao ro thay vi de nguoi dung tu doan.
+    ofLogWarning("ControlPanel")
+        << "Khong nap duoc font co glyph tieng Viet - dau se hien sai. "
+           "Kiem tra bin/data/fonts/Inter.ttf";
+}
+
+// ── Cua so Cai dat ────────────────────────────────────────────────────
+
+void ControlPanel::drawSettingsPanel(UiActions& a) {
+    if (m_settings == nullptr) { ImGui::TextDisabled("-"); return; }
+    AppSettings& st = *m_settings;
+
+    // ── Ngon ngu ───────────────────────────────────────────────────────
+    ImGui::SeparatorText(TR("set.language"));
+
+    // Ten ngon ngu KHONG dich - moi ngon ngu tu goi ten no bang chinh
+    // no. Nguoi dung lo chon nham ngon ngu khong doc duoc se khong tim
+    // duong ve neu danh sach hien bang thu tieng ho vua chon nham.
+    const char* langNames[] = {"Tiếng Việt", "English"};
+    int lang = static_cast<int>(st.language);
+    ImGui::SetNextItemWidth(180.0f);
+    if (ImGui::Combo("##lang", &lang, langNames, 2)) {
+        st.language = static_cast<Language>(lang);
+        i18n::setLanguage(st.language);
+        a.settingsChanged = true;
+    }
+    ImGui::TextDisabled("%s", TR("set.language.note"));
+
+    const int missing = i18n::missingCount();
+    if (missing > 0) {
+        ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f),
+                           "%s: %d", TR("set.missing"), missing);
+    }
+
+    // ── Output ─────────────────────────────────────────────────────────
+    ImGui::SeparatorText(TR("set.output"));
+
+    {
+        std::string cur = TR("set.output.none");
+        for (const DisplayEntry& d : m_displays) {
+            if (d.index == st.defaultOutputDisplay) {
+                cur = std::to_string(d.index + 1) + ". " + d.name;
+            }
+        }
+        ImGui::SetNextItemWidth(240.0f);
+        if (ImGui::BeginCombo(TR("set.output.default"), cur.c_str())) {
+            if (ImGui::Selectable(TR("set.output.none"), st.defaultOutputDisplay < 0)) {
+                st.defaultOutputDisplay = -1;
+                a.settingsChanged = true;
+            }
+            for (const DisplayEntry& d : m_displays) {
+                char lbl[128];
+                std::snprintf(lbl, sizeof(lbl), "%d. %s  %dx%d",
+                              d.index + 1, d.name.c_str(), d.w, d.h);
+                if (ImGui::Selectable(lbl, st.defaultOutputDisplay == d.index)) {
+                    st.defaultOutputDisplay = d.index;
+                    a.settingsChanged = true;
+                }
+            }
+            ImGui::EndCombo();
+        }
+    }
+
+    if (ImGui::Checkbox(TR("set.vsync"), &st.vsync)) a.settingsChanged = true;
+
+    // ── Media ──────────────────────────────────────────────────────────
+    ImGui::SeparatorText(TR("set.media"));
+
+    ImGui::SetNextItemWidth(180.0f);
+    if (ImGui::SliderInt(TR("set.media.budget"), &st.mediaCacheBudget, 1, 64)) {
+        a.settingsChanged = true;
+    }
+    ImGui::TextDisabled("%s", TR("set.media.budget.note"));
+
+    if (ImGui::Checkbox(TR("set.media.warnhap"), &st.warnNonHapMedia)) {
+        a.settingsChanged = true;
+    }
+
+    // ── Chan doan ──────────────────────────────────────────────────────
+    ImGui::SeparatorText(TR("set.diag"));
+
+    if (ImGui::Checkbox(TR("set.perflog"), &st.perfLogEnabled)) a.settingsChanged = true;
+
+    if (st.perfLogEnabled) {
+        float iv = static_cast<float>(st.perfLogIntervalSec);
+        ImGui::SetNextItemWidth(180.0f);
+        if (ImGui::SliderFloat(TR("set.perflog.interval"), &iv, 0.5f, 60.0f, "%.1f")) {
+            st.perfLogIntervalSec = iv;
+            a.settingsChanged = true;
+        }
+    }
+    ImGui::TextDisabled("%s", TR("set.perflog.note"));
+
+    // ── Khoi dong ──────────────────────────────────────────────────────
+    ImGui::SeparatorText(TR("set.startup"));
+    if (ImGui::Checkbox(TR("set.autoplay"), &st.autoPlayFirstClip)) a.settingsChanged = true;
+
+    // ── Luu ────────────────────────────────────────────────────────────
+    ImGui::Separator();
+    if (ImGui::Button(TR("set.save")))  a.saveSettings = true;
+    ImGui::SameLine();
+    if (ImGui::Button(TR("set.reset"))) a.resetSettings = true;
+}
+
 void ControlPanel::drawPreview(const ofTexture* tex) {
     if (tex == nullptr || !tex->isAllocated()) {
-        ImGui::TextDisabled("Chua co noi dung");
+        ImGui::TextDisabled("%s", TR("preview.nocontent"));
         return;
     }
 

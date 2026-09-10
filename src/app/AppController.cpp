@@ -3,6 +3,7 @@
 #include "core/model/WarpCornerPin.h"
 #include "core/model/WarpMesh.h"
 #include "core/util/Clock.h"
+#include "ui/Localization.h"
 #include "io/sources/MockSource.h"
 #include "io/sources/OscSource.h"
 
@@ -54,11 +55,22 @@ void AppController::setup() {
     // Bo dong nay thi ca hai cung sai, va sai theo kieu kho lan ra.
     ofDisableArbTex();
 
+    // Nap cai dat TRUOC panel.setup(): ngon ngu va font phai dung ngay
+    // tu frame dau, khong the doi frame sau roi nap lai atlas font.
+    {
+        std::string warn;
+        if (!m_settings.load(ofToDataPath(m_settingsPath, true), warn) && !warn.empty()) {
+            ofLogWarning("settings") << warn;
+        }
+        i18n::setLanguage(m_settings.language);
+    }
+
     buildDefaultProject();
 
     m_render.setup(m_project.composition.canvasSize);
-    m_cache.setBudget(12);
+    m_panel.setSettings(&m_settings);
     m_panel.setup();
+    applySettings();
 
     m_mapper.setCalibration(m_project.calibrations.empty()
                             ? nullptr : &m_project.calibrations[0]);
@@ -93,6 +105,12 @@ void AppController::setup() {
 
     m_edit.activeSliceIndex = 0;
     m_lastFrameNs = static_cast<uint64_t>(Clock::nowNs());
+
+    // Tu dua output ra may chieu neu nguoi dung da chon san. Dung san
+    // khau thi khong ai muon bam lai moi lan mo phan mem.
+    if (m_settings.defaultOutputDisplay >= 0) {
+        sendOutputToDisplay(m_settings.defaultOutputDisplay);
+    }
 
     // --demo: bat sensor gia lap va calibrate san. Dung de xem ngay ca
     // chuoi sensor -> mapping ma khong phai bam gi, va de kiem chung
@@ -184,7 +202,9 @@ void AppController::buildDefaultProject() {
     //
     // Co y KHONG lam dieu nay khi NAP project: ProjectIO khong luu trang
     // thai dang phat, va tu phat khi mo file la hanh vi gay bat ngo.
-    if (col > 0) m_project.composition.triggerClip(0, 0);
+    if (col > 0 && m_settings.autoPlayFirstClip) {
+        m_project.composition.triggerClip(0, 0);
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -214,8 +234,10 @@ void AppController::update() {
 }
 
 void AppController::writePerfLog() {
+    if (!m_settings.perfLogEnabled) return;
+
     m_perfLogTimer += static_cast<float>(ofGetLastFrameTime());
-    if (m_perfLogTimer < 5.0f) return;
+    if (m_perfLogTimer < static_cast<float>(m_settings.perfLogIntervalSec)) return;
     m_perfLogTimer = 0.0f;
 
     // Bo qua ban ghi dau: giay dau tien luon xau vi con dang nap media,
@@ -523,6 +545,12 @@ void AppController::executeTrigger(const TriggerHit& hit) {
     }
 }
 
+void AppController::applySettings() {
+    i18n::setLanguage(m_settings.language);
+    ofSetVerticalSync(m_settings.vsync);
+    m_cache.setBudget(m_settings.mediaCacheBudget);
+}
+
 void AppController::syncScreenToOutputSize() {
     if (!m_outputWindow || m_project.screens.empty()) return;
 
@@ -668,6 +696,23 @@ void AppController::applyUiActions(UiActions& a) {
         m_outputWindow->toggleFullscreen();
     }
 
+    if (a.settingsChanged) applySettings();
+
+    if (a.resetSettings) {
+        m_settings = AppSettings{};
+        applySettings();
+        m_panel.setStatusMessage(TR("set.reset"));
+    }
+
+    if (a.saveSettings) {
+        std::string err;
+        if (m_settings.save(ofToDataPath(m_settingsPath, true), err)) {
+            m_panel.setStatusMessage(TR("set.saved"));
+        } else {
+            m_panel.setStatusMessage(err, true);
+        }
+    }
+
     if (a.sendOutputToDisplay >= 0) sendOutputToDisplay(a.sendOutputToDisplay);
 
     if (a.outputWindowed && m_outputWindow) {
@@ -793,7 +838,7 @@ void AppController::applyUiActions(UiActions& a) {
                 // Day la nguyen nhan so 1 khien show bi tut fps: nguoi
                 // van hanh keo mot file .mp4 vao roi khong hieu tai sao
                 // tu 60 xuong 12 fps.
-                if (ext != "mov") {
+                if (ext != "mov" && m_settings.warnNonHapMedia) {
                     m_panel.setStatusMessage(
                         "Canh bao: '." + ext + "' kha nang cao KHONG phai HAP. "
                         "Dung tools/encode_hap.ps1 de chuyen doi.", true);

@@ -59,6 +59,18 @@ add_library(hexmap_io STATIC ${HEXMAP_IO_SOURCES} ${HEXMAP_IO_HEADERS})
 target_include_directories(hexmap_io PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_link_libraries(hexmap_io PUBLIC hexmap_core Threads::Threads)
 
+# ── Thư viện i18n: bảng chuỗi giao diện ────────────────────────────────
+#
+# Nằm trong ui/ nhưng KHÔNG chạm ImGui — chỉ std + core. Tách ra thành
+# target riêng để test đối chiếu được hai bảng ngôn ngữ mà không phải
+# kéo cả openFrameworks vào bản build test.
+add_library(hexmap_i18n STATIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/ui/Localization.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/ui/Localization.h"
+)
+target_include_directories(hexmap_i18n PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_link_libraries(hexmap_i18n PUBLIC hexmap_core)
+
 # ── Unit tests ─────────────────────────────────────────────────────────
 enable_testing()
 
@@ -67,7 +79,7 @@ file(GLOB HEXMAP_TEST_SOURCES CONFIGURE_DEPENDS
 )
 
 add_executable(hexmap_tests ${HEXMAP_TEST_SOURCES})
-target_link_libraries(hexmap_tests PRIVATE hexmap_core hexmap_io)
+target_link_libraries(hexmap_tests PRIVATE hexmap_core hexmap_io hexmap_i18n)
 target_include_directories(hexmap_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests")
 
 add_test(NAME core_tests COMMAND hexmap_tests)

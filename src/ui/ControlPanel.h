@@ -13,6 +13,8 @@
 
 #include "core/calib/CalibrationProfile.h"
 #include "core/model/ProjectIO.h"
+#include "core/util/AppSettings.h"
+#include "ui/Localization.h"
 #include "render/RenderEngine.h"
 
 #include "ofMain.h"
@@ -91,6 +93,12 @@ struct UiActions {
 
     /// Thoat fullscreen, dua cua so output ve che do cua so (de keo duoc).
     bool outputWindowed = false;
+
+    /// Cai dat: luu ra file / dat lai mac dinh.
+    bool saveSettings = false;
+    bool resetSettings = false;
+    /// Cai dat vua doi -> AppController ap dung (vsync, cache budget...).
+    bool settingsChanged = false;
     bool resetActiveSliceWarp = false;
     int  convertWarpTo = -1;        ///< -1 = không đổi; 0 = CornerPin, 1 = Mesh
     int  addSliceToScreen = -1;
@@ -139,6 +147,10 @@ public:
     void setCalibShowTarget(bool v) { m_calibShowTarget = v; }
     void setStatusMessage(const std::string& msg, bool isError = false);
 
+    /// Cai dat ung dung. ControlPanel doc va SUA truc tiep (thao tac
+    /// khong he qua); viec LUU ra file do AppController lam.
+    void setSettings(AppSettings* s) { m_settings = s; }
+
 private:
     void drawMenuBar(UiActions& a);
     void drawClipGrid(Project& p);
@@ -147,6 +159,14 @@ private:
     void drawSensorPanel(Project& p, const PerfStats& s, UiActions& a);
     void drawCalibrationPanel(Project& p, const PerfStats& s, UiActions& a);
     void drawPerfPanel(const PerfStats& s);
+    void drawSettingsPanel(UiActions& a);
+
+    /// Nap font co glyph tieng Viet.
+    ///
+    /// Font mac dinh cua ImGui chi co ASCII — day la ly do toan bo UI
+    /// truoc gio phai viet KHONG DAU. Nap Inter kem dai glyph tieng Viet
+    /// thi hien duoc day du dau, va cung san sang cho ngon ngu khac.
+    void loadFont();
     void drawPreview(const ofTexture* tex);
 
     /// C3-C8 + D1-D6 — thuoc tinh cua clip DANG CHON.
@@ -195,12 +215,15 @@ private:
     bool m_mapShowContent = true;
     bool m_showSensor = false;
     bool m_showPerf = true;
+    bool m_showSettings = false;
     bool m_showClip = true;
     bool m_showPreview = true;
 
     /// Phan chieu tu PerfStats, de menu bar hien duoc trang thai sensor.
     bool m_sensorRunning = false;
     std::vector<DisplayEntry> m_displays;
+    AppSettings* m_settings = nullptr;
+    bool m_fontLoaded = false;
 
     int m_triggerCount = 0;
     std::string m_lastTriggerName;

@@ -60,3 +60,17 @@ bin/data/calib/*
 *.tmp
 .DS_Store
 Thumbs.db
+
+# ── bin/ : chi commit tai nguyen ung dung CAN de chay ─────────────
+#
+# bin/data/fonts/ PHAI vao repo: thieu no thi giao dien mat het dau
+# tieng Viet tren may vua clone. Nhung thu duoi day thi khong:
+bin/data/media/          # 1.9 GB video thu nghiem, tao lai bang ffmpeg
+bin/data/perf.log        # do dac lan chay, khac nhau moi may
+bin/imgui.ini            # vi tri cua so, rieng tung nguoi
+
+# settings.json CO CHU DICH khong vao repo. No mo ta MAY NAY va NGUOI
+# NAY - ngon ngu giao dien, man hinh nao lam output. Commit no vao thi
+# dong nghiep clone ve se bi doi ngon ngu va bi day output ra mot man
+# hinh khong ton tai. Day chinh la ly do no tach khoi file project.
+bin/data/settings.json
