@@ -239,7 +239,7 @@ lại từng mục bằng cách tìm trong source và bỏ tick:
 | Mục | Bằng chứng |
 |---|---|
 | F18 Polygon slice | `WarpType` chỉ có `CornerPin`, `Mesh`, `Bezier` |
-| F21 Snapping | không có gì trong `core/` lẫn `ui/` (chỉ có `PixelSnapH` của font ImGui, không liên quan) |
+| F21 Snapping | không có gì trong `core/` lẫn `ui/` (chỉ có `PixelSnapH` của font ImGui, không liên quan). **→ đã làm, xem mục F21 bên dưới** |
 | F22 Slice input từ Layer | `Slice` chỉ có `inputOrigin`/`inputSize` — một hình chữ nhật trên canvas, không có trường chọn nguồn. **→ đã làm nửa Layer, xem mục F22 bên dưới** |
 | F23 Spout / NDI | `ScreenOutputType` có sẵn hai giá trị enum nhưng **không nơi nào dùng tới**; `render/` và `app/` không nhắc đến |
 | F24 Art-Net / sACN | không có |
@@ -326,6 +326,44 @@ Composition chứ không thành Layer với chỉ số rác.
 
 ⚠️ Phần `render/` (nướng FBO theo layer) **chưa được biên dịch** — máy đang
 làm không có openFrameworks. Phải build trên Windows để xác nhận.
+
+### 🟢 F21 — Hút điểm về đường gióng khi kéo (2026-09-10)
+
+Căn mép slice bằng mắt tới từng pixel là việc vừa lâu vừa không bao giờ
+chính xác — mà sai một pixel ở khe ghép hai máy chiếu là một vệt sáng
+hoặc vệt tối chạy dọc suốt buổi diễn.
+
+**Mốc hút:** mép và đường giữa khung máy chiếu · điểm điều khiển của các
+slice KHÁC (mốc hay dùng nhất khi ghép nhiều máy) · các điểm khác của
+chính slice đang kéo.
+
+**Ba quyết định làm nên hay dở của tính năng này:**
+
+★ **Ngưỡng tính theo PIXEL MÀN HÌNH, không phải đơn vị output.** Độ chính
+xác của bàn tay là hằng số theo pixel màn hình. Nếu ngưỡng tính theo đơn
+vị output thì khi thu nhỏ khung nhìn, ngưỡng "8 đơn vị" chỉ còn 2 pixel
+trên màn — hút gần như không bao giờ ăn; phóng to thì nó thành 40 pixel và
+hút loạn xạ. `snapThresholdFor(px, zoom)` chia ngược lại cho hệ số phóng.
+
+★ **Hai trục hút độc lập.** Chỉ hút khi cả x lẫn y cùng khớp thì gần như
+không bao giờ kích hoạt — người dùng hay muốn "thẳng cột với góc kia" mà
+chiều còn lại thì tuỳ ý.
+
+★ **Chọn đường GẦN NHẤT, không phải đường đầu tiên trong ngưỡng.** Khi
+nhiều mốc nằm sát nhau, lấy đường đầu tiên nghĩa là kết quả phụ thuộc thứ
+tự trong mảng — người dùng không đoán được nó sẽ hút vào đâu.
+
+**Giữ ALT để tạm tắt trong lúc kéo.** Bắt buộc phải có: cố ý để hở một khe
+3px giữa hai slice là việc thật, và không có đường thoát thì người dùng
+phải tắt hút ở thanh công cụ rồi bật lại — giữa buổi diễn thì không ai làm
+vậy. Đường gióng đang hút được vẽ ra màu vàng, để người dùng THẤY mình
+thẳng hàng với cái gì.
+
+**Kiểm chứng:** `357/357 test xanh` — 12 test riêng cho F21, gồm mốc NaN
+(warp suy biến lọt vào danh sách) không được làm hỏng cả phép hút, và
+ngưỡng phải đổi theo hệ số phóng.
+
+⚠️ Phần nối vào thao tác kéo nằm ở `ui/` nên **chưa được biên dịch**.
 
 ### Xây tiếp
 
@@ -510,7 +548,7 @@ ctest --test-dir build -C Debug --output-on-failure
 | [ ] | **F18** | Polygon slice (không chỉ hình chữ nhật) | L | 🟡 P2 |
 | [x] | **F19** | Color correction per-slice (brightness/gamma/RGB) | M | 🟡 P2 |
 | [x] | **F20** | **Soft edge blending** (ghép nhiều máy chiếu) | L | 🟡 P2 |
-| [ ] | **F21** | Snapping / đường gióng khi kéo | M | 🟡 P2 |
+| [x] | **F21** | Snapping / đường gióng khi kéo | M | 🟡 P2 |
 | [~] | **F22** | Slice input từ Layer / Group cụ thể | M | 🟡 P2 |
 | [ ] | **F23** | Output ra Spout / NDI (screen ảo) | M | 🟡 P2 |
 | [ ] | **F24** | LED mapping qua Art-Net / sACN | XL | ⚪ P3 |
