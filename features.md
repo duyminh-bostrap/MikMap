@@ -65,6 +65,7 @@
 | **Đa ngôn ngữ VI / EN** — `Localization` | ✅ Xong | 214 khoá × 2, đổi ngay không cần khởi động lại |
 | **Font Inter** (OFL) | ✅ Xong | `bin/data/fonts/` — đủ dấu tiếng Việt |
 | **F12 — mặt nạ bezier** | ✅ Xong | `BezierMask`, nút ở contentUV, mép mờ |
+| **Giao diện MikMap** | ✅ Xong | 3 trang cố định, bảng màu mới, `ui/Theme` |
 
 ### 🟢 Tầng ứng dụng oF — ĐÃ CHẠY
 
@@ -507,6 +508,65 @@ Lý do: chúng làm hệ thống *đẹp hơn*, nhưng không chứng minh đư�
 
 ---
 
+
+## 🎛️ Giao diện MikMap
+
+Dựng lại toàn bộ vỏ giao diện theo bản thiết kế `mikmap_ui.tsx`.
+
+| Mục | Nội dung |
+|---|---|
+| Bố cục | **cố định**, ba trang chuyển bằng tab — không còn cửa sổ nổi |
+| Bảng màu | cam = đang phát · vàng = đang chờ · lục = dữ liệu sống · lam = phụ trợ |
+| Thanh trên cùng | FPS và độ phân giải output **hiện thường trực** |
+| Composition | thư viện media · 2 màn hình xem · thuộc tính · lưới layer × cột |
+| Mapping | công tắc VÙNG LẤY / ĐƯỜNG RA dùng chung một khung nhìn |
+| Sensor | thiết bị · khung nhìn điểm chạm · calibration + vùng cảm ứng |
+
+**Kết quả:** 60.0 fps, `frame_avg` 16.67 ms — không đổi so với giao diện cũ.
+
+### Vì sao bỏ cửa sổ nổi
+
+Cửa sổ nổi tự do nghe thì linh hoạt, nhưng trong phòng tối giữa buổi diễn,
+người vận hành không có thời gian sắp lại bàn làm việc — và một bảng trôi ra
+ngoài màn hình hoặc bị che mất là chuyện xảy ra thật. Bố cục cố định nghĩa
+là mọi thứ **luôn ở đúng chỗ cũ**. Ngoại lệ duy nhất là cửa sổ **Cài đặt**:
+nó không thuộc luồng làm việc lúc diễn (mở ra, chỉnh, đóng lại), nên dành
+cho nó một chỗ cố định là lấy mất diện tích của những thứ dùng suốt buổi.
+
+### Hai tính năng mới đi kèm
+
+**Thư viện media** — liệt kê `bin/data/media`, bấm là gán vào ô clip đang
+chọn. File **không phải `.mov`** hiện màu vàng ngay trên danh sách: cảnh báo
+*sau khi* đã kéo vào thì đã muộn, lúc đó fps đã tụt giữa buổi diễn.
+
+**Chế độ VÙNG LẤY** — kéo vùng lấy của slice ngay trên canvas. Trước đây chỉ
+chỉnh được đầu ra bằng chuột, còn vùng lấy phải gõ số. Nhưng hai việc đó là
+hai nửa của cùng một thao tác — *lấy phần nào của hình* và *đặt nó ở đâu
+trên vật thể* — nên chúng dùng chung một khung nhìn và một công tắc.
+
+### Ba cái bẫy đã mắc phải
+
+**1. `near` là macro của Windows.** Đặt tên một lambda là `near` khiến
+`windows.h` biến nó thành rỗng, và lỗi báo ra là *"auto: no variable
+declared before '='"* — hoàn toàn không gợi ý gì đến nguyên nhân thật.
+
+**2. Một dòng quá rộng làm cắt CẢ bảng.** ImGui không cắt bớt nội dung tràn
+ra — nó **nới rộng** vùng nội dung của child. Hậu quả: mọi widget đặt bề
+rộng `-FLT_MIN` (hết chỗ còn lại) ăn theo bề rộng đã nới ấy và thành ra rộng
+hơn khung nhìn. Sửa một dòng gây ra chuyện đó thì cả bảng vừa lại.
+
+**3. `GetContentRegionAvail()` trong ô của table không trả về bề rộng ô.**
+Ba nút S/B/X căn phải theo giá trị đó bị đẩy ra ngoài cột và bị cắt — nhìn
+thì tưởng cột quá hẹp, thật ra là phép tính sai. Sửa bằng mốc cố định.
+
+### Điều suýt mất
+
+Thanh menu cũ bị ba tab thay thế — và **suýt kéo theo cả lối Lưu / Mở
+project**. Bản thiết kế không vẽ chỗ nào cho việc này, nhưng một phần mềm
+không lưu được công việc thì không dùng được; nên nó quay lại dưới dạng nút
+`Dự án` bật popup, không chiếm chỗ thường trực.
+
+---
 
 ## ✂️ F12 — Mặt nạ bezier
 

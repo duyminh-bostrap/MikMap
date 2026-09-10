@@ -1,11 +1,14 @@
 #include "ui/ControlPanel.h"
 
 #include "ui/Localization.h"
+#include "ui/Theme.h"
 
 #include "core/model/WarpCornerPin.h"
 #include "core/model/WarpMesh.h"
 
 #include <algorithm>
+#include <cfloat>
+#include <cstddef>
 #include <cstdio>
 
 namespace hexmap {
@@ -32,6 +35,16 @@ std::string winTitle(const char* key, const char* id) {
     return std::string(i18n::t(key)) + "###" + id;
 }
 
+/// Nhãn ở TRÊN, widget chiếm hết chiều rộng còn lại.
+///
+/// ★ Bảng thuộc tính bên phải chỉ rộng 280px. Kiểu mặc định của ImGui
+///   đặt nhãn BÊN PHẢI widget, nên "Vùng lấy - kích thước" bị cắt mất
+///   nửa sau — và người dùng không đoán được ô số đó là gì.
+void labelAbove(const char* text) {
+    ImGui::TextUnformatted(text);
+    ImGui::SetNextItemWidth(-FLT_MIN);
+}
+
 std::string formatBytes(size_t b) {
     char buf[48];
     if (b > 1024ull * 1024ull * 1024ull) {
@@ -52,6 +65,10 @@ void ControlPanel::setup() {
     // Nap font SAU gui.setup(): luc do ImGui context da ton tai nen
     // io.Fonts moi dung duoc. ofxImGui se dung atlas nay o frame dau.
     loadFont();
+
+    // Bang mau MikMap de len theme mac dinh cua ofxImGui.
+    // Goi SAU setup() vi setTheme() cua ofxImGui ghi de ImGuiStyle.
+    theme::apply();
 
     m_ready = true;
 }
@@ -81,94 +98,58 @@ void ControlPanel::draw(Project& project,
 
     m_gui.begin();
 
-    drawMenuBar(actions);
+    // ── Vo ung dung: MOT cua so day man hinh, khong vien ───────────────
+    //
+    // ★ Bo cuc CO DINH thay cho cac cua so noi truoc day.
+    //
+    //   Cua so noi tu do nghe thi linh hoat, nhung trong phong toi giua
+    //   buoi dien, nguoi van hanh khong co thoi gian sap lai ban lam viec
+    //   — va mot bang troi ra ngoai man hinh hoac bi che mat la chuyen
+    //   xay ra that. Bo cuc co dinh nghia la moi thu LUON o dung cho cu.
+    const ImGuiViewport* vp = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(vp->WorkPos);
+    ImGui::SetNextWindowSize(vp->WorkSize);
 
-    // Composition la cua so CHINH — khong co nut dong. Dong no di thi
-    // khong con gi de lam.
-    ImGui::SetNextWindowPos(ImVec2(8, 30), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(560, 420), ImGuiCond_FirstUseEver);
-    if (ImGui::Begin(winTitle("win.composition", "composition").c_str(),
-                 nullptr, ImGuiWindowFlags_NoCollapse)) {
-        drawClipGrid(project);
-        ImGui::Separator();
-        drawLayerPanel(project);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, theme::v4(theme::BgApp));
+
+    const ImGuiWindowFlags rootFlags =
+        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize
+        | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse
+        | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus
+        | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
+
+    if (ImGui::Begin("##mikmap_root", nullptr, rootFlags)) {
+        drawTopBar(stats, actions);
+
+        ImGui::PushStyleVar(ImGuiStyleVar_ChildBorderSize, 0.0f);
+        ImGui::BeginChild("##content", ImVec2(0, 0), ImGuiChildFlags_None,
+                          ImGuiWindowFlags_NoScrollbar);
+
+        switch (m_view) {
+        case View::Mapping: drawMappingView(project, edit, canvasPreview, actions); break;
+        case View::Sensor:  drawSensorView(project, stats, actions);                break;
+        default:            drawCompositionView(project, edit, stats,
+                                                canvasPreview, actions);            break;
+        }
+
+        ImGui::EndChild();
+        ImGui::PopStyleVar();
     }
     ImGui::End();
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar();
 
-    // ── Advanced Output — mo tu menu Output ────────────────────────────
-    if (m_showAdvancedOutput) {
-        ImGui::SetNextWindowPos(ImVec2(576, 30), ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowSize(ImVec2(400, 420), ImGuiCond_FirstUseEver);
-        if (ImGui::Begin(winTitle("win.advanced", "advout").c_str(), &m_showAdvancedOutput)) {
-            drawScreenPanel(project, edit, actions);
-        }
-        ImGui::End();
-    }
-
-    // ★ Cua so Mapping — can chinh ngay trong app, khong phai sang cua
-    //   so output. Dat mac dinh MO vi day la cong viec chinh.
-    if (m_showMapping) {
-        ImGui::SetNextWindowPos(ImVec2(576, 30), ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowSize(ImVec2(660, 500), ImGuiCond_FirstUseEver);
-        if (ImGui::Begin(winTitle("win.mapping", "mapping").c_str(), &m_showMapping)) {
-            drawMappingEditor(project, edit, canvasPreview);
-        }
-        ImGui::End();
-    }
-
-    if (m_showPreview) {
-        ImGui::SetNextWindowPos(ImVec2(8, 458), ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowSize(ImVec2(560, 380), ImGuiCond_FirstUseEver);
-        if (ImGui::Begin(winTitle("win.preview", "preview").c_str(), &m_showPreview)) {
-            drawPreview(canvasPreview);
-        }
-        ImGui::End();
-    }
-
-    // ── Sensor — mo tu menu Sensor ─────────────────────────────────────
-    if (m_showSensor) {
-        ImGui::SetNextWindowPos(ImVec2(576, 458), ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowSize(ImVec2(400, 380), ImGuiCond_FirstUseEver);
-        if (ImGui::Begin(winTitle("win.sensor", "sensor").c_str(), &m_showSensor)) {
-            drawSensorPanel(project, stats, actions);
-            ImGui::Separator();
-            drawCalibrationPanel(project, stats, actions);
-            ImGui::Separator();
-            drawTriggerZonePanel(project, actions);
-        }
-        ImGui::End();
-    }
-
+    // ── Cua so Cai dat: van la cua so NOI, co chu dich ─────────────────
+    //
+    // No khong thuoc luong lam viec luc dien — mo ra, chinh, dong lai.
+    // Danh cho no mot cho co dinh trong bo cuc la lay mat dien tich cua
+    // nhung thu dung suot buoi.
     if (m_showSettings) {
         ImGui::SetNextWindowSize(ImVec2(460, 560), ImGuiCond_FirstUseEver);
-
-        // Nen DAC, khac cac panel khac.
-        //
-        // Cac panel lam viec nam canh nhau tren nen toi nen trong suot van
-        // doc duoc. Cua so Cai dat thi luon NOI LEN TREN mot panel khac, va
-        // luoi clip ben duoi xuyen qua lam chu gan nhu khong doc noi.
         ImGui::SetNextWindowBgAlpha(1.0f);
-
         if (ImGui::Begin(winTitle("win.settings", "settings").c_str(), &m_showSettings)) {
             drawSettingsPanel(actions);
-        }
-        ImGui::End();
-    }
-
-    if (m_showPerf) {
-        ImGui::SetNextWindowPos(ImVec2(984, 30), ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowSize(ImVec2(300, 320), ImGuiCond_FirstUseEver);
-        if (ImGui::Begin(winTitle("win.perf", "perf").c_str(), &m_showPerf)) {
-            drawPerfPanel(stats);
-        }
-        ImGui::End();
-    }
-
-    if (m_showClip) {
-        ImGui::SetNextWindowPos(ImVec2(984, 358), ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowSize(ImVec2(300, 480), ImGuiCond_FirstUseEver);
-        if (ImGui::Begin(winTitle("win.clip", "clip").c_str(), &m_showClip)) {
-            drawClipPanel(project);
         }
         ImGui::End();
     }
@@ -183,247 +164,1050 @@ void ControlPanel::draw(Project& project,
     m_gui.end();
 }
 
-void ControlPanel::drawMenuBar(UiActions& a) {
-    if (!ImGui::BeginMainMenuBar()) return;
+// ═══════════════════════════════════════════════════════════════════════
+//  Thanh dieu huong tren cung
+// ═══════════════════════════════════════════════════════════════════════
+
+void ControlPanel::drawTopBar(const PerfStats& s, UiActions& a) {
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::v4(theme::BgPanel));
+    ImGui::BeginChild("##topbar", ImVec2(0, theme::TopBarH), ImGuiChildFlags_None,
+                      ImGuiWindowFlags_NoScrollbar);
+
+    // Vien duoi — tach thanh dieu huong khoi vung lam viec.
+    {
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        const ImVec2 p0 = ImGui::GetWindowPos();
+        const float w = ImGui::GetWindowWidth();
+        dl->AddLine(ImVec2(p0.x, p0.y + theme::TopBarH - 1.0f),
+                    ImVec2(p0.x + w, p0.y + theme::TopBarH - 1.0f), theme::Border);
+    }
+
+    ImGui::SetCursorPos(ImVec2(14.0f, (theme::TopBarH - ImGui::GetFrameHeight()) * 0.5f));
+
+    // ── Thuong hieu ────────────────────────────────────────────────────
+    {
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        const ImVec2 p = ImGui::GetCursorScreenPos();
+        const float cy = p.y + ImGui::GetFrameHeight() * 0.5f;
+        dl->AddRectFilled(ImVec2(p.x, cy - 8.0f), ImVec2(p.x + 16.0f, cy + 8.0f),
+                          theme::Primary, 3.0f);
+        dl->AddRectFilled(ImVec2(p.x + 5.5f, cy - 2.5f), ImVec2(p.x + 10.5f, cy + 2.5f),
+                          theme::BgPanel, 1.0f);
+        ImGui::Dummy(ImVec2(22.0f, ImGui::GetFrameHeight()));
+    }
+    ImGui::SameLine(0.0f, 6.0f);
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("MIKMAP");
 
     // ── Project ────────────────────────────────────────────────────────
-    if (ImGui::BeginMenu(TR("menu.project"))) {
-        if (ImGui::MenuItem(TR("menu.project.new")))               a.newProject  = true;
-        if (ImGui::MenuItem(TR("menu.project.open"), "Ctrl+O")) a.loadProject = true;
-        if (ImGui::MenuItem(TR("menu.project.save"), "Ctrl+S")) a.saveProject = true;
-        ImGui::EndMenu();
+    //
+    // ★ Thanh menu cu da bi ba tab thay the — va suyt keo theo ca loi Luu
+    //   / Mo project. Ban thiet ke khong ve cho nao cho viec nay, nhung
+    //   mot phan mem khong luu duoc cong viec thi khong dung duoc; nen no
+    //   quay lai duoi dang mot nut bat popup, khong chiem cho thuong truc.
+    ImGui::SameLine(0.0f, 16.0f);
+    if (theme::tabButton(TR("menu.project"), false, ImVec2(78, 0), theme::Text)) {
+        ImGui::OpenPopup("##projectmenu");
     }
-
-    // ── Output ─────────────────────────────────────────────────────────
-    // Advanced Output la cua so rieng mo tu day, giong cach Resolume
-    // tach no ra khoi khung lam viec chinh: no la cong cu DUNG SAN KHAU,
-    // dung mot lan luc can chinh, khong phai thu nhin suot buoi dien.
-    if (ImGui::BeginMenu(TR("menu.output"))) {
-        ImGui::MenuItem(TR("menu.output.mapping"), nullptr, &m_showMapping);
-        ImGui::MenuItem(TR("menu.output.advanced"), nullptr, &m_showAdvancedOutput);
+    if (ImGui::BeginPopup("##projectmenu")) {
+        if (ImGui::MenuItem(TR("menu.project.new")))               a.newProject  = true;
+        if (ImGui::MenuItem(TR("menu.project.open"), "Ctrl+O"))    a.loadProject = true;
+        if (ImGui::MenuItem(TR("menu.project.save"), "Ctrl+S"))    a.saveProject = true;
         ImGui::Separator();
-
-        // Liet ke man hinh vat ly. Day la cach dua hinh ra may chieu ma
-        // KHONG phai keo cua so bang tay — thao tac vua kho vua de keo
-        // nham vao khe giua hai man hinh.
-        if (m_displays.empty()) {
-            ImGui::TextDisabled("%s", TR("menu.output.nodisplay"));
-        } else {
-            ImGui::TextDisabled("%s", TR("menu.output.sendto"));
+        if (ImGui::BeginMenu(TR("menu.output.sendto"))) {
+            if (m_displays.empty()) {
+                ImGui::TextDisabled("%s", TR("menu.output.nodisplay"));
+            }
             for (const DisplayEntry& d : m_displays) {
-                char label[128];
-                std::snprintf(label, sizeof(label), "  %d. %s  %dx%d%s",
+                char lbl[128];
+                std::snprintf(lbl, sizeof(lbl), "%d. %s  %dx%d%s",
                               d.index + 1, d.name.c_str(), d.w, d.h,
                               d.isPrimary ? TR("menu.output.primary") : "");
-                if (ImGui::MenuItem(label)) a.sendOutputToDisplay = d.index;
+                if (ImGui::MenuItem(lbl)) a.sendOutputToDisplay = d.index;
             }
+            ImGui::EndMenu();
         }
-
+        if (ImGui::MenuItem(TR("menu.output.windowed")))            a.outputWindowed  = true;
+        if (ImGui::MenuItem(TR("menu.output.fullscreen"), "F11"))   a.toggleFullscreen = true;
         ImGui::Separator();
-        if (ImGui::MenuItem(TR("menu.output.windowed"))) a.outputWindowed = true;
-        if (ImGui::MenuItem(TR("menu.output.fullscreen"), "F11")) a.toggleFullscreen = true;
-        ImGui::EndMenu();
-    }
-
-    // ── Sensor ─────────────────────────────────────────────────────────
-    // Gom moi thu lien quan sensor vao mot cho. Nhung lenh hay dung
-    // (bat/tat, auto-calibrate) de thang o menu, khong bat mo cua so.
-    if (ImGui::BeginMenu(TR("menu.sensor"))) {
-        ImGui::MenuItem(TR("menu.sensor.panel"), nullptr, &m_showSensor);
-        ImGui::Separator();
-
         if (ImGui::MenuItem(TR("menu.sensor.mock"), "M")) {
-            a.sensorTypeIndex = 0;
-            a.startSensor = true;
+            a.sensorTypeIndex = 0; a.startSensor = true;
         }
         if (ImGui::MenuItem(TR("menu.sensor.osc"), "O")) {
-            a.sensorTypeIndex = 1;
-            a.startSensor = true;
+            a.sensorTypeIndex = 1; a.startSensor = true;
         }
-        if (ImGui::MenuItem(TR("menu.sensor.stop"))) a.stopSensor = true;
-
-        ImGui::Separator();
-        if (ImGui::MenuItem(TR("menu.sensor.autocal"), "A")) a.calibAutoMock = true;
+        if (ImGui::MenuItem(TR("menu.sensor.stop")))            a.stopSensor   = true;
+        if (ImGui::MenuItem(TR("menu.sensor.autocal"), "A"))    a.calibAutoMock = true;
         ImGui::MenuItem(TR("menu.sensor.crosshair"), "C", &m_calibShowTarget);
-        ImGui::EndMenu();
+        ImGui::EndPopup();
     }
 
-    // ── View ───────────────────────────────────────────────────────────
-    if (ImGui::BeginMenu(TR("menu.settings"))) {
-        ImGui::MenuItem(TR("menu.settings.open"), nullptr, &m_showSettings);
-        ImGui::EndMenu();
+    // ── Ba tab ─────────────────────────────────────────────────────────
+    ImGui::SameLine(0.0f, 16.0f);
+    {
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::v4(theme::BgSunken));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(3, 3));
+        ImGui::BeginChild("##tabs", ImVec2(512.0f, theme::TopBarH - 12.0f),
+                          ImGuiChildFlags_Borders, ImGuiWindowFlags_NoScrollbar);
+
+        const ImVec2 tsz(164.0f, 0.0f);
+        if (theme::tabButton(TR("nav.composition"), m_view == View::Composition, tsz)) {
+            m_view = View::Composition;
+        }
+        ImGui::SameLine(0.0f, 2.0f);
+        if (theme::tabButton(TR("nav.mapping"), m_view == View::Mapping, tsz)) {
+            m_view = View::Mapping;
+        }
+        ImGui::SameLine(0.0f, 2.0f);
+        if (theme::tabButton(TR("nav.sensor"), m_view == View::Sensor, tsz)) {
+            m_view = View::Sensor;
+        }
+
+        ImGui::EndChild();
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor();
     }
 
-    if (ImGui::BeginMenu(TR("menu.view"))) {
-        ImGui::MenuItem(TR("win.mapping"),     nullptr, &m_showMapping);
-        ImGui::MenuItem(TR("win.preview"),     nullptr, &m_showPreview);
-        ImGui::MenuItem(TR("win.clip"),        nullptr, &m_showClip);
-        ImGui::MenuItem(TR("win.perf"),        nullptr, &m_showPerf);
-        ImGui::EndMenu();
+    // ── Trang thai ben phai ────────────────────────────────────────────
+    //
+    // FPS va do phan giai dau ra hien THUONG TRUC, khong phai mo bang moi
+    // thay: hai con so nay la thu duy nhat cho biet buoi dien co on khong,
+    // va luc chung tut thi khong ai co thoi gian di tim cho de xem.
+    {
+        char fpsBuf[48];
+        std::snprintf(fpsBuf, sizeof(fpsBuf), "FPS %.1f", s.fps);
+
+        std::string outBuf = TR("nav.nooutput");
+        for (const DisplayEntry& d : m_displays) {
+            if (d.index != m_activeOutputDisplay) continue;
+            char b[96];
+            std::snprintf(b, sizeof(b), "OUTPUT %d: %dx%d", d.index + 1, d.w, d.h);
+            outBuf = b;
+        }
+
+        const float gearW  = 34.0f;
+        const float fpsW   = ImGui::CalcTextSize(fpsBuf).x + 24.0f;
+        const float outW   = ImGui::CalcTextSize(outBuf.c_str()).x + 24.0f;
+        const float rightW = fpsW + outW + gearW + 30.0f;
+
+        ImGui::SameLine();
+        ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(),
+                                      ImGui::GetWindowWidth() - rightW));
+
+        // Chi so FPS doi mau theo nguong 60: xanh = dat, vang = khong.
+        const bool ok = (s.fps >= 55.0);
+        ImGui::PushStyleColor(ImGuiCol_Text, theme::v4(ok ? theme::Success : theme::Warning));
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(fpsBuf);
+        ImGui::PopStyleColor();
+
+        ImGui::SameLine(0.0f, 18.0f);
+        theme::statusDot(m_activeOutputDisplay >= 0 ? theme::Success : theme::TextFaint);
+        ImGui::SameLine(0.0f, 6.0f);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextDisabled("%s", outBuf.c_str());
+
+        ImGui::SameLine(0.0f, 12.0f);
+        if (theme::tabButton(TR("nav.settings"), m_showSettings, ImVec2(gearW, 0))) {
+            m_showSettings = !m_showSettings;
+        }
     }
 
-    // ── Chi bao trang thai ben phai ────────────────────────────────────
-    // Hien thang tren menu bar de nguoi van hanh biet sensor co chay
-    // khong ma KHONG phai mo cua so Sensor ra xem.
-    ImGui::Separator();
-    if (m_sensorRunning) {
-        ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.5f, 1.0f), "%s", TR("status.sensor.on"));
-    } else {
-        ImGui::TextDisabled("%s", TR("status.sensor.off"));
-    }
-
+    // ── Thong bao tam thoi ─────────────────────────────────────────────
     if (m_statusTimer > 0.0f && !m_status.empty()) {
-        ImGui::Separator();
-        if (m_statusIsError) ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "%s", m_status.c_str());
-        else                 ImGui::TextColored(ImVec4(0.5f, 1.0f, 0.6f, 1.0f), "%s", m_status.c_str());
+        ImDrawList* dl = ImGui::GetForegroundDrawList();
+        const ImVec2 tsz = ImGui::CalcTextSize(m_status.c_str());
+        const ImVec2 wp  = ImGui::GetMainViewport()->WorkPos;
+        const float  ww  = ImGui::GetMainViewport()->WorkSize.x;
+
+        const ImVec2 p((wp.x + ww - tsz.x) * 0.5f, wp.y + theme::TopBarH + 10.0f);
+        const ImU32 c = m_statusIsError ? theme::Danger : theme::Success;
+
+        dl->AddRectFilled(ImVec2(p.x - 14.0f, p.y - 7.0f),
+                          ImVec2(p.x + tsz.x + 14.0f, p.y + tsz.y + 7.0f),
+                          theme::BgCard, 5.0f);
+        dl->AddRect(ImVec2(p.x - 14.0f, p.y - 7.0f),
+                    ImVec2(p.x + tsz.x + 14.0f, p.y + tsz.y + 7.0f),
+                    theme::alpha(c, 0.6f), 5.0f, 0, 1.5f);
+        dl->AddText(p, c, m_status.c_str());
     }
 
-    ImGui::EndMainMenuBar();
+    ImGui::EndChild();
+    ImGui::PopStyleColor();
 }
 
-// ── A4 A5 A6: lưới clip ────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════
+//  TRANG 1 — COMPOSITION
+// ═══════════════════════════════════════════════════════════════════════
 
-void ControlPanel::drawClipGrid(Project& p) {
-    Composition& comp = p.composition;
+void ControlPanel::drawCompositionView(Project& p, EditState& edit,
+                                       const PerfStats& s,
+                                       const ofTexture* canvasTex,
+                                       UiActions& a) {
+    (void)edit;
 
-    ImGui::Text("%s", TR("comp.deck"));
-    ImGui::SameLine();
-    for (int d = 0; d < comp.deckCount(); ++d) {
-        if (d > 0) ImGui::SameLine();
-        const bool active = (d == comp.viewedDeck());
-        if (active) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.35f, 0.55f, 0.85f, 1.0f));
-        if (ImGui::Button(comp.deck(d).name.c_str())) {
-            // A9 — chỉ đổi deck đang XEM, playback không bị ngắt.
-            comp.setViewedDeck(d);
-        }
-        if (active) ImGui::PopStyleColor();
-    }
+    const ImVec2 avail = ImGui::GetContentRegionAvail();
+    if (avail.x < 200.0f || avail.y < 200.0f) return;
 
-    ImGui::Spacing();
+    // Nua tren cho cong cu, nua duoi cho luoi clip. Sàn 300px cho nua
+    // tren: duoi nguong do hai man hinh xem nho toi muc vo dung.
+    const float topH = std::max(300.0f, avail.y * theme::CompTopRatio);
+    const float botH = std::max(120.0f, avail.y - topH - 6.0f);
 
-    const int cols = comp.columnCount();
-    const int layers = comp.layerCount();
-    if (cols <= 0 || layers <= 0) { ImGui::TextDisabled("%s", TR("comp.empty")); return; }
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(6, 6));
 
-    // Hàng tiêu đề cột — bấm để trigger CẢ CỘT (A6).
-    ImGui::Dummy(ImVec2(74.0f, 1.0f));
-    for (int c = 0; c < cols; ++c) {
+    // ── Hang tren ──────────────────────────────────────────────────────
+    ImGui::BeginChild("##comp_top", ImVec2(0, topH), ImGuiChildFlags_None,
+                      ImGuiWindowFlags_NoScrollbar);
+    {
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::v4(theme::BgPanel));
+        ImGui::BeginChild("##browser", ImVec2(theme::BrowserW, 0), ImGuiChildFlags_Borders);
+        drawBrowserPanel(p, a);
+        ImGui::EndChild();
+        ImGui::PopStyleColor();
+
         ImGui::SameLine();
-        ImGui::PushID(10000 + c);
-        if (ImGui::Button(std::to_string(c + 1).c_str(), ImVec2(46.0f, 22.0f))) {
-            comp.triggerColumn(c);
-        }
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip(TR("comp.triggercol"), c + 1);
-        ImGui::PopID();
+
+        const float midW = std::max(240.0f,
+            ImGui::GetContentRegionAvail().x - theme::InspectorW - 6.0f);
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::v4(theme::BgApp));
+        ImGui::BeginChild("##monitors", ImVec2(midW, 0), ImGuiChildFlags_Borders,
+                          ImGuiWindowFlags_NoScrollbar);
+        drawMonitors(p, s, canvasTex);
+        ImGui::EndChild();
+        ImGui::PopStyleColor();
+
+        ImGui::SameLine();
+
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::v4(theme::BgPanel));
+        ImGui::BeginChild("##inspector", ImVec2(0, 0), ImGuiChildFlags_Borders);
+        drawInspector(p);
+        ImGui::EndChild();
+        ImGui::PopStyleColor();
+    }
+    ImGui::EndChild();
+
+    // ── Hang duoi: layer × cot, chiem HET chieu ngang ──────────────────
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::v4(theme::BgPanel));
+    ImGui::BeginChild("##deck", ImVec2(0, botH), ImGuiChildFlags_Borders,
+                      ImGuiWindowFlags_NoScrollbar);
+    drawLayersDeck(p);
+    ImGui::EndChild();
+    ImGui::PopStyleColor();
+
+    ImGui::PopStyleVar();
+}
+
+// ── Trinh duyet media ──────────────────────────────────────────────────
+
+void ControlPanel::rescanMedia() {
+    m_mediaFiles.clear();
+
+    ofDirectory dir(ofToDataPath("media", true));
+    if (!dir.exists()) { m_mediaScanned = true; return; }
+
+    dir.allowExt("mov");
+    dir.allowExt("mp4");
+    dir.allowExt("png");
+    dir.allowExt("jpg");
+    dir.allowExt("jpeg");
+    dir.listDir();
+    dir.sort();
+
+    for (std::size_t i = 0; i < dir.size(); ++i) {
+        m_mediaFiles.push_back(dir.getPath(i));
+    }
+    m_mediaScanned = true;
+}
+
+void ControlPanel::drawBrowserPanel(Project& p, UiActions& a) {
+    (void)p;
+
+    // Quet dia la I/O — chi lam lan dau, hoac khi nguoi dung yeu cau.
+    if (!m_mediaScanned) rescanMedia();
+
+    ImGui::TextUnformatted(TR("browser.title"));
+    ImGui::SameLine();
+    ImGui::SetCursorPosX(ImGui::GetWindowWidth() - 34.0f);
+    if (theme::tabButton("<>", false, ImVec2(24, 0), theme::Info)) rescanMedia();
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("browser.rescan"));
+
+    ImGui::Separator();
+    theme::sectionLabel(TR("browser.media"));
+
+    if (m_mediaFiles.empty()) {
+        ImGui::TextDisabled("%s", TR("browser.empty"));
     }
 
-    // Vẽ layer từ TRÊN xuống: chỉ số cao = trên cùng, giống Resolume.
-    for (int L = layers - 1; L >= 0; --L) {
-        const Layer& layer = comp.layer(L);
-        ImGui::PushID(L);
+    const bool hasTarget = (m_selLayer >= 0 && m_selColumn >= 0);
 
-        ImGui::AlignTextToFramePadding();
-        ImGui::Text("%-8.8s", layer.name.c_str());
+    ImGui::BeginChild("##medialist", ImVec2(0, -76.0f));
+    for (std::size_t i = 0; i < m_mediaFiles.size(); ++i) {
+        const std::string name = ofFilePath::getFileName(m_mediaFiles[i]);
+        const std::string ext  = ofToLower(ofFilePath::getFileExt(m_mediaFiles[i]));
 
-        for (int c = 0; c < cols; ++c) {
-            ImGui::SameLine();
-            ImGui::PushID(c);
+        // ★ .mov gan nhu chac chan la HAP trong du an nay; dinh dang khac
+        //   thi bao mau VANG ngay tren danh sach. Canh bao sau khi da keo
+        //   vao thi da muon — luc do fps da tut giua buoi dien.
+        const bool likelyHap = (ext == "mov");
+        ImGui::PushStyleColor(ImGuiCol_Text,
+            theme::v4(likelyHap ? theme::Text : theme::Warning));
 
-            const Clip& clip = comp.deck(comp.viewedDeck()).clip(L, c);
-            const bool isPlaying = (layer.activeDeck == comp.viewedDeck()
-                                    && layer.activeColumn == c);
-
-            if (clip.isEmpty()) {
-                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.14f, 0.14f, 0.16f, 1.0f));
-            } else if (isPlaying) {
-                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.70f, 0.35f, 1.0f));
+        ImGui::PushID(static_cast<int>(i));
+        if (ImGui::Selectable(name.c_str(), false, 0, ImVec2(0, 20))) {
+            if (hasTarget) {
+                a.assignMediaPath = m_mediaFiles[i];
+                a.assignLayer     = m_selLayer;
+                a.assignColumn    = m_selColumn;
             } else {
-                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.28f, 0.30f, 0.36f, 1.0f));
+                setStatusMessage(TR("browser.noTarget"), true);
             }
+        }
+        ImGui::PopID();
+        ImGui::PopStyleColor();
 
-            const std::string label = clip.isEmpty() ? "+" : clip.name.substr(0, 5);
-            if (ImGui::Button(label.c_str(), ImVec2(46.0f, 26.0f))) {
-                // Ctrl+bam, hoac bam vao o TRONG -> chon file (I6).
-                // O trong ma bam thuong khong lam gi thi nguoi dung se
-                // tuong phan mem hong; cho no mo file browser luon.
-                if (ImGui::GetIO().KeyCtrl || clip.isEmpty()) {
-                    m_pendingBrowse = true;
-                    m_browseLayer = L;
-                    m_browseColumn = c;
-                } else {
-                    comp.triggerClip(L, c);      // A5
-                    m_selLayer = L;              // chon luon de xem thuoc tinh
-                    m_selColumn = c;
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("%s\n%s", m_mediaFiles[i].c_str(),
+                              likelyHap ? TR("browser.hapOk") : TR("browser.hapWarn"));
+        }
+    }
+    ImGui::EndChild();
+
+    ImGui::Separator();
+    if (hasTarget) {
+        ImGui::TextDisabled(TR("browser.target"), m_selLayer + 1, m_selColumn + 1);
+    } else {
+        ImGui::TextDisabled("%s", TR("browser.noTarget"));
+    }
+
+    if (theme::outlineButton(TR("browser.browse"), theme::Info,
+                             ImVec2(-FLT_MIN, 0))) {
+        if (hasTarget) {
+            m_pendingBrowse = true;
+            m_browseLayer   = m_selLayer;
+            m_browseColumn  = m_selColumn;
+        } else {
+            setStatusMessage(TR("browser.noTarget"), true);
+        }
+    }
+}
+
+// ── Hai man hinh xem ───────────────────────────────────────────────────
+
+void ControlPanel::drawMonitors(Project& p, const PerfStats& s,
+                                const ofTexture* canvasTex) {
+    const ImVec2 avail = ImGui::GetContentRegionAvail();
+    if (avail.x < 120.0f || avail.y < 80.0f) return;
+
+    const float halfW = (avail.x - 8.0f) * 0.5f;
+
+    auto monitor = [&](const char* id, const char* label, ImU32 labelCol,
+                       bool showSliceRects, const char* badge, ImU32 badgeCol) {
+        ImGui::BeginChild(id, ImVec2(halfW, 0), ImGuiChildFlags_None,
+                          ImGuiWindowFlags_NoScrollbar);
+
+        ImGui::PushStyleColor(ImGuiCol_Text, theme::v4(labelCol));
+        ImGui::TextUnformatted(label);
+        ImGui::PopStyleColor();
+
+        if (badge != nullptr) {
+            const float bw = ImGui::CalcTextSize(badge).x + 14.0f;
+            ImGui::SameLine();
+            ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(),
+                                          ImGui::GetWindowWidth() - bw - 8.0f));
+            ImGui::PushStyleColor(ImGuiCol_Text, theme::v4(badgeCol));
+            ImGui::TextUnformatted(badge);
+            ImGui::PopStyleColor();
+        }
+
+        const ImVec2 box = ImGui::GetContentRegionAvail();
+        if (box.x < 20.0f || box.y < 20.0f) { ImGui::EndChild(); return; }
+
+        const ImVec2 org = ImGui::GetCursorScreenPos();
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        dl->AddRectFilled(org, ImVec2(org.x + box.x, org.y + box.y),
+                          IM_COL32(0, 0, 0, 255), 4.0f);
+
+        if (canvasTex != nullptr && canvasTex->isAllocated()) {
+            const float tw = canvasTex->getWidth();
+            const float th = canvasTex->getHeight();
+            const float sc = std::min(box.x / tw, box.y / th);
+            const float dw = tw * sc, dh = th * sc;
+            const ImVec2 tl(org.x + (box.x - dw) * 0.5f, org.y + (box.y - dh) * 0.5f);
+
+            dl->AddImage(GetImTextureID(*canvasTex), tl, ImVec2(tl.x + dw, tl.y + dh));
+
+            // ★ Man hinh phai ve them VUNG LAY cua tung slice.
+            //   Day la khac biet that giua hai o: ben trai la toan bo
+            //   canvas, ben phai cho biet phan nao cua canvas THUC SU
+            //   duoc chieu ra. Khong co no thi hai o giong het nhau va
+            //   cai thu hai vo nghia.
+            if (showSliceRects && !p.screens.empty()) {
+                const Vec2 cs = p.composition.canvasSize;
+                if (cs.x > 0.0 && cs.y > 0.0) {
+                    for (const Screen& sc2 : p.screens) {
+                        if (!sc2.enabled) continue;
+                        for (int si : sc2.visibleSlices()) {
+                            const Slice& sl = sc2.slices[static_cast<std::size_t>(si)];
+                            const ImVec2 a0(
+                                tl.x + static_cast<float>(sl.inputOrigin.x / cs.x) * dw,
+                                tl.y + static_cast<float>(sl.inputOrigin.y / cs.y) * dh);
+                            const ImVec2 a1(
+                                a0.x + static_cast<float>(sl.inputSize.x / cs.x) * dw,
+                                a0.y + static_cast<float>(sl.inputSize.y / cs.y) * dh);
+                            dl->AddRect(a0, a1, theme::alpha(theme::Primary, 0.9f), 0.0f, 0, 1.5f);
+                            if (!sl.name.empty()) {
+                                dl->AddText(ImVec2(a0.x + 4.0f, a0.y + 2.0f),
+                                            theme::alpha(theme::Primary, 0.9f), sl.name.c_str());
+                            }
+                        }
+                    }
                 }
             }
-            if (!clip.isEmpty() && ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("%s\n%s", clip.name.c_str(), clip.media.path.c_str());
-            }
-
-            ImGui::PopStyleColor();
-            ImGui::PopID();
+        } else {
+            const char* msg = TR("preview.nocontent");
+            const ImVec2 tsz = ImGui::CalcTextSize(msg);
+            dl->AddText(ImVec2(org.x + (box.x - tsz.x) * 0.5f,
+                               org.y + (box.y - tsz.y) * 0.5f),
+                        theme::TextFaint, msg);
         }
-        ImGui::PopID();
-    }
 
-    ImGui::Spacing();
-    if (ImGui::Button(TR("comp.clearall"))) comp.clearAll();
+        dl->AddRect(org, ImVec2(org.x + box.x, org.y + box.y),
+                    showSliceRects ? theme::alpha(theme::Primary, 0.45f) : theme::Border,
+                    4.0f);
+        ImGui::EndChild();
+    };
+
+    char fps[32];
+    std::snprintf(fps, sizeof(fps), "%.1f FPS", s.fps);
+
+    monitor("##mon_preview", TR("mon.preview"), theme::TextDim, false, nullptr, 0);
     ImGui::SameLine();
-    ImGui::TextDisabled("%s", TR("comp.hint"));
+    monitor("##mon_active", TR("mon.active"), theme::Primary, true, fps,
+            (s.fps >= 55.0) ? theme::Success : theme::Warning);
 }
 
-// ── A7 A8 A11: layer ───────────────────────────────────────────────────
+// ── Bang thuoc tinh ────────────────────────────────────────────────────
 
-void ControlPanel::drawLayerPanel(Project& p) {
+void ControlPanel::drawInspector(Project& p) {
+    ImGui::TextUnformatted(TR("inspector.title"));
+    ImGui::Separator();
+    drawClipPanel(p);
+}
+
+// ── Luoi layer × cot ───────────────────────────────────────────────────
+
+void ControlPanel::drawLayersDeck(Project& p) {
     Composition& comp = p.composition;
 
-    float master = static_cast<float>(comp.masterOpacity);
-    if (ImGui::SliderFloat(TR("comp.master"), &master, 0.0f, 1.0f)) {
-        comp.masterOpacity = master;
+    // ── Thanh cong cu deck ─────────────────────────────────────────────
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted(TR("comp.deck"));
+    for (int d = 0; d < comp.deckCount(); ++d) {
+        ImGui::SameLine(0.0f, 6.0f);
+        const bool act = (d == comp.viewedDeck());
+        if (theme::tabButton(comp.deck(d).name.c_str(), act, ImVec2(76, 0))) {
+            comp.setViewedDeck(d);   // A9 — chi doi deck dang XEM
+        }
     }
 
-    for (int L = comp.layerCount() - 1; L >= 0; --L) {
-        Layer& layer = comp.layer(L);
-        ImGui::PushID(2000 + L);
-
-        ImGui::SetNextItemWidth(110.0f);
-        float op = static_cast<float>(layer.opacity);
-        if (ImGui::SliderFloat("##op", &op, 0.0f, 1.0f, "%.2f")) layer.opacity = op;
-
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(100.0f);
-        int blend = static_cast<int>(layer.blend);
-        if (ImGui::Combo("##blend", &blend, kBlendNames, IM_ARRAYSIZE(kBlendNames))) {
-            layer.blend = static_cast<BlendMode>(blend);
-        }
-
-        ImGui::SameLine();
-        ImGui::Checkbox("S", &layer.solo);
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("layer.solo.tip"));
-
-        ImGui::SameLine();
-        ImGui::Checkbox("B", &layer.bypass);
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("layer.bypass.tip"));
-
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(70.0f);
-        float tr = static_cast<float>(layer.transitionDuration);
-        if (ImGui::DragFloat("##tr", &tr, 0.01f, 0.0f, 10.0f, "%.2fs")) {
-            layer.transitionDuration = std::max(0.0f, tr);
-        }
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("%s", TR("layer.transition.tip"));
-        }
-
-        ImGui::SameLine();
-        if (ImGui::SmallButton("X")) layer.clear();
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("layer.clear.tip"));
-
-        ImGui::SameLine();
-        ImGui::Text("%s", layer.name.c_str());
-
-        ImGui::PopID();
+    ImGui::SameLine(0.0f, 18.0f);
+    if (theme::outlineButton(TR("comp.clearall"), theme::Danger, ImVec2(90, 0))) {
+        comp.clearAll();
     }
+    ImGui::SameLine(0.0f, 14.0f);
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextDisabled("%s", TR("comp.hint"));
+
+    const int cols   = comp.columnCount();
+    const int layers = comp.layerCount();
+    if (cols <= 0 || layers <= 0) {
+        ImGui::TextDisabled("%s", TR("comp.empty"));
+        return;
+    }
+
+    // ── Bang: cot layer DINH ben trai, hang tieu de DINH tren ──────────
+    //
+    // ★ Dung ImGui table voi ScrollFreeze thay vi tu cuon tung hang.
+    //   Neu moi hang tu cuon rieng, keo hang nay thi hang kia dung yen va
+    //   cac o clip lech cot nhau — luoi mat het y nghia.
+    const ImGuiTableFlags tf = ImGuiTableFlags_ScrollX | ImGuiTableFlags_ScrollY
+                             | ImGuiTableFlags_BordersInnerV
+                             | ImGuiTableFlags_SizingFixedFit;
+
+    ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(2, 2));
+    if (ImGui::BeginTable("##deckgrid", cols + 1, tf)) {
+        ImGui::TableSetupColumn("##layer", ImGuiTableColumnFlags_WidthFixed,
+                                theme::LayerCtrlW);
+        for (int c = 0; c < cols; ++c) {
+            char id[24];
+            std::snprintf(id, sizeof(id), "##col%d", c);
+            ImGui::TableSetupColumn(id, ImGuiTableColumnFlags_WidthFixed, theme::ClipW);
+        }
+        ImGui::TableSetupScrollFreeze(1, 1);
+
+        // Hang tieu de: bam so cot = phat ca cot (A6).
+        ImGui::TableNextRow(ImGuiTableRowFlags_Headers, 22.0f);
+        ImGui::TableSetColumnIndex(0);
+        for (int c = 0; c < cols; ++c) {
+            ImGui::TableSetColumnIndex(c + 1);
+            ImGui::PushID(20000 + c);
+            char lbl[24];
+            std::snprintf(lbl, sizeof(lbl), "COL %d", c + 1);
+            if (theme::tabButton(lbl, false, ImVec2(-FLT_MIN, 18.0f), theme::Primary)) {
+                comp.triggerColumn(c);
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip(TR("comp.triggercol"), c + 1);
+            ImGui::PopID();
+        }
+
+        // Layer ve tu TREN xuong: chi so cao = tren cung, giong Resolume.
+        for (int L = layers - 1; L >= 0; --L) {
+            Layer& layer = comp.layer(L);
+            ImGui::TableNextRow(ImGuiTableRowFlags_None, theme::LayerRowH);
+            ImGui::PushID(3000 + L);
+
+            // ── Cot dieu khien layer ───────────────────────────────────
+            ImGui::TableSetColumnIndex(0);
+            {
+                // ★ Ten CAT NGAN ve be rong co dinh, roi ba nut dat o mot
+                //   moc CO DINH tinh tu dau o.
+                //
+                //   Khong dung GetContentRegionAvail() o day: trong mot o
+                //   cua ImGui table no KHONG tra ve be rong cua o, va ba
+                //   nut bi day ra ngoai cot roi bi cat mat — nhin thi
+                //   tuong cot qua hep, that ra la phep tinh sai.
+                char nameBuf[16];
+                std::snprintf(nameBuf, sizeof(nameBuf), "%-9.9s", layer.name.c_str());
+
+                ImGui::AlignTextToFramePadding();
+                ImGui::TextUnformatted(nameBuf);
+
+                constexpr float kBtnBlockW = 24.0f * 3.0f + 3.0f * 2.0f;
+                constexpr float kBtnAnchor = 132.0f;   // < LayerCtrlW - kBtnBlockW
+                ImGui::SameLine(0.0f, std::max(6.0f,
+                    kBtnAnchor - ImGui::CalcTextSize(nameBuf).x));
+
+                const ImVec2 bs(24.0f, 20.0f);
+                if (theme::tabButton("S", layer.solo, bs, theme::Info)) layer.solo = !layer.solo;
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("layer.solo.tip"));
+                ImGui::SameLine(0.0f, 3.0f);
+                if (theme::tabButton("B", layer.bypass, bs, theme::Danger)) layer.bypass = !layer.bypass;
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("layer.bypass.tip"));
+                ImGui::SameLine(0.0f, 3.0f);
+                if (theme::tabButton("X", false, bs, theme::Danger)) layer.clear();
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("layer.clear.tip"));
+
+                // ★ Model luu 0..1 nhung nguoi van hanh nghi bang PHAN TRAM.
+                //   Dua thang gia tri 0..1 vao dinh dang "%.0f%%" cho ra
+                //   "1%" khi opacity = 1.0 — sai hoan toan va rat de tin.
+                float opPct = static_cast<float>(layer.opacity * 100.0);
+                ImGui::SetNextItemWidth(theme::LayerCtrlW - 8.0f);
+                if (ImGui::SliderFloat("##op", &opPct, 0.0f, 100.0f, "OPACITY  %.0f%%",
+                                       ImGuiSliderFlags_AlwaysClamp)) {
+                    layer.opacity = opPct / 100.0;
+                }
+
+                ImGui::SetNextItemWidth((theme::LayerCtrlW - 12.0f) * 0.58f);
+                int blend = static_cast<int>(layer.blend);
+                if (ImGui::Combo("##blend", &blend, kBlendNames, IM_ARRAYSIZE(kBlendNames))) {
+                    layer.blend = static_cast<BlendMode>(blend);
+                }
+                ImGui::SameLine(0.0f, 4.0f);
+                ImGui::SetNextItemWidth((theme::LayerCtrlW - 12.0f) * 0.38f);
+                float tr = static_cast<float>(layer.transitionDuration);
+                if (ImGui::DragFloat("##tr", &tr, 0.01f, 0.0f, 10.0f, "%.2fs")) {
+                    layer.transitionDuration = std::max(0.0f, tr);
+                }
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("layer.transition.tip"));
+            }
+
+            // ── Cac o clip ─────────────────────────────────────────────
+            for (int c = 0; c < cols; ++c) {
+                ImGui::TableSetColumnIndex(c + 1);
+                ImGui::PushID(c);
+
+                const Clip& clip = comp.deck(comp.viewedDeck()).clip(L, c);
+                const bool playing  = (layer.activeDeck == comp.viewedDeck()
+                                       && layer.activeColumn == c);
+                const bool selected = (L == m_selLayer && c == m_selColumn);
+                const bool empty    = clip.isEmpty();
+
+                ImU32 bg     = theme::alpha(theme::BgSunken, 0.9f);
+                ImU32 border = theme::alpha(theme::Border, 0.8f);
+                if (playing)      { bg = theme::alpha(theme::Primary, 0.16f); border = theme::Primary; }
+                else if (!empty)  { bg = theme::BgCard;                       border = theme::BorderLit; }
+                if (selected)     { border = theme::Warning; }
+
+                ImGui::PushStyleColor(ImGuiCol_Button,        theme::v4(bg));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, theme::v4(theme::alpha(theme::Info, 0.20f)));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive,  theme::v4(theme::alpha(theme::Info, 0.32f)));
+                ImGui::PushStyleColor(ImGuiCol_Border,        theme::v4(border));
+
+                if (ImGui::Button("##cell", ImVec2(-FLT_MIN, theme::LayerRowH - 8.0f))) {
+                    // ★ Bam MOT lan = CHON, khong phat.
+                    //
+                    //   Truoc day bam la phat ngay. Nhung nguoi van hanh
+                    //   phai chinh duoc clip SAP dung ma khong lam gian
+                    //   doan clip dang chieu — bam nham mot o giua buoi
+                    //   dien la khan gia thay ngay.
+                    //   Phat = bam DUP, hoac bam so cot.
+                    m_selLayer  = L;
+                    m_selColumn = c;
+                    if (empty) {
+                        m_pendingBrowse = true;
+                        m_browseLayer   = L;
+                        m_browseColumn  = c;
+                    }
+                }
+                if (!empty && ImGui::IsItemHovered()
+                    && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                    comp.triggerClip(L, c);
+                }
+
+                const ImVec2 r0 = ImGui::GetItemRectMin();
+                const ImVec2 r1 = ImGui::GetItemRectMax();
+                ImDrawList* dl = ImGui::GetWindowDrawList();
+
+                if (empty) {
+                    const ImVec2 ts = ImGui::CalcTextSize("+");
+                    dl->AddText(ImVec2((r0.x + r1.x - ts.x) * 0.5f,
+                                       (r0.y + r1.y - ts.y) * 0.5f),
+                                theme::alpha(theme::TextFaint, 0.9f), "+");
+                } else {
+                    dl->PushClipRect(r0, r1, true);
+                    dl->AddText(ImVec2(r0.x + 5.0f, r0.y + 4.0f), theme::Text,
+                                clip.name.c_str());
+                    dl->PopClipRect();
+
+                    if (playing) {
+                        // Thanh tien do: nguoi van hanh phai biet clip con
+                        // bao lau de chuyen tiep dung nhip.
+                        const float t = static_cast<float>(
+                            std::clamp(clip.transport.position, 0.0, 1.0));
+                        dl->AddRectFilled(ImVec2(r0.x, r1.y - 3.0f),
+                                          ImVec2(r0.x + (r1.x - r0.x) * t, r1.y),
+                                          theme::Primary);
+                    }
+                }
+
+                ImGui::PopStyleColor(4);
+
+                if (!empty && ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("%s\n%s\n%s", clip.name.c_str(),
+                                      clip.media.path.c_str(), TR("comp.cellhint"));
+                }
+                ImGui::PopID();
+            }
+            ImGui::PopID();
+        }
+        ImGui::EndTable();
+    }
+    ImGui::PopStyleVar();
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  TRANG 2 — ADVANCED MAPPING
+// ═══════════════════════════════════════════════════════════════════════
+
+void ControlPanel::drawMapToolbar(Project& p, EditState& edit, UiActions& a) {
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::v4(theme::BgPanel));
+    ImGui::BeginChild("##maptools", ImVec2(0, theme::ToolBarH), ImGuiChildFlags_None,
+                      ImGuiWindowFlags_NoScrollbar);
+    {
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        const ImVec2 wp = ImGui::GetWindowPos();
+        dl->AddLine(ImVec2(wp.x, wp.y + theme::ToolBarH - 1.0f),
+                    ImVec2(wp.x + ImGui::GetWindowWidth(), wp.y + theme::ToolBarH - 1.0f),
+                    theme::Border);
+    }
+
+    ImGui::SetCursorPos(ImVec2(10.0f, (theme::ToolBarH - ImGui::GetFrameHeight()) * 0.5f));
+
+    // ── Trai: them / xoa slice ─────────────────────────────────────────
+    if (theme::outlineButton(TR("adv.addslice"), theme::Success, ImVec2(0, 0))) {
+        a.addSliceToScreen = m_activeScreen;
+    }
+    ImGui::SameLine(0.0f, 6.0f);
+    if (theme::outlineButton(TR("adv.delete"), theme::Danger, ImVec2(0, 0))) {
+        a.removeSliceIndex = edit.activeSliceIndex;
+    }
+
+    ImGui::SameLine(0.0f, 14.0f);
+    if (theme::tabButton(TR("map.showcontent"), m_mapShowContent, ImVec2(0, 0), theme::Info)) {
+        m_mapShowContent = !m_mapShowContent;
+    }
+    ImGui::SameLine(0.0f, 6.0f);
+    if (theme::tabButton(TR("adv.grid"), edit.showGrid, ImVec2(0, 0), theme::Info)) {
+        edit.showGrid = !edit.showGrid;
+    }
+    ImGui::SameLine(0.0f, 6.0f);
+    if (theme::tabButton(TR("mask.edit"), edit.maskEditMode, ImVec2(0, 0), theme::Success)) {
+        edit.maskEditMode = !edit.maskEditMode;
+        m_mapDragPoint = -1;
+        edit.maskDraggedNode = -1;
+    }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("mask.edit.tip"));
+
+    // ── Giua: cong tac INPUT / OUTPUT ──────────────────────────────────
+    //
+    // ★ Hai nua cua CUNG mot thao tac, nen dung chung mot khung nhin.
+    //   "Lay phan nao cua hinh" (INPUT) va "dat no o dau tren vat the"
+    //   (OUTPUT). Truoc day chi chinh duoc OUTPUT bang chuot, con INPUT
+    //   phai go so — trong khi ca hai deu la viec keo hinh chu nhat.
+    {
+        constexpr float kModeW = 320.0f;
+        ImGui::SameLine();
+        ImGui::SetCursorPosX((ImGui::GetWindowWidth() - kModeW) * 0.5f);
+
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::v4(theme::BgSunken));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(3, 3));
+        ImGui::BeginChild("##mapmode", ImVec2(kModeW, theme::ToolBarH - 10.0f),
+                          ImGuiChildFlags_Borders, ImGuiWindowFlags_NoScrollbar);
+
+        const ImVec2 msz(152.0f, 0.0f);
+        if (theme::tabButton(TR("map.mode.input"), m_mapMode == MapMode::Input,
+                             msz, theme::Success)) {
+            m_mapMode = MapMode::Input;
+        }
+        ImGui::SameLine(0.0f, 2.0f);
+        if (theme::tabButton(TR("map.mode.output"), m_mapMode == MapMode::Output,
+                             msz, theme::Primary)) {
+            m_mapMode = MapMode::Output;
+        }
+
+        ImGui::EndChild();
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor();
+    }
+
+    // ── Phai: dua ra may chieu + an/hien bang ──────────────────────────
+    {
+        const float rightW = 330.0f;
+        ImGui::SameLine();
+        ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(),
+                                      ImGui::GetWindowWidth() - rightW));
+
+        if (theme::outlineButton(TR("menu.output.fullscreen"), theme::Primary, ImVec2(0, 0))) {
+            a.toggleFullscreen = true;
+        }
+        ImGui::SameLine(0.0f, 6.0f);
+        if (theme::outlineButton(TR("menu.output.windowed"), theme::Info, ImVec2(0, 0))) {
+            a.outputWindowed = true;
+        }
+        ImGui::SameLine(0.0f, 6.0f);
+        if (theme::tabButton("[ ]", m_showMapSidebar, ImVec2(30, 0), theme::Text)) {
+            m_showMapSidebar = !m_showMapSidebar;
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("map.sidebar"));
+    }
+
+    ImGui::EndChild();
+    ImGui::PopStyleColor();
+    (void)p;
+}
+
+void ControlPanel::drawMappingView(Project& p, EditState& edit,
+                                   const ofTexture* canvasTex, UiActions& a) {
+    drawMapToolbar(p, edit, a);
+
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(6, 6));
+
+    const float sideW = m_showMapSidebar ? theme::InspectorW : 0.0f;
+    const float workW = std::max(200.0f,
+        ImGui::GetContentRegionAvail().x - sideW - (m_showMapSidebar ? 6.0f : 0.0f));
+
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::v4(theme::BgApp));
+    ImGui::BeginChild("##workspace", ImVec2(workW, 0), ImGuiChildFlags_Borders,
+                      ImGuiWindowFlags_NoScrollbar);
+    {
+        // Nhan cho biet dang nhin vao KHONG GIAN NAO. Hai che do trong rat
+        // giong nhau — deu la hinh chu nhat tren nen toi — nen thieu nhan
+        // thi rat de chinh nham khong gian.
+        theme::statusDot(m_mapMode == MapMode::Input ? theme::Success : theme::Primary);
+        ImGui::SameLine(0.0f, 6.0f);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextDisabled("%s", m_mapMode == MapMode::Input
+                                  ? TR("map.mode.input.note") : TR("map.mode.output.note"));
+
+        if (m_mapMode == MapMode::Input) drawInputEditor(p, edit, canvasTex);
+        else                             drawMappingEditor(p, edit, canvasTex);
+    }
+    ImGui::EndChild();
+    ImGui::PopStyleColor();
+
+    if (m_showMapSidebar) {
+        ImGui::SameLine();
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::v4(theme::BgPanel));
+        ImGui::BeginChild("##sliceset", ImVec2(0, 0), ImGuiChildFlags_Borders);
+        drawSliceSettings(p, edit, a);
+        ImGui::EndChild();
+        ImGui::PopStyleColor();
+    }
+
+    ImGui::PopStyleVar();
+}
+
+void ControlPanel::drawSliceSettings(Project& p, EditState& edit, UiActions& a) {
+    ImGui::TextUnformatted(TR("slice.settings"));
+    ImGui::Separator();
+    drawScreenPanel(p, edit, a);
+}
+
+// ── Che do INPUT: keo vung LAY tren canvas ─────────────────────────────
+
+void ControlPanel::drawInputEditor(Project& p, EditState& edit,
+                                   const ofTexture* canvasTex) {
+    if (p.screens.empty()) { ImGui::TextDisabled("%s", TR("map.noscreen")); return; }
+
+    m_activeScreen = std::clamp(m_activeScreen, 0,
+                                static_cast<int>(p.screens.size()) - 1);
+    Screen& sc = p.screens[static_cast<std::size_t>(m_activeScreen)];
+
+    const Vec2 cs = p.composition.canvasSize;
+    if (cs.x <= 0.0 || cs.y <= 0.0) return;
+
+    const ImVec2 avail = ImGui::GetContentRegionAvail();
+    if (avail.x < 60.0f || avail.y < 60.0f) return;
+
+    const float scale = std::min(avail.x * 0.92f / static_cast<float>(cs.x),
+                                 avail.y * 0.92f / static_cast<float>(cs.y));
+    const float dw = static_cast<float>(cs.x) * scale;
+    const float dh = static_cast<float>(cs.y) * scale;
+
+    const ImVec2 cur = ImGui::GetCursorScreenPos();
+    const ImVec2 org(cur.x + (avail.x - dw) * 0.5f, cur.y + (avail.y - dh) * 0.5f);
+
+    auto toWidget = [&](const Vec2& v) {
+        return ImVec2(org.x + static_cast<float>(v.x) * scale,
+                      org.y + static_cast<float>(v.y) * scale);
+    };
+    auto toCanvas = [&](const ImVec2& v) {
+        return Vec2{(v.x - org.x) / scale, (v.y - org.y) / scale};
+    };
+
+    ImGui::InvisibleButton("##inputcanvas", avail);
+    const bool hovered = ImGui::IsItemHovered();
+    const bool active  = ImGui::IsItemActive();
+
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    dl->AddRectFilled(org, ImVec2(org.x + dw, org.y + dh), IM_COL32(10, 10, 12, 255));
+
+    if (canvasTex != nullptr && canvasTex->isAllocated()) {
+        dl->AddImage(GetImTextureID(*canvasTex), org, ImVec2(org.x + dw, org.y + dh));
+    }
+    dl->AddRect(org, ImVec2(org.x + dw, org.y + dh), theme::BorderLit);
+
+    // ── Vung lay cua tung slice ────────────────────────────────────────
+    const int n = sc.sliceCount();
+    int hitCorner = -1;   // 0 = goc tren-trai, 1 = goc duoi-phai, 2 = ca khoi
+    int hitSlice  = -1;
+
+    const ImVec2 mouse = ImGui::GetIO().MousePos;
+    constexpr float kGrab = 11.0f;
+
+    for (int i = 0; i < n; ++i) {
+        const Slice& s = sc.slices[static_cast<std::size_t>(i)];
+        const ImVec2 a0 = toWidget(s.inputOrigin);
+        const ImVec2 a1 = toWidget(Vec2{s.inputOrigin.x + s.inputSize.x,
+                                        s.inputOrigin.y + s.inputSize.y});
+
+        const bool sel = (i == edit.activeSliceIndex);
+        const ImU32 col = sel ? theme::Success : theme::alpha(theme::Info, 0.75f);
+
+        dl->AddRectFilled(a0, a1, theme::alpha(col, sel ? 0.14f : 0.07f));
+        dl->AddRect(a0, a1, col, 0.0f, 0, sel ? 2.0f : 1.0f);
+        if (!s.name.empty()) {
+            dl->AddText(ImVec2(a0.x + 5.0f, a0.y - 16.0f), col, s.name.c_str());
+        }
+
+        if (!sel || !(hovered || active)) continue;
+
+        // Hai tay nam goc + than khoi. Du de keo va thay doi kich thuoc
+        // ma khong can 8 tay nam nhu trinh sua anh — o day chi can vung
+        // chu nhat, khong xoay.
+        dl->AddRectFilled(ImVec2(a0.x - 4, a0.y - 4), ImVec2(a0.x + 4, a0.y + 4), col);
+        dl->AddRectFilled(ImVec2(a1.x - 4, a1.y - 4), ImVec2(a1.x + 4, a1.y + 4), col);
+
+        // Ten `near` KHONG dung duoc: windows.h dinh nghia no thanh macro
+        // rong, va loi bao ra la "auto: no variable declared" — hoan toan
+        // khong goi y gi den nguyen nhan that.
+        auto grabbed = [&](const ImVec2& q) {
+            return std::abs(q.x - mouse.x) < kGrab && std::abs(q.y - mouse.y) < kGrab;
+        };
+        if      (grabbed(a0)) { hitCorner = 0; hitSlice = i; }
+        else if (grabbed(a1)) { hitCorner = 1; hitSlice = i; }
+        else if (mouse.x > a0.x && mouse.x < a1.x
+                 && mouse.y > a0.y && mouse.y < a1.y) { hitCorner = 2; hitSlice = i; }
+    }
+
+    // ── Tuong tac ──────────────────────────────────────────────────────
+    if (active && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        if (hitSlice >= 0) {
+            m_inputDragPart = hitCorner;
+        } else {
+            m_inputDragPart = -1;
+            // Bam vao cho trong: chon slice co vung lay chua diem do.
+            const Vec2 cp = toCanvas(mouse);
+            for (int i = n - 1; i >= 0; --i) {
+                const Slice& s = sc.slices[static_cast<std::size_t>(i)];
+                if (cp.x >= s.inputOrigin.x && cp.x <= s.inputOrigin.x + s.inputSize.x
+                    && cp.y >= s.inputOrigin.y && cp.y <= s.inputOrigin.y + s.inputSize.y) {
+                    edit.activeSliceIndex = i;
+                    break;
+                }
+            }
+        }
+    }
+    if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) m_inputDragPart = -1;
+
+    if (m_inputDragPart >= 0 && edit.activeSliceIndex >= 0
+        && edit.activeSliceIndex < n
+        && ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
+
+        Slice& s = sc.slices[static_cast<std::size_t>(edit.activeSliceIndex)];
+        const ImVec2 d = ImGui::GetIO().MouseDelta;
+        const Vec2 dv{d.x / scale, d.y / scale};
+
+        if (m_inputDragPart == 2) {
+            s.inputOrigin.x += dv.x;
+            s.inputOrigin.y += dv.y;
+        } else if (m_inputDragPart == 0) {
+            // Keo goc tren-trai: goc duoi-phai dung yen, nen kich thuoc
+            // phai bu lai. Chan o 8px de vung khong bi bop ve 0 roi bien
+            // mat khoi khung nhin.
+            const double nx = std::min(s.inputOrigin.x + dv.x,
+                                       s.inputOrigin.x + s.inputSize.x - 8.0);
+            const double ny = std::min(s.inputOrigin.y + dv.y,
+                                       s.inputOrigin.y + s.inputSize.y - 8.0);
+            s.inputSize.x += s.inputOrigin.x - nx;
+            s.inputSize.y += s.inputOrigin.y - ny;
+            s.inputOrigin  = Vec2{nx, ny};
+        } else {
+            s.inputSize.x = std::max(8.0, s.inputSize.x + dv.x);
+            s.inputSize.y = std::max(8.0, s.inputSize.y + dv.y);
+        }
+    }
+
+    ImGui::SetCursorScreenPos(ImVec2(org.x, org.y + dh + 6.0f));
+    ImGui::TextDisabled("%s", TR("map.input.hint"));
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  TRANG 3 — SENSOR I/O
+// ═══════════════════════════════════════════════════════════════════════
+
+void ControlPanel::drawSensorView(Project& p, const PerfStats& s, UiActions& a) {
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(6, 6));
+
+    // ── Trai: quan ly thiet bi ─────────────────────────────────────────
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::v4(theme::BgPanel));
+    ImGui::BeginChild("##devices", ImVec2(300.0f, 0), ImGuiChildFlags_Borders);
+    {
+        ImGui::TextUnformatted(TR("sen.devices"));
+        ImGui::Separator();
+        drawSensorPanel(p, s, a);
+
+        ImGui::Spacing();
+        theme::sectionLabel(TR("perf.title"));
+        drawPerfPanel(s);
+    }
+    ImGui::EndChild();
+    ImGui::PopStyleColor();
+
+    // ── Giua: khung nhin diem cham ─────────────────────────────────────
+    ImGui::SameLine();
+    const float rightW = 340.0f;
+    const float midW = std::max(200.0f,
+        ImGui::GetContentRegionAvail().x - rightW - 6.0f);
+
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::v4(theme::BgSunken));
+    ImGui::BeginChild("##radar", ImVec2(midW, 0), ImGuiChildFlags_Borders,
+                      ImGuiWindowFlags_NoScrollbar);
+    {
+        // So diem cham da hien o bang THIET BI ben trai; lap lai o day chi
+        // them nhieu. Cai khung nay can la TRANG THAI dang chay hay khong.
+        theme::statusDot(s.sensorConnected ? theme::Success : theme::TextFaint);
+        ImGui::SameLine(0.0f, 6.0f);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextDisabled("%s", s.sensorConnected ? TR("sen.running") : TR("sen.stopped"));
+
+        const ImVec2 avail = ImGui::GetContentRegionAvail();
+        if (avail.x > 60.0f && avail.y > 60.0f && !p.screens.empty()) {
+            const Screen& sc = p.screens[static_cast<std::size_t>(
+                std::clamp(m_activeScreen, 0, static_cast<int>(p.screens.size()) - 1))];
+
+            const float rw = static_cast<float>(std::max(1.0, sc.resolution.x));
+            const float rh = static_cast<float>(std::max(1.0, sc.resolution.y));
+            const float k = std::min(avail.x * 0.94f / rw, avail.y * 0.94f / rh);
+            const float dw = rw * k, dh = rh * k;
+
+            const ImVec2 cur = ImGui::GetCursorScreenPos();
+            const ImVec2 org(cur.x + (avail.x - dw) * 0.5f, cur.y + (avail.y - dh) * 0.5f);
+            ImDrawList* dl = ImGui::GetWindowDrawList();
+
+            dl->AddRectFilled(org, ImVec2(org.x + dw, org.y + dh), IM_COL32(6, 6, 8, 255));
+
+            // Luoi dan huong — de uoc luong vi tri diem cham bang mat.
+            for (int i = 1; i < 8; ++i) {
+                const float t = static_cast<float>(i) / 8.0f;
+                dl->AddLine(ImVec2(org.x + dw * t, org.y),
+                            ImVec2(org.x + dw * t, org.y + dh),
+                            theme::alpha(theme::Info, 0.13f));
+                dl->AddLine(ImVec2(org.x, org.y + dh * t),
+                            ImVec2(org.x + dw, org.y + dh * t),
+                            theme::alpha(theme::Info, 0.13f));
+            }
+            dl->AddRect(org, ImVec2(org.x + dw, org.y + dh), theme::Border);
+
+            // Vien tung slice.
+            for (int i = 0; i < sc.sliceCount(); ++i) {
+                const Slice& sl = sc.slices[static_cast<std::size_t>(i)];
+                const IWarp* w = sl.warp();
+                if (w == nullptr) continue;
+                ImVec2 q[4];
+                const Vec2 uv[4] = {{0, 0}, {1, 0}, {1, 1}, {0, 1}};
+                for (int c = 0; c < 4; ++c) {
+                    const Vec2 o = w->forward(uv[c]);
+                    q[c] = ImVec2(org.x + static_cast<float>(o.x) * k,
+                                  org.y + static_cast<float>(o.y) * k);
+                }
+                dl->AddPolyline(q, 4, theme::alpha(theme::Primary, 0.55f),
+                                ImDrawFlags_Closed, 1.5f);
+            }
+
+            // Diem cham da anh xa — day la bang chung calibration dung
+            // hay sai: cham vao vat the, cham phai roi dung cho tay minh.
+            for (const Vec2& v : m_sensorPoints) {
+                const ImVec2 q(org.x + static_cast<float>(v.x) * k,
+                               org.y + static_cast<float>(v.y) * k);
+                dl->AddCircleFilled(q, 5.0f, theme::alpha(theme::Success, 0.85f));
+                dl->AddCircle(q, 11.0f, theme::Success, 0, 1.5f);
+            }
+
+            ImGui::Dummy(avail);
+        }
+    }
+    ImGui::EndChild();
+    ImGui::PopStyleColor();
+
+    // ── Phai: calibration + vung cam ung ───────────────────────────────
+    ImGui::SameLine();
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::v4(theme::BgPanel));
+    ImGui::BeginChild("##calib", ImVec2(0, 0), ImGuiChildFlags_Borders);
+    {
+        ImGui::TextUnformatted(TR("cal.section"));
+        ImGui::Separator();
+        drawCalibrationPanel(p, s, a);
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        drawTriggerZonePanel(p, a);
+    }
+    ImGui::EndChild();
+    ImGui::PopStyleColor();
+
+    ImGui::PopStyleVar();
 }
 
 // ── F1 F3 F5 F15 F16: screen & slice ───────────────────────────────────
@@ -433,14 +1217,21 @@ void ControlPanel::drawScreenPanel(Project& p, EditState& edit, UiActions& a) {
 
     m_activeScreen = std::clamp(m_activeScreen, 0, static_cast<int>(p.screens.size()) - 1);
 
+    // ★ Bang nay rong 280px. Moi dong PHAI vua trong do.
+    //
+    //   ImGui khong cat bot noi dung tran ra: no NOI RONG vung noi dung
+    //   cua child. Hau qua khong hien nhien chut nao — moi widget dat be
+    //   rong bang "-FLT_MIN" (het cho con lai) se an theo be rong da noi
+    //   ay va thanh ra rong hon khung nhin, tuc la CA BANG bi cat, khong
+    //   rieng dong gay ra chuyen do.
     for (size_t i = 0; i < p.screens.size(); ++i) {
-        if (i > 0) ImGui::SameLine();
         const bool active = (static_cast<int>(i) == m_activeScreen);
-        if (active) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.35f, 0.55f, 0.85f, 1.0f));
         ImGui::PushID(static_cast<int>(i));
-        if (ImGui::Button(p.screens[i].name.c_str())) m_activeScreen = static_cast<int>(i);
+        if (theme::tabButton(p.screens[i].name.c_str(), active,
+                             ImVec2(-FLT_MIN, 0), theme::Info)) {
+            m_activeScreen = static_cast<int>(i);
+        }
         ImGui::PopID();
-        if (active) ImGui::PopStyleColor();
     }
 
     Screen& sc = p.screens[static_cast<size_t>(m_activeScreen)];
@@ -450,37 +1241,41 @@ void ControlPanel::drawScreenPanel(Project& p, EditState& edit, UiActions& a) {
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("%s", TR("adv.overlay.tip"));
     }
-    ImGui::SameLine();
-    ImGui::Checkbox(TR("adv.grid"), &edit.showGrid);
 
-    if (ImGui::Button(TR("adv.addslice"))) a.addSliceToScreen = m_activeScreen;
+    if (theme::outlineButton(TR("adv.addslice"), theme::Success, ImVec2(-FLT_MIN, 0))) {
+        a.addSliceToScreen = m_activeScreen;
+    }
 
     ImGui::Separator();
-    ImGui::Text("%s", TR("adv.slicelist"));
+    theme::sectionLabel(TR("adv.slicelist"));
 
     for (int i = 0; i < sc.sliceCount(); ++i) {
         Slice& s = sc.slices[static_cast<size_t>(i)];
         ImGui::PushID(3000 + i);
 
+        // Hang 1: chon + ten. Hang 2: bat/solo/xoa. Nhoi ca sau thu vao
+        // mot hang la thu da lam bang tran ngang.
         const bool selected = (i == edit.activeSliceIndex);
         if (ImGui::RadioButton("##sel", selected)) edit.activeSliceIndex = i;
-        ImGui::SameLine();
-        ImGui::Checkbox("##en", &s.enabled);
-        ImGui::SameLine();
-        ImGui::Checkbox(TR("adv.solo"), &s.solo);
         ImGui::SameLine();
 
         char nameBuf[64];
         std::snprintf(nameBuf, sizeof(nameBuf), "%s", s.name.c_str());
-        ImGui::SetNextItemWidth(120.0f);
+        ImGui::SetNextItemWidth(-FLT_MIN);
         if (ImGui::InputText("##name", nameBuf, sizeof(nameBuf))) s.name = nameBuf;
 
+        ImGui::Indent(22.0f);
+        ImGui::Checkbox(TR("common.on"), &s.enabled);
+        ImGui::SameLine();
+        ImGui::Checkbox(TR("adv.solo"), &s.solo);
         ImGui::SameLine();
         if (ImGui::SmallButton(TR("adv.delete"))) a.removeSliceIndex = i;
+        ImGui::Unindent(22.0f);
 
         if (!s.warp()->isInvertible()) {
-            ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f),
-                               "%s", TR("adv.broken"));
+            ImGui::PushStyleColor(ImGuiCol_Text, theme::v4(theme::Danger));
+            ImGui::TextWrapped("%s", TR("adv.broken"));
+            ImGui::PopStyleColor();
         }
         ImGui::PopID();
     }
@@ -492,44 +1287,52 @@ void ControlPanel::drawScreenPanel(Project& p, EditState& edit, UiActions& a) {
 
     Slice& s = sc.slices[static_cast<size_t>(edit.activeSliceIndex)];
     ImGui::Separator();
-    ImGui::Text(TR("adv.selected"), s.name.c_str());
+    ImGui::TextWrapped(TR("adv.selected"), s.name.c_str());
 
     // F4 — vùng lấy trên canvas
     float ox[2] = {static_cast<float>(s.inputOrigin.x), static_cast<float>(s.inputOrigin.y)};
-    if (ImGui::DragFloat2(TR("adv.inputorigin"), ox, 1.0f)) {
+    labelAbove(TR("adv.inputorigin"));
+    if (ImGui::DragFloat2("##inorg", ox, 1.0f)) {
         s.inputOrigin = Vec2{ox[0], ox[1]};
     }
     float sz[2] = {static_cast<float>(s.inputSize.x), static_cast<float>(s.inputSize.y)};
-    if (ImGui::DragFloat2(TR("adv.inputsize"), sz, 1.0f, 1.0f, 16384.0f)) {
+    labelAbove(TR("adv.inputsize"));
+    if (ImGui::DragFloat2("##insz", sz, 1.0f, 1.0f, 16384.0f)) {
         s.inputSize = Vec2{std::max(1.0f, sz[0]), std::max(1.0f, sz[1])};
     }
 
     // Đổi loại warp
     int warpType = (s.warp()->type() == WarpType::Mesh) ? 1 : 0;
     const char* warpNames[] = {"Corner pin", "Mesh"};
-    if (ImGui::Combo(TR("adv.warptype"), &warpType, warpNames, 2)) {
+    labelAbove(TR("adv.warptype"));
+    if (ImGui::Combo("##warptype", &warpType, warpNames, 2)) {
         a.convertWarpTo = warpType;
     }
-    ImGui::SameLine();
-    if (ImGui::Button(TR("adv.reset"))) a.resetActiveSliceWarp = true;
+    if (ImGui::Button(TR("adv.reset"), ImVec2(-FLT_MIN, 0))) a.resetActiveSliceWarp = true;
 
     // ── F19: hieu chinh mau rieng cho slice ────────────────────────────
     if (ImGui::TreeNode(TR("adv.color"))) {
+        ImGui::PushTextWrapPos(0.0f);
         ImGui::TextDisabled("%s", TR("adv.color.note"));
+        ImGui::PopTextWrapPos();
 
         float br = static_cast<float>(s.color.brightness);
-        if (ImGui::SliderFloat(TR("adv.color.brightness"), &br, -1.0f, 1.0f)) s.color.brightness = br;
+        labelAbove(TR("adv.color.brightness"));
+        if (ImGui::SliderFloat("##br", &br, -1.0f, 1.0f)) s.color.brightness = br;
 
         float ct = static_cast<float>(s.color.contrast);
-        if (ImGui::SliderFloat(TR("adv.color.contrast"), &ct, 0.0f, 3.0f)) s.color.contrast = ct;
+        labelAbove(TR("adv.color.contrast"));
+        if (ImGui::SliderFloat("##ct", &ct, 0.0f, 3.0f)) s.color.contrast = ct;
 
         float gm = static_cast<float>(s.color.gamma);
-        if (ImGui::SliderFloat(TR("adv.color.gamma"), &gm, 0.1f, 4.0f)) s.color.gamma = gm;
+        labelAbove(TR("adv.color.gamma"));
+        if (ImGui::SliderFloat("##gm", &gm, 0.1f, 4.0f)) s.color.gamma = gm;
 
         float gain[3] = {static_cast<float>(s.color.gainR),
                          static_cast<float>(s.color.gainG),
                          static_cast<float>(s.color.gainB)};
-        if (ImGui::ColorEdit3(TR("adv.color.rgb"), gain,
+        labelAbove(TR("adv.color.rgb"));
+        if (ImGui::ColorEdit3("##rgb", gain,
                               ImGuiColorEditFlags_Float | ImGuiColorEditFlags_HDR)) {
             s.color.gainR = gain[0];
             s.color.gainG = gain[1];
@@ -537,7 +1340,8 @@ void ControlPanel::drawScreenPanel(Project& p, EditState& edit, UiActions& a) {
         }
 
         float op = static_cast<float>(s.color.opacity);
-        if (ImGui::SliderFloat(TR("adv.color.opacity"), &op, 0.0f, 1.0f)) s.color.opacity = op;
+        labelAbove(TR("adv.color.opacity"));
+        if (ImGui::SliderFloat("##sop", &op, 0.0f, 1.0f)) s.color.opacity = op;
 
         if (ImGui::Button(TR("adv.color.reset"))) s.color.reset();
         ImGui::SameLine();
@@ -555,31 +1359,39 @@ void ControlPanel::drawScreenPanel(Project& p, EditState& edit, UiActions& a) {
 
     // ── F20: hoa vien de ghep nhieu may chieu ─────────────────────────
     if (ImGui::TreeNode(TR("adv.softedge"))) {
+        ImGui::PushTextWrapPos(0.0f);
         ImGui::TextDisabled(TR("adv.edge.note1"));
         ImGui::TextDisabled(TR("adv.edge.note2"));
+        ImGui::PopTextWrapPos();
 
         float e[4] = {static_cast<float>(s.softEdge.left),
                       static_cast<float>(s.softEdge.right),
                       static_cast<float>(s.softEdge.top),
                       static_cast<float>(s.softEdge.bottom)};
         bool changed = false;
-        changed |= ImGui::SliderFloat(TR("adv.edge.left"),   &e[0], 0.0f, 0.5f, "%.3f");
-        changed |= ImGui::SliderFloat(TR("adv.edge.right"),  &e[1], 0.0f, 0.5f, "%.3f");
-        changed |= ImGui::SliderFloat(TR("adv.edge.top"),    &e[2], 0.0f, 0.5f, "%.3f");
-        changed |= ImGui::SliderFloat(TR("adv.edge.bottom"), &e[3], 0.0f, 0.5f, "%.3f");
+        labelAbove(TR("adv.edge.left"));
+        changed |= ImGui::SliderFloat("##el", &e[0], 0.0f, 0.5f, "%.3f");
+        labelAbove(TR("adv.edge.right"));
+        changed |= ImGui::SliderFloat("##er", &e[1], 0.0f, 0.5f, "%.3f");
+        labelAbove(TR("adv.edge.top"));
+        changed |= ImGui::SliderFloat("##et", &e[2], 0.0f, 0.5f, "%.3f");
+        labelAbove(TR("adv.edge.bottom"));
+        changed |= ImGui::SliderFloat("##eb", &e[3], 0.0f, 0.5f, "%.3f");
         if (changed) {
             s.softEdge.left = e[0]; s.softEdge.right = e[1];
             s.softEdge.top  = e[2]; s.softEdge.bottom = e[3];
         }
 
         float g = static_cast<float>(s.softEdge.gamma);
-        if (ImGui::SliderFloat(TR("adv.edge.gamma"), &g, 0.2f, 4.0f)) s.softEdge.gamma = g;
+        labelAbove(TR("adv.edge.gamma"));
+        if (ImGui::SliderFloat("##eg", &g, 0.2f, 4.0f)) s.softEdge.gamma = g;
         if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip("%s", TR("adv.edge.gamma.tip"));
         }
 
         float lum = static_cast<float>(s.softEdge.luminance);
-        if (ImGui::SliderFloat(TR("adv.edge.mid"), &lum, 0.0f, 1.0f)) s.softEdge.luminance = lum;
+        labelAbove(TR("adv.edge.mid"));
+        if (ImGui::SliderFloat("##em", &lum, 0.0f, 1.0f)) s.softEdge.luminance = lum;
 
         if (ImGui::Button(TR("adv.edge.reset"))) s.softEdge.reset();
         ImGui::SameLine();
@@ -601,8 +1413,8 @@ void ControlPanel::drawScreenPanel(Project& p, EditState& edit, UiActions& a) {
             ImGui::PushID(4000 + k);
             float c[2] = {static_cast<float>(cp->corner(k).x),
                           static_cast<float>(cp->corner(k).y)};
-            ImGui::SetNextItemWidth(160.0f);
-            if (ImGui::DragFloat2(cornerNames[k], c, 0.5f)) {
+                labelAbove(cornerNames[k]);
+            if (ImGui::DragFloat2("##corner", c, 0.5f)) {
                 if (!cp->setCorner(k, Vec2{c[0], c[1]})) {
                     // Bị từ chối vì tứ giác sẽ lõm hoặc tự cắt.
                     setStatusMessage(TR("adv.corner.rejected"), true);
@@ -613,7 +1425,8 @@ void ControlPanel::drawScreenPanel(Project& p, EditState& edit, UiActions& a) {
     } else {
         auto* mesh = static_cast<WarpMesh*>(s.warp());
         int dims[2] = {mesh->cols(), mesh->rows()};
-        if (ImGui::DragInt2(TR("adv.meshgrid"), dims, 0.2f, 1, 32)) {
+        labelAbove(TR("adv.meshgrid"));
+        if (ImGui::DragInt2("##meshdim", dims, 0.2f, 1, 32)) {
             mesh->resize(dims[0], dims[1]);   // F11 — giữ nguyên hình đã kéo
         }
         ImGui::TextDisabled("%s", TR("adv.mesh.hint"));
@@ -625,7 +1438,9 @@ void ControlPanel::drawScreenPanel(Project& p, EditState& edit, UiActions& a) {
 void ControlPanel::drawMaskPanel(Slice& s, EditState& edit) {
     BezierMask& m = s.mask;
 
+    ImGui::PushTextWrapPos(0.0f);
     ImGui::TextDisabled("%s", TR("mask.note"));
+    ImGui::PopTextWrapPos();
 
     if (ImGui::Checkbox(TR("mask.enabled"), &m.enabled)) {
         // Bat mat na khi chua co hinh thi khong thay gi thay doi va nguoi
@@ -651,29 +1466,27 @@ void ControlPanel::drawMaskPanel(Slice& s, EditState& edit) {
     if (ImGui::Checkbox(TR("mask.invert"), &m.invert)) {}
 
     float f = static_cast<float>(m.feather);
-    ImGui::SetNextItemWidth(180.0f);
-    if (ImGui::SliderFloat(TR("mask.feather"), &f, 0.0f, 0.5f, "%.3f")) {
+    labelAbove(TR("mask.feather"));
+    if (ImGui::SliderFloat("##feather", &f, 0.0f, 0.5f, "%.3f")) {
         m.feather = f;
     }
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("mask.feather.tip"));
 
     ImGui::Separator();
 
-    if (ImGui::Button(TR("mask.shape.rect"))) {
+    if (ImGui::Button(TR("mask.shape.rect"), ImVec2(-FLT_MIN, 0))) {
         const bool inv = m.invert; const double ft = m.feather;
         m = BezierMask::rectangle(0.10);
         m.invert = inv; m.feather = ft;
         edit.maskEditMode = true;
     }
-    ImGui::SameLine();
-    if (ImGui::Button(TR("mask.shape.ellipse"))) {
+    if (ImGui::Button(TR("mask.shape.ellipse"), ImVec2(-FLT_MIN, 0))) {
         const bool inv = m.invert; const double ft = m.feather;
         m = BezierMask::ellipse(4);
         m.invert = inv; m.feather = ft;
         edit.maskEditMode = true;
     }
-    ImGui::SameLine();
-    if (ImGui::Button(TR("mask.clear"))) {
+    if (ImGui::Button(TR("mask.clear"), ImVec2(-FLT_MIN, 0))) {
         m.reset();
         edit.maskEditMode = false;
         edit.maskDraggedNode = -1;
@@ -690,8 +1503,10 @@ void ControlPanel::drawMaskPanel(Slice& s, EditState& edit) {
     }
 
     if (edit.maskEditMode) {
+        ImGui::PushTextWrapPos(0.0f);
         ImGui::TextDisabled("%s", TR("mask.hint"));
         ImGui::TextDisabled("%s", TR("mask.hint.handle"));
+        ImGui::PopTextWrapPos();
     }
 }
 
@@ -703,18 +1518,27 @@ void ControlPanel::drawSensorPanel(Project& p, const PerfStats& s, UiActions& a)
     ImGui::Text("%s", TR("menu.sensor"));
 
     static int sensorType = 0;
+    // Cot nay chi rong 300px: nhan len tren, nut chiem het be ngang.
+    // Xep ngang ca combo + nhan + nut + trang thai thi dong bi cat.
     const char* types[] = {TR("sen.type.mock"), TR("sen.type.osc")};
-    ImGui::SetNextItemWidth(160.0f);
-    if (ImGui::Combo(TR("sen.source"), &sensorType, types, 2)) a.sensorTypeIndex = sensorType;
+    labelAbove(TR("sen.source"));
+    if (ImGui::Combo("##sensrc", &sensorType, types, 2)) a.sensorTypeIndex = sensorType;
 
-    ImGui::SameLine();
     if (s.sensorConnected) {
-        if (ImGui::Button(TR("sen.stop"))) a.stopSensor = true;
-        ImGui::SameLine();
-        ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.5f, 1.0f), "%s", TR("sen.running"));
+        if (theme::outlineButton(TR("sen.stop"), theme::Danger, ImVec2(-FLT_MIN, 0))) {
+            a.stopSensor = true;
+        }
+        theme::statusDot(theme::Success);
+        ImGui::SameLine(0.0f, 6.0f);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextColored(theme::v4(theme::Success), "%s", TR("sen.running"));
     } else {
-        if (ImGui::Button(TR("sen.run"))) a.startSensor = true;
-        ImGui::SameLine();
+        if (theme::outlineButton(TR("sen.run"), theme::Success, ImVec2(-FLT_MIN, 0))) {
+            a.startSensor = true;
+        }
+        theme::statusDot(theme::TextFaint, false);
+        ImGui::SameLine(0.0f, 6.0f);
+        ImGui::AlignTextToFramePadding();
         ImGui::TextDisabled("%s", TR("sen.stopped"));
     }
 
@@ -741,8 +1565,10 @@ void ControlPanel::drawCalibrationPanel(Project& p, const PerfStats& s, UiAction
 
     // Hướng dẫn từng bước — người vận hành không cần đọc tài liệu.
     m_calibTarget = std::clamp(m_calibTarget, 0, 3);
+    ImGui::PushTextWrapPos(0.0f);
     ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f),
                        TR("cal.step"), m_calibTarget + 1);
+    ImGui::PopTextWrapPos();
     ImGui::TextDisabled(TR("cal.target"),
                         kCalibTargets[m_calibTarget].x, kCalibTargets[m_calibTarget].y);
 
@@ -1262,19 +2088,10 @@ void ControlPanel::drawMappingEditor(Project& p, EditState& edit,
                                 static_cast<int>(p.screens.size()) - 1);
     Screen& sc = p.screens[static_cast<size_t>(m_activeScreen)];
 
-    ImGui::Checkbox(TR("map.showcontent"), &m_mapShowContent);
-
-    // F12 — cong tac che do sua mat na de NGAY o day, khong bat nguoi
-    // dung mo Advanced Output moi bat duoc: viec sua mat na dien ra
-    // trong chinh cua so nay.
-    ImGui::SameLine();
-    if (ImGui::Checkbox(TR("mask.edit"), &edit.maskEditMode)) {
-        m_mapDragPoint = -1;         // dung keo goc keystone dang do
-        edit.maskDraggedNode = -1;
-    }
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("mask.edit.tip"));
-
-    ImGui::SameLine();
+    // Cac cong tac (hien noi dung / luoi test / chinh mat na) da nam
+    // tren THANH CONG CU cua trang Mapping. De ca hai noi thi nguoi dung
+    // gap hai o tich cho cung mot thu — va se co luc chung nhin nhu khong
+    // dong bo, du thuc ra cung tro toi mot bien.
     ImGui::TextDisabled("%s", edit.maskEditMode ? TR("mask.hint") : TR("map.hint"));
 
     const ImVec2 avail = ImGui::GetContentRegionAvail();
@@ -1644,23 +2461,5 @@ void ControlPanel::drawSettingsPanel(UiActions& a) {
     if (ImGui::Button(TR("set.reset"))) a.resetSettings = true;
 }
 
-void ControlPanel::drawPreview(const ofTexture* tex) {
-    if (tex == nullptr || !tex->isAllocated()) {
-        ImGui::TextDisabled("%s", TR("preview.nocontent"));
-        return;
-    }
-
-    const ImVec2 avail = ImGui::GetContentRegionAvail();
-    const float aspect = tex->getWidth() / std::max(1.0f, tex->getHeight());
-
-    float w = avail.x;
-    float h = w / aspect;
-    if (h > avail.y) { h = avail.y; w = h * aspect; }
-
-    // Dung helper cua ofxImGui: ImTextureID la ImU64 o ImGui 1.92+, va
-    // ban 1.92 doi cac ham ve sang ImTextureRef. Tu ep kieu se hong khi
-    // nang cap ImGui; helper cua addon lo phan do.
-    ofxImGui::AddImage(*tex, glm::vec2(w, h));
-}
 
 } // namespace hexmap

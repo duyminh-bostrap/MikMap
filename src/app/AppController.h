@@ -107,6 +107,11 @@ private:
     /// Goi khi khoi dong va moi lan nguoi dung doi cai dat.
     void applySettings();
 
+    /// Nạp một file media vào ô clip. Dùng chung cho hộp thoại chọn file
+    /// (I6) và cho trình duyệt thư viện — hai lối vào, MỘT chỗ quyết định
+    /// loại media và cảnh báo HAP, để hai lối không lệch nhau.
+    void assignClip(int layer, int column, const std::string& path);
+
     /// G17 — thuc thi mot lan kich hoat vung cam ung.
     void executeTrigger(const TriggerHit& hit);
 
@@ -166,6 +171,11 @@ private:
     uint64_t m_lastFrameNs = 0;
 
     std::string m_projectPath = "bin/data/projects/default.hexmap";
+
+    /// Man hinh vat ly dang nhan output. -1 = chua dua ra dau.
+    /// Chi de HIEN TRANG THAI tren thanh tren cung; nguon su that ve vi
+    /// tri cua so van la ban than cua so.
+    int m_outputDisplayIndex = -1;
 
     AppSettings m_settings;
     std::string m_settingsPath = "settings.json";

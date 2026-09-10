@@ -1,0 +1,204 @@
+#include "ui/Theme.h"
+
+#include <cstring>
+
+namespace hexmap {
+namespace theme {
+
+ImVec4 v4(ImU32 c) {
+    return ImVec4(static_cast<float>((c >> IM_COL32_R_SHIFT) & 0xFF) / 255.0f,
+                  static_cast<float>((c >> IM_COL32_G_SHIFT) & 0xFF) / 255.0f,
+                  static_cast<float>((c >> IM_COL32_B_SHIFT) & 0xFF) / 255.0f,
+                  static_cast<float>((c >> IM_COL32_A_SHIFT) & 0xFF) / 255.0f);
+}
+
+ImU32 alpha(ImU32 c, float a) {
+    const ImU32 rgb = c & ~IM_COL32_A_MASK;
+    const ImU32 av  = static_cast<ImU32>(a * 255.0f) & 0xFF;
+    return rgb | (av << IM_COL32_A_SHIFT);
+}
+
+void apply() {
+    ImGuiStyle& s = ImGui::GetStyle();
+
+    // ── Hình khối ──────────────────────────────────────────────────────
+    // Bo góc nhỏ và ĐỀU. Bo nhiều làm các bảng trông như thẻ rời rạc;
+    // đây là một bàn điều khiển liền mạch, không phải một trang web.
+    s.WindowRounding    = 0.0f;
+    s.ChildRounding     = 4.0f;
+    s.FrameRounding     = 3.0f;
+    s.PopupRounding     = 4.0f;
+    s.ScrollbarRounding = 6.0f;
+    s.GrabRounding      = 3.0f;
+    s.TabRounding       = 4.0f;
+
+    s.WindowBorderSize = 0.0f;
+    s.ChildBorderSize  = 1.0f;
+    s.FrameBorderSize  = 1.0f;
+    s.PopupBorderSize  = 1.0f;
+
+    s.WindowPadding    = ImVec2(10, 10);
+    s.FramePadding     = ImVec2(8, 5);
+    s.ItemSpacing      = ImVec2(8, 7);
+    s.ItemInnerSpacing = ImVec2(6, 5);
+    s.IndentSpacing    = 18.0f;
+    s.ScrollbarSize    = 10.0f;
+    s.GrabMinSize      = 9.0f;
+
+    s.WindowTitleAlign = ImVec2(0.0f, 0.5f);
+    s.SeparatorTextBorderSize = 1.0f;
+    s.SeparatorTextAlign      = ImVec2(0.0f, 0.5f);
+    s.SeparatorTextPadding    = ImVec2(14, 4);
+
+    // ── Màu ────────────────────────────────────────────────────────────
+    ImVec4* c = s.Colors;
+
+    c[ImGuiCol_Text]                 = v4(Text);
+    c[ImGuiCol_TextDisabled]         = v4(TextDim);
+    c[ImGuiCol_WindowBg]             = v4(BgApp);
+    c[ImGuiCol_ChildBg]              = v4(BgPanel);
+    c[ImGuiCol_PopupBg]              = v4(BgCard);
+    c[ImGuiCol_Border]               = v4(Border);
+    c[ImGuiCol_BorderShadow]         = ImVec4(0, 0, 0, 0);
+
+    c[ImGuiCol_FrameBg]              = v4(BgSunken);
+    c[ImGuiCol_FrameBgHovered]       = v4(alpha(Info, 0.16f));
+    c[ImGuiCol_FrameBgActive]        = v4(alpha(Info, 0.28f));
+
+    c[ImGuiCol_TitleBg]              = v4(BgCard);
+    c[ImGuiCol_TitleBgActive]        = v4(BgCard);
+    c[ImGuiCol_TitleBgCollapsed]     = v4(BgPanel);
+    c[ImGuiCol_MenuBarBg]            = v4(BgPanel);
+
+    c[ImGuiCol_ScrollbarBg]          = ImVec4(0, 0, 0, 0);
+    c[ImGuiCol_ScrollbarGrab]        = v4(Border);
+    c[ImGuiCol_ScrollbarGrabHovered] = v4(BorderLit);
+    c[ImGuiCol_ScrollbarGrabActive]  = v4(alpha(Primary, 0.7f));
+
+    // ★ Tay nắm thanh trượt màu CAM, giống mọi thứ "đang tác động".
+    //   Người vận hành nhìn thấy cam là biết chỗ đó đang ảnh hưởng tới
+    //   hình đang chiếu.
+    c[ImGuiCol_CheckMark]            = v4(Primary);
+    c[ImGuiCol_SliderGrab]           = v4(Primary);
+    c[ImGuiCol_SliderGrabActive]     = v4(Warning);
+
+    c[ImGuiCol_Button]               = v4(BgCard);
+    c[ImGuiCol_ButtonHovered]        = v4(alpha(Primary, 0.18f));
+    c[ImGuiCol_ButtonActive]         = v4(alpha(Primary, 0.34f));
+
+    c[ImGuiCol_Header]               = v4(alpha(Primary, 0.16f));
+    c[ImGuiCol_HeaderHovered]        = v4(alpha(Primary, 0.26f));
+    c[ImGuiCol_HeaderActive]         = v4(alpha(Primary, 0.36f));
+
+    c[ImGuiCol_Separator]            = v4(Border);
+    c[ImGuiCol_SeparatorHovered]     = v4(alpha(Info, 0.7f));
+    c[ImGuiCol_SeparatorActive]      = v4(Info);
+
+    c[ImGuiCol_ResizeGrip]           = ImVec4(0, 0, 0, 0);
+    c[ImGuiCol_ResizeGripHovered]    = v4(alpha(Primary, 0.4f));
+    c[ImGuiCol_ResizeGripActive]     = v4(alpha(Primary, 0.7f));
+
+    c[ImGuiCol_Tab]                  = v4(BgCard);
+    c[ImGuiCol_TabHovered]           = v4(alpha(Primary, 0.24f));
+    c[ImGuiCol_TabSelected]          = v4(alpha(Primary, 0.34f));
+
+    c[ImGuiCol_PlotLines]            = v4(Info);
+    c[ImGuiCol_PlotLinesHovered]     = v4(Warning);
+    c[ImGuiCol_PlotHistogram]        = v4(Success);
+    c[ImGuiCol_PlotHistogramHovered] = v4(Warning);
+
+    c[ImGuiCol_TableHeaderBg]        = v4(BgCard);
+    c[ImGuiCol_TableBorderStrong]    = v4(Border);
+    c[ImGuiCol_TableBorderLight]     = v4(alpha(Border, 0.6f));
+    c[ImGuiCol_TableRowBg]           = ImVec4(0, 0, 0, 0);
+    c[ImGuiCol_TableRowBgAlt]        = v4(alpha(BgCard, 0.4f));
+
+    c[ImGuiCol_TextSelectedBg]       = v4(alpha(Primary, 0.35f));
+    c[ImGuiCol_DragDropTarget]       = v4(Warning);
+    c[ImGuiCol_NavCursor]            = v4(Primary);
+    c[ImGuiCol_ModalWindowDimBg]     = ImVec4(0.0f, 0.0f, 0.0f, 0.65f);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Mảnh giao diện
+// ═══════════════════════════════════════════════════════════════════════
+
+void sectionLabel(const char* text) {
+    ImGui::PushStyleColor(ImGuiCol_Text, v4(TextFaint));
+    ImGui::TextUnformatted(text);
+    ImGui::PopStyleColor();
+
+    // Gạch chân mảnh chạy hết chiều rộng: tách mục mà không tốn một dòng
+    // Separator đầy đủ, vốn quá nặng cho các mục nhỏ liên tiếp.
+    const ImVec2 p = ImGui::GetCursorScreenPos();
+    const float w = ImGui::GetContentRegionAvail().x;
+    ImGui::GetWindowDrawList()->AddLine(ImVec2(p.x, p.y - 3.0f),
+                                        ImVec2(p.x + w, p.y - 3.0f),
+                                        alpha(Border, 0.8f));
+    ImGui::Dummy(ImVec2(0.0f, 1.0f));
+}
+
+bool tabButton(const char* label, bool active, const ImVec2& size, ImU32 accent) {
+    if (active) {
+        ImGui::PushStyleColor(ImGuiCol_Button,        v4(BgCard));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, v4(BgCard));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive,  v4(BgCard));
+        ImGui::PushStyleColor(ImGuiCol_Text,          v4(accent));
+        ImGui::PushStyleColor(ImGuiCol_Border,        v4(BorderLit));
+    } else {
+        ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0, 0, 0, 0));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, v4(alpha(BgCard, 0.8f)));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive,  v4(BgCard));
+        ImGui::PushStyleColor(ImGuiCol_Text,          v4(TextDim));
+        ImGui::PushStyleColor(ImGuiCol_Border,        ImVec4(0, 0, 0, 0));
+    }
+    const bool hit = ImGui::Button(label, size);
+    ImGui::PopStyleColor(5);
+    return hit;
+}
+
+bool outlineButton(const char* label, ImU32 accent, const ImVec2& size) {
+    ImGui::PushStyleColor(ImGuiCol_Button,        v4(alpha(accent, 0.10f)));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, v4(alpha(accent, 0.22f)));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive,  v4(alpha(accent, 0.34f)));
+    ImGui::PushStyleColor(ImGuiCol_Text,          v4(accent));
+    ImGui::PushStyleColor(ImGuiCol_Border,        v4(alpha(accent, 0.45f)));
+    const bool hit = ImGui::Button(label, size);
+    ImGui::PopStyleColor(5);
+    return hit;
+}
+
+void statusDot(ImU32 c, bool glow) {
+    const float r = 4.0f;
+    const ImVec2 p = ImGui::GetCursorScreenPos();
+    const float cy = p.y + ImGui::GetTextLineHeight() * 0.5f;
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+
+    // Quầng sáng: chấm 4px trên nền gần đen rất dễ lọt khỏi tầm nhìn
+    // ngoại vi. Quầng làm nó "nảy" lên mà không phải phóng to chấm.
+    if (glow) dl->AddCircleFilled(ImVec2(p.x + r, cy), r * 2.4f, alpha(c, 0.22f));
+    dl->AddCircleFilled(ImVec2(p.x + r, cy), r, c);
+
+    ImGui::Dummy(ImVec2(r * 2.0f, ImGui::GetTextLineHeight()));
+}
+
+void beginCard(const char* id, const ImVec2& size, ImU32 border) {
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, v4(BgCard));
+    ImGui::PushStyleColor(ImGuiCol_Border,  v4(border));
+    ImGui::BeginChild(id, size, ImGuiChildFlags_Borders);
+}
+
+void endCard() {
+    ImGui::EndChild();
+    ImGui::PopStyleColor(2);
+}
+
+void outlineLastItem(ImU32 c, float thickness) {
+    ImGui::GetWindowDrawList()->AddRect(ImGui::GetItemRectMin(),
+                                        ImGui::GetItemRectMax(),
+                                        c, ImGui::GetStyle().FrameRounding,
+                                        0, thickness);
+}
+
+} // namespace theme
+} // namespace hexmap

@@ -398,6 +398,8 @@ void AppController::draw() {
         entries.push_back(e);
     }
     m_panel.setDisplays(std::move(entries));
+    m_panel.setActiveOutputDisplay(m_outputDisplayIndex);
+    m_panel.setSensorPoints(m_edit.sensorOutputPoints);
     m_panel.draw(m_project, m_edit, m_stats,
                  &m_render.canvasFbo().getTexture(), m_actions);
     applyUiActions(m_actions);
@@ -559,6 +561,35 @@ void AppController::executeTrigger(const TriggerHit& hit) {
     }
 }
 
+void AppController::assignClip(int layer, int column, const std::string& path) {
+    if (layer < 0 || column < 0 || path.empty()) return;
+
+    const std::string ext = ofToLower(ofFilePath::getFileExt(path));
+
+    Clip c;
+    c.name = ofFilePath::getBaseName(path);
+    c.media.path = path;
+
+    if (ext == "png" || ext == "jpg" || ext == "jpeg"
+        || ext == "gif" || ext == "tga" || ext == "bmp") {
+        c.media.type = MediaType::Image;
+    } else {
+        c.media.type = MediaType::Video;
+
+        // ★ I9 — canh bao khi file kha nang cao KHONG phai HAP.
+        // Day la nguyen nhan so 1 khien show bi tut fps: nguoi van hanh
+        // keo mot file .mp4 vao roi khong hieu tai sao tu 60 xuong 12 fps.
+        if (ext != "mov" && m_settings.warnNonHapMedia) {
+            m_panel.setStatusMessage(
+                "Canh bao: '." + ext + "' kha nang cao KHONG phai HAP. "
+                "Dung tools/encode_hap.ps1 de chuyen doi.", true);
+        }
+    }
+
+    m_project.composition.deck(m_project.composition.viewedDeck())
+        .setClip(layer, column, c);
+}
+
 void AppController::applySettings() {
     i18n::setLanguage(m_settings.language);
     ofSetVerticalSync(m_settings.vsync);
@@ -658,6 +689,7 @@ void AppController::sendOutputToDisplay(int displayIndex) {
     // cua so doi kich thuoc va co gian mapping theo ti le. Mot cho lo
     // viec nay thay vi hai, de hai cho khong cho ra ket qua khac nhau.
     m_outputWindow->setFullscreen(true);
+    m_outputDisplayIndex = displayIndex;
     m_panel.setStatusMessage("Output -> man hinh " + std::to_string(displayIndex + 1)
                              + " (" + d.name + ", "
                              + std::to_string(d.w) + "x" + std::to_string(d.h) + ")");
@@ -835,33 +867,11 @@ void AppController::applyUiActions(UiActions& a) {
     if (a.browseForClip) {
         const ofFileDialogResult res =
             ofSystemLoadDialog("Chon video HAP hoac anh", false);
-        if (res.bSuccess) {
-            const std::string ext = ofToLower(ofFilePath::getFileExt(res.filePath));
+        if (res.bSuccess) assignClip(a.browseLayer, a.browseColumn, res.filePath);
+    }
 
-            Clip c;
-            c.name = ofFilePath::getBaseName(res.filePath);
-            c.media.path = res.filePath;
-
-            if (ext == "png" || ext == "jpg" || ext == "jpeg"
-                || ext == "gif" || ext == "tga" || ext == "bmp") {
-                c.media.type = MediaType::Image;
-            } else {
-                c.media.type = MediaType::Video;
-
-                // ★ I9 — canh bao khi file kha nang cao KHONG phai HAP.
-                // Day la nguyen nhan so 1 khien show bi tut fps: nguoi
-                // van hanh keo mot file .mp4 vao roi khong hieu tai sao
-                // tu 60 xuong 12 fps.
-                if (ext != "mov" && m_settings.warnNonHapMedia) {
-                    m_panel.setStatusMessage(
-                        "Canh bao: '." + ext + "' kha nang cao KHONG phai HAP. "
-                        "Dung tools/encode_hap.ps1 de chuyen doi.", true);
-                }
-            }
-
-            m_project.composition.deck(m_project.composition.viewedDeck())
-                .setClip(a.browseLayer, a.browseColumn, c);
-        }
+    if (!a.assignMediaPath.empty()) {
+        assignClip(a.assignLayer, a.assignColumn, a.assignMediaPath);
     }
 
     // ── Wizard calibration (G6) ────────────────────────────────────────

@@ -111,32 +111,44 @@ Mở thư mục repo rồi:
 ./bin/HexMapping.exe --demo   # bật mock sensor + auto-calibrate sẵn
 ```
 
-### Menu bar
+### Bố cục
+
+Ba trang, chuyển bằng tab trên thanh trên cùng. **Bố cục cố định, không
+phải cửa sổ nổi**: trong phòng tối giữa buổi diễn không ai có thời gian sắp
+lại bàn làm việc, và một bảng trôi ra ngoài màn hình là chuyện xảy ra thật.
 
 ```
-Dự án  |  Output  |  Sensor  |  Cài đặt  |  Xem  |  SENSOR: đang chạy
+MIKMAP  Dự án │ COMPOSITION │ ADVANCED MAPPING │ SENSOR I/O    FPS 60.0  ● OUTPUT 1: 1920x1080  ...
 ```
 
-| Menu | Nội dung |
+| Trang | Nội dung |
 |---|---|
-| **Output** | Mapping · Advanced Output · **Đưa output ra màn hình N** · Về chế độ cửa sổ · Fullscreen |
-| **Sensor** | Sensor & Calibration · Chạy Mock/OSC · Auto-calibrate · Dấu thập |
-| **Cài đặt** | Ngôn ngữ · màn hình output mặc định · vsync · cache media · log hiệu năng |
-| **Xem** | Mapping · Xem trước · Clip · Hiệu năng |
+| **COMPOSITION** | thư viện media · hai màn hình xem · thuộc tính clip · lưới layer × cột |
+| **ADVANCED MAPPING** | công tắc VÙNG LẤY / ĐƯỜNG RA · khung chỉnh · thiết lập slice |
+| **SENSOR I/O** | thiết bị + hiệu năng · khung nhìn điểm chạm · calibration + vùng cảm ứng |
+
+`Dự án` mở menu Lưu / Mở / Tạo mới, đưa output ra màn hình, và các lệnh
+sensor. `...` bên phải mở **Cài đặt** (ngôn ngữ, màn hình mặc định, vsync).
 
 ### Thao tác
 
 | | |
 |---|---|
-| Bấm ô clip | Phát clip đó |
-| Bấm số cột | Phát cả cột trên mọi layer |
-| Bấm ô trống / `Ctrl`+bấm | Chọn file media |
-| **Kéo điểm trong cửa sổ Mapping** | Keystone / mesh warp — **ngay trong app** |
-| Bấm vào slice trong Mapping | Chọn slice đó |
+| Bấm ô clip | **Chọn** ô đó (không phát) |
+| Bấm đúp ô clip | Phát clip |
+| Bấm `COL n` | Phát cả cột trên mọi layer |
+| Bấm ô trống | Mở hộp thoại chọn file |
+| Bấm file trong **THƯ VIỆN** | Gán vào ô clip đang chọn |
+| **Kéo điểm ở ĐƯỜNG RA** | Keystone / mesh warp |
+| **Kéo khung ở VÙNG LẤY** | Đổi phần canvas mà slice lấy |
 | Tick **Chỉnh mặt nạ** | Chuyển sang kéo nút mặt nạ bezier (F12) |
 | Bấm lên đường mặt nạ | Thêm một nút ngay chỗ bấm |
 | Chuột phải lên nút | Xoá nút |
 | `Ctrl`+kéo nút / `Shift`+bấm nút | Uốn cong / duỗi thẳng |
+
+Bấm ô clip **chọn** chứ không phát: người vận hành phải chỉnh được clip
+*sắp* dùng mà không làm gián đoạn clip đang chiếu — bấm nhầm một ô giữa
+buổi diễn là khán giả thấy ngay.
 
 ### Đưa hình ra máy chiếu
 

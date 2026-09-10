@@ -15,6 +15,7 @@
 #include "core/model/ProjectIO.h"
 #include "core/util/AppSettings.h"
 #include "ui/Localization.h"
+#include "ui/Theme.h"
 #include "render/RenderEngine.h"
 
 #include "ofMain.h"
@@ -82,6 +83,12 @@ struct UiActions {
     bool browseForClip = false;
     int  browseLayer = -1;
     int  browseColumn = -1;
+
+    /// Gán thẳng một file từ trình duyệt media, không qua hộp thoại.
+    /// Rỗng = không có yêu cầu nào.
+    std::string assignMediaPath;
+    int assignLayer = -1;
+    int assignColumn = -1;
 
     /// G17 — them / xoa vung cam ung.
     bool addTriggerZone = false;
@@ -152,10 +159,64 @@ public:
     /// khong he qua); viec LUU ra file do AppController lam.
     void setSettings(AppSettings* s) { m_settings = s; }
 
+    /// Màn hình vật lý đang nhận output, để thanh trên cùng hiện trạng
+    /// thái. -1 = chưa đưa ra máy chiếu nào.
+    void setActiveOutputDisplay(int index) { m_activeOutputDisplay = index; }
+
+    /// Điểm chạm đã ánh xạ sang không gian OUTPUT, cho khung nhìn sensor.
+    void setSensorPoints(std::vector<Vec2> pts) { m_sensorPoints = std::move(pts); }
+
+public:
+    /// Ba trang chính. Thay cho các cửa sổ nổi trước đây.
+    ///
+    /// ── Vì sao chuyển sang bố cục cố định ────────────────────────────
+    /// Cửa sổ nổi tự do nghe thì linh hoạt, nhưng trong phòng tối, giữa
+    /// buổi diễn, người vận hành không có thời gian sắp lại bàn làm việc.
+    /// Bố cục cố định nghĩa là mọi thứ LUÔN ở đúng chỗ cũ — và không bao
+    /// giờ có chuyện một bảng trôi ra ngoài màn hình hoặc bị che mất.
+    enum class View { Composition = 0, Mapping, Sensor };
+
+    View view() const { return m_view; }
+    void setView(View v) { m_view = v; }
+
 private:
-    void drawMenuBar(UiActions& a);
-    void drawClipGrid(Project& p);
-    void drawLayerPanel(Project& p);
+    void drawTopBar(const PerfStats& s, UiActions& a);
+
+    void drawCompositionView(Project& p, EditState& edit, const PerfStats& s,
+                             const ofTexture* canvasTex, UiActions& a);
+    void drawMappingView(Project& p, EditState& edit,
+                         const ofTexture* canvasTex, UiActions& a);
+    void drawSensorView(Project& p, const PerfStats& s, UiActions& a);
+
+    /// Trình duyệt media bên trái trang Composition.
+    void drawBrowserPanel(Project& p, UiActions& a);
+
+    /// Hai màn hình xem: nội dung canvas và vùng thực sự ra máy chiếu.
+    void drawMonitors(Project& p, const PerfStats& s, const ofTexture* canvasTex);
+
+    /// Bảng thuộc tính bên phải trang Composition.
+    void drawInspector(Project& p);
+
+    /// Lưới layer × cột, layer control dính bên trái.
+    void drawLayersDeck(Project& p);
+
+    /// Thanh công cụ trang Mapping.
+    void drawMapToolbar(Project& p, EditState& edit, UiActions& a);
+
+    /// Bảng thuộc tính slice bên phải trang Mapping.
+    void drawSliceSettings(Project& p, EditState& edit, UiActions& a);
+
+    /// ★ Chế độ INPUT: kéo VÙNG LẤY của slice trên canvas.
+    ///
+    /// Trước đây chỉ chỉnh được đầu ra (keystone); vùng lấy phải gõ số.
+    /// Nhưng hai việc đó là hai nửa của cùng một thao tác — "lấy phần
+    /// nào của hình" và "đặt nó ở đâu trên vật thể" — nên chúng dùng
+    /// chung một khung nhìn và một công tắc chuyển, đúng như bản thiết kế.
+    void drawInputEditor(Project& p, EditState& edit, const ofTexture* canvasTex);
+
+    /// Quét lại thư mục media. Gọi thưa, không phải mỗi frame.
+    void rescanMedia();
+
     void drawScreenPanel(Project& p, EditState& edit, UiActions& a);
 
     /// F12 — bảng mặt nạ bezier của slice đang chọn.
@@ -180,7 +241,6 @@ private:
     /// truoc gio phai viet KHONG DAU. Nap Inter kem dai glyph tieng Viet
     /// thi hien duoc day du dau, va cung san sang cho ngon ngu khac.
     void loadFont();
-    void drawPreview(const ofTexture* tex);
 
     /// C3-C8 + D1-D6 — thuoc tinh cua clip DANG CHON.
     void drawClipPanel(Project& p);
@@ -199,6 +259,19 @@ private:
     ofxImGui::Gui m_gui;
     bool m_ready = false;
 
+    View m_view = View::Composition;
+
+    /// Trang Mapping: đang chỉnh vùng LẤY hay vùng RA.
+    enum class MapMode { Input = 0, Output };
+    MapMode m_mapMode = MapMode::Output;
+    bool m_showMapSidebar = true;
+
+    /// Trình duyệt media — danh sách file trong bin/data/media.
+    /// Quét đĩa là thao tác I/O nên KHÔNG làm mỗi frame; chỉ khi mở trang
+    /// hoặc khi người dùng bấm quét lại.
+    std::vector<std::string> m_mediaFiles;
+    bool m_mediaScanned = false;
+
     /// O clip dang chon de xem/sua thuoc tinh. Khac voi o dang PHAT:
     /// nguoi van hanh can chinh clip sap dung ma khong lam gian doan
     /// clip dang chieu.
@@ -214,23 +287,21 @@ private:
     bool m_statusIsError = false;
     float m_statusTimer = 0.0f;
 
-    /// Yeu cau mo file browser, ghi nhan trong luc ve luoi clip roi
-    /// chuyen ra UiActions o cuoi draw().
-    // ── Cua so nao dang mo ─────────────────────────────────────────────
-    // Advanced Output la cong cu CHINH cua phan mem nay nen mo san.
-    // Sensor thi dong: chua co phan cung, mo ra chi chiem cho.
-    bool m_showAdvancedOutput = false;
-    bool m_showMapping = true;
-
     /// Trang thai keo trong trinh chinh mapping — RIENG voi cua so output,
     /// de hai noi khong tranh nhau mot bien.
     int  m_mapDragPoint = -1;
     bool m_mapShowContent = true;
-    bool m_showSensor = false;
-    bool m_showPerf = true;
+
+    /// Che do sua vung LAY: -1 khong keo, 0 goc tren-trai, 1 goc duoi-phai,
+    /// 2 ca khoi.
+    int  m_inputDragPart = -1;
+
+    /// Cua so Cai dat — thu duy nhat con NOI, vi no khong thuoc luong lam
+    /// viec luc dien.
     bool m_showSettings = false;
-    bool m_showClip = true;
-    bool m_showPreview = true;
+
+    int m_activeOutputDisplay = -1;
+    std::vector<Vec2> m_sensorPoints;
 
     /// Phan chieu tu PerfStats, de menu bar hien duoc trang thai sensor.
     bool m_sensorRunning = false;
