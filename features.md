@@ -373,7 +373,7 @@ trước đây **chỉ nằm trong ghi chú**, không có lớp nào cả.
 
 | Mục | Bằng chứng |
 |---|---|
-| G3 Serial / Arduino | không có lớp nguồn nào; chỉ được nhắc trong ghi chú của `OscSource.h` |
+| G3 Serial / Arduino | không có lớp nguồn nào; chỉ được nhắc trong ghi chú của `OscSource.h`. **→ đã làm phần giao thức, xem mục G3 bên dưới** |
 | G15 Kinect / Femto | không có; `Kinect` chỉ xuất hiện trong ghi chú giải thích của 5 file |
 | G16 Ghi log + replay | không có lớp ghi/phát lại phiên sensor. **→ đã làm phần lõi, xem mục G16 bên dưới** |
 | G18 Nhiều sensor cho nhiều screen | `AppController` hardcode `calibrations[0]` ở **6 chỗ** — một sensor duy nhất |
@@ -459,6 +459,46 @@ trọng nhất của replay.
 vòng**: ghi một phiên → đọc lại → bơm vào `OscSource` thật đúng mốc thời
 gian → ra đúng điểm chạm. (`OscSource::feedPacket` tồn tại sẵn cho việc
 này từ đầu, chỉ chưa ai xây phần còn lại.)
+
+### 🟢 G3 — Phương ngữ Serial cho Arduino (2026-09-10)
+
+`[~]`: **phần giao thức xong** (thứ quyết định firmware chạy được hay
+không) — còn phần mở cổng serial, cần API riêng của từng hệ điều hành.
+
+**Phương ngữ:** `T <id> <x> <y>` · `U <id>` · `C`
+
+★ **ASCII từng dòng, không phải nhị phân.** Nhị phân gọn hơn, nhưng thứ
+quyết định một dự án Arduino chạy được hay không là khả năng **mở Serial
+Monitor ra nhìn**. Với ASCII, người làm phần cứng cắm dây vào là thấy ngay
+thiết bị đang gửi gì, và gõ tay một dòng để thử phần mềm mà không cần nạp
+firmware. Ở 115200 baud, 40 điểm ở 60 Hz chỉ chiếm ~3% băng thông — chỗ
+này không phải nút thắt.
+
+★ **Cái bẫy thật của serial: dòng bị cắt ngang.** Serial KHÔNG giao hàng
+theo dòng — một lần `read()` trả về đúng những byte vừa tới, có thể là nửa
+dòng, có thể là hai dòng rưỡi. Ai giả định "mỗi lần đọc là một dòng" sẽ có
+phần mềm chạy hoàn hảo trên bàn (dữ liệu thưa, mỗi dòng tới trọn vẹn) rồi
+hỏng ngay khi cắm thiết bị thật gửi nhanh — và hỏng theo kiểu **mất rải
+rác vài điểm**, rất khó lần ra. Có test nạp **từng byte một** và đối chiếu
+kết quả phải y hệt nạp cả cục.
+
+★ **Rác từ firmware không được thành điểm chạm ma.** `std::atoi` trả 0 cho
+chuỗi rác, nên `T abc def` sẽ thành một cú chạm ở (0,0) — mà góc trên-trái
+là toạ độ HỢP LỆ, nên nó trông y như chạm thật và sẽ kích hoạt trigger
+zone ở đó. Thiếu một trường thì **bỏ cả dòng**, không lấy phần đọc được.
+
+★ **Trần 128 ký tự một dòng.** Thiết bị hỏng gửi rác không có ký tự xuống
+dòng sẽ làm bộ đệm phình vô hạn tới khi hết RAM. Thiết bị hỏng thì phải
+làm *mất dữ liệu*, không được làm sập phần mềm điều khiển — và phải **đồng
+bộ lại được** ở dòng kế tiếp.
+
+Số dòng rác được đếm (`badLines`) để hiện lên PerfPanel: người làm phần
+cứng nhìn con số tăng là biết firmware đang gửi lẫn thứ khác.
+
+**Kiểm chứng:** `402/402 test xanh` — 16 test cho G3.
+
+**Còn lại:** mở cổng (`CreateFile` trên Windows, `termios` trên POSIX) +
+thread đọc, theo đúng khuôn `OscSource`.
 
 ### Xây tiếp
 
@@ -657,7 +697,7 @@ ctest --test-dir build -C Debug --output-on-failure
 |:-:|---|---|:-:|:-:|
 | [x] | **G1** | Kiến trúc thread + TripleBuffer + SpscRing | M | 🔴 P0 |
 | [x] | **G2** | MockSource + sensor simulator | S | 🔴 P0 |
-| [ ] | **G3** | Serial / Arduino source | M | 🔴 P0 |
+| [~] | **G3** | Serial / Arduino source | M | 🔴 P0 |
 | [x] | **G4** | OSC server (UDP) | M | 🔴 P0 |
 | [x] | **G5** | **Homography solver (DLT + RANSAC)** | M | 🔴 P0 |
 | [x] | **G6** | **Calibration wizard — chạm 4+ điểm** | M | 🔴 P0 |
