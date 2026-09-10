@@ -236,6 +236,7 @@
 		<ClCompile Include="src\core\math\Homography.cpp" />
 		<ClCompile Include="src\core\math\LinearSolver.cpp" />
 		<ClCompile Include="src\core\math\Mat3.cpp" />
+		<ClCompile Include="src\core\model\BezierMask.cpp" />
 		<ClCompile Include="src\core\model\BlendMode.cpp" />
 		<ClCompile Include="src\core\model\Composition.cpp" />
 		<ClCompile Include="src\core\model\Deck.cpp" />

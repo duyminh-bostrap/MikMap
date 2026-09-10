@@ -20,7 +20,7 @@ C++20 · openFrameworks 0.12.x · OpenGL · Dear ImGui · Windows / MSVC 2022
 
 | | |
 |---|---|
-| Unit test | **290 passed, 0 failed** · 3462 assertion · 0 cảnh báo `/W4` |
+| Unit test | **313 passed, 0 failed** · 3686 assertion · 0 cảnh báo `/W4` |
 | Hiệu năng | 60 fps · frame p99 ~17 ms · độ trễ sensor p99 ~9 ms |
 | Video | 4K HAP Q — 1–5 luồng giữ đúng tốc độ gốc (đo thật, xem `features.md`) |
 | Giao diện | Tiếng Việt / English, đổi ngay trong **Cài đặt** |
@@ -133,6 +133,10 @@ Dự án  |  Output  |  Sensor  |  Cài đặt  |  Xem  |  SENSOR: đang chạy
 | Bấm ô trống / `Ctrl`+bấm | Chọn file media |
 | **Kéo điểm trong cửa sổ Mapping** | Keystone / mesh warp — **ngay trong app** |
 | Bấm vào slice trong Mapping | Chọn slice đó |
+| Tick **Chỉnh mặt nạ** | Chuyển sang kéo nút mặt nạ bezier (F12) |
+| Bấm lên đường mặt nạ | Thêm một nút ngay chỗ bấm |
+| Chuột phải lên nút | Xoá nút |
+| `Ctrl`+kéo nút / `Shift`+bấm nút | Uốn cong / duỗi thẳng |
 
 ### Đưa hình ra máy chiếu
 

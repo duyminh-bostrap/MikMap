@@ -23,6 +23,7 @@
 // Ta can no cho ofxImGui::AddImage().
 #include "ImHelpers.h"
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -156,6 +157,18 @@ private:
     void drawClipGrid(Project& p);
     void drawLayerPanel(Project& p);
     void drawScreenPanel(Project& p, EditState& edit, UiActions& a);
+
+    /// F12 — bảng mặt nạ bezier của slice đang chọn.
+    void drawMaskPanel(Slice& s, EditState& edit);
+
+    /// F12 — phần tương tác chuột với nút mặt nạ, tách khỏi
+    /// drawMappingEditor để hàm đó không phình ra khó đọc.
+    /// @param toWidget  contentUV → toạ độ màn hình của widget
+    /// @return true nếu đã "nuốt" cú bấm (không để nó chọn slice khác)
+    bool handleMaskEditing(Slice& s, EditState& edit,
+                           const std::function<ImVec2(const Vec2&)>& toWidget,
+                           const std::function<Vec2(const ImVec2&)>& toOutput,
+                           ImDrawList* dl, bool hovered, bool active);
     void drawSensorPanel(Project& p, const PerfStats& s, UiActions& a);
     void drawCalibrationPanel(Project& p, const PerfStats& s, UiActions& a);
     void drawPerfPanel(const PerfStats& s);

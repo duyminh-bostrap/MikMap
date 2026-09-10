@@ -282,6 +282,27 @@ JsonValue sliceToJson(const Slice& s) {
         e.set("luminance", JsonValue(s.softEdge.luminance));
         o.set("softEdge", std::move(e));
     }
+
+    // F12 — chi ghi khi CO mat na, de file project cua slice thuong gon.
+    if (!s.mask.isIdentity()) {
+        JsonValue m = JsonValue::object();
+        m.set("enabled", JsonValue(s.mask.enabled));
+        m.set("invert",  JsonValue(s.mask.invert));
+        m.set("feather", JsonValue(s.mask.feather));
+
+        JsonValue arr = JsonValue::array();
+        for (const MaskNode& nd : s.mask.nodes) {
+            JsonValue n = JsonValue::object();
+            n.set("p",   vecToJson(nd.point));
+            // Tay nam bang 0 la truong hop PHO BIEN (mat na da giac);
+            // bo qua chung cho file khoi phinh.
+            if (nd.inHandle.x  != 0.0 || nd.inHandle.y  != 0.0) n.set("in",  vecToJson(nd.inHandle));
+            if (nd.outHandle.x != 0.0 || nd.outHandle.y != 0.0) n.set("out", vecToJson(nd.outHandle));
+            arr.push(std::move(n));
+        }
+        m.set("nodes", std::move(arr));
+        o.set("mask", std::move(m));
+    }
     return o;
 }
 
@@ -310,6 +331,37 @@ Slice sliceFromJson(const JsonValue& j, std::vector<std::string>& warn) {
     s.softEdge.bottom    = e["bottom"].asNumber(0.0);
     s.softEdge.gamma     = e["gamma"].asNumber(1.0);
     s.softEdge.luminance = e["luminance"].asNumber(0.5);
+
+    const JsonValue& m = j["mask"];
+    s.mask.enabled = m["enabled"].asBool(false);
+    s.mask.invert  = m["invert"].asBool(false);
+    s.mask.feather = m["feather"].asNumber(0.0);
+
+    const JsonValue& mn = m["nodes"];
+    const size_t rawCount = mn.size();
+    for (size_t k = 0; k < rawCount; ++k) {
+        // Chan file hong: mot mang hang trieu nut khong duoc lam treo
+        // luc mo project.
+        if (s.mask.nodes.size() >= static_cast<size_t>(BezierMask::kMaxNodes)) {
+            warn.push_back("Slice '" + s.name + "': mat na co qua "
+                           + std::to_string(BezierMask::kMaxNodes)
+                           + " nut, phan thua bi bo qua");
+            break;
+        }
+        MaskNode nd;
+        nd.point     = jsonToVec(mn.at(k)["p"],   Vec2{0.0, 0.0});
+        nd.inHandle  = jsonToVec(mn.at(k)["in"],  Vec2{0.0, 0.0});
+        nd.outHandle = jsonToVec(mn.at(k)["out"], Vec2{0.0, 0.0});
+        s.mask.nodes.push_back(nd);
+    }
+
+    // Bat mat na ma khong du nut de khep hinh: bao ro thay vi de nguoi
+    // dung tu hoi vi sao khong thay gi thay doi.
+    if (s.mask.enabled && s.mask.nodes.size() < 3) {
+        warn.push_back("Slice '" + s.name + "': mat na duoc bat nhung chi co "
+                       + std::to_string(s.mask.nodes.size())
+                       + " nut (can it nhat 3) - mat na se khong co tac dung");
+    }
     return s;
 }
 

@@ -384,6 +384,21 @@ public:
 
 > Nếu để đến Bước 4 mới thêm `inverse()`, sẽ phải viết lại toàn bộ `render/WarpGeometry` và `model/Slice`. Đây là lý do interface này thuộc **Bước 2**, không phải Bước 4.
 
+### 4.2b Mặt nạ nằm ở đâu trong chuỗi
+
+Mặt nạ bezier (F12) **không phải một phép biến đổi** — nó là một hàm che phủ
+`contentUV → [0,1]` nhân vào kênh alpha ở cuối. Vì nút mặt nạ ở `contentUV`,
+nó tự động đi theo `H_w`: kéo lại góc keystone thì mặt nạ biến dạng cùng bề mặt.
+
+Chiều ngược lại cũng phải nhất quán: `Screen::hitTest` gọi `Slice::isLit()` chứ
+không phải `outputToContent()`, vì một điểm rơi vào vùng bị mặt nạ cắt là điểm
+**không có ánh sáng** — báo "chạm trúng" ở đó là sai, và tệ hơn, nó che mất slice
+nằm dưới đang thực sự sáng ở chỗ đó.
+
+Nhưng `outputToContent()` thì **cố ý bỏ qua mặt nạ**: đó là phép nghịch đảo hình
+học thuần tuý, và wizard calibration dựa vào nó — điểm ngắm hoàn toàn có thể rơi
+vào vùng bị cắt, lúc đó vẫn phải calibrate được.
+
 ### 4.3 Chuỗi đầy đủ với Composition Canvas
 
 Mục 4.1 là dạng rút gọn. Trong hệ thống thật có thêm một tầng ở giữa: **Composition Canvas** — không gian ảo nơi các layer được trộn lại, **độc lập với độ phân giải máy chiếu**.
@@ -568,6 +583,17 @@ Mục 4.1 là dạng rút gọn. Trong hệ thống thật có thêm một tần
 5. **Toạ độ thô đi qua biên thread; ngữ nghĩa áp dụng tại nơi sử dụng.**
 6. **Độ trễ phải được ĐO, không được ĐOÁN** — PerfPanel là công dân hạng nhất, không phải tính năng phụ.
 7. **Mọi tính năng phải chạy được với `MockSource`** — không có phần cứng vẫn phát triển và test được.
+8. **Hình học do người dùng vẽ ra sống ở không gian gắn với NỘI DUNG, không phải với máy chiếu.**
+   Mặt nạ bezier (F12) ở `contentUV` của slice; vùng cảm ứng (G17) ở không gian canvas.
+   Lý do chung: keystone là thứ ánh xạ nội dung lên bề mặt thật, nên bất cứ thứ gì
+   người dùng đã căn theo vật thể phải **đi qua cùng phép warp đó**. Đặt ở pixel máy
+   chiếu thì mỗi lần chỉnh lại keystone — việc xảy ra thường xuyên khi máy chiếu bị
+   xê dịch — là mỗi lần phải vẽ lại toàn bộ.
+9. **Lớp nào có thành viên khó sao chép thì bọc riêng thành viên đó, không viết tay
+   copy constructor cho cả lớp.** Copy constructor viết tay liệt kê từng trường, nên
+   mỗi trường mới thêm vào lớp là một cơ hội để sót — và cái sót đó không gây lỗi
+   biên dịch, chỉ gây mất dữ liệu lặng lẽ. `Slice` từng mất `mask` đúng theo kiểu
+   này; nay `WarpPtr` (tự `clone()`) lo phần đa hình và `Slice` dùng `= default`.
 
 ---
 

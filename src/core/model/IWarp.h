@@ -106,4 +106,47 @@ public:
     virtual void boundingBox(Vec2& outMin, Vec2& outMax) const = 0;
 };
 
+
+/// Con trỏ sở hữu warp, SAO CHÉP ĐƯỢC (tự gọi clone()).
+///
+/// ── Vì sao cần một lớp riêng cho việc này ────────────────────────────
+/// Trước đây Slice giữ `unique_ptr<IWarp>` nên phải TỰ VIẾT copy
+/// constructor và operator= để clone warp. Mà copy constructor viết tay
+/// thì liệt kê từng trường một — nên mỗi lần thêm một trường mới vào
+/// Slice, ai đó phải nhớ thêm nó vào cả hai chỗ.
+///
+/// Chuyện đã xảy ra thật: trường `mask` (F12) được thêm vào Slice nhưng
+/// sót ở cả hai hàm sao chép, và mặt nạ lặng lẽ biến mất mỗi lần slice
+/// bị sao chép — mà slice bị sao chép ở khắp nơi (nạp project, thêm
+/// slice, undo). Không có lỗi biên dịch, không có cảnh báo.
+///
+/// Bọc riêng phần "khó sao chép" vào đây thì Slice không còn cần hàm sao
+/// chép viết tay nữa: `= default` lo hết, và trường mới TỰ ĐỘNG được
+/// sao chép. Cả một lớp lỗi biến mất thay vì được vá từng lần.
+class WarpPtr {
+public:
+    WarpPtr() = default;
+    WarpPtr(std::unique_ptr<IWarp> p) : m_p(std::move(p)) {}
+
+    WarpPtr(const WarpPtr& o) : m_p(o.m_p ? o.m_p->clone() : nullptr) {}
+    WarpPtr& operator=(const WarpPtr& o) {
+        if (this != &o) m_p = o.m_p ? o.m_p->clone() : nullptr;
+        return *this;
+    }
+    WarpPtr(WarpPtr&&) noexcept = default;
+    WarpPtr& operator=(WarpPtr&&) noexcept = default;
+    ~WarpPtr() = default;
+
+    WarpPtr& operator=(std::unique_ptr<IWarp> p) { m_p = std::move(p); return *this; }
+
+    IWarp*       get()       { return m_p.get(); }
+    const IWarp* get() const { return m_p.get(); }
+    explicit operator bool() const { return m_p != nullptr; }
+    IWarp*       operator->()       { return m_p.get(); }
+    const IWarp* operator->() const { return m_p.get(); }
+
+private:
+    std::unique_ptr<IWarp> m_p;
+};
+
 } // namespace hexmap

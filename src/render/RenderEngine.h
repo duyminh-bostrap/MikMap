@@ -22,6 +22,8 @@
 
 #include "ofMain.h"
 
+#include <cstdint>
+#include <map>
 #include <vector>
 
 namespace hexmap {
@@ -56,6 +58,22 @@ struct EditState {
     bool calibrating = false;
     Vec2 calibTargetUV{0.15, 0.15};   ///< contentUV của slice đang chọn
     int  calibStep = 0;               ///< 0..3, để hiện "bước n/4"
+
+    // ── F12: chỉnh mặt nạ bezier ───────────────────────────────────────
+    /// Đang ở chế độ sửa mặt nạ. Khi bật, kéo chuột trong cửa sổ Mapping
+    /// tác động lên NÚT MẶT NẠ chứ không phải góc keystone.
+    ///
+    /// Hai thao tác này cùng dùng một khung nhìn và cùng cú kéo chuột, nên
+    /// phải tách bằng một chế độ rõ ràng: nếu đoán theo "điểm nào gần
+    /// chuột hơn", người dùng sẽ vô tình xô lệch keystone đã căn xong khi
+    /// đang chỉnh mặt nạ — hỏng thứ tốn công nhất để làm lại.
+    bool maskEditMode = false;
+
+    int  maskHoveredNode = -1;
+    int  maskDraggedNode = -1;
+
+    /// 0 = điểm neo, 1 = tay nắm VÀO, 2 = tay nắm RA.
+    int  maskDraggedPart = 0;
 
     // ── G13: overlay điểm sensor ───────────────────────────────────────
     /// Toạ độ điểm chạm đã ánh xạ sang không gian OUTPUT (pixel máy chiếu).
@@ -102,11 +120,41 @@ private:
     void drawClipToCanvas(const Clip& clip, double opacity,
                           BlendMode blend, MediaCache& cache);
     void applyBlendMode(BlendMode mode) const;
-    void drawSliceGeometry(const Slice& slice) const;
+    void drawSliceGeometry(const Slice& slice, int sliceIndex, int screenId) const;
     void drawEditOverlay(const Screen& screen, const EditState& edit) const;
     void drawTestGrid(const Screen& screen) const;
     void drawCalibTarget(const Screen& screen, const EditState& edit) const;
     void drawSensorPointsOnOutput(const EditState& edit) const;
+
+    /// F12 — vẽ đường mặt nạ lên máy chiếu khi đang chỉnh.
+    void drawMaskOutline(const Screen& screen, const EditState& edit) const;
+
+    // ── F12: texture mặt nạ ────────────────────────────────────────────
+    //
+    // Mặt nạ được nướng ra một texture ở KHÔNG GIAN contentUV rồi lấy mẫu
+    // trong shader vẽ slice. Vì sao không dùng stencil buffer:
+    //   · stencil cho mép SẮC, không làm mờ được — mà mép mờ mới là thứ
+    //     giấu được sai số căn chỉnh với vật thể thật
+    //   · nó phụ thuộc cửa sổ output có stencil buffer hay không
+    //   · texture cộng thẳng vào kênh alpha, hoà đúng với hoà viền (F20)
+    //     mà không phải sắp xếp lại thứ tự vẽ
+    struct MaskTex {
+        ofFbo    fbo;
+        uint64_t hash = 0;         ///< BezierMask::geometryHash lúc nướng
+        uint64_t lastUsedFrame = 0;
+    };
+
+    /// Lấy texture mặt nạ, nướng lại nếu hình đã đổi.
+    /// Trả về nullptr nếu slice không có mặt nạ đang hoạt động.
+    const ofFbo* maskTexture(const Slice& slice, int sliceIndex, int screenId) const;
+
+    /// Dọn texture của slice đã bị xoá. Gọi thưa, không phải mỗi frame.
+    void pruneMaskCache() const;
+
+    /// Khoá gồm cả id screen: hai screen có thể cùng chỉ số slice mà hình
+    /// mặt nạ hoàn toàn khác nhau.
+    mutable std::map<uint64_t, MaskTex> m_maskCache;
+    mutable uint64_t m_frameCounter = 0;
 
     /// Shader ve slice, co hieu chinh mau (F19).
     ///

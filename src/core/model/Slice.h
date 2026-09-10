@@ -26,6 +26,7 @@
 #pragma once
 
 #include "core/math/Vec2.h"
+#include "core/model/BezierMask.h"
 #include "core/model/IWarp.h"
 
 #include <memory>
@@ -94,9 +95,19 @@ public:
     Slice(const Vec2& inputOrigin, const Vec2& inputSize,
           const Vec2& outputTopLeft, const Vec2& outputSize);
 
-    // Sao chép sâu — warp được clone(), không chia sẻ con trỏ.
-    Slice(const Slice& other);
-    Slice& operator=(const Slice& other);
+    // ★ Sao chép mặc định là ĐÚNG và cố ý như vậy.
+    //
+    //   Phần duy nhất khó sao chép — con trỏ đa hình tới warp — đã được
+    //   `WarpPtr` lo (nó tự gọi clone()). Nhờ đó Slice không cần hàm sao
+    //   chép viết tay, và trường mới thêm vào lớp này TỰ ĐỘNG được sao
+    //   chép theo.
+    //
+    //   Trước đây hai hàm này viết tay, liệt kê từng trường. Khi thêm
+    //   `mask` (F12) thì cả hai đều sót, và mặt nạ biến mất mỗi lần slice
+    //   bị sao chép — nạp project, thêm slice, mọi chỗ. Không lỗi biên
+    //   dịch, không cảnh báo. Xem ghi chú ở `WarpPtr` trong IWarp.h.
+    Slice(const Slice&) = default;
+    Slice& operator=(const Slice&) = default;
     Slice(Slice&&) noexcept = default;
     Slice& operator=(Slice&&) noexcept = default;
     ~Slice() = default;
@@ -114,6 +125,11 @@ public:
 
     /// F20 — hoà viền để ghép nhiều máy chiếu.
     SoftEdge softEdge;
+
+    /// F12 — mặt nạ bezier, cắt ánh sáng theo bóng vật thể thật.
+    /// Điểm nút ở contentUV nên đi cùng warp: chỉnh lại keystone thì
+    /// mặt nạ theo cùng, không phải vẽ lại. Xem `BezierMask.h`.
+    BezierMask mask;
 
     // ── F4: vùng lấy trên Composition Canvas ───────────────────────────
     Vec2 inputOrigin{0.0, 0.0};
@@ -141,7 +157,22 @@ public:
 
     /// ★ output px → contentUV. Đây là bước sensor cần.
     /// @return false nếu điểm nằm ngoài slice.
+    ///
+    /// ★ CỐ Ý bỏ qua mặt nạ (F12) — đây là phép nghịch đảo HÌNH HỌC
+    ///   thuần tuý. Wizard calibration dùng nó và phải chạy được kể cả
+    ///   khi điểm ngắm rơi vào vùng bị mặt nạ cắt; nếu không, đúng lúc
+    ///   người vận hành cần calibrate lại thì công cụ lại từ chối.
+    ///
+    ///   Nơi CẦN xét mặt nạ là `isLit()` và `Screen::hitTest`.
     bool outputToContent(const Vec2& outputPx, Vec2& contentUV) const;
+
+    /// Điểm output này có thực sự ĐƯỢC CHIẾU SÁNG không: nằm trong slice
+    /// VÀ không bị mặt nạ cắt.
+    ///
+    /// Đây mới là câu hỏi của sensor. Chạm vào một chỗ bị mặt nạ cắt là
+    /// chạm vào chỗ tối — không có gì ở đó để chạm, nên không nên kích
+    /// hoạt gì.
+    bool isLit(const Vec2& outputPx, Vec2& contentUV) const;
 
     /// ★ output px → toạ độ Composition Canvas.
     bool outputToCanvas(const Vec2& outputPx, Vec2& canvasPx) const;
@@ -155,7 +186,8 @@ public:
     }
 
 private:
-    std::unique_ptr<IWarp> m_warp;
+    /// WarpPtr chứ không phải unique_ptr — xem ghi chú ở hàm sao chép.
+    WarpPtr m_warp;
 };
 
 } // namespace hexmap

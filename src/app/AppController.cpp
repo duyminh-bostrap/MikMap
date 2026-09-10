@@ -147,6 +147,20 @@ void AppController::setup() {
             addZone("Zone phai", 0.85, 1);   // quy dao di qua o theta ~ 0
             addZone("Zone trai", 0.15, 2);   // ... va o theta ~ 180 do
         }
+
+        // F12 — dat san mot mat na elip. Cung ly do voi hai vung cam ung
+        // o tren: --demo phai the hien duoc CA CHUOI ma khong phai bam gi,
+        // va phai kiem chung tu dong duoc (architecture.md §10.7).
+        //
+        // Chi dat khi slice CHUA co mat na, de --demo tren mot project
+        // that khong de len thiet ke cua nguoi dung.
+        if (!m_project.screens.empty() && m_project.screens[0].sliceCount() > 0) {
+            Slice& s0 = m_project.screens[0].slices[0];
+            if (s0.mask.nodes.empty()) {
+                s0.mask = BezierMask::ellipse(4);
+                s0.mask.feather = 0.04;
+            }
+        }
     }
 }
 

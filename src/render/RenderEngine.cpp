@@ -50,9 +50,47 @@ uniform vec4  uEdge;
 uniform float uEdgeGamma;
 uniform float uEdgeLum;
 
+// F12 — mat na bezier, nuong san ra texture o khong gian contentUV.
+uniform sampler2D uMask;
+uniform float uMaskOn;       // 0 = khong co mat na
+uniform float uMaskInvert;
+uniform vec2  uFeatherUV;    // ban kinh lam mo, theo UV moi truc
+
 in  vec2 vTexCoord;
 in  vec2 vSliceUV;
 out vec4 fragColor;
+
+// Lay mau mat na, co lam mo mep.
+//
+// Lam mo bang cach lay nhieu mau NGAY LUC VE chu khong blur san vao
+// texture. Nho vay keo thanh truot feather la thay ngay, khong phai
+// nuong lai texture moi frame — nuong lai giua luc keo se giat.
+//
+// Hop 5x5 = 25 mau. Tren output 1920x1080 la ~50 trieu luot doc texture
+// moi frame — vai phan tram GPU hien dai, va CHI chay khi feather > 0.
+float maskCoverage() {
+    if (uMaskOn < 0.5) return 1.0;
+
+    float m;
+    if (uFeatherUV.x <= 0.0 && uFeatherUV.y <= 0.0) {
+        m = texture(uMask, vSliceUV).r;
+    } else {
+        float acc = 0.0;
+        for (int j = -2; j <= 2; ++j) {
+            for (int i = -2; i <= 2; ++i) {
+                vec2 o = vec2(float(i), float(j)) * 0.5 * uFeatherUV;
+                acc += texture(uMask, vSliceUV + o).r;
+            }
+        }
+        m = acc / 25.0;
+
+        // Hop blur cho ra doc TUYEN TINH; smoothstep bo hai dau goc canh
+        // de mep mo nhin lien mach hon.
+        m = smoothstep(0.0, 1.0, m);
+    }
+
+    return (uMaskInvert > 0.5) ? (1.0 - m) : m;
+}
 
 // Duong cong hoa vien. Tong hai duong cong doi dien phai bang 1 o moi
 // diem, neu khong vung chong se sang hon hoac toi hon phan con lai.
@@ -76,6 +114,7 @@ void main() {
     rgb *= uGain;
 
     float a = c.a * uOpacity;
+    a *= maskCoverage();                          // F12
     a *= edgeCurve(vSliceUV.x,       uEdge.x);   // trai
     a *= edgeCurve(1.0 - vSliceUV.x, uEdge.y);   // phai
     a *= edgeCurve(vSliceUV.y,       uEdge.z);   // tren
@@ -299,9 +338,132 @@ void RenderEngine::renderComposition(Composition& comp, MediaCache& cache) {
 //  Pass 2 — Composition FBO → Slice đã warp
 // ═══════════════════════════════════════════════════════════════════════
 
-void RenderEngine::drawSliceGeometry(const Slice& slice) const {
+// ── F12: nuong mat na ra texture ───────────────────────────────────────
+
+const ofFbo* RenderEngine::maskTexture(const Slice& slice, int sliceIndex,
+                                       int screenId) const {
+    if (!slice.mask.isActive()) return nullptr;
+
+    const uint64_t key = (static_cast<uint64_t>(static_cast<uint32_t>(screenId)) << 32)
+                       |  static_cast<uint64_t>(static_cast<uint32_t>(sliceIndex));
+    MaskTex& mt = m_maskCache[key];
+    mt.lastUsedFrame = m_frameCounter;
+
+    const uint64_t want = slice.mask.geometryHash();
+    if (mt.fbo.isAllocated() && mt.hash == want) return &mt.fbo;
+
+    // ── Kich thuoc texture ─────────────────────────────────────────────
+    //
+    // Mat na song o khong gian contentUV (0..1 ca hai truc), nhung slice
+    // thuong khong vuong. Cap phat texture vuong cho mot slice 1920x200
+    // thi chieu doc thua rat nhieu texel con chieu ngang lai thieu.
+    // Chia theo TI LE cua inputSize — dai lien la kich thuoc vung LAY,
+    // on dinh, khong doi khi nguoi dung keo goc keystone.
+    const double sx = std::max(1.0, slice.inputSize.x);
+    const double sy = std::max(1.0, slice.inputSize.y);
+    const double longSide = std::max(sx, sy);
+
+    constexpr int kMaxDim = 1024;
+    constexpr int kMinDim = 64;
+    const int tw = std::clamp(static_cast<int>(std::lround(kMaxDim * sx / longSide)),
+                              kMinDim, kMaxDim);
+    const int th = std::clamp(static_cast<int>(std::lround(kMaxDim * sy / longSide)),
+                              kMinDim, kMaxDim);
+
+    if (!mt.fbo.isAllocated()
+        || mt.fbo.getWidth() != tw || mt.fbo.getHeight() != th) {
+        ofFbo::Settings fs;
+        fs.width  = tw;
+        fs.height = th;
+        fs.internalformat = GL_RGBA8;
+        fs.useDepth   = false;
+        fs.useStencil = false;
+
+        // MSAA o day KHONG phai xa xi: mep mat na la mot duong cheo tuy y
+        // tren mot texture co the thap hon do phan giai may chieu. Khong
+        // khu rang cua thi mep hien ra thanh bac thang tren tuong that.
+        // Chi phi tra MOT LAN moi khi hinh doi, khong phai moi frame.
+        fs.numSamples = 4;
+
+        mt.fbo.allocate(fs);
+
+        // Bam vao mep: lay mau ngoai [0,1] (do offset feather) phai lay
+        // gia tri o bien, khong duoc lap vong sang phia doi dien.
+        mt.fbo.getTexture().setTextureWrap(GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE);
+    }
+
+    // ── Ve duong bien ──────────────────────────────────────────────────
+    std::vector<Vec2> poly;
+    slice.mask.flatten(poly);
+
+    ofPushStyle();
+
+    mt.fbo.begin();
+    ofClear(0, 0, 0, 0);
+
+    // Ghi DE, khong hoa tron: ta muon do phu tho cua hinh, con mep muot
+    // la do MSAA lo khi resolve. Bat hoa tron o day chi lam gia tri mep
+    // phu thuoc vao thu tu ve.
+    ofDisableBlendMode();
+    ofSetColor(255);
+
+    if (poly.size() >= 3) {
+        ofPath path;
+        path.setFilled(true);
+        path.setFillColor(ofColor(255, 255, 255, 255));
+
+        // Chan-le, KHONG phai nonzero. Hinh tu cat khi do cho ra vung
+        // rong nhin thay duoc thay vi to dac bat ngo — va no khop voi
+        // BezierMask::containsUV, nen cai nhin thay va cai hit-test bao
+        // luon la mot.
+        path.setPolyWindingMode(OF_POLY_WINDING_ODD);
+
+        for (size_t i = 0; i < poly.size(); ++i) {
+            const float x = static_cast<float>(poly[i].x) * static_cast<float>(tw);
+            const float y = static_cast<float>(poly[i].y) * static_cast<float>(th);
+            if (i == 0) path.moveTo(x, y);
+            else        path.lineTo(x, y);
+        }
+        path.close();
+        path.draw();
+    }
+    mt.fbo.end();
+
+    ofEnableBlendMode(OF_BLENDMODE_ALPHA);
+    ofPopStyle();
+
+    mt.hash = want;
+    return &mt.fbo;
+}
+
+void RenderEngine::pruneMaskCache() const {
+    // Slice bi xoa thi texture cua no khong con ai hoi toi. Doi mot lat
+    // roi don, thay vi don ngay: doi qua lai giua hai slice trong luc
+    // can chinh se lien tuc cap phat lai FBO.
+    constexpr uint64_t kIdleFrames = 600;   // ~10 giay o 60fps
+
+    for (auto it = m_maskCache.begin(); it != m_maskCache.end(); ) {
+        if (m_frameCounter - it->second.lastUsedFrame > kIdleFrames) {
+            it = m_maskCache.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
+void RenderEngine::drawSliceGeometry(const Slice& slice, int sliceIndex,
+                                    int screenId) const {
     const IWarp* w = slice.warp();
     if (w == nullptr) return;
+
+    // ★ Nuong texture mat na TRUOC MOI THU KHAC.
+    //
+    //   maskTexture() ve vao mot FBO khac. Goi no sau m_sliceShader.begin()
+    //   thi ofPath::draw() se ve duong mat na BANG CHINH slice shader do —
+    //   shader ay lay mau tex0 va uMask, cho ra texture den si, va mat na
+    //   cat sach toan bo noi dung. Trieu chung nhin thay la man hinh den
+    //   hoan toan, khong he giong "loi ve mat na".
+    const ofFbo* maskFbo = maskTexture(slice, sliceIndex, screenId);
 
     const int sub = std::max(1, w->defaultSubdivisions());
 
@@ -362,6 +524,35 @@ void RenderEngine::drawSliceGeometry(const Slice& slice) const {
         m_sliceShader.setUniform1f("uEdgeGamma", static_cast<float>(std::max(0.05, e.gamma)));
         m_sliceShader.setUniform1f("uEdgeLum",   static_cast<float>(e.luminance));
 
+        // F12 — mat na. Shader luon co sampler uMask; khi khong co mat na
+        // thi uMaskOn = 0 va sampler khong bao gio duoc doc. Van phai
+        // GAN mot texture nao do: sampler chua rang buoc trong GL core
+        // profile la hanh vi khong xac dinh, ke ca khi nhanh code khong
+        // chay toi — driver van co the tra ve rac hoac bao loi.
+        if (maskFbo != nullptr) {
+            m_sliceShader.setUniformTexture("uMask", maskFbo->getTexture(), 1);
+            m_sliceShader.setUniform1f("uMaskOn", 1.0f);
+            m_sliceShader.setUniform1f("uMaskInvert", slice.mask.invert ? 1.0f : 0.0f);
+
+            // Feather duoc khai theo canh NGAN cua slice. Doi sang UV thi
+            // moi truc mot he so khac nhau, neu khong mep mo se bi keo
+            // gian theo ti le slice — mot slice 1920x200 se co vien tren
+            // duoi day gap 10 lan vien trai phai.
+            const double sx = std::max(1.0, slice.inputSize.x);
+            const double sy = std::max(1.0, slice.inputSize.y);
+            const double shortSide = std::min(sx, sy);
+            const double f = std::clamp(slice.mask.feather, 0.0, 0.5);
+
+            m_sliceShader.setUniform2f("uFeatherUV",
+                static_cast<float>(f * shortSide / sx),
+                static_cast<float>(f * shortSide / sy));
+        } else {
+            m_sliceShader.setUniformTexture("uMask", m_canvas.getTexture(), 1);
+            m_sliceShader.setUniform1f("uMaskOn", 0.0f);
+            m_sliceShader.setUniform1f("uMaskInvert", 0.0f);
+            m_sliceShader.setUniform2f("uFeatherUV", 0.0f, 0.0f);
+        }
+
         m_sliceMesh.draw();
         m_sliceShader.end();
     } else {
@@ -381,20 +572,30 @@ void RenderEngine::renderScreen(const Screen& screen, const EditState& edit) {
     const std::vector<int> visible = screen.visibleSlices();
     m_lastSlicesDrawn = static_cast<int>(visible.size());
 
+    ++m_frameCounter;
+    if ((m_frameCounter % 300ull) == 0ull) pruneMaskCache();
+
     for (const int i : visible) {
-        drawSliceGeometry(screen.slices[static_cast<size_t>(i)]);
+        drawSliceGeometry(screen.slices[static_cast<size_t>(i)], i, screen.id);
     }
 
     // ★ FULLSCREEN = dang chieu cho khan gia xem: CHI noi dung.
     //   Khong vien slice, khong handle, khong luoi, khong vung cam ung,
     //   khong cham sensor. Bat cu thu gi khac deu la loi hien ra man anh.
     //
-    //   Ngoai le DUY NHAT: dau thap calibration. Calibration bat buoc
-    //   phai nhin thay TREN VAT THE THAT de nguoi van hanh cham vao, nen
-    //   khong the an no. No lai co cong tac rieng (phim C) nen chi hien
-    //   khi nguoi dung chu dong bat.
+    //   Hai NGOAI LE, va ca hai cung mot ly do: chung phai nhin thay
+    //   TREN VAT THE THAT thi cong viec moi lam duoc.
+    //
+    //     · Dau thap calibration — nguoi van hanh phai cham vao no
+    //     · Duong mat na (F12) — phai khop voi mep vat the that; nhin
+    //       vao khung xem thu trong app thi khong can duoc
+    //
+    //   Ca hai deu co cong tac RIENG do nguoi dung chu dong bat (phim C,
+    //   va o "Chinh mat na"), nen chung khong bao gio tu nhien hien ra
+    //   giua buoi dien.
     if (edit.outputIsFullscreen) {
-        if (edit.calibrating) drawCalibTarget(screen, edit);
+        if (edit.maskEditMode) drawMaskOutline(screen, edit);
+        if (edit.calibrating)  drawCalibTarget(screen, edit);
         return;
     }
 
@@ -403,8 +604,66 @@ void RenderEngine::renderScreen(const Screen& screen, const EditState& edit) {
         drawEditOverlay(screen, edit);
     }
 
+    if (edit.maskEditMode)     drawMaskOutline(screen, edit);
     if (edit.calibrating)      drawCalibTarget(screen, edit);
     if (edit.showSensorPoints) drawSensorPointsOnOutput(edit);
+}
+
+// ── F12: duong mat na tren may chieu ───────────────────────────────────
+//
+// Chinh mat na phai NHIN VAO VAT THE THAT ma keo, khong phai nhin vao
+// bang xem thu trong app: viec can lam la khop duong cat voi mep vat the.
+// Vi vay duong mat na phai hien ca tren may chieu.
+
+void RenderEngine::drawMaskOutline(const Screen& screen, const EditState& edit) const {
+    if (edit.activeSliceIndex < 0 || edit.activeSliceIndex >= screen.sliceCount()) return;
+
+    const Slice& s = screen.slices[static_cast<size_t>(edit.activeSliceIndex)];
+    if (s.mask.nodes.size() < 2 || s.warp() == nullptr) return;
+
+    std::vector<Vec2> poly;
+    s.mask.flatten(poly);
+    if (poly.size() < 2) return;
+
+    ofPushStyle();
+
+    ofNoFill();
+    ofSetLineWidth(2.0f);
+    ofSetColor(120, 255, 200);
+
+    ofPolyline line;
+    for (const Vec2& uv : poly) line.addVertex(toOf(s.contentToOutput(uv)));
+    line.close();
+    line.draw();
+
+    // Diem neo + tay nam.
+    const int n = static_cast<int>(s.mask.nodes.size());
+    for (int i = 0; i < n; ++i) {
+        const MaskNode& nd = s.mask.nodes[static_cast<size_t>(i)];
+        const glm::vec3 p = toOf(s.contentToOutput(nd.point));
+
+        if (!nd.isCorner()) {
+            ofSetLineWidth(1.0f);
+            ofSetColor(120, 255, 200, 140);
+            const glm::vec3 a = toOf(s.contentToOutput(nd.inPoint()));
+            const glm::vec3 b = toOf(s.contentToOutput(nd.outPoint()));
+            ofDrawLine(p.x, p.y, a.x, a.y);
+            ofDrawLine(p.x, p.y, b.x, b.y);
+            ofFill();
+            ofDrawCircle(a.x, a.y, 4.0f);
+            ofDrawCircle(b.x, b.y, 4.0f);
+        }
+
+        ofFill();
+        ofSetColor(i == edit.maskDraggedNode ? ofColor(255, 255, 255)
+                 : i == edit.maskHoveredNode ? ofColor(200, 255, 230)
+                                             : ofColor(120, 255, 200));
+        ofDrawCircle(p.x, p.y, 7.0f);
+        ofSetColor(20);
+        ofDrawCircle(p.x, p.y, 3.0f);
+    }
+
+    ofPopStyle();
 }
 
 // ── G6: dau thap calibration ───────────────────────────────────────────

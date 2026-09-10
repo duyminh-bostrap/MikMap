@@ -76,8 +76,13 @@ int Screen::hitTest(const Vec2& outputPx) const {
         if (outputPx.x < lo.x - kBoundsEpsilon || outputPx.x > hi.x + kBoundsEpsilon) continue;
         if (outputPx.y < lo.y - kBoundsEpsilon || outputPx.y > hi.y + kBoundsEpsilon) continue;
 
+        // ★ isLit chứ không phải outputToContent: điểm rơi vào vùng bị
+        //   mặt nạ (F12) cắt là điểm KHÔNG có ánh sáng. Trả về slice đó
+        //   nghĩa là bảo "chạm trúng" vào một chỗ tối om — và slice nằm
+        //   DƯỚI, thứ thực sự đang sáng ở chỗ đó, sẽ không bao giờ được
+        //   xét tới vì vòng lặp đã dừng.
         Vec2 uv;
-        if (s.outputToContent(outputPx, uv)) return i;
+        if (s.isLit(outputPx, uv)) return i;
     }
     return -1;
 }

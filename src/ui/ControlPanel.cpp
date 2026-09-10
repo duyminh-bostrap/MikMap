@@ -547,6 +547,12 @@ void ControlPanel::drawScreenPanel(Project& p, EditState& edit, UiActions& a) {
         ImGui::TreePop();
     }
 
+    // ── F12: mat na bezier ────────────────────────────────────────────
+    if (ImGui::TreeNode(TR("mask.title"))) {
+        drawMaskPanel(s, edit);
+        ImGui::TreePop();
+    }
+
     // ── F20: hoa vien de ghep nhieu may chieu ─────────────────────────
     if (ImGui::TreeNode(TR("adv.softedge"))) {
         ImGui::TextDisabled(TR("adv.edge.note1"));
@@ -611,6 +617,81 @@ void ControlPanel::drawScreenPanel(Project& p, EditState& edit, UiActions& a) {
             mesh->resize(dims[0], dims[1]);   // F11 — giữ nguyên hình đã kéo
         }
         ImGui::TextDisabled("%s", TR("adv.mesh.hint"));
+    }
+}
+
+// ── F12: bang mat na bezier ────────────────────────────────────────────
+
+void ControlPanel::drawMaskPanel(Slice& s, EditState& edit) {
+    BezierMask& m = s.mask;
+
+    ImGui::TextDisabled("%s", TR("mask.note"));
+
+    if (ImGui::Checkbox(TR("mask.enabled"), &m.enabled)) {
+        // Bat mat na khi chua co hinh thi khong thay gi thay doi va nguoi
+        // dung tuong phan mem hong. Dung san hinh chu nhat de co cai ma keo.
+        if (m.enabled && m.nodes.size() < 3) {
+            const bool wasInvert = m.invert;
+            const double wasFeather = m.feather;
+            m = BezierMask::rectangle(0.10);
+            m.invert  = wasInvert;
+            m.feather = wasFeather;
+            edit.maskEditMode = true;
+        }
+    }
+
+    ImGui::SameLine();
+    if (ImGui::Checkbox(TR("mask.edit"), &edit.maskEditMode)) {
+        // Vao che do sua thi bo chon diem keystone dang keo do, neu khong
+        // cu keo tiep theo se di chuyen goc keystone thay vi nut mat na.
+        m_mapDragPoint = -1;
+    }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("mask.edit.tip"));
+
+    if (ImGui::Checkbox(TR("mask.invert"), &m.invert)) {}
+
+    float f = static_cast<float>(m.feather);
+    ImGui::SetNextItemWidth(180.0f);
+    if (ImGui::SliderFloat(TR("mask.feather"), &f, 0.0f, 0.5f, "%.3f")) {
+        m.feather = f;
+    }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("mask.feather.tip"));
+
+    ImGui::Separator();
+
+    if (ImGui::Button(TR("mask.shape.rect"))) {
+        const bool inv = m.invert; const double ft = m.feather;
+        m = BezierMask::rectangle(0.10);
+        m.invert = inv; m.feather = ft;
+        edit.maskEditMode = true;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button(TR("mask.shape.ellipse"))) {
+        const bool inv = m.invert; const double ft = m.feather;
+        m = BezierMask::ellipse(4);
+        m.invert = inv; m.feather = ft;
+        edit.maskEditMode = true;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button(TR("mask.clear"))) {
+        m.reset();
+        edit.maskEditMode = false;
+        edit.maskDraggedNode = -1;
+        edit.maskHoveredNode = -1;
+    }
+
+    if (m.nodes.empty()) {
+        ImGui::TextDisabled("%s", TR("mask.empty"));
+    } else {
+        ImGui::Text(TR("mask.nodes"), static_cast<int>(m.nodes.size()));
+        if (m.nodes.size() < 3) {
+            ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f), "%s", TR("mask.tooFew"));
+        }
+    }
+
+    if (edit.maskEditMode) {
+        ImGui::TextDisabled("%s", TR("mask.hint"));
+        ImGui::TextDisabled("%s", TR("mask.hint.handle"));
     }
 }
 
@@ -976,6 +1057,201 @@ void ControlPanel::drawTriggerZonePanel(Project& p, UiActions& a) {
     }
 }
 
+// ── F12: keo nut mat na trong cua so Mapping ───────────────────────────
+//
+// Tach khoi drawMappingEditor de ham do khong phinh ra kho doc: hai bo
+// tuong tac (goc keystone / nut mat na) dung chung khung nhin nhung logic
+// hoan toan khac nhau.
+
+bool ControlPanel::handleMaskEditing(
+        Slice& s, EditState& edit,
+        const std::function<ImVec2(const Vec2&)>& toWidget,
+        const std::function<Vec2(const ImVec2&)>& toOutput,
+        ImDrawList* dl, bool hovered, bool active) {
+
+    BezierMask& m = s.mask;
+    const int n = static_cast<int>(m.nodes.size());
+
+    const ImVec2 mouse = ImGui::GetIO().MousePos;
+    auto uvToWidget = [&](const Vec2& uv) { return toWidget(s.contentToOutput(uv)); };
+    auto dist = [](const ImVec2& a, const ImVec2& b) {
+        return std::sqrt((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y));
+    };
+
+    // ── Ve duong bien ──────────────────────────────────────────────────
+    if (n >= 2) {
+        std::vector<Vec2> poly;
+        m.flatten(poly);
+
+        std::vector<ImVec2> pts;
+        pts.reserve(poly.size());
+        for (const Vec2& uv : poly) pts.push_back(uvToWidget(uv));
+
+        // Mau khac han vien slice (vang) va vien hong (do): ba thu nay
+        // deu la duong khep kin nen phai phan biet duoc bang mau.
+        const ImU32 maskCol = m.enabled ? IM_COL32(120, 255, 200, 255)
+                                        : IM_COL32(120, 255, 200, 110);
+        dl->AddPolyline(pts.data(), static_cast<int>(pts.size()), maskCol,
+                        ImDrawFlags_Closed, 2.0f);
+    }
+
+    if (n == 0) return false;
+
+    // ── Tim thu duoi con tro ───────────────────────────────────────────
+    //
+    // Uu tien TAY NAM hon diem neo: tay nam thuong nam gan neo, va neu
+    // neo thang thi khong bao gio cham duoc vao tay nam.
+    constexpr float kGrab = 12.0f;
+
+    int hitNode = -1;
+    int hitPart = 0;                 // 0 neo, 1 tay nam vao, 2 tay nam ra
+    float best = kGrab;
+
+    if (hovered || active) {
+        for (int i = 0; i < n; ++i) {
+            const MaskNode& nd = m.nodes[static_cast<size_t>(i)];
+            if (nd.isCorner()) continue;
+            const float dIn  = dist(uvToWidget(nd.inPoint()),  mouse);
+            const float dOut = dist(uvToWidget(nd.outPoint()), mouse);
+            if (dIn  < best) { best = dIn;  hitNode = i; hitPart = 1; }
+            if (dOut < best) { best = dOut; hitNode = i; hitPart = 2; }
+        }
+        for (int i = 0; i < n; ++i) {
+            const float d = dist(uvToWidget(m.nodes[static_cast<size_t>(i)].point), mouse);
+            if (d < best) { best = d; hitNode = i; hitPart = 0; }
+        }
+    }
+    edit.maskHoveredNode = (hitPart == 0) ? hitNode : -1;
+
+    bool consumed = false;
+
+    // ── Chuot phai: xoa nut ────────────────────────────────────────────
+    if (hovered && hitNode >= 0 && hitPart == 0
+        && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+        if (!m.removeNode(hitNode)) {
+            setStatusMessage(TR("mask.cannotRemove"), true);
+        }
+        edit.maskDraggedNode = -1;
+        return true;
+    }
+
+    // ── Chuot trai ─────────────────────────────────────────────────────
+    if (active && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        const ImGuiIO& io = ImGui::GetIO();
+
+        if (hitNode >= 0) {
+            MaskNode& nd = m.nodes[static_cast<size_t>(hitNode)];
+
+            if (io.KeyShift && hitPart == 0) {
+                // Duoi thang: bo hai tay nam, nut thanh goc nhon.
+                nd.inHandle  = Vec2{0.0, 0.0};
+                nd.outHandle = Vec2{0.0, 0.0};
+                consumed = true;
+
+            } else if (io.KeyCtrl && hitPart == 0 && nd.isCorner()) {
+                // Moc tay nam ra khoi mot nut goc. Huong ban dau lay theo
+                // duong noi hai nut ke — de nguoi dung keo tiep tu mot the
+                // hop ly thay vi tu vector 0 (khong biet keo ve huong nao).
+                const MaskNode& prev = m.nodes[static_cast<size_t>((hitNode - 1 + n) % n)];
+                const MaskNode& next = m.nodes[static_cast<size_t>((hitNode + 1) % n)];
+                Vec2 dir{(next.point.x - prev.point.x) * 0.15,
+                         (next.point.y - prev.point.y) * 0.15};
+                if (dir.x == 0.0 && dir.y == 0.0) dir = Vec2{0.08, 0.0};
+                nd.outHandle = dir;
+                nd.inHandle  = Vec2{-dir.x, -dir.y};
+                edit.maskDraggedNode = hitNode;
+                edit.maskDraggedPart = 2;
+                consumed = true;
+
+            } else {
+                edit.maskDraggedNode = hitNode;
+                edit.maskDraggedPart = hitPart;
+                consumed = true;
+            }
+
+        } else if (n >= 2) {
+            // Bam LEN DUONG -> chen nut o dung cho bam.
+            //
+            // Do khoang cach bang PIXEL chu khong bang don vi UV: tren mot
+            // slice 1920x200, lech 0.02 UV la 38px theo truc nay va 4px
+            // theo truc kia — mot nguong tinh bang UV se bat rat lech.
+            double t = 0.0, du = 0.0;
+            Vec2 uv;
+            if (s.outputToContent(toOutput(mouse), uv)) {
+                const int seg = m.closestSegment(uv, t, du);
+                if (seg >= 0) {
+                    const float dPx = dist(uvToWidget(m.pointOnSegment(seg, t)), mouse);
+                    if (dPx < kGrab) {
+                        if (m.insertNodeOnSegment(seg, t) < 0) {
+                            setStatusMessage(TR("mask.full"), true);
+                        }
+                        consumed = true;
+                    }
+                }
+            }
+        }
+    }
+
+    if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) edit.maskDraggedNode = -1;
+
+    // ── Keo ────────────────────────────────────────────────────────────
+    if (edit.maskDraggedNode >= 0 && edit.maskDraggedNode < n
+        && ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
+
+        MaskNode& nd = m.nodes[static_cast<size_t>(edit.maskDraggedNode)];
+
+        Vec2 uv;
+        // ★ Nut mat na song trong contentUV [0,1], va outputToContent tu
+        //   choi diem ngoai khoang do. Keo chuot ra ngoai slice thi nut
+        //   dung lai o bien — dung, vi mot nut ngoai slice khong co nghia
+        //   gi: texture mat na chi phu [0,1].
+        if (s.outputToContent(toOutput(mouse), uv)) {
+            if (edit.maskDraggedPart == 0) {
+                nd.point = uv;
+            } else {
+                const Vec2 h{uv.x - nd.point.x, uv.y - nd.point.y};
+
+                // Keo mot tay nam thi tay nam kia doi xung theo — duong
+                // cong di qua nut mot cach TRON. Doi voi bong vat the
+                // that (cot tron, mai vom) day gan nhu luon la thu can;
+                // muon goc nhon thi Shift+bam de duoi thang ca hai.
+                if (edit.maskDraggedPart == 2) {
+                    nd.outHandle = h;
+                    nd.inHandle  = Vec2{-h.x, -h.y};
+                } else {
+                    nd.inHandle  = h;
+                    nd.outHandle = Vec2{-h.x, -h.y};
+                }
+            }
+        }
+        consumed = true;
+    }
+
+    // ── Ve nut va tay nam ──────────────────────────────────────────────
+    for (int i = 0; i < n; ++i) {
+        const MaskNode& nd = m.nodes[static_cast<size_t>(i)];
+        const ImVec2 p = uvToWidget(nd.point);
+
+        if (!nd.isCorner()) {
+            const ImVec2 a = uvToWidget(nd.inPoint());
+            const ImVec2 b = uvToWidget(nd.outPoint());
+            dl->AddLine(p, a, IM_COL32(120, 255, 200, 120), 1.0f);
+            dl->AddLine(p, b, IM_COL32(120, 255, 200, 120), 1.0f);
+            dl->AddCircleFilled(a, 3.5f, IM_COL32(120, 255, 200, 200));
+            dl->AddCircleFilled(b, 3.5f, IM_COL32(120, 255, 200, 200));
+        }
+
+        ImU32 c = IM_COL32(120, 255, 200, 255);
+        if (i == edit.maskDraggedNode)      c = IM_COL32(255, 255, 255, 255);
+        else if (i == edit.maskHoveredNode) c = IM_COL32(210, 255, 235, 255);
+
+        dl->AddCircleFilled(p, 6.0f, c);
+        dl->AddCircleFilled(p, 2.4f, IM_COL32(20, 20, 20, 255));
+    }
+
+    return consumed;
+}
+
 // ── ★ Trinh chinh mapping NGAY TRONG cua so chinh ─────────────────────
 
 void ControlPanel::drawMappingEditor(Project& p, EditState& edit,
@@ -987,8 +1263,19 @@ void ControlPanel::drawMappingEditor(Project& p, EditState& edit,
     Screen& sc = p.screens[static_cast<size_t>(m_activeScreen)];
 
     ImGui::Checkbox(TR("map.showcontent"), &m_mapShowContent);
+
+    // F12 — cong tac che do sua mat na de NGAY o day, khong bat nguoi
+    // dung mo Advanced Output moi bat duoc: viec sua mat na dien ra
+    // trong chinh cua so nay.
     ImGui::SameLine();
-    ImGui::TextDisabled("%s", TR("map.hint"));
+    if (ImGui::Checkbox(TR("mask.edit"), &edit.maskEditMode)) {
+        m_mapDragPoint = -1;         // dung keo goc keystone dang do
+        edit.maskDraggedNode = -1;
+    }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("mask.edit.tip"));
+
+    ImGui::SameLine();
+    ImGui::TextDisabled("%s", edit.maskEditMode ? TR("mask.hint") : TR("map.hint"));
 
     const ImVec2 avail = ImGui::GetContentRegionAvail();
     if (avail.x < 40.0f || avail.y < 40.0f) return;
@@ -1088,6 +1375,22 @@ void ControlPanel::drawMappingEditor(Project& p, EditState& edit,
         dl->AddPolyline(pts.data(), static_cast<int>(pts.size()), col,
                         ImDrawFlags_Closed, isActive ? 2.5f : 1.5f);
 
+        // F12 — duong mat na hien CA khi khong o che do sua: no quyet
+        // dinh phan nao thuc su duoc chieu, nen nhin vao khung mapping ma
+        // khong thay no thi hieu sai hoan toan ve thu dang ra may chieu.
+        if (s.mask.nodes.size() >= 2) {
+            std::vector<Vec2> mpoly;
+            s.mask.flatten(mpoly);
+            std::vector<ImVec2> mpts;
+            mpts.reserve(mpoly.size());
+            for (const Vec2& uv : mpoly) mpts.push_back(toWidget(s.contentToOutput(uv)));
+
+            const ImU32 mc = s.mask.enabled ? IM_COL32(120, 255, 200, 200)
+                                            : IM_COL32(120, 255, 200, 70);
+            dl->AddPolyline(mpts.data(), static_cast<int>(mpts.size()), mc,
+                            ImDrawFlags_Closed, 1.5f);
+        }
+
         if (!s.name.empty()) {
             dl->AddText(ImVec2(pts[0].x + 4.0f, pts[0].y + 2.0f), col, s.name.c_str());
         }
@@ -1096,14 +1399,26 @@ void ControlPanel::drawMappingEditor(Project& p, EditState& edit,
     // ── Diem dieu khien cua slice dang chon ────────────────────────────
     if (edit.activeSliceIndex < 0 || edit.activeSliceIndex >= sc.sliceCount()) {
         dl->AddText(ImVec2(origin.x + 8.0f, origin.y + 8.0f),
-                    IM_COL32(255, 255, 255, 150),
-                    "Bam vao mot slice de chon");
+                    IM_COL32(255, 255, 255, 150), TR("map.selecthint"));
         return;
     }
 
     Slice& s = sc.slices[static_cast<size_t>(edit.activeSliceIndex)];
     IWarp* w = s.warp();
     if (w == nullptr) return;
+
+    // ── F12: che do sua mat na ─────────────────────────────────────────
+    //
+    // ★ Khi bat, phan keystone ben duoi KHONG chay chut nao — khong ve
+    //   handle, khong bat chuot. Neu de ca hai cung nhan chuot thi mot cu
+    //   keo hut se xo lech goc keystone da can xong, tuc pha hong dung
+    //   thu ton cong nhat de lam lai, ngay giua luc dang can mat na.
+    if (edit.maskEditMode) {
+        handleMaskEditing(s, edit, toWidget, toScreenSpace, dl, hovered, active);
+        return;
+    }
+    edit.maskDraggedNode = -1;
+    edit.maskHoveredNode = -1;
 
     const int n = w->controlPointCount();
     const float r = (n > 25) ? 4.0f : 6.5f;
@@ -1173,8 +1488,7 @@ void ControlPanel::drawMappingEditor(Project& p, EditState& edit,
 
     if (outsideCount > 0) {
         char msg[96];
-        std::snprintf(msg, sizeof(msg),
-                      "%d diem nam NGOAI khung may chieu", outsideCount);
+        std::snprintf(msg, sizeof(msg), TR("map.outside"), outsideCount);
         dl->AddText(ImVec2(origin.x + 6.0f, origin.y + drawH + 6.0f),
                     IM_COL32(255, 140, 60, 255), msg);
     }

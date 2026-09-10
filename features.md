@@ -64,6 +64,7 @@
 | **Cài đặt ứng dụng** — `AppSettings` | ✅ Xong | `settings.json`, tách khỏi file project |
 | **Đa ngôn ngữ VI / EN** — `Localization` | ✅ Xong | 214 khoá × 2, đổi ngay không cần khởi động lại |
 | **Font Inter** (OFL) | ✅ Xong | `bin/data/fonts/` — đủ dấu tiếng Việt |
+| **F12 — mặt nạ bezier** | ✅ Xong | `BezierMask`, nút ở contentUV, mép mờ |
 
 ### 🟢 Tầng ứng dụng oF — ĐÃ CHẠY
 
@@ -231,7 +232,7 @@ toàn. `ofxHapPlayer::getShader()` tồn tại chính vì việc này: nó trả
 
 ### Xây tiếp
 
-`E1` FX chain · `F12` bezier mask · `A13` group · `C9` cue points · `G14` TUIO
+`E1` FX chain · `A13` group · `C9` cue points · `G14` TUIO
 
 ### 📊 R1 — băng thông HAP 4K đo thật (3840×2160 @30fps)
 
@@ -506,6 +507,69 @@ Lý do: chúng làm hệ thống *đẹp hơn*, nhưng không chứng minh đư�
 
 ---
 
+
+## ✂️ F12 — Mặt nạ bezier
+
+| Mục | Nội dung |
+|---|---|
+| Không gian | **contentUV** của slice, đi qua đúng phép warp |
+| Hình dựng sẵn | chữ nhật, elip (tay nắm chuẩn kappa) |
+| Sửa | kéo nút · bấm lên đường = thêm nút · chuột phải = xoá · Ctrl+kéo = uốn cong · Shift+bấm = duỗi thẳng |
+| Đảo | cắt phần bên trong — khoét lỗ chừa cửa sổ thật |
+| Mép mờ | 0–0.5 theo cạnh ngắn slice, tính lúc lấy mẫu nên đổi là thấy ngay |
+| Sensor | `Screen::hitTest` bỏ qua vùng bị cắt — chạm vào chỗ tối thì không kích hoạt gì |
+
+**Kết quả:** `313/313 test xanh · 3686 assertion` · 60.0 fps với mặt nạ elip + mép mờ
+(`frame_avg` 16.67 ms, không đổi so với khi tắt mặt nạ).
+
+### Vì sao nút mặt nạ ở contentUV, không phải pixel máy chiếu
+
+Keystone là thứ ánh xạ nội dung slice lên **bề mặt thật**. Đặt mặt nạ ở
+contentUV nghĩa là nó đi qua đúng phép warp đó: vẽ xong bóng vật thể một
+lần, sau này máy chiếu bị xê dịch thì chỉ cần kéo lại 4 góc — mặt nạ theo
+cùng. Đặt ở pixel máy chiếu thì **mỗi lần chỉnh keystone là mỗi lần phải vẽ
+lại toàn bộ**. Cùng lý do khiến `TriggerZone` nằm ở không gian canvas.
+
+### Vì sao texture chứ không phải stencil buffer
+
+Stencil là cách quen thuộc để cắt hình, nhưng nó cho **mép sắc** và không
+làm mờ được — mà mép mờ mới là thứ giấu được sai số căn chỉnh giữa hình
+chiếu và cạnh vật thể thật (cùng nguyên lý với hoà viền F20). Nó cũng phụ
+thuộc vào việc cửa sổ output có stencil buffer hay không. Nướng mặt nạ ra
+một texture rồi nhân vào **kênh alpha** thì hoà đúng với F20 mà không phải
+sắp xếp lại thứ tự vẽ.
+
+Mép mờ được tính **lúc lấy mẫu** (hộp 5×5 trong shader) chứ không blur sẵn
+vào texture: nhờ vậy kéo thanh trượt feather là thấy ngay, không phải nướng
+lại texture mỗi frame — nướng lại giữa lúc đang kéo sẽ giật.
+
+### Ba cái bẫy đã mắc phải khi làm
+
+**1. Nướng texture trong lúc shader đang bind.** `maskTexture()` vẽ vào một
+FBO khác. Gọi nó *sau* `m_sliceShader.begin()` thì `ofPath::draw()` vẽ đường
+mặt nạ **bằng chính slice shader** — cho ra texture đen sì, và mặt nạ cắt
+sạch toàn bộ nội dung. Triệu chứng nhìn thấy là **màn hình đen hoàn toàn**,
+không hề giống "lỗi vẽ mặt nạ".
+
+**2. Copy constructor viết tay bỏ sót trường mới.** `Slice` giữ
+`unique_ptr<IWarp>` nên phải tự viết copy constructor liệt kê từng trường.
+Thêm `mask` vào lớp mà quên hai hàm sao chép → mặt nạ **lặng lẽ biến mất**
+mỗi lần slice bị sao chép (nạp project, thêm slice), không lỗi biên dịch,
+không cảnh báo. Sửa tận gốc: bọc phần khó sao chép vào `WarpPtr` (tự gọi
+`clone()`), rồi `Slice` dùng `= default` — trường mới từ nay tự động được
+sao chép.
+
+**3. Test đo nhầm đại lượng.** Test "chèn nút không làm đổi hình" ban đầu so
+**diện tích** đa giác trước/sau. Nhưng sau khi chèn, `flatten()` sinh nhiều
+đỉnh hơn nên đa giác xấp xỉ sát đường cong hơn và diện tích tăng — đó là sai
+số *làm phẳng*, không phải hình đổi. Viết lại thành so **từng điểm** trên
+đường cong, và khi đó phép chia đôi de Casteljau khớp tới `1e-12`.
+
+*(Bên lề, cũng là một kỳ vọng sai của tôi: bezier bậc 3 với hằng số kappa
+**phình ra ngoài** đường tròn thật ~0.03%, nên diện tích elip 4 nút lớn hơn
+`π/4` chứ không nhỏ hơn.)*
+
+---
 
 ## ⚙️ Cài đặt & đa ngôn ngữ
 

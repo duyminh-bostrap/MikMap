@@ -37,6 +37,9 @@
 		<ClCompile Include="src\core\math\Mat3.cpp">
 			<Filter>src\core\math</Filter>
 		</ClCompile>
+		<ClCompile Include="src\core\model\BezierMask.cpp">
+			<Filter>src\core\model</Filter>
+		</ClCompile>
 		<ClCompile Include="src\core\model\BlendMode.cpp">
 			<Filter>src\core\model</Filter>
 		</ClCompile>
@@ -88,12 +91,18 @@
 		<ClCompile Include="src\render\RenderEngine.cpp">
 			<Filter>src\render</Filter>
 		</ClCompile>
-		<ClCompile Include="src\core\util\AppSettings.cpp">
-			<Filter>src\core\util</Filter>
-		</ClCompile>
-		<ClCompile Include="src\ui\Localization.cpp">
-			<Filter>src\ui</Filter>
-		</ClCompile>
+		<ClCompile Include="src\core\util\AppSettings.cpp">
+
+			<Filter>src\core\util</Filter>
+
+		</ClCompile>
+
+		<ClCompile Include="src\ui\Localization.cpp">
+
+			<Filter>src\ui</Filter>
+
+		</ClCompile>
+
 		<ClCompile Include="src\ui\ControlPanel.cpp">
 			<Filter>src\ui</Filter>
 		</ClCompile>
