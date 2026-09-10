@@ -515,16 +515,32 @@ void AppController::outputMouseReleased(ofMouseEventArgs&) {
 void AppController::startSensor(int typeIndex) {
     stopSensor();
 
-    if (typeIndex == 1) {
+    if (typeIndex == 1 || typeIndex == 2) {
+        // G4 / G14 — cung mot lop nguon, khac phuong ngu. Phan kho cua
+        // mot nguon sensor (socket, thread, vong su kien, het han diem)
+        // dung chung; chi cach doc message la khac.
+        const bool tuio = (typeIndex == 2);
+
         OscConfig cfg;
-        cfg.port = 9000;
+        cfg.protocol = tuio ? OscProtocol::Tuio : OscProtocol::Hexmap;
+
+        // ★ TUIO co cong quy uoc rieng la 3333. Dung 9000 cho ca hai thi
+        //   nguoi dung phai vao cau hinh bo tracking doi cong — ma phan
+        //   lon bo tracking chi cho doi dia chi, khong cho doi cong.
+        cfg.port = tuio ? 3333 : 9000;
+
+        // TUIO luon gui toa do chuan hoa [0,1]; nhan len thang sensor.
+        cfg.sensorRange = Vec2{1920.0, 1080.0};
+
         auto src = std::make_unique<OscSource>(cfg);
         if (!src->start()) {
-            m_panel.setStatusMessage("OSC: " + src->lastError(), true);
+            m_panel.setStatusMessage(std::string(tuio ? "TUIO: " : "OSC: ")
+                                     + src->lastError(), true);
             return;
         }
         m_sensor = std::move(src);
-        m_panel.setStatusMessage("OSC dang nghe cong 9000");
+        m_panel.setStatusMessage(tuio ? "TUIO dang nghe cong 3333"
+                                      : "OSC dang nghe cong 9000");
     } else {
         MockConfig cfg;
         cfg.pointCount = 3;

@@ -365,6 +365,61 @@ ngưỡng phải đổi theo hệ số phóng.
 
 ⚠️ Phần nối vào thao tác kéo nằm ở `ui/` nên **chưa được biên dịch**.
 
+### ⚠️ Đính chính bảng G (2026-09-10)
+
+Kiểm lại bằng source: trong `src/io/sources/` chỉ có **đúng hai** nguồn —
+`MockSource` và `OscSource`. Mọi nhắc tới TUIO / Kinect / Arduino / LiDAR
+trước đây **chỉ nằm trong ghi chú**, không có lớp nào cả.
+
+| Mục | Bằng chứng |
+|---|---|
+| G3 Serial / Arduino | không có lớp nguồn nào; chỉ được nhắc trong ghi chú của `OscSource.h` |
+| G15 Kinect / Femto | không có; `Kinect` chỉ xuất hiện trong ghi chú giải thích của 5 file |
+| G16 Ghi log + replay | không có lớp ghi/phát lại phiên sensor |
+| G18 Nhiều sensor cho nhiều screen | `AppController` hardcode `calibrations[0]` ở **6 chỗ** — một sensor duy nhất |
+| G19 LiDAR (Livox / Ouster) | không có |
+
+### 🟢 G14 — Nguồn TUIO (2026-09-10)
+
+TUIO là thứ hầu hết phần mềm tracking nói: Community Core Vision, các bộ
+theo dõi LiDAR thương mại, khung IR, ứng dụng multitouch. Nói được TUIO
+nghĩa là **cắm được vào phần lớn hệ thống có sẵn mà không phải viết driver
+riêng cho từng loại**.
+
+**Làm thành CHẾ ĐỘ của `OscSource`, không phải lớp nguồn riêng.** Phần khó
+và dễ sai của một nguồn sensor không nằm ở việc đọc message — nó nằm ở
+socket, thread, vòng sự kiện wait-free, và cơ chế hết hạn điểm khi UDP
+đánh rơi gói. Chép lại toàn bộ khối đó cho TUIO nghĩa là nhân đôi chỗ để
+sai, và sửa lỗi ở một bản sẽ quên bản kia.
+
+**Hai điểm chết người của giao thức, đều đã khoá bằng test:**
+
+★ **TUIO không có message "nhấc tay".** Cách duy nhất biết một điểm biến
+mất là nó **vắng mặt trong `alive`** của frame kế. Ai chỉ xử lý `set` sẽ
+có bộ theo dõi mà điểm không bao giờ chết — chạm rồi nhấc tay, dấu chạm
+nằm đó mãi. Trong tác phẩm tương tác đó là hiệu ứng kẹt cứng tới khi khởi
+động lại.
+
+★ **UDP không bảo đảm thứ tự.** Gói đến muộn mang trạng thái cũ; áp vào sẽ
+làm điểm nhảy giật về sau rồi nhảy tới. Triệu chứng là hiệu ứng "rung" mà
+đổi bộ lọc bao nhiêu cũng không hết — vì nguyên nhân không nằm ở nhiễu.
+`fseq` cho biết frame nào mới hơn; frame cũ bị bỏ (và `set` của nó cũng bị
+dọn, nếu không sẽ rò sang frame kế thành điểm ma).
+
+Thêm hai chi tiết nhỏ nhưng thật: điểm **đứng yên** chỉ xuất hiện trong
+`alive` không kèm `set` (bên gửi chỉ gửi khi có thay đổi) nên phải nhớ vị
+trí cũ; và id lạ trong `alive` mà chưa từng thấy `set` thì **bỏ qua chứ
+không bịa (0,0)** — góc trên-trái là toạ độ hợp lệ, điểm ma ở đó trông y
+như cú chạm thật và sẽ kích hoạt trigger zone.
+
+Cổng mặc định **3333** theo quy ước TUIO (khác 9000 của phương ngữ Hexmap):
+phần lớn bộ tracking chỉ cho đổi địa chỉ, không cho đổi cổng.
+
+**Kiểm chứng:** `376/376 test xanh` — 19 test cho G14, trong đó có bài
+dựng **gói UDP đúng byte** (bundle: set + alive + fseq) chạy qua cả
+`parseOscPacket` lẫn `TuioDecoder` lẫn `OscSource`, và bài chứng minh nhấc
+tay sinh sự kiện `Up` **ngay** chứ không đợi hết hạn 1 giây.
+
 ### Xây tiếp
 
 `E1` FX chain · `A13` group · `C9` cue points · `G14` TUIO
@@ -562,7 +617,7 @@ ctest --test-dir build -C Debug --output-on-failure
 |:-:|---|---|:-:|:-:|
 | [x] | **G1** | Kiến trúc thread + TripleBuffer + SpscRing | M | 🔴 P0 |
 | [x] | **G2** | MockSource + sensor simulator | S | 🔴 P0 |
-| [x] | **G3** | Serial / Arduino source | M | 🔴 P0 |
+| [ ] | **G3** | Serial / Arduino source | M | 🔴 P0 |
 | [x] | **G4** | OSC server (UDP) | M | 🔴 P0 |
 | [x] | **G5** | **Homography solver (DLT + RANSAC)** | M | 🔴 P0 |
 | [x] | **G6** | **Calibration wizard — chạm 4+ điểm** | M | 🔴 P0 |
@@ -574,11 +629,11 @@ ctest --test-dir build -C Debug --output-on-failure
 | [x] | **G12** | PointTracker — gán ID bền vững qua frame | M | 🟠 P1 |
 | [x] | **G13** | Overlay debug điểm sensor lên output | S | 🟠 P1 |
 | [x] | **G14** | TUIO source | M | 🟠 P1 |
-| [x] | **G15** | Kinect / Femto Bolt depth source + blob detect | L | 🟠 P1 |
-| [x] | **G16** | Ghi log + replay phiên sensor để debug | M | 🟡 P2 |
+| [ ] | **G15** | Kinect / Femto Bolt depth source + blob detect | L | 🟠 P1 |
+| [ ] | **G16** | Ghi log + replay phiên sensor để debug | M | 🟡 P2 |
 | [x] | **G17** | Trigger clip / FX từ sự kiện sensor | M | 🟠 P1 |
-| [x] | **G18** | Calibration nhiều sensor cho nhiều screen | M | 🟡 P2 |
-| [x] | **G19** | LiDAR source (Livox / Ouster) | L | 🟡 P2 |
+| [ ] | **G18** | Calibration nhiều sensor cho nhiều screen | M | 🟡 P2 |
+| [ ] | **G19** | LiDAR source (Livox / Ouster) | L | 🟡 P2 |
 
 ---
 

@@ -208,7 +208,75 @@ void OscSource::feedPacket(const uint8_t* data, size_t size) {
     publishFrame();
 }
 
+void OscSource::handleTuio(const std::vector<OscMessage>& msgs) {
+    TuioFrame frame;
+    if (!m_tuio.feed(msgs, frame)) return;   // gói chưa đóng frame
+
+    const double now = nowSec();
+
+    // ── Điểm đã nhấc lên ───────────────────────────────────────────────
+    //
+    // ★ TUIO không có message "nhấc tay"; `TuioDecoder` suy ra từ việc id
+    //   vắng mặt trong `alive`. Phát Up ở đây là chỗ DUY NHẤT điểm chạm
+    //   TUIO kết thúc — thiếu nó thì mọi cú chạm sống mãi cho tới khi
+    //   `expireStalePoints` dọn sau 1 giây, tức là hiệu ứng trễ đúng một
+    //   giây mỗi lần nhấc tay.
+    for (const int32_t endedId : frame.ended) {
+        const auto id = static_cast<uint32_t>(endedId);
+        const auto it = m_points.find(id);
+        if (it == m_points.end()) continue;
+
+        TouchEvent ev;
+        ev.id = id;
+        ev.x = it->second.x;
+        ev.y = it->second.y;
+        ev.state = TouchState::Up;
+        ev.sourceId = m_sourceId;
+        ev.tCaptureNs = Clock::nowNs();
+        m_events.push(ev);
+        m_points.erase(it);
+    }
+
+    // ── Điểm còn sống ──────────────────────────────────────────────────
+    for (const TuioCursor& c : frame.cursors) {
+        const auto id = static_cast<uint32_t>(c.id);
+
+        // ★ TUIO LUÔN gửi toạ độ chuẩn hoá [0,1] — đó là quy định của
+        //   giao thức, không phải tuỳ chọn. Nên KHÔNG hỏi `normalizedInput`
+        //   ở đây: cờ đó dành cho phương ngữ Hexmap, nơi bên gửi tự chọn.
+        //   Đọc cờ đó ở đây nghĩa là cấu hình sai một lần sẽ dồn mọi điểm
+        //   chạm về góc trên-trái, trong một ô vuông 1x1 pixel.
+        const double x = c.x * m_cfg.sensorRange.x;
+        const double y = c.y * m_cfg.sensorRange.y;
+
+        const bool existed = (m_points.find(id) != m_points.end());
+
+        LivePoint& p = m_points[id];
+        p.x = static_cast<float>(x);
+        p.y = static_cast<float>(y);
+        p.z = 0.0f;
+        p.lastSeenSec = now;
+
+        if (!existed) {
+            p.isNew = false;
+            TouchEvent ev;
+            ev.id = id;
+            ev.x = p.x;
+            ev.y = p.y;
+            ev.state = TouchState::Down;
+            ev.sourceId = m_sourceId;
+            ev.tCaptureNs = Clock::nowNs();
+            m_events.push(ev);
+        }
+    }
+}
+
 void OscSource::handleMessages(const std::vector<OscMessage>& msgs) {
+    if (m_cfg.protocol == OscProtocol::Tuio) {
+        handleTuio(msgs);
+        return;
+    }
+
     const std::string& prefix = m_cfg.addressPrefix;
     const double now = nowSec();
 

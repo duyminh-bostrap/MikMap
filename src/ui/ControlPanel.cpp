@@ -1853,9 +1853,11 @@ void ControlPanel::drawSensorPanel(Project& p, const PerfStats& s, UiActions& a)
     static int sensorType = 0;
     // Cot nay chi rong 300px: nhan len tren, nut chiem het be ngang.
     // Xep ngang ca combo + nhan + nut + trang thai thi dong bi cat.
-    const char* types[] = {TR("sen.type.mock"), TR("sen.type.osc")};
+    // Thu tu PHAI khop voi AppController::startSensor: 0 mock, 1 OSC, 2 TUIO.
+    const char* types[] = {TR("sen.type.mock"), TR("sen.type.osc"),
+                           TR("sen.type.tuio")};
     labelAbove(TR("sen.source"));
-    if (ImGui::Combo("##sensrc", &sensorType, types, 2)) a.sensorTypeIndex = sensorType;
+    if (ImGui::Combo("##sensrc", &sensorType, types, 3)) a.sensorTypeIndex = sensorType;
 
     if (s.sensorConnected) {
         char lbl[64];
