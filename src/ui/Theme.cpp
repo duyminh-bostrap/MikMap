@@ -190,6 +190,35 @@ bool tabButton(const char* label, bool active, const ImVec2& size, ImU32 accent)
     return hit;
 }
 
+bool segButton(const char* label, bool active, const ImVec2& size, ImU32 accent) {
+    if (active) {
+        ImGui::PushStyleColor(ImGuiCol_Button,        v4(alpha(accent, 0.20f)));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, v4(alpha(accent, 0.28f)));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive,  v4(alpha(accent, 0.36f)));
+        ImGui::PushStyleColor(ImGuiCol_Text,          v4(accent));
+        ImGui::PushStyleColor(ImGuiCol_Border,        v4(alpha(accent, 0.50f)));
+    } else {
+        ImGui::PushStyleColor(ImGuiCol_Button,        v4(BgHeader));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, v4(BgCard));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive,  v4(BgButton));
+        ImGui::PushStyleColor(ImGuiCol_Text,          v4(TextMuted));
+        ImGui::PushStyleColor(ImGuiCol_Border,        v4(Border));
+    }
+    pushBold(fs::Tiny);
+    const bool hit = ImGui::Button(label, size);
+    popFont();
+    ImGui::PopStyleColor(5);
+    return hit;
+}
+
+void sectionDivider() {
+    ImGui::Dummy(ImVec2(0.0f, 1.0f));
+    const ImVec2 p = ImGui::GetCursorScreenPos();
+    const float w = ImGui::GetContentRegionAvail().x;
+    ImGui::GetWindowDrawList()->AddLine(ImVec2(p.x, p.y), ImVec2(p.x + w, p.y), BorderSoft);
+    ImGui::Dummy(ImVec2(0.0f, 1.0f));
+}
+
 bool outlineButton(const char* label, ImU32 accent, const ImVec2& size) {
     ImGui::PushStyleColor(ImGuiCol_Button,        v4(alpha(accent, 0.10f)));
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, v4(alpha(accent, 0.22f)));

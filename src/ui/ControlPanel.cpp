@@ -2328,7 +2328,7 @@ void ControlPanel::drawScreenPanel(Project& p, EditState& edit, UiActions& a) {
         ImGui::TextWrapped("%s", TR("adv.broken"));
         ImGui::PopStyleColor();
     }
-    ImGui::Separator();
+    theme::sectionDivider();
 
     // ── F22: lấy nội dung từ đâu ───────────────────────────────────────
     {
@@ -2385,16 +2385,30 @@ void ControlPanel::drawScreenPanel(Project& p, EditState& edit, UiActions& a) {
     if (insz) s.inputSize = Vec2{std::max(1.0f, sz[0]), std::max(1.0f, sz[1])};
 
     // Đổi loại warp. Thứ tự PHẢI khớp với AppController::applyUiActions.
+    //
+    // ★ Bộ chọn PHÂN ĐOẠN chứ không phải hộp xổ, đúng bản thiết kế: ba
+    //   lựa chọn luôn nhìn thấy cả ba. Hộp xổ giấu mất hai lựa chọn kia,
+    //   trong khi đây là thứ người vận hành đổi qua đổi lại liên tục lúc
+    //   căn một bề mặt cong.
     int warpType = 0;
     switch (s.warp()->type()) {
     case WarpType::Mesh:   warpType = 1; break;
     case WarpType::Bezier: warpType = 2; break;
     default:               warpType = 0; break;
     }
-    const char* warpNames[] = {"Corner pin", "Mesh", "Bezier"};
-    labelAbove(TR("adv.warptype"));
-    if (ImGui::Combo("##warptype", &warpType, warpNames, 3)) {
-        a.convertWarpTo = warpType;
+    theme::fieldLabel(TR("adv.warptype"));
+    {
+        const char* warpNames[] = {"CORNER PIN", "MESH", "BEZIER"};
+        const float gap = 6.0f;
+        const float segW = (ImGui::GetContentRegionAvail().x - gap * 2.0f) / 3.0f;
+        for (int i = 0; i < 3; ++i) {
+            if (i > 0) ImGui::SameLine(0.0f, gap);
+            ImGui::PushID(7100 + i);
+            if (theme::segButton(warpNames[i], warpType == i, ImVec2(segW, 29.0f))) {
+                a.convertWarpTo = i;
+            }
+            ImGui::PopID();
+        }
     }
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("adv.warptype.tip"));
     char rlbl[64];
@@ -2499,7 +2513,8 @@ void ControlPanel::drawScreenPanel(Project& p, EditState& edit, UiActions& a) {
     // không với tay tới được.
     if (s.warp()->type() == WarpType::CornerPin) {
         auto* cp = static_cast<WarpCornerPin*>(s.warp());
-        ImGui::Text("%s", TR("adv.corners"));
+        theme::sectionDivider();
+        theme::fieldLabel(TR("adv.corners"));
         const char* cornerNames[4] = {TR("adv.corner.tl"), TR("adv.corner.tr"),
                                       TR("adv.corner.br"), TR("adv.corner.bl")};
         for (int k = 0; k < 4; ++k) {
