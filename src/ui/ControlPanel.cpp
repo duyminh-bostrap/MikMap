@@ -1133,6 +1133,13 @@ void ControlPanel::drawLayersDeck(Project& p) {
 
                 ImVec2 r0 = ImGui::GetCursorScreenPos();
 
+                // ★ ImGui tu chen ItemSpacing.y GIUA hai nut xep chong —
+                //   khong triet tieu thi o co clip cao hon o rong dung
+                //   dung 1 khoang spacing, va lo ra mot khe nen bang o
+                //   giua vung anh voi thanh nhan. Ep spacing = 0 CHI cho
+                //   hai nut nay, tra lai binh thuong ngay sau do.
+                ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(ImGui::GetStyle().ItemSpacing.x, 0.0f));
+
                 if (!empty) {
                     if (ImGui::Button("##play", ImVec2(-FLT_MIN, thumbH))) {
                         // ★ Phat NGAY (len song that) VA chon lam muc tieu
@@ -1150,6 +1157,7 @@ void ControlPanel::drawLayersDeck(Project& p) {
                     m_selLayer  = L;
                     m_selColumn = c;
                 }
+                ImGui::PopStyleVar();
 
                 const ImVec2 r1 = ImGui::GetItemRectMax();
                 if (empty) r0 = ImGui::GetItemRectMin();   // o rong: mot nut duy nhat
