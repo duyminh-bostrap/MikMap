@@ -261,6 +261,7 @@
 		<ClCompile Include="src\io\proto\TuioDecoder.cpp" />
 		<ClCompile Include="src\io\sources\MockSource.cpp" />
 		<ClCompile Include="src\io\sources\OscSource.cpp" />
+		<ClCompile Include="src\render\GeneratorBank.cpp" />
 		<ClCompile Include="src\render\MediaCache.cpp" />
 		<ClCompile Include="src\render\RenderEngine.cpp" />
 		<ClCompile Include="src\ui\ControlPanel.cpp" />
@@ -339,6 +340,7 @@
 		<ClInclude Include="src\io\proto\TuioDecoder.h" />
 		<ClInclude Include="src\io\sources\MockSource.h" />
 		<ClInclude Include="src\io\sources\OscSource.h" />
+		<ClInclude Include="src\render\GeneratorBank.h" />
 		<ClInclude Include="src\render\MediaCache.h" />
 		<ClInclude Include="src\render\RenderEngine.h" />
 		<ClInclude Include="src\ui\ControlPanel.h" />

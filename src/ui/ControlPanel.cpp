@@ -754,6 +754,36 @@ void ControlPanel::drawBrowserPanel(Project& p, UiActions& a) {
     const bool hasTarget = (m_selLayer >= 0 && m_selColumn >= 0);
 
     ImGui::BeginChild("##medialist", ImVec2(0, -76.0f));
+
+    // ── Nguồn sinh bằng shader ─────────────────────────────────────────
+    //
+    // ★ Đặt TRƯỚC danh sách file, không phải sau. Lưới clip rỗng là tình
+    //   huống người dùng gặp NGAY lần chạy đầu; thứ duy nhất bỏ vào được
+    //   lúc đó là generator, nên nó phải là thứ đập vào mắt trước.
+    for (std::size_t g = 0; g < generatorCatalog().size(); ++g) {
+        const GeneratorInfo& gi = generatorCatalog()[g];
+
+        char row[160];
+        std::snprintf(row, sizeof(row), "%s  %s", ICON_LC_SPARKLES, gi.label);
+
+        ImGui::PushID(static_cast<int>(9000 + g));
+        ImGui::PushStyleColor(ImGuiCol_Text, theme::v4(theme::Info));
+        if (ImGui::Selectable(row, false, 0, ImVec2(0, 20))) {
+            if (hasTarget) {
+                a.assignGeneratorId = gi.id;
+                a.assignLayer       = m_selLayer;
+                a.assignColumn      = m_selColumn;
+            } else {
+                setStatusMessage(TR("browser.noTarget"), true);
+            }
+        }
+        ImGui::PopStyleColor();
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("browser.generator.tip"));
+        ImGui::PopID();
+    }
+
+    if (!m_mediaFiles.empty()) theme::sectionDivider();
+
     for (std::size_t i = 0; i < m_mediaFiles.size(); ++i) {
         const std::string name = ofFilePath::getFileName(m_mediaFiles[i]);
         const std::string ext  = ofToLower(ofFilePath::getFileExt(m_mediaFiles[i]));

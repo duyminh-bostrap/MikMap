@@ -18,6 +18,7 @@
 #pragma once
 
 #include "core/model/Clip.h"
+#include "render/GeneratorBank.h"
 
 #include "ofMain.h"
 #include "ofxHapPlayer.h"
@@ -33,6 +34,10 @@ public:
     struct Entry {
         std::unique_ptr<ofxHapPlayer> video;
         std::unique_ptr<ofImage>      image;
+
+        /// Nguồn hình sinh bằng shader — FBO này được vẽ lại mỗi frame.
+        std::unique_ptr<ofFbo> fbo;
+        std::string            generatorId;
 
         bool   loaded = false;
         bool   failed = false;
@@ -79,6 +84,7 @@ private:
     Entry* load(const MediaRef& ref);
 
     std::map<std::string, std::unique_ptr<Entry>> m_entries;
+    GeneratorBank m_generators;
     int m_frameCounter = 0;
     int m_budget = 12;
     int m_evictions = 0;

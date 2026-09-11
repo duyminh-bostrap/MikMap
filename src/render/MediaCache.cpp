@@ -11,6 +11,7 @@ ofTexture* MediaCache::Entry::texture() {
         return (t && t->isAllocated()) ? t : nullptr;
     }
     if (image && image->isAllocated()) return &image->getTexture();
+    if (fbo && fbo->isAllocated()) return &fbo->getTexture();
     return nullptr;
 }
 
@@ -54,6 +55,28 @@ MediaCache::Entry* MediaCache::load(const MediaRef& ref) {
                              + "  — file co phai HAP khong? Dung tools/encode_hap.ps1";
         }
 
+    } else if (ref.type == MediaType::Generator) {
+        // Generator không có file để nạp — chỉ cần một FBO để vẽ vào.
+        //
+        // 1280×720 chứ không phải 4K: đây là nội dung SINH RA, phóng lên
+        // bao nhiêu cũng không vỡ thành pixel như video, trong khi một
+        // FBO 4K tốn 33 MB VRAM và phải tô lại toàn bộ mỗi frame.
+        if (!isKnownGenerator(ref.path)) {
+            entry->failed = true;
+            entry->errorText = "Khong co generator ten: " + ref.path;
+        } else {
+            auto fbo = std::make_unique<ofFbo>();
+            fbo->allocate(1280, 720, GL_RGBA);
+            fbo->begin();
+            ofClear(5, 5, 5, 255);
+            fbo->end();
+
+            entry->size = Vec2{1280.0, 720.0};
+            entry->generatorId = ref.path;
+            entry->fbo = std::move(fbo);
+            entry->loaded = true;
+        }
+
     } else if (ref.type == MediaType::Image) {
         auto img = std::make_unique<ofImage>();
         if (img->load(ref.path) || img->load(path)) {
@@ -74,8 +97,22 @@ MediaCache::Entry* MediaCache::load(const MediaRef& ref) {
 
 void MediaCache::update() {
     ++m_frameCounter;
+
+    const float now = static_cast<float>(ofGetElapsedTimef());
+
     for (auto& kv : m_entries) {
         Entry& e = *kv.second;
+
+        // ★ Chỉ vẽ lại generator ĐANG ĐƯỢC DÙNG ở frame này. Generator
+        //   còn nằm trong cache nhưng không clip nào phát thì vẽ lại chỉ
+        //   tốn GPU — và với tám generator trong cache thì cái giá đó
+        //   không hề nhỏ.
+        if (e.fbo && !e.generatorId.empty()
+            && e.lastUsedFrame >= m_frameCounter - 1) {
+            m_generators.render(e.generatorId, *e.fbo, now);
+            continue;
+        }
+
         if (!e.video) continue;
 
         e.video->update();
@@ -152,7 +189,7 @@ size_t MediaCache::estimatedVramBytes() const {
     size_t total = 0;
     for (const auto& kv : m_entries) {
         if (!kv.second->loaded) continue;
-        // HAP giữ texture nén DXT/BC ~1 byte/pixel; ảnh RGBA là 4.
+        // HAP giữ texture nén DXT/BC ~1 byte/pixel; ảnh và FBO RGBA là 4.
         const double px = kv.second->size.x * kv.second->size.y;
         total += static_cast<size_t>(px * (kv.second->video ? 1.0 : 4.0));
     }

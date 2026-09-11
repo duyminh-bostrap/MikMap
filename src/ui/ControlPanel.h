@@ -12,6 +12,7 @@
 #pragma once
 
 #include "core/calib/CalibrationProfile.h"
+#include "core/model/Generators.h"
 #include "core/model/ProjectIO.h"
 #include "core/util/AppSettings.h"
 #include "ui/Localization.h"
@@ -89,6 +90,11 @@ struct UiActions {
     std::string assignMediaPath;
     int assignLayer = -1;
     int assignColumn = -1;
+
+    /// Gán một NGUỒN SINH BẰNG SHADER vào ô clip (assignLayer/Column).
+    /// Rỗng = không có yêu cầu. Tách khỏi assignMediaPath vì đây không
+    /// phải đường dẫn file — nó là mã trong core/model/Generators.h.
+    std::string assignGeneratorId;
 
     /// G17 — them / xoa vung cam ung.
     bool addTriggerZone = false;

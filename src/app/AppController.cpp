@@ -1,5 +1,6 @@
 #include "app/AppController.h"
 
+#include "core/model/Generators.h"
 #include "core/model/WarpCornerPin.h"
 #include "core/model/WarpMesh.h"
 #include "core/util/Clock.h"
@@ -990,6 +991,20 @@ void AppController::applyUiActions(UiActions& a) {
 
     if (!a.assignMediaPath.empty()) {
         assignClip(a.assignLayer, a.assignColumn, a.assignMediaPath);
+    }
+
+    if (!a.assignGeneratorId.empty() && a.assignLayer >= 0 && a.assignColumn >= 0
+        && isKnownGenerator(a.assignGeneratorId)) {
+        Clip c;
+        c.name       = generatorLabel(a.assignGeneratorId);
+        c.media.type = MediaType::Generator;
+        c.media.path = a.assignGeneratorId;
+
+        // Generator chạy vô tận, không có điểm kết thúc để tua tới. Để
+        // durationSec = 0 thì Transport hiểu là "phát liên tục" và không
+        // cố tính phần trăm vị trí trên một độ dài không tồn tại.
+        m_project.composition.deck(m_project.composition.viewedDeck())
+            .setClip(a.assignLayer, a.assignColumn, c);
     }
 
     // ── Wizard calibration (G6) ────────────────────────────────────────
