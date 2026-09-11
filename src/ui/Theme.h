@@ -42,7 +42,7 @@ constexpr ImU32 TextDim   = IM_COL32(0x88, 0x88, 0x88, 0xFF);
 constexpr ImU32 TextFaint = IM_COL32(0x55, 0x55, 0x55, 0xFF);
 
 // ── Kích thước cố định (theo bản thiết kế) ─────────────────────────────
-constexpr float TopBarH     = 46.0f;   ///< thanh điều hướng trên cùng
+constexpr float TopBarH     = 56.0f;   ///< thanh điều hướng trên cùng (h-14 trong mikmap_UI_pug)
 constexpr float ToolBarH    = 42.0f;   ///< thanh công cụ của trang Mapping
 constexpr float BrowserW    = 220.0f;
 constexpr float InspectorW  = 250.0f;
