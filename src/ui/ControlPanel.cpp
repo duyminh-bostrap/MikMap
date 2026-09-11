@@ -2157,19 +2157,13 @@ void ControlPanel::drawScreenPanel(Project& p, EditState& edit, UiActions& a) {
 
     m_activeScreen = std::clamp(m_activeScreen, 0, static_cast<int>(p.screens.size()) - 1);
 
-    // ★ Danh sach chon man chieu TRUOC DAY nam o day bi thua: cot cay va
-    //   dai pill tren thanh cong cu da lam dung viec do roi. Ba noi cung
-    //   chon MOT thu la loang, khong phai them chac chan.
+    // ★ Ba thu tung nam o day gio da co cho khac ro rang hon, bo di cho
+    //   khoi lap:
+    //   - Danh sach chon man chieu -> cot cay + dai pill tren toolbar.
+    //   - "Show edit overlay"      -> nut "Show Mode" tren topbar chinh
+    //     (dieu khien CUNG MOT co edit.showOverlay, chi la dao nguoc).
+    //   - "+ Add slice"            -> nut "Add Slice" ghim duoi cot cay.
     Screen& sc = p.screens[static_cast<size_t>(m_activeScreen)];
-
-    ImGui::Checkbox(TR("adv.overlay"), &edit.showOverlay);
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("%s", TR("adv.overlay.tip"));
-    }
-
-    if (theme::outlineButton(TR("adv.addslice"), theme::Success, ImVec2(-FLT_MIN, 0))) {
-        a.addSliceToScreen = m_activeScreen;
-    }
 
     ImGui::Separator();
     theme::sectionLabel(TR("adv.slicelist"));
