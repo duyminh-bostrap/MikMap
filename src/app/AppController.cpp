@@ -81,6 +81,7 @@ void AppController::setup() {
     m_mapper.setCalibration(m_project.calibrations.empty()
                             ? nullptr : &m_project.calibrations[0]);
     m_mapper.setScreen(m_project.screens.empty() ? nullptr : &m_project.screens[0]);
+    rebuildSensorRoutes();
 
     // ★ Voi project MAC DINH, dong bo do phan giai screen theo cua so
     //   output that.
@@ -340,6 +341,22 @@ void AppController::pollSensor() {
     // phình ra vô hạn trong một show dài.
     for (const uint32_t lostId : m_tracker.justLost()) {
         m_filters.erase(lostId);
+    }
+
+    // ── G18: frame nay den tu NGUON NAO? ───────────────────────────────
+    //
+    // ★ Moi cam bien di qua ho so hieu chinh CUA RIENG NO, toi screen cua
+    //   rieng no. Truoc G18 moi thu deu chay qua calibrations[0] — cam
+    //   bien thu hai cam vao se di qua phep hieu chinh cua cam bien thu
+    //   nhat va tha diem o nhung cho TRONG CO VE HOP LY, kieu sai kho
+    //   phat hien nhat vi khong co gi bao loi.
+    //
+    //   Khong tim thay tuyen thi BO CA FRAME, khong muon tam ho so khac.
+    if (const SensorRoute* route = m_routes.find(f.sourceId)) {
+        m_mapper.setCalibration(&m_project.calibrations[route->profileIndex]);
+        m_mapper.setScreen(&m_project.screens[route->screenIndex]);
+    } else if (!m_routes.routes.empty()) {
+        return;
     }
 
     for (const TrackedPoint& tp : m_tracker.activeTracks()) {
@@ -619,6 +636,20 @@ void AppController::assignClip(int layer, int column, const std::string& path) {
         .setClip(layer, column, c);
 }
 
+void AppController::rebuildSensorRoutes() {
+    m_routes = buildSensorRoutes(m_project.calibrations, m_project.screens);
+
+    // ★ Canh bao phai NOI RA, khong chi ghi log. Moi muc trong danh sach
+    //   nay deu nghia la "co mot cam bien se khong hoat dong" — va trieu
+    //   chung o phia nguoi dung chi la im lang, khong co gi bao loi.
+    for (const std::string& w : m_routes.warnings) {
+        ofLogWarning("sensor") << w;
+    }
+    if (!m_routes.warnings.empty()) {
+        m_panel.setStatusMessage(m_routes.warnings.front(), true);
+    }
+}
+
 void AppController::applySettings() {
     i18n::setLanguage(m_settings.language);
     ofSetVerticalSync(m_settings.vsync);
@@ -832,6 +863,7 @@ void AppController::applyUiActions(UiActions& a) {
             m_mapper.setCalibration(m_project.calibrations.empty()
                                     ? nullptr : &m_project.calibrations[0]);
             m_mapper.setScreen(m_project.screens.empty() ? nullptr : &m_project.screens[0]);
+            rebuildSensorRoutes();
             m_edit.activeSliceIndex = 0;
             m_project.triggerZones.resetRuntimeState();
             m_triggerCount = 0;
@@ -858,6 +890,7 @@ void AppController::applyUiActions(UiActions& a) {
         m_cache.clear();
         m_mapper.setCalibration(&m_project.calibrations[0]);
         m_mapper.setScreen(&m_project.screens[0]);
+        rebuildSensorRoutes();
     }
 
     // ── Slice ──────────────────────────────────────────────────────────

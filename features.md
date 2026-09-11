@@ -376,7 +376,7 @@ trước đây **chỉ nằm trong ghi chú**, không có lớp nào cả.
 | G3 Serial / Arduino | không có lớp nguồn nào; chỉ được nhắc trong ghi chú của `OscSource.h`. **→ đã làm phần giao thức, xem mục G3 bên dưới** |
 | G15 Kinect / Femto | không có; `Kinect` chỉ xuất hiện trong ghi chú giải thích của 5 file |
 | G16 Ghi log + replay | không có lớp ghi/phát lại phiên sensor. **→ đã làm phần lõi, xem mục G16 bên dưới** |
-| G18 Nhiều sensor cho nhiều screen | `AppController` hardcode `calibrations[0]` ở **6 chỗ** — một sensor duy nhất |
+| G18 Nhiều sensor cho nhiều screen | `AppController` hardcode `calibrations[0]` ở **6 chỗ** — một sensor duy nhất. **→ đã làm, xem mục G18 bên dưới** |
 | G19 LiDAR (Livox / Ouster) | không có |
 
 ### 🟢 G14 — Nguồn TUIO (2026-09-10)
@@ -499,6 +499,48 @@ cứng nhìn con số tăng là biết firmware đang gửi lẫn thứ khác.
 
 **Còn lại:** mở cổng (`CreateFile` trên Windows, `termios` trên POSIX) +
 thread đọc, theo đúng khuôn `OscSource`.
+
+### 🟢 G18 — Nhiều sensor cho nhiều screen (2026-09-11)
+
+Một sân khấu lớn thường có hai hoặc ba cảm biến: LiDAR quét sàn trước,
+khung IR trên tường bên, Kinect nhìn xuống bục. Mỗi cái phủ một vùng khác
+nhau và chiếu lên một máy chiếu khác nhau.
+
+Model đã có sẵn `CalibrationProfile::sourceId` và `targetScreenId` từ đầu
+— thiếu đúng phần **định tuyến**. Trước đây `AppController` gắn cứng
+`calibrations[0]` ở sáu chỗ, nên cảm biến thứ hai cắm vào sẽ **đi qua phép
+hiệu chỉnh của cảm biến thứ nhất**.
+
+★ **Bảng CHỈ SỐ chứ không phải con trỏ.** `SensorMapper` giữ con trỏ thô
+tới `CalibrationProfile` và `Screen`, mà hai thứ đó nằm trong `std::vector`
+của Project — chỉ cần thêm một screen là vector cấp phát lại và mọi con
+trỏ thành treo. Đây không phải lo xa: đúng lỗi đó đã xảy ra khi làm nút
+"Thêm Screen" (F22). Chỉ số sai thì phát hiện được bằng kiểm tra biên; con
+trỏ treo thì im lặng cho tới lúc sập.
+
+★ **Khớp theo `Screen::id`, không theo vị trí trong mảng.** Xoá một screen
+ở giữa làm mọi vị trí sau nó dịch đi một — và khi đó mọi cảm biến lặng lẽ
+chiếu sang **máy chiếu bên cạnh**. Sai theo kiểu trông vẫn "có chạy", nên
+rất lâu mới bị phát hiện.
+
+★ **Screen đích không tồn tại → BỎ tuyến, không lùi về screen 0.** Lùi về
+screen 0 thì điểm chạm vẫn xuất hiện, chỉ là ở sai máy chiếu — trông như
+phần mềm đang chạy, nên người ta đi tìm lỗi ở chỗ khác. Bỏ tuyến thì triệu
+chứng khớp với nguyên nhân: cảm biến đó im lặng, kèm cảnh báo nói rõ.
+
+★ **Hai hồ sơ cùng `sourceId` → giữ cái đầu, nói rõ.** Lấy cái sau nghĩa
+là hành vi phụ thuộc thứ tự trong file, và người vận hành sẽ thấy hiệu ứng
+"tự nhiên nhảy sang chỗ khác" sau khi lưu lại project mà không đổi gì.
+
+★ **Hồ sơ chưa calibrate xong cũng phải cảnh báo.** Người vận hành cắm cảm
+biến vào, không thấy gì xảy ra, và không có cách nào biết là vì chưa
+calibrate.
+
+**Kiểm chứng:** `412/412 test xanh` — 10 test cho G18, gồm bài ba sensor →
+ba screen đi ba đường riêng, và bài một hồ sơ hỏng không được kéo theo các
+tuyến còn lại.
+
+⚠️ Phần nối vào `AppController` **chưa được biên dịch** (lớp oF).
 
 ### Xây tiếp
 
@@ -712,7 +754,7 @@ ctest --test-dir build -C Debug --output-on-failure
 | [ ] | **G15** | Kinect / Femto Bolt depth source + blob detect | L | 🟠 P1 |
 | [~] | **G16** | Ghi log + replay phiên sensor để debug | M | 🟡 P2 |
 | [x] | **G17** | Trigger clip / FX từ sự kiện sensor | M | 🟠 P1 |
-| [ ] | **G18** | Calibration nhiều sensor cho nhiều screen | M | 🟡 P2 |
+| [x] | **G18** | Calibration nhiều sensor cho nhiều screen | M | 🟡 P2 |
 | [ ] | **G19** | LiDAR source (Livox / Ouster) | L | 🟡 P2 |
 
 ---
