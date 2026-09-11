@@ -245,6 +245,10 @@ bool treeRow(const char* icon, const char* label, int depth,
     const ImVec2 p0 = ImGui::GetCursorScreenPos();
     const ImVec2 p1(p0.x + w, p0.y + rowH);
 
+    // ★ Cho phep vat gi do CHONG LEN sau no (vd nut mat bat/tat o canh
+    //   phai hang) van bam duoc — mac dinh ImGui khoa hover cho item DAU
+    //   TIEN nam duoi con tro, item ve SAU bi chan hoan toan du ve TREN.
+    ImGui::SetNextItemAllowOverlap();
     ImGui::InvisibleButton(label, ImVec2(w, rowH));
     const bool hovered = ImGui::IsItemHovered();
     const bool clicked = ImGui::IsItemClicked();

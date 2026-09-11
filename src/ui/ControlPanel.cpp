@@ -1494,6 +1494,29 @@ void ControlPanel::drawScreenTree(Project& p, EditState& edit, UiActions& a) {
     m_activeScreen = std::clamp(m_activeScreen, 0,
                                 static_cast<int>(p.screens.size()) - 1);
 
+    // ★ Nut mat ngay tren hang, o CANH PHAI: bat/tat man chieu hoac slice
+    //   ma khong phai bam vao roi lan xuong bang thuoc tinh moi thay cong
+    //   tac. Ve SAU treeRow (InvisibleButton cua no phu het ca hang) nen
+    //   vung nho nay o tren cung, an click truoc — dung ky thuat da dung
+    //   cho o clip.
+    auto visToggle = [&](bool& enabled) {
+        const ImVec2 r0 = ImGui::GetItemRectMin();
+        const ImVec2 r1 = ImGui::GetItemRectMax();
+        constexpr float kEyeW = 22.0f;
+        ImGui::SetCursorScreenPos(ImVec2(r1.x - kEyeW, r0.y));
+        ImGui::InvisibleButton("##vis", ImVec2(kEyeW, r1.y - r0.y));
+        const bool hov = ImGui::IsItemHovered();
+        if (ImGui::IsItemClicked()) enabled = !enabled;
+        const char* icon = enabled ? ICON_LC_EYE : ICON_LC_EYE_OFF;
+        const ImU32 col = hov ? theme::Text
+                              : (enabled ? theme::TextDim : theme::alpha(theme::TextFaint, 0.8f));
+        const ImVec2 isz = ImGui::CalcTextSize(icon);
+        ImGui::GetWindowDrawList()->AddText(
+            ImVec2(r1.x - kEyeW + (kEyeW - isz.x) * 0.5f, r0.y + (r1.y - r0.y - isz.y) * 0.5f),
+            col, icon);
+        if (hov) ImGui::SetTooltip("%s", TR("tree.vis.tip"));
+    };
+
     for (int si = 0; si < static_cast<int>(p.screens.size()); ++si) {
         Screen& sc = p.screens[static_cast<std::size_t>(si)];
         ImGui::PushID(si);
@@ -1503,6 +1526,7 @@ void ControlPanel::drawScreenTree(Project& p, EditState& edit, UiActions& a) {
             m_activeScreen = si;
             m_selKind = SelKind::Screen;
         }
+        visToggle(sc.enabled);
 
         for (int li = 0; li < sc.sliceCount(); ++li) {
             Slice& sl = sc.slices[static_cast<std::size_t>(li)];
@@ -1521,6 +1545,7 @@ void ControlPanel::drawScreenTree(Project& p, EditState& edit, UiActions& a) {
                 edit.activeSliceIndex = li;
                 m_selKind = SelKind::Slice;
             }
+            visToggle(sl.enabled);
 
             if (!sl.mask.nodes.empty()) {
                 const bool maskSel = (si == m_activeScreen && li == edit.activeSliceIndex
@@ -2132,25 +2157,10 @@ void ControlPanel::drawScreenPanel(Project& p, EditState& edit, UiActions& a) {
 
     m_activeScreen = std::clamp(m_activeScreen, 0, static_cast<int>(p.screens.size()) - 1);
 
-    // ★ Bang nay rong 280px. Moi dong PHAI vua trong do.
-    //
-    //   ImGui khong cat bot noi dung tran ra: no NOI RONG vung noi dung
-    //   cua child. Hau qua khong hien nhien chut nao — moi widget dat be
-    //   rong bang "-FLT_MIN" (het cho con lai) se an theo be rong da noi
-    //   ay va thanh ra rong hon khung nhin, tuc la CA BANG bi cat, khong
-    //   rieng dong gay ra chuyen do.
-    for (size_t i = 0; i < p.screens.size(); ++i) {
-        const bool active = (static_cast<int>(i) == m_activeScreen);
-        ImGui::PushID(static_cast<int>(i));
-        if (theme::tabButton(p.screens[i].name.c_str(), active,
-                             ImVec2(-FLT_MIN, 0), theme::Info)) {
-            m_activeScreen = static_cast<int>(i);
-        }
-        ImGui::PopID();
-    }
-
+    // ★ Danh sach chon man chieu TRUOC DAY nam o day bi thua: cot cay va
+    //   dai pill tren thanh cong cu da lam dung viec do roi. Ba noi cung
+    //   chon MOT thu la loang, khong phai them chac chan.
     Screen& sc = p.screens[static_cast<size_t>(m_activeScreen)];
-    ImGui::Separator();
 
     ImGui::Checkbox(TR("adv.overlay"), &edit.showOverlay);
     if (ImGui::IsItemHovered()) {
