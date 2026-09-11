@@ -633,7 +633,7 @@ void ControlPanel::drawMonitors(Project& p, const PerfStats& s,
 
     auto monitor = [&](const char* id, const char* label, ImU32 labelCol,
                        bool showSliceRects, const char* badge, ImU32 badgeCol,
-                       bool pulse) {
+                       bool pulse, const ofTexture* tex) {
         ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::v4(theme::BgCard));
         ImGui::BeginChild(id, ImVec2(halfW, 0), ImGuiChildFlags_Borders,
                           ImGuiWindowFlags_NoScrollbar);
@@ -680,14 +680,14 @@ void ControlPanel::drawMonitors(Project& p, const PerfStats& s,
         dl->AddRectFilled(org, ImVec2(org.x + box.x, org.y + box.y),
                           IM_COL32(0, 0, 0, 255), 4.0f);
 
-        if (canvasTex != nullptr && canvasTex->isAllocated()) {
-            const float tw = canvasTex->getWidth();
-            const float th = canvasTex->getHeight();
+        if (tex != nullptr && tex->isAllocated()) {
+            const float tw = tex->getWidth();
+            const float th = tex->getHeight();
             const float sc = std::min(box.x / tw, box.y / th);
             const float dw = tw * sc, dh = th * sc;
             const ImVec2 tl(org.x + (box.x - dw) * 0.5f, org.y + (box.y - dh) * 0.5f);
 
-            dl->AddImage(GetImTextureID(*canvasTex), tl, ImVec2(tl.x + dw, tl.y + dh));
+            dl->AddImage(GetImTextureID(*tex), tl, ImVec2(tl.x + dw, tl.y + dh));
 
             // ★ Man hinh phai ve them VUNG LAY cua tung slice.
             //   Day la khac biet that giua hai o: ben trai la toan bo
@@ -733,10 +733,15 @@ void ControlPanel::drawMonitors(Project& p, const PerfStats& s,
     char fps[32];
     std::snprintf(fps, sizeof(fps), "%.1f FPS", s.fps);
 
-    monitor("##mon_preview", TR("mon.preview"), theme::Info, false, nullptr, 0, false);
+    // ★ PREVIEW la texture cua CLIP DANG CHON (m_clipPreviewTex, do
+    //   AppController bom vao qua setClipPreview() moi frame) — KHONG
+    //   phai canvas dang chieu. Chon o rong / chua chon gi thi tex la
+    //   nullptr, o nay ve "chua co noi dung" thay vi lap lai ACTIVE.
+    monitor("##mon_preview", TR("mon.preview"), theme::Info, false, nullptr, 0,
+            false, m_clipPreviewTex);
     ImGui::SameLine();
     monitor("##mon_active", TR("mon.active"), theme::Primary, true, fps,
-            (s.fps >= 55.0) ? theme::Success : theme::Warning, true);
+            (s.fps >= 55.0) ? theme::Success : theme::Warning, true, canvasTex);
 }
 
 // ── Bang thuoc tinh ────────────────────────────────────────────────────
@@ -1113,31 +1118,47 @@ void ControlPanel::drawLayersDeck(Project& p) {
                 ImGui::PushStyleColor(ImGuiCol_ButtonActive,  theme::v4(theme::alpha(theme::Info, 0.32f)));
                 ImGui::PushStyleColor(ImGuiCol_Border,        theme::v4(border));
 
-                if (ImGui::Button("##cell", ImVec2(-FLT_MIN, theme::LayerRowH - 8.0f))) {
-                    // ★ Bam vao than o: RONG -> chi chon (khong con tu mo
-                    //   browse nua, viec do chuyen sang menu chuot phai).
-                    //   CO DUONG DAN -> phat NGAY, giong bam nut play tren
-                    //   dau video — khong con phai bam dup nua.
-                    if (empty) {
+                // ★ Hai vung bam TACH RIENG, dung nhu anh minh hoa yeu cau:
+                //   o MAU (thumbnail, phia tren) CHI de phat/chon — khong
+                //   keo-tha, khong menu chuot phai, khong tooltip hover; o
+                //   DEN (thanh nhan, phia duoi) moi la noi giu-keo, bam
+                //   phai mo menu. Gop hai thu vao MOT nut duy nhat truoc
+                //   day khien "chi dinh bam" o vung anh cung bi hieu nham
+                //   thanh keo — tach han la cach fix dung goc.
+                constexpr float kLabelH = 20.0f;
+                constexpr float kProgH  = 3.0f;
+                constexpr float kBlackH = kLabelH + kProgH;
+                const float totalH = theme::LayerRowH - 8.0f;
+                const float thumbH = std::max(0.0f, totalH - kBlackH);
+
+                ImVec2 r0 = ImGui::GetCursorScreenPos();
+
+                if (!empty) {
+                    if (ImGui::Button("##play", ImVec2(-FLT_MIN, thumbH))) {
+                        // ★ Phat NGAY (len song that) VA chon lam muc tieu
+                        //   xem truoc luon — nguoi van hanh vua bam la thay
+                        //   ca hai man hinh PREVIEW lan ACTIVE cung khop,
+                        //   khong phai bam them lan nua o thanh den.
+                        comp.triggerClip(L, c);
                         m_selLayer  = L;
                         m_selColumn = c;
-                    } else {
-                        comp.triggerClip(L, c);
                     }
                 }
 
-                const ImVec2 r0 = ImGui::GetItemRectMin();
+                const float blackH = empty ? totalH : kBlackH;
+                if (ImGui::Button("##black", ImVec2(-FLT_MIN, blackH))) {
+                    m_selLayer  = L;
+                    m_selColumn = c;
+                }
+
                 const ImVec2 r1 = ImGui::GetItemRectMax();
-                const bool cellHovered = ImGui::IsItemHovered();
+                if (empty) r0 = ImGui::GetItemRectMin();   // o rong: mot nut duy nhat
                 ImDrawList* dl = ImGui::GetWindowDrawList();
 
-                // ── Keo-tha: giu roi keo o clip nay tha sang o khac de DOI CHO ──
+                // ── Keo-tha CHI TU/VAO o DEN: giu roi keo tha sang o khac de DOI CHO ──
                 //
                 // ★ Ke muc tieu da co clip thi HOAN DOI (khong ghi de mat du
                 //   lieu); ke rong thi chi CHUYEN toi (o nguon thanh rong).
-                //   ImGui tu phan biet click-nhanh (van phat clip nhu binh
-                //   thuong) voi giu-keo-qua-nguong (chuyen sang keo-tha) —
-                //   khong xung dot voi logic bam o tren.
                 if (!empty && ImGui::BeginDragDropSource()) {
                     const int payload[2] = { L, c };
                     ImGui::SetDragDropPayload("MIKMAP_CLIP", payload, sizeof(payload));
@@ -1179,7 +1200,7 @@ void ControlPanel::drawLayersDeck(Project& p) {
                     ImGui::EndDragDropTarget();
                 }
 
-                // ── Menu chuot phai: chon file / nhan ban / sao chep / dan / xoa ──
+                // ── Menu chuot phai (o DEN): chon file / nhan ban / sao chep / dan / xoa / doi ten / thong tin ──
                 if (ImGui::BeginPopupContextItem("##clipctx")) {
                     if (ImGui::MenuItem(TR("clip.ctx.choose"))) {
                         m_pendingBrowse = true;
@@ -1209,6 +1230,18 @@ void ControlPanel::drawLayersDeck(Project& p) {
                     }
                     if (!empty) {
                         ImGui::Separator();
+                        if (ImGui::MenuItem(TR("clip.ctx.rename"))) {
+                            m_renameLayer  = L;
+                            m_renameColumn = c;
+                            std::snprintf(m_renameBuf, sizeof(m_renameBuf), "%s", clip.name.c_str());
+                            m_pendingRename = true;
+                        }
+                        if (ImGui::MenuItem(TR("clip.ctx.info"))) {
+                            m_renameLayer  = L;
+                            m_renameColumn = c;
+                            m_pendingInfo  = true;
+                        }
+                        ImGui::Separator();
                         if (ImGui::MenuItem(TR("clip.ctx.delete"))) {
                             comp.deck(comp.viewedDeck()).clearClip(L, c);
                         }
@@ -1231,9 +1264,7 @@ void ControlPanel::drawLayersDeck(Project& p) {
                     //   tren, thanh nhan h-5 (20px) phia duoi chua ten clip +
                     //   icon mat, thanh tien do h-1 (3px) o day cung khi dang
                     //   phat.
-                    constexpr float kLabelH = 20.0f;
-                    constexpr float kProgH  = 3.0f;
-                    const ImVec2 thumb1(r1.x, r1.y - kLabelH - kProgH);
+                    const ImVec2 thumb1(r1.x, r1.y - kBlackH);
 
                     const ImU32 c0 = playing ? theme::alpha(theme::Primary, 0.55f)
                                              : theme::alpha(theme::Info,    0.45f);
@@ -1245,9 +1276,8 @@ void ControlPanel::drawLayersDeck(Project& p) {
                                             theme::Primary);
                     }
 
-                    // Thanh nhan: la noi bam de CHON o nay lam muc tieu xem
-                    // truoc (Inspector CLIP tab + man hinh PREVIEW), khong
-                    // phat — phat da thuoc ve than o roi.
+                    // Thanh nhan (o DEN): CHI ve, khong tu tao vung bam rieng
+                    // nua — ca thanh nay da la nut "##black" o tren roi.
                     const bool isPreviewSel = (L == m_selLayer && c == m_selColumn);
                     const ImVec2 lbl0(r0.x, thumb1.y);
                     const ImVec2 lbl1(r1.x, r1.y - kProgH);
@@ -1261,17 +1291,8 @@ void ControlPanel::drawLayersDeck(Project& p) {
                                 isPreviewSel ? theme::Info : theme::Text, clip.name.c_str());
                     dl->PopClipRect();
 
-                    ImGui::SetCursorScreenPos(ImVec2(r1.x - 18.0f, lbl0.y));
-                    ImGui::InvisibleButton("##preview", ImVec2(18.0f, kLabelH));
-                    const bool eyeHover = ImGui::IsItemHovered();
-                    if (ImGui::IsItemClicked()) {
-                        m_selLayer  = L;
-                        m_selColumn = c;
-                    }
-                    if (eyeHover) ImGui::SetTooltip("%s", TR("clip.preview.tip"));
                     dl->AddText(ImVec2(r1.x - 15.0f, lbl0.y + (kLabelH - theme::fs::Micro) * 0.5f),
-                               (isPreviewSel || eyeHover) ? theme::Info
-                                                          : theme::alpha(theme::TextDim, 0.8f),
+                               isPreviewSel ? theme::Info : theme::alpha(theme::TextDim, 0.8f),
                                ICON_LC_EYE);
 
                     if (playing) {
@@ -1292,11 +1313,6 @@ void ControlPanel::drawLayersDeck(Project& p) {
                 dl->AddRect(r0, r1, border, ImGui::GetStyle().FrameRounding);
 
                 ImGui::PopStyleColor(4);
-
-                if (!empty && cellHovered) {
-                    ImGui::SetTooltip("%s\n%s\n%s", clip.name.c_str(),
-                                      clip.media.path.c_str(), TR("comp.cellhint"));
-                }
                 ImGui::PopID();
             }
             ImGui::PopID();
@@ -1304,6 +1320,45 @@ void ControlPanel::drawLayersDeck(Project& p) {
         ImGui::EndTable();
     }
     ImGui::PopStyleVar();
+
+    // ── Doi ten / Thong tin clip — mo TU menu chuot phai (o DEN) ───────
+    //
+    // ★ OpenPopup phai goi O DAY, ngoai vong lap qua tung o, vi BeginPopup
+    //   ben duoi cung o day: hai ben phai CUNG mot tang ID-stack moi khop
+    //   (vong lap dung PushID(L)/PushID(c) rieng cho tung o).
+    if (m_pendingRename) { ImGui::OpenPopup("##renameclip"); m_pendingRename = false; }
+    if (ImGui::BeginPopup("##renameclip")) {
+        theme::sectionLabel(TR("clip.ctx.rename"));
+        ImGui::SetNextItemWidth(220.0f);
+        const bool enter = ImGui::InputText("##renamebuf", m_renameBuf, sizeof(m_renameBuf),
+                                            ImGuiInputTextFlags_EnterReturnsTrue);
+        const bool ok = enter || ImGui::Button(TR("dialog.ok"));
+        ImGui::SameLine();
+        const bool cancel = ImGui::Button(TR("dialog.cancel"));
+        if (ok) {
+            if (Clip* cptr = comp.deck(comp.viewedDeck()).clipPtr(m_renameLayer, m_renameColumn)) {
+                cptr->name = m_renameBuf;
+            }
+            ImGui::CloseCurrentPopup();
+        } else if (cancel) {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+
+    if (m_pendingInfo) { ImGui::OpenPopup("##clipinfo"); m_pendingInfo = false; }
+    if (ImGui::BeginPopup("##clipinfo")) {
+        theme::sectionLabel(TR("clip.ctx.info"));
+        const Clip& info = comp.deck(comp.viewedDeck()).clip(m_renameLayer, m_renameColumn);
+        ImGui::Text(TR("clip.where"), m_renameLayer + 1, m_renameColumn + 1);
+        ImGui::Text("%s", info.name.c_str());
+        ImGui::TextDisabled("%s", info.media.path.c_str());
+        theme::pushMono(theme::fs::Small);
+        ImGui::Text(TR("clip.mediainfo"), info.media.size.x, info.media.size.y,
+                   info.media.durationSec);
+        theme::popFont();
+        ImGui::EndPopup();
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════

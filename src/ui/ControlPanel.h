@@ -350,6 +350,16 @@ private:
     Clip m_clipClipboard;
     bool m_hasClipClipboard = false;
 
+    /// Hop thoai Doi ten / Thong tin clip, mo tu menu chuot phai. Ghi lai
+    /// muc tieu LUC BAM (giong m_ctxMenuLayer/Column) roi mo popup NGOAI
+    /// vong lap qua tung o — OpenPopup/BeginPopup phai cung mot tang
+    /// ID-stack moi khop, ma vong lap dung PushID(L)/PushID(c) rieng.
+    bool m_pendingRename = false;
+    bool m_pendingInfo   = false;
+    int  m_renameLayer   = -1;
+    int  m_renameColumn  = -1;
+    char m_renameBuf[128] = "";
+
     /// ★ Layer đang chọn để xem NHANH — RIÊNG với layer của clip đang
     ///   chọn (m_selLayer ở trên).
     ///

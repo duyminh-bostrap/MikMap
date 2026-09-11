@@ -430,6 +430,31 @@ void AppController::draw() {
     m_panel.setDisplays(std::move(entries));
     m_panel.setActiveOutputDisplay(m_outputDisplayIndex);
     m_panel.setSensorPoints(m_edit.sensorOutputPoints);
+
+    // ★ Man hinh PREVIEW cua ControlPanel chieu clip DANG CHON (bam icon
+    //   mat / o rong), khong phai canvas dang chieu. ui/ khong duoc goi
+    //   thang MediaCache (vi pham lop kien truc) nen AppController tra
+    //   cuu ho: peek() CHI TRA CUU, khong ep nap file 4K chi vi dang
+    //   xem thu. Chon o rong hoac clip chua tung phat (chua co trong
+    //   cache) -> tex la nullptr, PREVIEW hien "chua co noi dung".
+    {
+        const int selL = m_panel.selectedLayer();
+        const int selC = m_panel.selectedColumn();
+        const ofTexture* previewTex = nullptr;
+        if (selL >= 0 && selC >= 0) {
+            Composition& comp = m_project.composition;
+            if (selL < comp.layerCount()) {
+                const Clip& sel = comp.deck(comp.viewedDeck()).clip(selL, selC);
+                if (!sel.isEmpty()) {
+                    if (MediaCache::Entry* e = m_cache.peek(sel.media)) {
+                        previewTex = e->texture();
+                    }
+                }
+            }
+        }
+        m_panel.setClipPreview(previewTex);
+    }
+
     m_panel.draw(m_project, m_edit, m_stats,
                  &m_render.canvasFbo().getTexture(), m_actions);
     applyUiActions(m_actions);
