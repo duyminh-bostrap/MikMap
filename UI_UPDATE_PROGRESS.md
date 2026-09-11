@@ -76,17 +76,10 @@ xin thêm "copy particle mẫu thành GLSL")
 - [x] Xuất hiện trong trình duyệt media (Composition) ở trên cùng danh
       sách file, gán được vào ô clip bằng một cú bấm — không cần file.
 - [x] Test thủ công: cả 3 generator chạy đúng, hiển thị trong preview
-      lẫn ACTIVE COMPOSITION.
-
-## Đang làm / kiểm tra lại
-
-- [ ] Có một vệt nhiễu (static/noise) xuất hiện ở vùng vàng của khung
-      xem trước ACTIVE COMPOSITION (trang Composition) sau khi gán
-      nhiều generator liên tiếp vào Layer 3 — CHƯA rõ là artefact chụp
-      màn hình lúc chuyển clip hay lỗi thật. Vùng đó là pattern
-      "Test Card" có sẵn từ trước (đã thấy y hệt, không nhiễu, ở trang
-      Advanced Mapping) — cần xem lại bằng mắt thật trong app, không
-      chỉ qua ảnh chụp tự động.
+      lẫn ACTIVE COMPOSITION. (Vệt nhiễu thấy lúc đầu ở vùng vàng của
+      khung ACTIVE COMPOSITION chỉ xảy ra khi chụp ảnh đúng lúc đang
+      chuyển clip liên tục — chụp lại ở trạng thái đứng yên 3 giây thì
+      sạch, không phải lỗi thật.)
 
 ## Chưa làm
 
