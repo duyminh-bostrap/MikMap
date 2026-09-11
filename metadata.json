@@ -1,8 +1,0 @@
-{
-  "name": "MikMap",
-  "description": "Projection mapping engine and sensor calibration workstation featuring VJ composition, keystone and mesh warping, and real-time LiDAR/radar tracking.",
-  "requestFramePermissions": [],
-  "majorCapabilities": [
-    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
-  ]
-}
