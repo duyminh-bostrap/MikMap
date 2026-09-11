@@ -122,7 +122,7 @@ void ControlPanel::draw(Project& project,
         | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
 
     if (ImGui::Begin("##mikmap_root", nullptr, rootFlags)) {
-        drawTopBar(stats, actions);
+        drawTopBar(edit, stats, actions);
 
         ImGui::PushStyleVar(ImGuiStyleVar_ChildBorderSize, 0.0f);
         ImGui::BeginChild("##content", ImVec2(0, 0), ImGuiChildFlags_None,
@@ -170,7 +170,7 @@ void ControlPanel::draw(Project& project,
 //  Thanh dieu huong tren cung
 // ═══════════════════════════════════════════════════════════════════════
 
-void ControlPanel::drawTopBar(const PerfStats& s, UiActions& a) {
+void ControlPanel::drawTopBar(EditState& edit, const PerfStats& s, UiActions& a) {
     ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::v4(theme::BgPanel));
     ImGui::BeginChild("##topbar", ImVec2(0, theme::TopBarH), ImGuiChildFlags_None,
                       ImGuiWindowFlags_NoScrollbar);
@@ -351,6 +351,89 @@ void ControlPanel::drawTopBar(const PerfStats& s, UiActions& a) {
         ImGui::PopStyleColor();
     }
 
+    // ── Thanh cong cu nhanh: Show Mode / Test Grid / Auto Calib / Toan man hinh ──
+    //
+    // ★ Show Mode va Test Grid da co san TRANG THAI (EditState::showOverlay,
+    //   showGrid) va logic ve o RenderEngine tu truoc — chi thieu cho de
+    //   bam TOI, khong phai lam moi tu dau. Show Mode la NGUOC voi
+    //   showOverlay (bam "Show Mode" = AN het handle chinh sua di).
+    ImGui::SameLine(0.0f, 12.0f);
+    centerV(tabsH);
+    {
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::v4(theme::BgSunken));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(kGroupPad, kGroupPad));
+        ImGui::BeginChild("##quicktools", ImVec2(0.0f, tabsH),
+                          ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeX,
+                          ImGuiWindowFlags_NoScrollbar);
+        theme::pushSemiBold(theme::fs::Tiny);
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(9.0f, 5.0f));
+
+        char qlbl[64];
+        std::snprintf(qlbl, sizeof(qlbl), "%s  %s", ICON_LC_EYE, TR("topbar.showmode"));
+        if (theme::tabButton(qlbl, !edit.showOverlay, ImVec2(0, 0), theme::Success)) {
+            edit.showOverlay = !edit.showOverlay;
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("topbar.showmode.tip"));
+
+        ImGui::SameLine(0.0f, 2.0f);
+        std::snprintf(qlbl, sizeof(qlbl), "%s  %s", ICON_LC_GRID_3X3, TR("topbar.testgrid"));
+        if (theme::tabButton(qlbl, edit.showGrid, ImVec2(0, 0), theme::Warning)) {
+            edit.showGrid = !edit.showGrid;
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("topbar.testgrid.tip"));
+
+        ImGui::SameLine(0.0f, 2.0f);
+        std::snprintf(qlbl, sizeof(qlbl), "%s  %s", ICON_LC_WAND_2, TR("topbar.autocalib"));
+        if (theme::tabButton(qlbl, false, ImVec2(0, 0), theme::Info)) {
+            a.calibAutoMock = true;
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("topbar.autocalib.tip"));
+
+        ImGui::PopStyleVar();
+        theme::popFont();
+
+        ImGui::SameLine(0.0f, 4.0f);
+        if (theme::toolButton(ICON_LC_MAXIMIZE_2, TR("topbar.fullscreen.tip"))) {
+            a.toggleFullscreen = true;
+        }
+
+        ImGui::EndChild();
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor();
+    }
+
+    // ── Du an: luu / mo (bieu tuong tat) + ngon ngu ─────────────────────
+    ImGui::SameLine(0.0f, 8.0f);
+    centerV(tabsH);
+    {
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::v4(theme::BgSunken));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(kGroupPad, kGroupPad));
+        ImGui::BeginChild("##projectio", ImVec2(0.0f, tabsH),
+                          ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeX,
+                          ImGuiWindowFlags_NoScrollbar);
+        if (theme::toolButton(ICON_LC_DOWNLOAD, TR("topbar.save.tip"))) a.saveProject = true;
+        ImGui::SameLine(0.0f, 2.0f);
+        if (theme::toolButton(ICON_LC_UPLOAD, TR("topbar.load.tip")))   a.loadProject = true;
+        ImGui::EndChild();
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor();
+    }
+
+    ImGui::SameLine(0.0f, 8.0f);
+    centerV(tabsH);
+    {
+        char langLbl[16];
+        std::snprintf(langLbl, sizeof(langLbl), "%s  %s", ICON_LC_GLOBE,
+                      i18n::language() == Language::English ? "EN" : "VI");
+        theme::pushBold(theme::fs::Small);
+        if (theme::tabButton(langLbl, false, ImVec2(0, tabsH))) {
+            i18n::setLanguage(i18n::language() == Language::English
+                              ? Language::Vietnamese : Language::English);
+        }
+        theme::popFont();
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("topbar.lang.tip"));
+    }
+
     // ── Trang thai ben phai ────────────────────────────────────────────
     //
     // FPS va do phan giai dau ra hien THUONG TRUC, khong phai mo bang moi
@@ -359,6 +442,17 @@ void ControlPanel::drawTopBar(const PerfStats& s, UiActions& a) {
     {
         char fpsBuf[48];
         std::snprintf(fpsBuf, sizeof(fpsBuf), "FPS: %.1f", s.fps);
+
+        // ★ Do tre CHI co nghia khi co sensor dang chay — khong bia so
+        //   khi chua ket noi gi ca (architecture.md §10.6: do tre phai
+        //   duoc DO, khong duoc DOAN).
+        char latBuf[48];
+        if (s.sensorConnected) {
+            std::snprintf(latBuf, sizeof(latBuf), "%s %.1fms", TR("topbar.latency"),
+                          s.sensorLatencyAvgMs);
+        } else {
+            std::snprintf(latBuf, sizeof(latBuf), "%s --", TR("topbar.latency"));
+        }
 
         std::string outBuf = TR("nav.nooutput");
         for (const DisplayEntry& d : m_displays) {
@@ -374,11 +468,12 @@ void ControlPanel::drawTopBar(const PerfStats& s, UiActions& a) {
         // cua so nhu du dinh.
         theme::pushMono(theme::fs::Small);
         const float fpsW = ImGui::CalcTextSize(fpsBuf).x + 18.0f;
+        const float latW = ImGui::CalcTextSize(latBuf).x;
         const float outW = ImGui::CalcTextSize(outBuf.c_str()).x;
         theme::popFont();
 
         const float gearW  = 30.0f;
-        const float rightW = fpsW + outW + gearW + 46.0f;
+        const float rightW = fpsW + latW + outW + gearW + 64.0f;
 
         ImGui::SameLine();
         ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(),
@@ -409,6 +504,13 @@ void ControlPanel::drawTopBar(const PerfStats& s, UiActions& a) {
             ImGui::Dummy(ImVec2(tsz.x + pad * 2.0f, h));
             theme::popFont();
         }
+
+        ImGui::SameLine(0.0f, 14.0f);
+        centerV(ImGui::GetTextLineHeight());
+        theme::pushMono(theme::fs::Small);
+        ImGui::TextColored(theme::v4(s.sensorConnected ? theme::Success : theme::TextFaint),
+                           "%s", latBuf);
+        theme::popFont();
 
         ImGui::SameLine(0.0f, 18.0f);
         centerV(ImGui::GetTextLineHeight());
