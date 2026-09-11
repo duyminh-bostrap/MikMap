@@ -3199,8 +3199,14 @@ void ControlPanel::drawMappingEditor(Project& p, EditState& edit,
     edit.maskDraggedNode = -1;
     edit.maskHoveredNode = -1;
 
+    // ★ Rieng 4 goc Corner Pin ve TO va co NHAN toa do — day la thao tac
+    //   can chinh xac nhat va lam nhieu nhat (keystone), nen phai de bat
+    //   ra ngay, khong lan giua cac diem mesh nho. Mesh/Bezier van dung
+    //   dau cham nho nhu cu, chi day nguoi dung.
+    const bool isCornerPin = (s.warp()->type() == WarpType::CornerPin);
     const int n = w->controlPointCount();
-    const float r = (n > 25) ? 4.0f : 6.5f;
+    const float r = isCornerPin ? 11.0f : (n > 25 ? 4.0f : 6.5f);
+    static const char* kCornerTag[4] = {"TL", "TR", "BR", "BL"};
 
     int nearest = -1;
     if (hovered || active) {
@@ -3326,8 +3332,29 @@ void ControlPanel::drawMappingEditor(Project& p, EditState& edit,
         else if (k == nearest)      c = IM_COL32(255, 235, 120, 255);
         else if (outside)           c = IM_COL32(255, 140, 60, 255);
 
-        dl->AddCircleFilled(q, r, c);
-        dl->AddCircleFilled(q, r * 0.4f, IM_COL32(20, 20, 20, 255));
+        if (isCornerPin) {
+            // ★ Nhu ban thiet ke tham khao: quang sang + vien trang de noi
+            //   bat tren moi nen, cong nhan "TL (x,y)" ngay duoi diem —
+            //   nguoi van hanh doc duoc toa do ma khong phai lien mat qua
+            //   bang thuoc tinh ben canh.
+            dl->AddCircleFilled(q, r + 5.0f, theme::alpha(c, 0.22f));
+            dl->AddCircleFilled(q, r, c);
+            dl->AddCircle(q, r, IM_COL32(255, 255, 255, 235), 0, 2.5f);
+
+            char lbl[48];
+            std::snprintf(lbl, sizeof(lbl), "%s (%.0f,%.0f)", kCornerTag[k], cp.x, cp.y);
+            theme::pushBold(theme::fs::Micro);
+            const ImVec2 lsz = ImGui::CalcTextSize(lbl);
+            const ImVec2 lp(q.x - lsz.x * 0.5f, q.y + r + 6.0f);
+            dl->AddRectFilled(ImVec2(lp.x - 3.0f, lp.y - 1.0f),
+                              ImVec2(lp.x + lsz.x + 3.0f, lp.y + lsz.y + 1.0f),
+                              IM_COL32(10, 10, 10, 200), 2.0f);
+            dl->AddText(lp, IM_COL32(255, 255, 255, 255), lbl);
+            theme::popFont();
+        } else {
+            dl->AddCircleFilled(q, r, c);
+            dl->AddCircleFilled(q, r * 0.4f, IM_COL32(20, 20, 20, 255));
+        }
         if (outside) dl->AddCircle(q, r + 3.5f, IM_COL32(255, 140, 60, 220), 0, 1.5f);
     }
 
