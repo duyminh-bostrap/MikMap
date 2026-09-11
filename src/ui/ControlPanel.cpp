@@ -1097,10 +1097,15 @@ void ControlPanel::drawLayersDeck(Project& p) {
                 const bool selected = (L == m_selLayer && c == m_selColumn);
                 const bool empty    = clip.isEmpty();
 
+                // ★ Vien BorderLit (xam sang) cho o co clip nhin giong het
+                //   mot khung DANG CHON du khong ai chon ca — dung dung
+                //   mau Border binh thuong nhu ban thiet ke pug (border
+                //   gray-800, gan nhu chim vao nen), chi Warning/Primary
+                //   moi duoc noi bat that su (dang chon / dang phat).
                 ImU32 bg     = theme::alpha(theme::BgSunken, 0.9f);
-                ImU32 border = theme::alpha(theme::Border, 0.8f);
+                ImU32 border = theme::alpha(theme::Border, 0.6f);
                 if (playing)      { bg = theme::alpha(theme::Primary, 0.16f); border = theme::Primary; }
-                else if (!empty)  { bg = theme::BgCard;                       border = theme::BorderLit; }
+                else if (!empty)  { bg = theme::BgCard;                       border = theme::Border; }
                 if (selected)     { border = theme::Warning; }
 
                 ImGui::PushStyleColor(ImGuiCol_Button,        theme::v4(bg));
@@ -1145,13 +1150,30 @@ void ControlPanel::drawLayersDeck(Project& p) {
                     if (const ImGuiPayload* pl = ImGui::AcceptDragDropPayload("MIKMAP_CLIP")) {
                         const int* src = static_cast<const int*>(pl->Data);
                         const int srcL = src[0], srcC = src[1];
-                        if (srcL != L || srcC != c) {
+                        // ★ Chi cho keo trong CUNG mot layer — moi layer la
+                        //   mot deck doc lap, keo cheo layer se lam mo hinh
+                        //   "layer nao dang phat cot nao" roi tung, kho sua
+                        //   dung cho ca hai layer cung luc.
+                        if (srcL == L && srcC != c) {
                             Deck& deck = comp.deck(comp.viewedDeck());
                             const Clip moved = deck.clip(srcL, srcC);
                             const Clip here  = deck.clip(L, c);
+                            const bool wasSwap = !here.isEmpty();
                             deck.setClip(L, c, moved);
-                            if (here.isEmpty()) deck.clearClip(srcL, srcC);
-                            else                 deck.setClip(srcL, srcC, here);
+                            if (wasSwap) deck.setClip(srcL, srcC, here);
+                            else         deck.clearClip(srcL, srcC);
+
+                            // ★ BAT BUOC: neu o nguon/dich dang la o LAYER
+                            //   NAY dang phat, phai doi activeColumn theo
+                            //   clip — khong thi layer tro vao mot o vua bi
+                            //   xoa/doi du lieu va ra man hinh DEN ma khong
+                            //   ai biet vi sao (day la loi that da gap).
+                            const bool onThisDeck = (layer.activeDeck == comp.viewedDeck());
+                            if (onThisDeck && layer.activeColumn == srcC) {
+                                layer.activeColumn = c;
+                            } else if (wasSwap && onThisDeck && layer.activeColumn == c) {
+                                layer.activeColumn = srcC;
+                            }
                         }
                     }
                     ImGui::EndDragDropTarget();
