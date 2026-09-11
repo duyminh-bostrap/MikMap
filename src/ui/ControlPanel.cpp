@@ -122,7 +122,7 @@ void ControlPanel::draw(Project& project,
         | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
 
     if (ImGui::Begin("##mikmap_root", nullptr, rootFlags)) {
-        drawTopBar(edit, stats, actions);
+        drawTopBar(project.name, edit, stats, actions);
 
         ImGui::PushStyleVar(ImGuiStyleVar_ChildBorderSize, 0.0f);
         ImGui::BeginChild("##content", ImVec2(0, 0), ImGuiChildFlags_None,
@@ -170,7 +170,8 @@ void ControlPanel::draw(Project& project,
 //  Thanh dieu huong tren cung
 // ═══════════════════════════════════════════════════════════════════════
 
-void ControlPanel::drawTopBar(EditState& edit, const PerfStats& s, UiActions& a) {
+void ControlPanel::drawTopBar(const std::string& projectName, EditState& edit,
+                              const PerfStats& s, UiActions& a) {
     ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::v4(theme::BgPanel));
     ImGui::BeginChild("##topbar", ImVec2(0, theme::TopBarH), ImGuiChildFlags_None,
                       ImGuiWindowFlags_NoScrollbar);
@@ -221,44 +222,116 @@ void ControlPanel::drawTopBar(EditState& edit, const PerfStats& s, UiActions& a)
     //   bam SAU: InvisibleButton phai nam o vi tri DA BIET, nen phai tinh
     //   truoc kich thuoc icon + khoang cach + chu roi moi dat no.
     {
+        // So do lay NGUYEN tu ban thiet ke tham khao (MikMap_Web,
+        // Header.tsx), khong doan: icon w-6 h-6 = 24x24, o trong
+        // w-2.5 h-2.5 = 10x10, gap-2.5 = 10px tu icon toi chu, khung
+        // ngoai px-2 py-1.5 = 8/6px, bo tron rounded-lg = 8px.
+        constexpr float kIconW    = 24.0f;
+        constexpr float kInnerW   = 10.0f;
+        constexpr float kGap      = 10.0f;
+        constexpr float kPadX     = 8.0f;
+        constexpr float kPadY     = 6.0f;
+        constexpr float kChevGap  = 5.0f;
+        constexpr float kLineGap  = 3.0f;
+        constexpr float kRounding = 8.0f;
+
         theme::pushBold(theme::fs::Brand);
-        const float textW = ImGui::CalcTextSize("MIKMAP").x;
+        const float textW    = ImGui::CalcTextSize("MIKMAP").x;
+        const float brandLnH = ImGui::GetTextLineHeight();
         theme::popFont();
 
-        // Icon w-5 h-5 = 20x20, cham trong w-2 h-2 = 8x8, khoang cach toi
-        // chu gap-2.5 = 10px — dung so do ban thiet ke pug, khong doan.
-        constexpr float kIconW = 20.0f;
-        constexpr float kGap   = 10.0f;
-        const float totalW = kIconW + kGap + textW;
+        theme::pushBold(theme::fs::Tiny);
+        const float chevW = ImGui::CalcTextSize(ICON_LC_CHEVRON_DOWN).x;
+        theme::popFont();
 
+        theme::pushMono(theme::fs::Micro);
+        const float subW   = ImGui::CalcTextSize(projectName.c_str()).x;
+        const float subLnH = ImGui::GetTextLineHeight();
+        theme::popFont();
+
+        constexpr float kDotR = 3.0f, kDotGap = 5.0f;
+        const float txtBlkW = std::max(textW + kChevGap + chevW,
+                                       subW + kDotGap + kDotR * 2.0f);
+        const float txtBlkH = brandLnH + kLineGap + subLnH;
+        const float totalW  = kPadX * 2.0f + kIconW + kGap + txtBlkW;
+        const float totalH  = std::max(kIconW, txtBlkH) + kPadY * 2.0f;
+
+        ImGui::SetCursorPosY(cy - totalH * 0.5f);
         const ImVec2 p0 = ImGui::GetCursorScreenPos();
-        const bool clicked = ImGui::InvisibleButton("##brandmenu", ImVec2(totalW, rowH));
+        const bool clicked = ImGui::InvisibleButton("##brandmenu", ImVec2(totalW, totalH));
         const bool hovered = ImGui::IsItemHovered();
         if (hovered) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
 
         ImDrawList* dl = ImGui::GetWindowDrawList();
-        const float iconCy = p0.y + rowH * 0.5f;
-        const ImU32 iconCol = hovered ? theme::Warning : theme::Primary;
-        dl->AddRectFilled(ImVec2(p0.x, iconCy - 10.0f), ImVec2(p0.x + kIconW, iconCy + 10.0f),
-                          iconCol, 3.0f);
-        dl->AddRectFilled(ImVec2(p0.x + 6.0f, iconCy - 4.0f), ImVec2(p0.x + 14.0f, iconCy + 4.0f),
-                          theme::BgPanel, 1.0f);
+        const ImVec2 p1(p0.x + totalW, p0.y + totalH);
+
+        // Khung nut luon thay duoc — de nguoi dung biet day la mot NUT co
+        // menu, khong phai mot cai nhan trang tri.
+        if (hovered) dl->AddRectFilled(p0, p1, theme::BgCard, kRounding);
+        dl->AddRect(p0, p1, hovered ? theme::BorderLit : theme::Border, kRounding);
+
+        // ── Icon: quang sang cam + o vuong gradient ─────────────────────
+        const ImVec2 ic(p0.x + kPadX + kIconW * 0.5f, p0.y + totalH * 0.5f);
+
+        // ★ ImGui khong co box-shadow. Lenh shadow-[0_0_12px_rgba(255,127,
+        //   80,0.6)] cua ban thiet ke duoc dung lai bang may vong tron dong
+        //   tam alpha giam dan — mat doc ra dung mot quang sang mem, va re
+        //   hon han mot texture blur that.
+        constexpr int kGlowRings = 7;
+        for (int i = kGlowRings; i >= 1; --i) {
+            const float t   = static_cast<float>(i) / static_cast<float>(kGlowRings);
+            const float rad = kIconW * 0.5f + 12.0f * t;
+            const float a01 = (1.0f - t) * (hovered ? 0.16f : 0.11f);
+            dl->AddCircleFilled(ic, rad,
+                                IM_COL32(0xFF, 0x7F, 0x50, static_cast<int>(a01 * 255.0f)), 24);
+        }
+
+        const ImVec2 i0(ic.x - kIconW * 0.5f, ic.y - kIconW * 0.5f);
+        const ImVec2 i1(ic.x + kIconW * 0.5f, ic.y + kIconW * 0.5f);
+        // bg-gradient-to-br from-[#FF7F50] to-[#FFD166]. AddRectFilledMulti
+        // Color khong nhan bo tron, nen: nen bo tron mau trung gian truoc,
+        // roi phu dai mau len phan trong (thut vao 2px van nam gon trong
+        // duong bo tron 6px).
+        constexpr ImU32 kMid = IM_COL32(0xFF, 0xA8, 0x5B, 0xFF);
+        dl->AddRectFilled(i0, i1, kMid, 4.0f);
+        dl->AddRectFilledMultiColor(ImVec2(i0.x + 2.0f, i0.y + 2.0f),
+                                    ImVec2(i1.x - 2.0f, i1.y - 2.0f),
+                                    theme::Primary, kMid, theme::Warning, kMid);
+        dl->AddRectFilled(ImVec2(ic.x - kInnerW * 0.5f, ic.y - kInnerW * 0.5f),
+                          ImVec2(ic.x + kInnerW * 0.5f, ic.y + kInnerW * 0.5f),
+                          IM_COL32(0x12, 0x12, 0x12, 0xFF), 2.0f);
+
+        // ── Chu: MIKMAP + mui ten, duoi la ten du an + cham song ────────
+        const float txtX   = p0.x + kPadX + kIconW + kGap;
+        const float txtTop = p0.y + (totalH - txtBlkH) * 0.5f;
+        const ImU32 txtCol = hovered ? theme::Primary : theme::Text;
 
         dl->PushClipRectFullScreen();
         theme::pushBold(theme::fs::Brand);
-        const ImU32 textCol = hovered ? theme::Warning : theme::Text;
-        const ImVec2 textPos(p0.x + kIconW + kGap,
-                             p0.y + (rowH - ImGui::GetTextLineHeight()) * 0.5f);
         // ★ Chu MIKMAP trong ban thiet ke la font-black (wght 900); font
         //   nang nhat da cat san chi la Bold (700). Gia det chu bang cach
-        //   ve chong nhieu lan lech nua-pixel theo luoi 3x3 (thay vi 2x2) —
-        //   net day ro ret hon han Bold thuong, gan sat Black.
-        for (float dy = -0.7f; dy <= 0.7f; dy += 0.7f) {
-            for (float dx = -0.7f; dx <= 0.7f; dx += 0.7f) {
-                dl->AddText(ImVec2(textPos.x + dx, textPos.y + dy), textCol, "MIKMAP");
+        //   ve chong len nhau lech nua-pixel. O co chu 14px, do lech phai
+        //   nho (0.4px) — lech to hon la net bi nhoe thanh mot cuc, dam
+        //   nhung khong con doc ra tung chu.
+        for (float dy = -0.4f; dy <= 0.4f; dy += 0.4f) {
+            for (float dx = -0.4f; dx <= 0.4f; dx += 0.4f) {
+                dl->AddText(ImVec2(txtX + dx, txtTop + dy), txtCol, "MIKMAP");
             }
         }
         theme::popFont();
+
+        theme::pushBold(theme::fs::Tiny);
+        dl->AddText(ImVec2(txtX + textW + kChevGap,
+                           txtTop + (brandLnH - ImGui::GetTextLineHeight()) * 0.5f),
+                    hovered ? theme::Primary : theme::TextDim, ICON_LC_CHEVRON_DOWN);
+        theme::popFont();
+
+        const float subY = txtTop + brandLnH + kLineGap;
+        theme::pushMono(theme::fs::Micro);
+        dl->AddText(ImVec2(txtX, subY), theme::TextDim, projectName.c_str());
+        theme::popFont();
+        dl->AddCircleFilled(ImVec2(txtX + subW + kDotGap + kDotR, subY + subLnH * 0.5f),
+                            kDotR, theme::Success, 12);
         dl->PopClipRect();
 
         if (clicked) ImGui::OpenPopup("##projectmenu");

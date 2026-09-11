@@ -202,7 +202,8 @@ public:
     void setView(View v) { m_view = v; }
 
 private:
-    void drawTopBar(EditState& edit, const PerfStats& s, UiActions& a);
+    void drawTopBar(const std::string& projectName, EditState& edit,
+                    const PerfStats& s, UiActions& a);
 
     void drawCompositionView(Project& p, EditState& edit, const PerfStats& s,
                              const ofTexture* canvasTex, UiActions& a);

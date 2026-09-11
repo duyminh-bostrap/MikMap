@@ -69,7 +69,7 @@ constexpr float Tiny  = 10.0f;   ///< nhãn mục (SECTION LABEL)
 constexpr float Small = 11.0f;   ///< tab, hàng slice/mask trong cây
 constexpr float Body  = 12.0f;   ///< chữ thân, tiêu đề bảng, nút
 constexpr float Head  = 14.0f;   ///< tiêu đề thẻ
-constexpr float Brand = 18.0f;   ///< chữ MIKMAP
+constexpr float Brand = 14.0f;   ///< chữ MIKMAP (text-sm trong bản thiết kế)
 }
 
 // ── Font ───────────────────────────────────────────────────────────────
