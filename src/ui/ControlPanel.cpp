@@ -1681,43 +1681,40 @@ void ControlPanel::drawMapToolbar(Project& p, EditState& edit, UiActions& a) {
 
     ImGui::SetCursorPos(ImVec2(10.0f, (theme::ToolBarH - ImGui::GetFrameHeight()) * 0.5f));
 
-    // ── Trai ───────────────────────────────────────────────────────────
-    if (theme::iconButton(ICON_LC_LIST_TREE, m_showMapTree)) {
-        m_showMapTree = !m_showMapTree;
-    }
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("tree.toggle"));
+    // ★ Xep lai dung thu tu ban thiet ke tham khao (MikMap_Web): cong tac
+    //   VUNG LAY/DUONG RA di DAU TIEN (khong con can giua), roi toi dai
+    //   pill chon man chieu, roi mot dong chu ngan cho biet dang xem noi
+    //   dung nao / xuat ra dau. Cac cong cu khac (cay, chon/mat-na/hut,
+    //   xoa, luoi test, ap dung, an bang) don ve MOT cum ben phai, Reset
+    //   Warp dong vai tro nut ngoai cung nhu ban thiet ke.
 
-    ImGui::SameLine(0.0f, 10.0f);
-    if (theme::iconButton(ICON_LC_MOUSE_POINTER_2, !edit.maskEditMode, theme::Text)) {
-        edit.maskEditMode = false;
-        edit.maskDraggedNode = -1;
-    }
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("tool.select"));
+    // ── Cong tac VUNG LAY / DUONG RA (dau tien, khong can giua) ─────────
+    {
+        const ImVec2 msz(120.0f, 0.0f);
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::v4(theme::BgSunken));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(3, 3));
+        ImGui::BeginChild("##mapmode", ImVec2(msz.x * 2.0f + 8.0f, theme::ToolBarH - 10.0f),
+                          ImGuiChildFlags_Borders, ImGuiWindowFlags_NoScrollbar);
 
-    ImGui::SameLine(0.0f, 4.0f);
-    if (theme::iconButton(ICON_LC_SCISSORS, edit.maskEditMode, theme::Warning)) {
-        edit.maskEditMode = !edit.maskEditMode;
-        m_mapDragPoint = -1;
-        edit.maskDraggedNode = -1;
-        if (edit.maskEditMode) m_selKind = SelKind::Mask;
+        theme::pushBold(theme::fs::Small);
+        if (theme::tabButton(TR("map.mode.input"), m_mapMode == MapMode::Input,
+                             msz, theme::Success)) {
+            m_mapMode = MapMode::Input;
+        }
+        ImGui::SameLine(0.0f, 2.0f);
+        if (theme::tabButton(TR("map.mode.output"), m_mapMode == MapMode::Output,
+                             msz, theme::Primary)) {
+            m_mapMode = MapMode::Output;
+        }
+        theme::popFont();
+        ImGui::EndChild();
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor();
     }
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("mask.edit.tip"));
-
-    // F21 — nam canh hai cong cu kia vi no cung la mot CHE DO cua thao tac
-    // keo, khong phai mot lenh chay mot lan.
-    ImGui::SameLine(0.0f, 4.0f);
-    if (theme::iconButton(ICON_LC_MAGNET, m_snapEnabled, theme::Success)) {
-        m_snapEnabled = !m_snapEnabled;
-    }
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("tool.snap.tip"));
 
     // ── Dai chon nhanh SCREEN (chi hien khi co hon 1 man chieu) ─────────
-    //
-    // ★ Them Screen/Slice/Mask da chuyen xuong day cot cay — o day gio
-    //   chi con dai pill de NHAY nhanh giua cac may chieu ma khong phai
-    //   voi tay sang cot cay, giong ban thiet ke tham khao.
     if (p.screens.size() > 1) {
-        ImGui::SameLine(0.0f, 12.0f);
+        ImGui::SameLine(0.0f, 10.0f);
         ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::v4(theme::BgSunken));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(2, 2));
         ImGui::BeginChild("##screenpills", ImVec2(0.0f, theme::ToolBarH - 10.0f),
@@ -1739,59 +1736,77 @@ void ControlPanel::drawMapToolbar(Project& p, EditState& edit, UiActions& a) {
         ImGui::PopStyleColor();
     }
 
-    // ── Giua: cong tac VUNG LAY / DUONG RA ─────────────────────────────
-    //
-    // ★ Hai nua cua CUNG mot thao tac, nen dung chung mot khung nhin:
-    //   "lay phan nao cua hinh" (INPUT) va "dat no o dau tren vat the"
-    //   (OUTPUT). Truoc day chi chinh duoc OUTPUT bang chuot, con INPUT
-    //   phai go so — trong khi ca hai deu la viec keo hinh chu nhat.
-    {
-        constexpr float kModeW = 330.0f;
-        ImGui::SameLine();
-        ImGui::SetCursorPosX((ImGui::GetWindowWidth() - kModeW) * 0.5f);
+    // ── Dong chu ngan: dang xem noi dung nao / xuat ra dau ───────────────
+    Screen* activeScreenPtr = (m_activeScreen >= 0
+                               && m_activeScreen < static_cast<int>(p.screens.size()))
+                              ? &p.screens[static_cast<size_t>(m_activeScreen)] : nullptr;
+    if (activeScreenPtr != nullptr) {
+        ImGui::SameLine(0.0f, 10.0f);
+        ImGui::SetCursorPosY((theme::ToolBarH - ImGui::GetTextLineHeight()) * 0.5f);
 
-        ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::v4(theme::BgSunken));
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(3, 3));
-        ImGui::BeginChild("##mapmode", ImVec2(kModeW, theme::ToolBarH - 10.0f),
-                          ImGuiChildFlags_Borders, ImGuiWindowFlags_NoScrollbar);
-
-        const ImVec2 msz(157.0f, 0.0f);
-        theme::pushBold(theme::fs::Small);
-        if (theme::tabButton(TR("map.mode.input"), m_mapMode == MapMode::Input,
-                             msz, theme::Success)) {
-            m_mapMode = MapMode::Input;
+        char info[160];
+        if (m_mapMode == MapMode::Input) {
+            std::snprintf(info, sizeof(info), TR("map.breadcrumb.input"),
+                         static_cast<int>(p.composition.canvasSize.x),
+                         static_cast<int>(p.composition.canvasSize.y));
+        } else {
+            std::string devName = TR("map.breadcrumb.noassign");
+            for (const DisplayEntry& d : m_displays) {
+                if (d.index == activeScreenPtr->displayIndex) devName = d.name;
+            }
+            std::snprintf(info, sizeof(info), TR("map.breadcrumb.output"),
+                         activeScreenPtr->name.c_str(), devName.c_str(),
+                         static_cast<int>(activeScreenPtr->resolution.x),
+                         static_cast<int>(activeScreenPtr->resolution.y));
         }
-        ImGui::SameLine(0.0f, 2.0f);
-        if (theme::tabButton(TR("map.mode.output"), m_mapMode == MapMode::Output,
-                             msz, theme::Primary)) {
-            m_mapMode = MapMode::Output;
-        }
-
+        theme::pushMono(theme::fs::Small);
+        ImGui::TextDisabled("%s", info);
         theme::popFont();
-        ImGui::EndChild();
-        ImGui::PopStyleVar();
-        ImGui::PopStyleColor();
     }
 
-    // ── Phai ───────────────────────────────────────────────────────────
+    // ── Phai: cum cong cu + Reset Warp ngoai cung ────────────────────────
     {
-        const float rightW = 250.0f + 150.0f;
+        const float rightW = 500.0f;
         ImGui::SameLine();
         ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(),
                                       ImGui::GetWindowWidth() - rightW));
+        ImGui::SetCursorPosY((theme::ToolBarH - ImGui::GetFrameHeight()) * 0.5f);
 
-        // Reset khung keystone/mesh cua slice dang chon ve full-frame.
-        char resetLbl[48];
-        std::snprintf(resetLbl, sizeof(resetLbl), "%s  %s", ICON_LC_ROTATE_CCW, TR("adv.reset"));
-        if (theme::tabButton(resetLbl, false, ImVec2(0, 0))) {
-            a.resetActiveSliceWarp = true;
+        if (theme::iconButton(ICON_LC_LIST_TREE, m_showMapTree)) {
+            m_showMapTree = !m_showMapTree;
         }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("tree.toggle"));
+
+        ImGui::SameLine(0.0f, 6.0f);
+        if (theme::iconButton(ICON_LC_MOUSE_POINTER_2, !edit.maskEditMode, theme::Text)) {
+            edit.maskEditMode = false;
+            edit.maskDraggedNode = -1;
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("tool.select"));
+
         ImGui::SameLine(0.0f, 4.0f);
+        if (theme::iconButton(ICON_LC_SCISSORS, edit.maskEditMode, theme::Warning)) {
+            edit.maskEditMode = !edit.maskEditMode;
+            m_mapDragPoint = -1;
+            edit.maskDraggedNode = -1;
+            if (edit.maskEditMode) m_selKind = SelKind::Mask;
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("mask.edit.tip"));
+
+        // F21 — nam canh hai cong cu kia vi no cung la mot CHE DO cua thao
+        // tac keo, khong phai mot lenh chay mot lan.
+        ImGui::SameLine(0.0f, 4.0f);
+        if (theme::iconButton(ICON_LC_MAGNET, m_snapEnabled, theme::Success)) {
+            m_snapEnabled = !m_snapEnabled;
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("tool.snap.tip"));
+
+        ImGui::SameLine(0.0f, 10.0f);
         if (theme::toolButton(ICON_LC_TRASH_2, TR("adv.delete"), theme::Danger)) {
             a.removeSliceIndex = edit.activeSliceIndex;
         }
-        ImGui::SameLine(0.0f, 10.0f);
 
+        ImGui::SameLine(0.0f, 10.0f);
         if (theme::tabButton(TR("tool.testcard"), edit.showGrid, ImVec2(0, 0), theme::Info)) {
             edit.showGrid = !edit.showGrid;
         }
@@ -1807,11 +1822,20 @@ void ControlPanel::drawMapToolbar(Project& p, EditState& edit, UiActions& a) {
         }
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("tool.apply.tip"));
 
-        ImGui::SameLine(0.0f, 10.0f);
+        ImGui::SameLine(0.0f, 8.0f);
         if (theme::iconButton(ICON_LC_LAYOUT_GRID, m_showMapSidebar)) {
             m_showMapSidebar = !m_showMapSidebar;
         }
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("map.sidebar"));
+
+        // Reset khung keystone/mesh cua slice dang chon ve full-frame —
+        // NGOAI CUNG ben phai, dung nhu ban thiet ke tham khao.
+        ImGui::SameLine(0.0f, 12.0f);
+        char resetLbl[48];
+        std::snprintf(resetLbl, sizeof(resetLbl), "%s  %s", ICON_LC_ROTATE_CCW, TR("adv.reset"));
+        if (theme::tabButton(resetLbl, false, ImVec2(0, 0))) {
+            a.resetActiveSliceWarp = true;
+        }
     }
 
     ImGui::EndChild();
