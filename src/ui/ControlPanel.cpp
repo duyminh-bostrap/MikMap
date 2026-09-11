@@ -204,7 +204,9 @@ void ControlPanel::drawTopBar(const PerfStats& s, UiActions& a) {
     // cao rieng.
     const float rowH = ImGui::GetFrameHeight();
 
-    ImGui::SetCursorPosX(14.0f);
+    // Le trai/phai thanh dieu huong: px-5 = 20px trong ban thiet ke pug.
+    constexpr float kTopBarPadX = 20.0f;
+    ImGui::SetCursorPosX(kTopBarPadX);
     centerV(rowH);
 
     // ── Thuong hieu — CHINH NO la nut mo menu Project ───────────────────
@@ -223,8 +225,10 @@ void ControlPanel::drawTopBar(const PerfStats& s, UiActions& a) {
         const float textW = ImGui::CalcTextSize("MIKMAP").x;
         theme::popFont();
 
-        constexpr float kIconW = 22.0f;
-        constexpr float kGap   = 6.0f;
+        // Icon w-5 h-5 = 20x20, cham trong w-2 h-2 = 8x8, khoang cach toi
+        // chu gap-2.5 = 10px — dung so do ban thiet ke pug, khong doan.
+        constexpr float kIconW = 20.0f;
+        constexpr float kGap   = 10.0f;
         const float totalW = kIconW + kGap + textW;
 
         const ImVec2 p0 = ImGui::GetCursorScreenPos();
@@ -235,16 +239,26 @@ void ControlPanel::drawTopBar(const PerfStats& s, UiActions& a) {
         ImDrawList* dl = ImGui::GetWindowDrawList();
         const float iconCy = p0.y + rowH * 0.5f;
         const ImU32 iconCol = hovered ? theme::Warning : theme::Primary;
-        dl->AddRectFilled(ImVec2(p0.x, iconCy - 8.0f), ImVec2(p0.x + 16.0f, iconCy + 8.0f),
+        dl->AddRectFilled(ImVec2(p0.x, iconCy - 10.0f), ImVec2(p0.x + kIconW, iconCy + 10.0f),
                           iconCol, 3.0f);
-        dl->AddRectFilled(ImVec2(p0.x + 5.5f, iconCy - 2.5f), ImVec2(p0.x + 10.5f, iconCy + 2.5f),
+        dl->AddRectFilled(ImVec2(p0.x + 6.0f, iconCy - 4.0f), ImVec2(p0.x + 14.0f, iconCy + 4.0f),
                           theme::BgPanel, 1.0f);
 
         dl->PushClipRectFullScreen();
         theme::pushBold(theme::fs::Brand);
         const ImU32 textCol = hovered ? theme::Warning : theme::Text;
-        dl->AddText(ImVec2(p0.x + kIconW + kGap, p0.y + (rowH - ImGui::GetTextLineHeight()) * 0.5f),
-                    textCol, "MIKMAP");
+        const ImVec2 textPos(p0.x + kIconW + kGap,
+                             p0.y + (rowH - ImGui::GetTextLineHeight()) * 0.5f);
+        // ★ Chu MIKMAP trong ban thiet ke la font-black (wght 900); font
+        //   nang nhat da cat san chi la Bold (700). Gia det chu bang cach
+        //   ve chong 4 lan lech nua-pixel — khong can cat them mot file
+        //   font rieng chi cho MOT dong chu — tang do day net khoang 1.5x
+        //   so voi Bold thuong.
+        for (float dy = 0.0f; dy <= 0.6f; dy += 0.6f) {
+            for (float dx = 0.0f; dx <= 0.6f; dx += 0.6f) {
+                dl->AddText(ImVec2(textPos.x + dx, textPos.y + dy), textCol, "MIKMAP");
+            }
+        }
         theme::popFont();
         dl->PopClipRect();
 
@@ -291,33 +305,47 @@ void ControlPanel::drawTopBar(const PerfStats& s, UiActions& a) {
     //   ep bang nhau thi hai tab ngan bi thua khoang trong hai ben va
     //   nhin lech tam. Container ngoai dung AutoResizeX de tu co theo
     //   tong be rong that cua ba tab, khong phai mot con so doan truoc.
-    ImGui::SameLine(0.0f, 16.0f);
-    centerV(theme::TopBarH - 12.0f);
+    //
+    //   So do LAY DUNG tu ban thiet ke pug, khong doan: gap-8 (32px) tu
+    //   logo toi khoi tab, p-1 (4px) vien trong khoi, px-4 py-1.5 (16/6px)
+    //   moi nut, khong co gap giua ba nut, chu text-xs (12px).
+    constexpr float kTabPadX = 16.0f, kTabPadY = 6.0f, kGroupPad = 4.0f;
+    ImGui::SameLine(0.0f, 32.0f);
+
+    theme::pushBold(theme::fs::Body);
+    const float tabLineH = ImGui::GetTextLineHeight();
+    theme::popFont();
+    const float tabBtnH  = tabLineH + kTabPadY * 2.0f;
+    const float tabsH    = tabBtnH + kGroupPad * 2.0f;
+
+    centerV(tabsH);
     {
         ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::v4(theme::BgSunken));
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(3, 3));
-        ImGui::BeginChild("##tabs", ImVec2(0.0f, theme::TopBarH - 12.0f),
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(kGroupPad, kGroupPad));
+        ImGui::BeginChild("##tabs", ImVec2(0.0f, tabsH),
                           ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeX,
                           ImGuiWindowFlags_NoScrollbar);
 
         char lbl[96];
-        theme::pushBold(theme::fs::Small);
+        theme::pushBold(theme::fs::Body);
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(kTabPadX, kTabPadY));
 
         std::snprintf(lbl, sizeof(lbl), "%s  %s", ICON_LC_LAYERS, TR("nav.composition"));
         if (theme::tabButton(lbl, m_view == View::Composition, ImVec2(0, 0))) {
             m_view = View::Composition;
         }
-        ImGui::SameLine(0.0f, 2.0f);
+        ImGui::SameLine(0.0f, 0.0f);
         std::snprintf(lbl, sizeof(lbl), "%s  %s", ICON_LC_MONITOR_PLAY, TR("nav.mapping"));
         if (theme::tabButton(lbl, m_view == View::Mapping, ImVec2(0, 0))) {
             m_view = View::Mapping;
         }
-        ImGui::SameLine(0.0f, 2.0f);
+        ImGui::SameLine(0.0f, 0.0f);
         std::snprintf(lbl, sizeof(lbl), "%s  %s", ICON_LC_ACTIVITY, TR("nav.sensor"));
         if (theme::tabButton(lbl, m_view == View::Sensor, ImVec2(0, 0))) {
             m_view = View::Sensor;
         }
 
+        ImGui::PopStyleVar();
         theme::popFont();
         ImGui::EndChild();
         ImGui::PopStyleVar();
@@ -1099,6 +1127,37 @@ void ControlPanel::drawLayersDeck(Project& p) {
                 const bool cellHovered = ImGui::IsItemHovered();
                 ImDrawList* dl = ImGui::GetWindowDrawList();
 
+                // ── Keo-tha: giu roi keo o clip nay tha sang o khac de DOI CHO ──
+                //
+                // ★ Ke muc tieu da co clip thi HOAN DOI (khong ghi de mat du
+                //   lieu); ke rong thi chi CHUYEN toi (o nguon thanh rong).
+                //   ImGui tu phan biet click-nhanh (van phat clip nhu binh
+                //   thuong) voi giu-keo-qua-nguong (chuyen sang keo-tha) —
+                //   khong xung dot voi logic bam o tren.
+                if (!empty && ImGui::BeginDragDropSource()) {
+                    const int payload[2] = { L, c };
+                    ImGui::SetDragDropPayload("MIKMAP_CLIP", payload, sizeof(payload));
+                    ImGui::TextUnformatted(clip.name.c_str());
+                    ImGui::EndDragDropSource();
+                }
+                if (ImGui::BeginDragDropTarget()) {
+                    dl->AddRect(r0, r1, theme::Warning, ImGui::GetStyle().FrameRounding,
+                               0, 2.0f);
+                    if (const ImGuiPayload* pl = ImGui::AcceptDragDropPayload("MIKMAP_CLIP")) {
+                        const int* src = static_cast<const int*>(pl->Data);
+                        const int srcL = src[0], srcC = src[1];
+                        if (srcL != L || srcC != c) {
+                            Deck& deck = comp.deck(comp.viewedDeck());
+                            const Clip moved = deck.clip(srcL, srcC);
+                            const Clip here  = deck.clip(L, c);
+                            deck.setClip(L, c, moved);
+                            if (here.isEmpty()) deck.clearClip(srcL, srcC);
+                            else                 deck.setClip(srcL, srcC, here);
+                        }
+                    }
+                    ImGui::EndDragDropTarget();
+                }
+
                 // ── Menu chuot phai: chon file / nhan ban / sao chep / dan / xoa ──
                 if (ImGui::BeginPopupContextItem("##clipctx")) {
                     if (ImGui::MenuItem(TR("clip.ctx.choose"))) {
@@ -1204,6 +1263,12 @@ void ControlPanel::drawLayersDeck(Project& p) {
                                           theme::Primary);
                     }
                 }
+
+                // ★ Cac lop phu (thumbnail/nhan/tien do) ve SAU nut, nen de
+                //   ra ngoai r0..r1 la de len DUNG vien ImGui vua ve — phai
+                //   ve lai vien MOT LAN NUA tren cung, khong thi vien bi
+                //   nuot mat (dung Fill roi moi Border, khong nguoc lai).
+                dl->AddRect(r0, r1, border, ImGui::GetStyle().FrameRounding);
 
                 ImGui::PopStyleColor(4);
 
