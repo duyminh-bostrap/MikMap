@@ -1684,9 +1684,16 @@ void ControlPanel::drawMapToolbar(Project& p, EditState& edit, UiActions& a) {
     // ★ Xep lai dung thu tu ban thiet ke tham khao (MikMap_Web): cong tac
     //   VUNG LAY/DUONG RA di DAU TIEN (khong con can giua), roi toi dai
     //   pill chon man chieu, roi mot dong chu ngan cho biet dang xem noi
-    //   dung nao / xuat ra dau. Cac cong cu khac (cay, chon/mat-na/hut,
+    //   dung nao / xuat ra dau. Cac cong cu khac (chon/mat-na/hut,
     //   xoa, luoi test, ap dung, an bang) don ve MOT cum ben phai, Reset
     //   Warp dong vai tro nut ngoai cung nhu ban thiet ke.
+
+    // ── Nut dong/mo CAY MAN HINH — ngoai cung ben trai. ──────────────────
+    if (theme::iconButton(ICON_LC_LIST_TREE, m_showMapTree)) {
+        m_showMapTree = !m_showMapTree;
+    }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("tree.toggle"));
+    ImGui::SameLine(0.0f, 10.0f);
 
     // ── Cong tac VUNG LAY / DUONG RA (dau tien, khong can giua) ─────────
     {
@@ -1772,12 +1779,6 @@ void ControlPanel::drawMapToolbar(Project& p, EditState& edit, UiActions& a) {
                                       ImGui::GetWindowWidth() - rightW));
         ImGui::SetCursorPosY((theme::ToolBarH - ImGui::GetFrameHeight()) * 0.5f);
 
-        if (theme::iconButton(ICON_LC_LIST_TREE, m_showMapTree)) {
-            m_showMapTree = !m_showMapTree;
-        }
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("tree.toggle"));
-
-        ImGui::SameLine(0.0f, 6.0f);
         if (theme::iconButton(ICON_LC_MOUSE_POINTER_2, !edit.maskEditMode, theme::Text)) {
             edit.maskEditMode = false;
             edit.maskDraggedNode = -1;
