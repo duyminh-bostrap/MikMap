@@ -283,47 +283,76 @@ void panelHeader(const char* icon, const char* title, ImU32 accent) {
 }
 
 bool treeRow(const char* icon, const char* label, int depth,
-             bool selected, ImU32 accent) {
+             bool selected, ImU32 accent, const char* badge) {
     ImDrawList* dl = ImGui::GetWindowDrawList();
 
-    const float rowH   = ImGui::GetTextLineHeight() + 8.0f;
-    const float indent = 10.0f + static_cast<float>(depth) * 18.0f;
-    const float w      = ImGui::GetContentRegionAvail().x;
+    // ★ Ba cấp — ba cỡ hàng, đo thẳng từ bản thiết kế tham khảo đang
+    //   chạy: screen 34px/12px đậm, slice 29px/11px, mặt nạ 23px/10px.
+    //   Chính chênh lệch này làm cấu trúc cây đọc được mà không cần thêm
+    //   một đường kẻ nào.
+    struct Spec { float h, indent, iconSz, textSz; };
+    constexpr Spec kSpec[3] = {
+        {34.0f,  0.0f, fs::Body,  fs::Body },
+        {29.0f, 16.0f, fs::Small, fs::Small},
+        {23.0f, 26.0f, fs::Tiny,  fs::Tiny },
+    };
+    const Spec& sp = kSpec[std::clamp(depth, 0, 2)];
 
-    const ImVec2 p0 = ImGui::GetCursorScreenPos();
-    const ImVec2 p1(p0.x + w, p0.y + rowH);
+    const float w = ImGui::GetContentRegionAvail().x;
+
+    const ImVec2 p0(ImGui::GetCursorScreenPos().x + sp.indent,
+                    ImGui::GetCursorScreenPos().y);
+    const ImVec2 p1(ImGui::GetCursorScreenPos().x + w, p0.y + sp.h);
 
     // ★ Cho phep vat gi do CHONG LEN sau no (vd nut mat bat/tat o canh
     //   phai hang) van bam duoc — mac dinh ImGui khoa hover cho item DAU
     //   TIEN nam duoi con tro, item ve SAU bi chan hoan toan du ve TREN.
     ImGui::SetNextItemAllowOverlap();
-    ImGui::InvisibleButton(label, ImVec2(w, rowH));
+    ImGui::InvisibleButton(label, ImVec2(w, sp.h));
     const bool hovered = ImGui::IsItemHovered();
     const bool clicked = ImGui::IsItemClicked();
 
+    // Hàng đang chọn là một THẺ bo góc có viền, không phải một vệt màu
+    // chạy hết chiều ngang — đúng bản thiết kế, và nhờ có viền nên nó
+    // vẫn tách khỏi nền ngay cả khi màu nhấn bị nhạt đi.
     if (selected) {
-        dl->AddRectFilled(p0, p1, alpha(accent, 0.20f));
-        // Vach mau ben trai: cho biet CAP nao dang duoc chon ngay ca khi
-        // hang bi cuon che mat mot phan.
-        dl->AddRectFilled(p0, ImVec2(p0.x + 2.0f, p1.y), accent);
+        if (depth == 0) {
+            dl->AddRectFilled(p0, p1, IM_COL32(0x22, 0x22, 0x22, 0xFF), 4.0f);
+            dl->AddRect(p0, p1, IM_COL32(0x38, 0x38, 0x38, 0xFF), 4.0f);
+        } else {
+            dl->AddRectFilled(p0, p1, alpha(accent, 0.15f), 4.0f);
+            dl->AddRect(p0, p1, alpha(accent, 0.30f), 4.0f);
+        }
     } else if (hovered) {
-        dl->AddRectFilled(p0, p1, BgCard);
+        dl->AddRectFilled(p0, p1, BgHeader, 4.0f);
     }
 
-    const ImU32 fg = selected ? accent : (hovered ? Text : TextDim);
-    float x = p0.x + indent;
-    const float ty = p0.y + 4.0f;
+    const ImU32 fg = selected ? (depth == 0 ? Primary : accent)
+                              : (hovered ? Text : (depth == 2 ? TextMuted : TextDim));
 
-    // Cap 0 (screen) dam va to hon; cap duoi thuong va nho hon. Thu bac
-    // nay lam cau truc cay doc duoc ma khong can them duong ke.
-    ImFont* f  = (depth == 0) ? g_fonts.bold : g_fonts.regular;
-    const float sz = (depth == 0) ? fs::Body : fs::Small;
+    float x = p0.x + (depth == 0 ? 9.0f : 8.0f);
+    const float ty = p0.y + (sp.h - sp.textSz) * 0.5f - 1.0f;
 
     if (icon != nullptr && icon[0] != 0) {
-        dl->AddText(g_fonts.regular, fs::Body, ImVec2(x, ty), fg, icon);
-        x += 20.0f;
+        // Icon giữ MÀU RIÊNG theo cấp kể cả khi hàng không được chọn: nó
+        // là thứ cho biết đây là screen / slice / mặt nạ.
+        const ImU32 ic = selected ? fg : (depth == 0 ? fg : accent);
+        dl->AddText(g_fonts.regular, sp.iconSz, ImVec2(x, ty), ic, icon);
+        x += sp.iconSz + 6.0f;
     }
-    dl->AddText(f, sz, ImVec2(x, ty + (depth == 0 ? 0.0f : 1.0f)), fg, label);
+    dl->AddText(selected ? g_fonts.bold : (depth == 0 ? g_fonts.bold : g_fonts.regular),
+                sp.textSz, ImVec2(x, ty), fg, label);
+
+    // Nhãn phụ căn phải (vd độ phân giải của screen) — chữ nhỏ, mờ, để
+    // đọc được thông số mà không phải mở bảng thuộc tính. Chừa sẵn 22px
+    // sát mép phải cho nút con mắt bật/tắt mà bên gọi vẽ chồng lên sau.
+    if (badge != nullptr && badge[0] != 0) {
+        ImFont* bf = (g_fonts.bold != nullptr) ? g_fonts.bold : ImGui::GetFont();
+        const float bw = bf->CalcTextSizeA(fs::Micro, FLT_MAX, 0.0f, badge).x;
+        dl->AddText(bf, fs::Micro,
+                    ImVec2(p1.x - 31.0f - bw, p0.y + (sp.h - fs::Micro) * 0.5f),
+                    IM_COL32(0x66, 0x66, 0x66, 0xFF), badge);
+    }
 
     return clicked;
 }

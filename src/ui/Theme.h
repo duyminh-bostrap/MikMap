@@ -161,8 +161,9 @@ void panelHeader(const char* icon, const char* title, ImU32 accent = Text);
 /// @param depth  0 = screen, 1 = slice, 2 = mask
 /// @param accent màu khi được chọn — mỗi cấp một màu, xem `Theme.cpp`
 /// @return true nếu vừa được bấm
+/// @param badge  nhãn phụ căn phải (vd "1920x1080"); nullptr = không có
 bool treeRow(const char* icon, const char* label, int depth,
-             bool selected, ImU32 accent);
+             bool selected, ImU32 accent, const char* badge = nullptr);
 
 /// Nút chỉ có ICON, kèm tooltip giải thích.
 ///

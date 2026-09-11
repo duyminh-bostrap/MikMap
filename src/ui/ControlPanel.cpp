@@ -1621,7 +1621,11 @@ void ControlPanel::drawScreenTree(Project& p, EditState& edit, UiActions& a) {
         ImGui::PushID(si);
 
         const bool screenSel = (si == m_activeScreen && m_selKind == SelKind::Screen);
-        if (theme::treeRow(ICON_LC_MONITOR, sc.name.c_str(), 0, screenSel, theme::Info)) {
+        char resBadge[24];
+        std::snprintf(resBadge, sizeof(resBadge), "%dx%d",
+                      static_cast<int>(sc.resolution.x), static_cast<int>(sc.resolution.y));
+        if (theme::treeRow(ICON_LC_MONITOR, sc.name.c_str(), 0, screenSel, theme::Info,
+                           resBadge)) {
             m_activeScreen = si;
             m_selKind = SelKind::Screen;
         }
@@ -1778,6 +1782,10 @@ void ControlPanel::drawMapToolbar(Project& p, EditState& edit, UiActions& a) {
                     theme::Border);
     }
 
+    // Nut tren thanh cong cu lot px-3 py-1.5 = 12/6px theo ban thiet ke —
+    // thap hon o nhap trong bang, de ca hang vua trong 42px.
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(12, 6));
+
     ImGui::SetCursorPos(ImVec2(10.0f, (theme::ToolBarH - ImGui::GetFrameHeight()) * 0.5f));
 
     // ★ Xep lai dung thu tu ban thiet ke tham khao (MikMap_Web): cong tac
@@ -1872,7 +1880,7 @@ void ControlPanel::drawMapToolbar(Project& p, EditState& edit, UiActions& a) {
 
     // ── Phai: cum cong cu + Reset Warp ngoai cung ────────────────────────
     {
-        const float rightW = 500.0f;
+        const float rightW = 380.0f;
         ImGui::SameLine();
         ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(),
                                       ImGui::GetWindowWidth() - rightW));
@@ -1906,22 +1914,13 @@ void ControlPanel::drawMapToolbar(Project& p, EditState& edit, UiActions& a) {
             a.removeSliceIndex = edit.activeSliceIndex;
         }
 
-        ImGui::SameLine(0.0f, 10.0f);
-        if (theme::tabButton(TR("tool.testcard"), edit.showGrid, ImVec2(0, 0), theme::Info)) {
-            edit.showGrid = !edit.showGrid;
-        }
-        ImGui::SameLine(0.0f, 8.0f);
-
-        // ★ Nut NEN DAC duy nhat cua ca giao dien.
+        // ★ "Luoi test" va "Ap dung" tung nam o day da duoc BO.
         //
-        //   Ban thiet ke danh mau nen cam cho rieng "Apply". O day no
-        //   nghia la DUA HINH RA MAY CHIEU — hanh dong quan trong nhat
-        //   cua ca trang, va la thu nguoi van hanh tim luc gap.
-        if (theme::filledButton(TR("tool.apply"), theme::Primary, ImVec2(78, 0))) {
-            a.toggleFullscreen = true;
-        }
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("tool.apply.tip"));
-
+        //   Ca hai bam vao dung mot trang thai ma thanh tren cung da co
+        //   (Test Grid, nut toan man hinh) — hai nut cho cung mot viec
+        //   khong cho them kha nang nao, chi lam nguoi dung phai doan xem
+        //   chung co khac nhau khong. Ban thiet ke tham khao cung chi de
+        //   Reset Warp va nut xoa o thanh nay.
         ImGui::SameLine(0.0f, 8.0f);
         if (theme::iconButton(ICON_LC_LAYOUT_GRID, m_showMapSidebar)) {
             m_showMapSidebar = !m_showMapSidebar;
@@ -1938,6 +1937,7 @@ void ControlPanel::drawMapToolbar(Project& p, EditState& edit, UiActions& a) {
         }
     }
 
+    ImGui::PopStyleVar();
     ImGui::EndChild();
     ImGui::PopStyleColor();
 }
