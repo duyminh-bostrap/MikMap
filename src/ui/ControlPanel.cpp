@@ -1686,21 +1686,32 @@ void ControlPanel::drawMapToolbar(Project& p, EditState& edit, UiActions& a) {
     }
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("tool.snap.tip"));
 
-    ImGui::SameLine(0.0f, 12.0f);
-    {
-        char lbl[64];
-        std::snprintf(lbl, sizeof(lbl), "%s  %s", ICON_LC_PLUS, TR("tool.addslice"));
-        if (theme::tabButton(lbl, false, ImVec2(0, 0), theme::Success)) {
-            a.addSliceToScreen = m_activeScreen;
+    // ── Dai chon nhanh SCREEN (chi hien khi co hon 1 man chieu) ─────────
+    //
+    // ★ Them Screen/Slice/Mask da chuyen xuong day cot cay — o day gio
+    //   chi con dai pill de NHAY nhanh giua cac may chieu ma khong phai
+    //   voi tay sang cot cay, giong ban thiet ke tham khao.
+    if (p.screens.size() > 1) {
+        ImGui::SameLine(0.0f, 12.0f);
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::v4(theme::BgSunken));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(2, 2));
+        ImGui::BeginChild("##screenpills", ImVec2(0.0f, theme::ToolBarH - 10.0f),
+                          ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeX,
+                          ImGuiWindowFlags_NoScrollbar);
+        theme::pushBold(theme::fs::Micro);
+        for (int i = 0; i < static_cast<int>(p.screens.size()); ++i) {
+            if (i > 0) ImGui::SameLine(0.0f, 0.0f);
+            ImGui::PushID(6000 + i);
+            if (theme::tabButton(p.screens[static_cast<size_t>(i)].name.c_str(),
+                                 i == m_activeScreen, ImVec2(0, 0), theme::Primary)) {
+                m_activeScreen = i;
+            }
+            ImGui::PopID();
         }
-    }
-    ImGui::SameLine(0.0f, 6.0f);
-    {
-        char lbl[64];
-        std::snprintf(lbl, sizeof(lbl), "%s  %s", ICON_LC_PLUS, TR("tool.addmask"));
-        if (theme::tabButton(lbl, false, ImVec2(0, 0), theme::Warning)) {
-            a.addMask = true;
-        }
+        theme::popFont();
+        ImGui::EndChild();
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor();
     }
 
     // ── Giua: cong tac VUNG LAY / DUONG RA ─────────────────────────────
@@ -1739,10 +1750,22 @@ void ControlPanel::drawMapToolbar(Project& p, EditState& edit, UiActions& a) {
 
     // ── Phai ───────────────────────────────────────────────────────────
     {
-        const float rightW = 250.0f;
+        const float rightW = 250.0f + 150.0f;
         ImGui::SameLine();
         ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(),
                                       ImGui::GetWindowWidth() - rightW));
+
+        // Reset khung keystone/mesh cua slice dang chon ve full-frame.
+        char resetLbl[48];
+        std::snprintf(resetLbl, sizeof(resetLbl), "%s  %s", ICON_LC_ROTATE_CCW, TR("adv.reset"));
+        if (theme::tabButton(resetLbl, false, ImVec2(0, 0))) {
+            a.resetActiveSliceWarp = true;
+        }
+        ImGui::SameLine(0.0f, 4.0f);
+        if (theme::toolButton(ICON_LC_TRASH_2, TR("adv.delete"), theme::Danger)) {
+            a.removeSliceIndex = edit.activeSliceIndex;
+        }
+        ImGui::SameLine(0.0f, 10.0f);
 
         if (theme::tabButton(TR("tool.testcard"), edit.showGrid, ImVec2(0, 0), theme::Info)) {
             edit.showGrid = !edit.showGrid;
@@ -1768,7 +1791,6 @@ void ControlPanel::drawMapToolbar(Project& p, EditState& edit, UiActions& a) {
 
     ImGui::EndChild();
     ImGui::PopStyleColor();
-    (void)p;
 }
 
 void ControlPanel::drawMappingView(Project& p, EditState& edit,
@@ -1778,10 +1800,35 @@ void ControlPanel::drawMappingView(Project& p, EditState& edit,
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(6, 6));
 
     // ── Trai: cay SCREEN SETUP ─────────────────────────────────────────
+    //
+    // ★ Ba nut Them Screen/Slice/Mask ghim o DAY cot cay, khong nam lan
+    //   trong thanh cong cu tren dau — day la cho nguoi dung nhin vao
+    //   DAU TIEN khi can them mot muc moi vao cay, giong ban thiet ke
+    //   tham khao (MikMap_Web AdvancedMappingView).
     if (m_showMapTree) {
         ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::v4(theme::BgPanel));
         ImGui::BeginChild("##screentree", ImVec2(theme::TreeW, 0), ImGuiChildFlags_Borders);
-        drawScreenTree(p, edit, a);
+        {
+            constexpr float kFooterH = 98.0f;
+            ImGui::BeginChild("##screentree_scroll", ImVec2(0, -kFooterH));
+            drawScreenTree(p, edit, a);
+            ImGui::EndChild();
+
+            ImGui::Separator();
+            char lbl[64];
+            std::snprintf(lbl, sizeof(lbl), "%s  %s", ICON_LC_MONITOR, TR("adv.addscreen"));
+            if (theme::outlineButton(lbl, theme::Primary, ImVec2(-FLT_MIN, 0))) {
+                a.addScreen = true;
+            }
+            std::snprintf(lbl, sizeof(lbl), "%s  %s", ICON_LC_PLUS, TR("tool.addslice"));
+            if (theme::tabButton(lbl, false, ImVec2(-FLT_MIN, 0), theme::Success)) {
+                a.addSliceToScreen = m_activeScreen;
+            }
+            std::snprintf(lbl, sizeof(lbl), "%s  %s", ICON_LC_SCISSORS, TR("tool.addmask"));
+            if (theme::tabButton(lbl, false, ImVec2(-FLT_MIN, 0), theme::Warning)) {
+                a.addMask = true;
+            }
+        }
         ImGui::EndChild();
         ImGui::PopStyleColor();
         ImGui::SameLine();

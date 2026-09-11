@@ -918,6 +918,17 @@ void AppController::applyUiActions(UiActions& a) {
         rebuildSensorRoutes();
     }
 
+    // ── Screen (may chieu / man hinh moi) ───────────────────────────────
+    if (a.addScreen) {
+        const int newId = static_cast<int>(m_project.screens.size());
+        char nameBuf[32];
+        std::snprintf(nameBuf, sizeof(nameBuf), "Screen %d", newId + 1);
+        Screen sc(newId, nameBuf, Vec2{1920.0, 1080.0});
+        sc.addFullScreenSlice(m_project.composition.canvasSize);
+        m_project.screens.push_back(std::move(sc));
+        m_edit.activeSliceIndex = 0;
+    }
+
     // ── Slice ──────────────────────────────────────────────────────────
     if (a.addSliceToScreen >= 0
         && a.addSliceToScreen < static_cast<int>(m_project.screens.size())) {

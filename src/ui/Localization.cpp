@@ -180,6 +180,7 @@ const Table& tableVI() {
         // Advanced output
         {"adv.overlay",             "Hiện overlay chỉnh sửa"},
         {"adv.grid",                "Lưới test"},
+        {"adv.addscreen",           "Thêm màn chiếu"},
         {"adv.addslice",            "+ Thêm slice"},
         {"adv.slicelist",           "Slice (trên cùng ở cuối danh sách):"},
         {"adv.selected",            "Slice đang chọn: %s"},
@@ -521,6 +522,7 @@ const Table& tableEN() {
 
         {"adv.overlay",             "Show edit overlay"},
         {"adv.grid",                "Test grid"},
+        {"adv.addscreen",           "Add Screen"},
         {"adv.addslice",            "+ Add slice"},
         {"adv.slicelist",           "Slices (topmost last):"},
         {"adv.selected",            "Selected slice: %s"},

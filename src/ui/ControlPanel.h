@@ -114,6 +114,10 @@ struct UiActions {
     int  convertWarpTo = -1;        ///< -1 = không đổi; 0 = CornerPin, 1 = Mesh
     int  addSliceToScreen = -1;
     int  removeSliceIndex = -1;
+
+    /// Them mot SCREEN (may chieu/man hinh) moi, kem san mot slice full-
+    /// frame — mac dinh hop ly de bat dau chinh ngay, giong addSliceToScreen.
+    bool addScreen = false;
 };
 
 class ControlPanel {
