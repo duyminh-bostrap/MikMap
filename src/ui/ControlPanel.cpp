@@ -2157,49 +2157,11 @@ void ControlPanel::drawScreenPanel(Project& p, EditState& edit, UiActions& a) {
 
     m_activeScreen = std::clamp(m_activeScreen, 0, static_cast<int>(p.screens.size()) - 1);
 
-    // ★ Ba thu tung nam o day gio da co cho khac ro rang hon, bo di cho
-    //   khoi lap:
-    //   - Danh sach chon man chieu -> cot cay + dai pill tren toolbar.
-    //   - "Show edit overlay"      -> nut "Show Mode" tren topbar chinh
-    //     (dieu khien CUNG MOT co edit.showOverlay, chi la dao nguoc).
-    //   - "+ Add slice"            -> nut "Add Slice" ghim duoi cot cay.
+    // ★ Danh sach slice (chon + ten + ON/solo/xoa) tung nam o day gio bo
+    //   han: cay SCREEN SETUP da chon duoc slice (kem icon mat cho ON),
+    //   thanh cong cu tren dau da co nut Xoa cho slice dang chon. Bang
+    //   nay CHI con thuoc tinh cua MOT slice — cai dang duoc chon o cay.
     Screen& sc = p.screens[static_cast<size_t>(m_activeScreen)];
-
-    ImGui::Separator();
-    theme::sectionLabel(TR("adv.slicelist"));
-
-    for (int i = 0; i < sc.sliceCount(); ++i) {
-        Slice& s = sc.slices[static_cast<size_t>(i)];
-        ImGui::PushID(3000 + i);
-
-        // Hang 1: chon + ten. Hang 2: bat/solo/xoa. Nhoi ca sau thu vao
-        // mot hang la thu da lam bang tran ngang.
-        const bool selected = (i == edit.activeSliceIndex);
-        if (ImGui::RadioButton("##sel", selected)) edit.activeSliceIndex = i;
-        ImGui::SameLine();
-
-        char nameBuf[64];
-        std::snprintf(nameBuf, sizeof(nameBuf), "%s", s.name.c_str());
-        ImGui::SetNextItemWidth(-FLT_MIN);
-        if (ImGui::InputText("##name", nameBuf, sizeof(nameBuf))) s.name = nameBuf;
-
-        ImGui::Indent(22.0f);
-        ImGui::Checkbox(TR("common.on"), &s.enabled);
-        ImGui::SameLine();
-        ImGui::Checkbox(TR("adv.solo"), &s.solo);
-        ImGui::SameLine();
-        if (theme::toolButton(ICON_LC_TRASH_2, TR("adv.delete"), theme::Danger)) {
-            a.removeSliceIndex = i;
-        }
-        ImGui::Unindent(22.0f);
-
-        if (!s.warp()->isInvertible()) {
-            ImGui::PushStyleColor(ImGuiCol_Text, theme::v4(theme::Danger));
-            ImGui::TextWrapped("%s", TR("adv.broken"));
-            ImGui::PopStyleColor();
-        }
-        ImGui::PopID();
-    }
 
     if (edit.activeSliceIndex < 0 || edit.activeSliceIndex >= sc.sliceCount()) {
         ImGui::TextDisabled("%s", TR("adv.noslice"));
@@ -2207,8 +2169,13 @@ void ControlPanel::drawScreenPanel(Project& p, EditState& edit, UiActions& a) {
     }
 
     Slice& s = sc.slices[static_cast<size_t>(edit.activeSliceIndex)];
-    ImGui::Separator();
     ImGui::TextWrapped(TR("adv.selected"), s.name.c_str());
+    if (s.warp() != nullptr && !s.warp()->isInvertible()) {
+        ImGui::PushStyleColor(ImGuiCol_Text, theme::v4(theme::Danger));
+        ImGui::TextWrapped("%s", TR("adv.broken"));
+        ImGui::PopStyleColor();
+    }
+    ImGui::Separator();
 
     // ── F22: lấy nội dung từ đâu ───────────────────────────────────────
     {
