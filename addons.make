@@ -1,2 +1,0 @@
-ofxHapPlayer
-ofxImGui
