@@ -19,6 +19,9 @@
 		<ClCompile Include="src\core\calib\SensorMapper.cpp">
 			<Filter>src\core\calib</Filter>
 		</ClCompile>
+		<ClCompile Include="src\core\calib\SensorRouting.cpp">
+			<Filter>src\core\calib</Filter>
+		</ClCompile>
 		<ClCompile Include="src\core\filter\OneEuroFilter.cpp">
 			<Filter>src\core\filter</Filter>
 		</ClCompile>
@@ -35,6 +38,9 @@
 			<Filter>src\core\math</Filter>
 		</ClCompile>
 		<ClCompile Include="src\core\math\Mat3.cpp">
+			<Filter>src\core\math</Filter>
+		</ClCompile>
+		<ClCompile Include="src\core\math\Snapping.cpp">
 			<Filter>src\core\math</Filter>
 		</ClCompile>
 		<ClCompile Include="src\core\model\BezierMask.cpp">
@@ -70,6 +76,9 @@
 		<ClCompile Include="src\core\model\TriggerZone.cpp">
 			<Filter>src\core\model</Filter>
 		</ClCompile>
+		<ClCompile Include="src\core\model\WarpBezier.cpp">
+			<Filter>src\core\model</Filter>
+		</ClCompile>
 		<ClCompile Include="src\core\model\WarpCornerPin.cpp">
 			<Filter>src\core\model</Filter>
 		</ClCompile>
@@ -79,7 +88,16 @@
 		<ClCompile Include="src\core\util\Json.cpp">
 			<Filter>src\core\util</Filter>
 		</ClCompile>
+		<ClCompile Include="src\io\SensorLog.cpp">
+			<Filter>src\io</Filter>
+		</ClCompile>
 		<ClCompile Include="src\io\proto\OscMessage.cpp">
+			<Filter>src\io\proto</Filter>
+		</ClCompile>
+		<ClCompile Include="src\io\proto\SerialProtocol.cpp">
+			<Filter>src\io\proto</Filter>
+		</ClCompile>
+		<ClCompile Include="src\io\proto\TuioDecoder.cpp">
 			<Filter>src\io\proto</Filter>
 		</ClCompile>
 		<ClCompile Include="src\io\sources\MockSource.cpp">
@@ -100,9 +118,9 @@
 
 		</ClCompile>
 
-		<ClCompile Include="src\ui\Theme.cpp">
-			<Filter>src\ui</Filter>
-		</ClCompile>
+		<ClCompile Include="src\ui\Theme.cpp">
+			<Filter>src\ui</Filter>
+		</ClCompile>
 		<ClCompile Include="src\ui\Localization.cpp">
 
 			<Filter>src\ui</Filter>
@@ -311,6 +329,9 @@
 		<ClInclude Include="src\core\calib\SensorMapper.h">
 			<Filter>src\core\calib</Filter>
 		</ClInclude>
+		<ClInclude Include="src\core\calib\SensorRouting.h">
+			<Filter>src\core\calib</Filter>
+		</ClInclude>
 		<ClInclude Include="src\core\filter\OneEuroFilter.h">
 			<Filter>src\core\filter</Filter>
 		</ClInclude>
@@ -327,6 +348,9 @@
 			<Filter>src\core\math</Filter>
 		</ClInclude>
 		<ClInclude Include="src\core\math\Mat3.h">
+			<Filter>src\core\math</Filter>
+		</ClInclude>
+		<ClInclude Include="src\core\math\Snapping.h">
 			<Filter>src\core\math</Filter>
 		</ClInclude>
 		<ClInclude Include="src\core\math\Vec2.h">
@@ -368,6 +392,9 @@
 		<ClInclude Include="src\core\model\TriggerZone.h">
 			<Filter>src\core\model</Filter>
 		</ClInclude>
+		<ClInclude Include="src\core\model\WarpBezier.h">
+			<Filter>src\core\model</Filter>
+		</ClInclude>
 		<ClInclude Include="src\core\model\WarpCornerPin.h">
 			<Filter>src\core\model</Filter>
 		</ClInclude>
@@ -392,7 +419,16 @@
 		<ClInclude Include="src\io\TripleBuffer.h">
 			<Filter>src\io</Filter>
 		</ClInclude>
+		<ClInclude Include="src\io\SensorLog.h">
+			<Filter>src\io</Filter>
+		</ClInclude>
 		<ClInclude Include="src\io\proto\OscMessage.h">
+			<Filter>src\io\proto</Filter>
+		</ClInclude>
+		<ClInclude Include="src\io\proto\SerialProtocol.h">
+			<Filter>src\io\proto</Filter>
+		</ClInclude>
+		<ClInclude Include="src\io\proto\TuioDecoder.h">
 			<Filter>src\io\proto</Filter>
 		</ClInclude>
 		<ClInclude Include="src\io\sources\MockSource.h">

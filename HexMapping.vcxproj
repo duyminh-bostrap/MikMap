@@ -230,12 +230,14 @@
 		<ClCompile Include="src\app\main.cpp" />
 		<ClCompile Include="src\core\calib\CalibrationProfile.cpp" />
 		<ClCompile Include="src\core\calib\SensorMapper.cpp" />
+		<ClCompile Include="src\core\calib\SensorRouting.cpp" />
 		<ClCompile Include="src\core\filter\OneEuroFilter.cpp" />
 		<ClCompile Include="src\core\filter\PointTracker.cpp" />
 		<ClCompile Include="src\core\math\BilinearInverse.cpp" />
 		<ClCompile Include="src\core\math\Homography.cpp" />
 		<ClCompile Include="src\core\math\LinearSolver.cpp" />
 		<ClCompile Include="src\core\math\Mat3.cpp" />
+		<ClCompile Include="src\core\math\Snapping.cpp" />
 		<ClCompile Include="src\core\model\BezierMask.cpp" />
 
 		<ClCompile Include="src\core\model\BlendMode.cpp" />
@@ -247,19 +249,23 @@
 		<ClCompile Include="src\core\model\Transform2D.cpp" />
 		<ClCompile Include="src\core\model\Transport.cpp" />
 		<ClCompile Include="src\core\model\TriggerZone.cpp" />
+		<ClCompile Include="src\core\model\WarpBezier.cpp" />
 		<ClCompile Include="src\core\model\WarpCornerPin.cpp" />
 		<ClCompile Include="src\core\model\WarpMesh.cpp" />
 		<ClCompile Include="src\core\util\AppSettings.cpp" />
 
 		<ClCompile Include="src\core\util\Json.cpp" />
+		<ClCompile Include="src\io\SensorLog.cpp" />
 		<ClCompile Include="src\io\proto\OscMessage.cpp" />
+		<ClCompile Include="src\io\proto\SerialProtocol.cpp" />
+		<ClCompile Include="src\io\proto\TuioDecoder.cpp" />
 		<ClCompile Include="src\io\sources\MockSource.cpp" />
 		<ClCompile Include="src\io\sources\OscSource.cpp" />
 		<ClCompile Include="src\render\MediaCache.cpp" />
 		<ClCompile Include="src\render\RenderEngine.cpp" />
 		<ClCompile Include="src\ui\ControlPanel.cpp" />
 
-		<ClCompile Include="src\ui\Localization.cpp" />
+		<ClCompile Include="src\ui\Localization.cpp" />
 		<ClCompile Include="src\ui\Theme.cpp" />
 		<ClCompile Include="..\openFrameworks\addons\ofxHapPlayer\src\ofxHapPlayer.cpp" />
 		<ClCompile Include="..\openFrameworks\addons\ofxHapPlayer\libs\hap\src\hap.c" />
@@ -297,12 +303,14 @@
 		<ClInclude Include="src\app\AppController.h" />
 		<ClInclude Include="src\core\calib\CalibrationProfile.h" />
 		<ClInclude Include="src\core\calib\SensorMapper.h" />
+		<ClInclude Include="src\core\calib\SensorRouting.h" />
 		<ClInclude Include="src\core\filter\OneEuroFilter.h" />
 		<ClInclude Include="src\core\filter\PointTracker.h" />
 		<ClInclude Include="src\core\math\BilinearInverse.h" />
 		<ClInclude Include="src\core\math\Homography.h" />
 		<ClInclude Include="src\core\math\LinearSolver.h" />
 		<ClInclude Include="src\core\math\Mat3.h" />
+		<ClInclude Include="src\core\math\Snapping.h" />
 		<ClInclude Include="src\core\math\Vec2.h" />
 		<ClInclude Include="src\core\model\BlendMode.h" />
 		<ClInclude Include="src\core\model\Clip.h" />
@@ -316,15 +324,19 @@
 		<ClInclude Include="src\core\model\Transform2D.h" />
 		<ClInclude Include="src\core\model\Transport.h" />
 		<ClInclude Include="src\core\model\TriggerZone.h" />
+		<ClInclude Include="src\core\model\WarpBezier.h" />
 		<ClInclude Include="src\core\model\WarpCornerPin.h" />
 		<ClInclude Include="src\core\model\WarpMesh.h" />
 		<ClInclude Include="src\core\util\Clock.h" />
 		<ClInclude Include="src\core\util\Json.h" />
 		<ClInclude Include="src\io\ISensorSource.h" />
 		<ClInclude Include="src\io\SensorFrame.h" />
+		<ClInclude Include="src\io\SensorLog.h" />
 		<ClInclude Include="src\io\SpscRingBuffer.h" />
 		<ClInclude Include="src\io\TripleBuffer.h" />
 		<ClInclude Include="src\io\proto\OscMessage.h" />
+		<ClInclude Include="src\io\proto\SerialProtocol.h" />
+		<ClInclude Include="src\io\proto\TuioDecoder.h" />
 		<ClInclude Include="src\io\sources\MockSource.h" />
 		<ClInclude Include="src\io\sources\OscSource.h" />
 		<ClInclude Include="src\render\MediaCache.h" />
