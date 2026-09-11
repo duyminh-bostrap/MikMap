@@ -44,15 +44,15 @@ constexpr ImU32 TextFaint = IM_COL32(0x55, 0x55, 0x55, 0xFF);
 // ── Kích thước cố định (theo bản thiết kế) ─────────────────────────────
 constexpr float TopBarH     = 46.0f;   ///< thanh điều hướng trên cùng
 constexpr float ToolBarH    = 42.0f;   ///< thanh công cụ của trang Mapping
-constexpr float BrowserW    = 240.0f;
-constexpr float InspectorW  = 280.0f;
+constexpr float BrowserW    = 220.0f;
+constexpr float InspectorW  = 250.0f;
 constexpr float TreeW       = 260.0f;   ///< cây SCREEN SETUP
 constexpr float LayerCtrlW  = 220.0f;  ///< cột điều khiển bên trái mỗi layer
 constexpr float ClipW       = 120.0f;
 constexpr float LayerRowH   = 90.0f;
 
 /// Tỉ lệ chiều cao dành cho nửa trên trang Composition.
-constexpr float CompTopRatio = 0.55f;
+constexpr float CompTopRatio = 0.50f;
 
 // ── Thang cỡ chữ ───────────────────────────────────────────────────────
 //
@@ -152,6 +152,24 @@ bool iconButton(const char* icon, bool active, ImU32 accent = Text);
 /// Bản thiết kế chỉ dùng cho "Apply"; dùng nhiều thì mất hết trọng số.
 bool filledButton(const char* label, ImU32 bg,
                   const ImVec2& size = ImVec2(0, 0));
+
+/// Thanh phần trăm dạng "viên thuốc" — nhãn (VD "OPACITY  100%") ở trên,
+/// rãnh bo tròn hoàn toàn ở dưới, núm tròn trắng nổi tại đầu mút.
+///
+/// ★ Đây KHÔNG phải ImGui::SliderFloat viết lại cho vui — hai thứ khác
+///   hẳn nhau về hình dạng. SliderFloat vẽ nhãn CHỒNG LÊN rãnh; bản thiết
+///   kế đặt nhãn thành một DÒNG RIÊNG phía trên, rãnh không chữ, và núm
+///   là một chấm tròn trắng nổi hẳn ra ngoài rãnh — chỉ vẽ lại từ đầu
+///   bằng ImDrawList mới ra đúng hình đó.
+///
+/// @param value01  0..1, được SỬA TRỰC TIẾP khi người dùng kéo/bấm
+/// @param fillColor màu phần đã lấp đầy
+/// @param glow    có quầng sáng quanh núm không — dành cho giá trị đang
+///                THỰC SỰ tác động (layer đang phát); dùng tràn lan thì
+///                mất hết ý nghĩa "cái này đang nổi bật"
+/// @return true nếu value01 vừa đổi
+bool opacityBar(const char* id, const char* label, double* value01,
+                ImU32 fillColor, bool glow, float width = -1.0f);
 
 /// Khung nền + viền cho một "thẻ" bao quanh vùng vừa vẽ.
 /// Dùng cặp: beginCard() … endCard().

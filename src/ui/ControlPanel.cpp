@@ -183,35 +183,73 @@ void ControlPanel::drawTopBar(const PerfStats& s, UiActions& a) {
                     ImVec2(p0.x + w, p0.y + theme::TopBarH - 1.0f), theme::Border);
     }
 
-    ImGui::SetCursorPos(ImVec2(14.0f, (theme::TopBarH - ImGui::GetFrameHeight()) * 0.5f));
-
-    // ── Thuong hieu ────────────────────────────────────────────────────
-    {
-        ImDrawList* dl = ImGui::GetWindowDrawList();
-        const ImVec2 p = ImGui::GetCursorScreenPos();
-        const float cy = p.y + ImGui::GetFrameHeight() * 0.5f;
-        dl->AddRectFilled(ImVec2(p.x, cy - 8.0f), ImVec2(p.x + 16.0f, cy + 8.0f),
-                          theme::Primary, 3.0f);
-        dl->AddRectFilled(ImVec2(p.x + 5.5f, cy - 2.5f), ImVec2(p.x + 10.5f, cy + 2.5f),
-                          theme::BgPanel, 1.0f);
-        ImGui::Dummy(ImVec2(22.0f, ImGui::GetFrameHeight()));
-    }
-    ImGui::SameLine(0.0f, 6.0f);
-    theme::pushBold(theme::fs::Brand);
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted("MIKMAP");
-    theme::popFont();
-
-    // ── Project ────────────────────────────────────────────────────────
+    // ★ Tam trung tam theo TRUC DOC cua ca thanh. Moi phan tu sau day tu
+    //   dat lai Y quanh moc nay ngay TRUOC khi ve, khong dua vao co che
+    //   can dong tu dong cua ImGui::SameLine().
     //
-    // ★ Thanh menu cu da bi ba tab thay the — va suyt keo theo ca loi Luu
-    //   / Mo project. Ban thiet ke khong ve cho nao cho viec nay, nhung
-    //   mot phan mem khong luu duoc cong viec thi khong dung duoc; nen no
-    //   quay lai duoi dang mot nut bat popup, khong chiem cho thuong truc.
-    ImGui::SameLine(0.0f, 16.0f);
-    if (theme::tabButton(TR("menu.project"), false, ImVec2(78, 0), theme::Text)) {
-        ImGui::OpenPopup("##projectmenu");
+    //   Ly do phai lam vay: hang nay tron nhieu co chu khac nhau (18px
+    //   cho MIKMAP, 12px cho nut, 11px cho tab, font mono rieng cho so
+    //   lieu). SameLine() chi mang theo Y cua DIEM BAT DAU dong — no
+    //   khong tu can giua cac phan tu co chieu cao khac nhau tren cung
+    //   mot hang. Bo qua buoc nay se ra dung thu nguoi dung da thay:
+    //   chu tren thanh menu nam LECH nhau, khong thang hang.
+    const float cy = theme::TopBarH * 0.5f;
+    auto centerV = [&](float itemH) {
+        ImGui::SetCursorPosY(cy - itemH * 0.5f);
+    };
+
+    // Chieu cao mot "hang" o co chu mac dinh — dung lam moc chung cho
+    // cac phan tu trang tri (icon, cham trang thai) khong tu co chieu
+    // cao rieng.
+    const float rowH = ImGui::GetFrameHeight();
+
+    ImGui::SetCursorPosX(14.0f);
+    centerV(rowH);
+
+    // ── Thuong hieu — CHINH NO la nut mo menu Project ───────────────────
+    //
+    // ★ Bo rieng nut "Du an": mot nut chu rieng biet chiem cho va lam
+    //   hang nhin loang. Logo + chu MIKMAP la thu DUY NHAT khong doi theo
+    //   trang dang xem, nen la noi hop ly nhat de dat menu — giong cach
+    //   phan lon app desktop dat menu chinh sau logo.
+    //
+    //   Ve y het truoc gio (khong doi hinh dang), chi phu them MOT vung
+    //   bam vo hinh de vua giu nguyen mat vua bat duoc click. Ve TRUOC,
+    //   bam SAU: InvisibleButton phai nam o vi tri DA BIET, nen phai tinh
+    //   truoc kich thuoc icon + khoang cach + chu roi moi dat no.
+    {
+        theme::pushBold(theme::fs::Brand);
+        const float textW = ImGui::CalcTextSize("MIKMAP").x;
+        theme::popFont();
+
+        constexpr float kIconW = 22.0f;
+        constexpr float kGap   = 6.0f;
+        const float totalW = kIconW + kGap + textW;
+
+        const ImVec2 p0 = ImGui::GetCursorScreenPos();
+        const bool clicked = ImGui::InvisibleButton("##brandmenu", ImVec2(totalW, rowH));
+        const bool hovered = ImGui::IsItemHovered();
+        if (hovered) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        const float iconCy = p0.y + rowH * 0.5f;
+        const ImU32 iconCol = hovered ? theme::Warning : theme::Primary;
+        dl->AddRectFilled(ImVec2(p0.x, iconCy - 8.0f), ImVec2(p0.x + 16.0f, iconCy + 8.0f),
+                          iconCol, 3.0f);
+        dl->AddRectFilled(ImVec2(p0.x + 5.5f, iconCy - 2.5f), ImVec2(p0.x + 10.5f, iconCy + 2.5f),
+                          theme::BgPanel, 1.0f);
+
+        dl->PushClipRectFullScreen();
+        theme::pushBold(theme::fs::Brand);
+        const ImU32 textCol = hovered ? theme::Warning : theme::Text;
+        dl->AddText(ImVec2(p0.x + kIconW + kGap, p0.y + (rowH - ImGui::GetTextLineHeight()) * 0.5f),
+                    textCol, "MIKMAP");
+        theme::popFont();
+        dl->PopClipRect();
+
+        if (clicked) ImGui::OpenPopup("##projectmenu");
     }
+
     if (ImGui::BeginPopup("##projectmenu")) {
         if (ImGui::MenuItem(TR("menu.project.new")))               a.newProject  = true;
         if (ImGui::MenuItem(TR("menu.project.open"), "Ctrl+O"))    a.loadProject = true;
@@ -246,29 +284,36 @@ void ControlPanel::drawTopBar(const PerfStats& s, UiActions& a) {
     }
 
     // ── Ba tab ─────────────────────────────────────────────────────────
+    //
+    // ★ Moi tab TU CO theo chinh chu cua no (ImVec2(0,0)), khong ep chung
+    //   mot be rong co dinh. "ADVANCED MAPPING" dai hon han "SENSOR I/O";
+    //   ep bang nhau thi hai tab ngan bi thua khoang trong hai ben va
+    //   nhin lech tam. Container ngoai dung AutoResizeX de tu co theo
+    //   tong be rong that cua ba tab, khong phai mot con so doan truoc.
     ImGui::SameLine(0.0f, 16.0f);
+    centerV(theme::TopBarH - 12.0f);
     {
         ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::v4(theme::BgSunken));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(3, 3));
-        ImGui::BeginChild("##tabs", ImVec2(578.0f, theme::TopBarH - 12.0f),
-                          ImGuiChildFlags_Borders, ImGuiWindowFlags_NoScrollbar);
+        ImGui::BeginChild("##tabs", ImVec2(0.0f, theme::TopBarH - 12.0f),
+                          ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeX,
+                          ImGuiWindowFlags_NoScrollbar);
 
-        const ImVec2 tsz(176.0f, 0.0f);
         char lbl[96];
         theme::pushBold(theme::fs::Small);
 
         std::snprintf(lbl, sizeof(lbl), "%s  %s", ICON_LC_LAYERS, TR("nav.composition"));
-        if (theme::tabButton(lbl, m_view == View::Composition, tsz)) {
+        if (theme::tabButton(lbl, m_view == View::Composition, ImVec2(0, 0))) {
             m_view = View::Composition;
         }
         ImGui::SameLine(0.0f, 2.0f);
         std::snprintf(lbl, sizeof(lbl), "%s  %s", ICON_LC_MONITOR_PLAY, TR("nav.mapping"));
-        if (theme::tabButton(lbl, m_view == View::Mapping, tsz)) {
+        if (theme::tabButton(lbl, m_view == View::Mapping, ImVec2(0, 0))) {
             m_view = View::Mapping;
         }
         ImGui::SameLine(0.0f, 2.0f);
         std::snprintf(lbl, sizeof(lbl), "%s  %s", ICON_LC_ACTIVITY, TR("nav.sensor"));
-        if (theme::tabButton(lbl, m_view == View::Sensor, tsz)) {
+        if (theme::tabButton(lbl, m_view == View::Sensor, ImVec2(0, 0))) {
             m_view = View::Sensor;
         }
 
@@ -295,10 +340,17 @@ void ControlPanel::drawTopBar(const PerfStats& s, UiActions& a) {
             outBuf = b;
         }
 
-        const float gearW  = 34.0f;
-        const float fpsW   = ImGui::CalcTextSize(fpsBuf).x + 24.0f;
-        const float outW   = ImGui::CalcTextSize(outBuf.c_str()).x + 24.0f;
-        const float rightW = fpsW + outW + gearW + 30.0f;
+        // Uoc luong be rong bang CHINH font se dung de ve (mono), khong
+        // phai font mac dinh — neu khong be rong tinh se sai mot chut so
+        // voi chu that, va nhom trang thai ben phai khong khop sat mep
+        // cua so nhu du dinh.
+        theme::pushMono(theme::fs::Small);
+        const float fpsW = ImGui::CalcTextSize(fpsBuf).x + 18.0f;
+        const float outW = ImGui::CalcTextSize(outBuf.c_str()).x;
+        theme::popFont();
+
+        const float gearW  = 30.0f;
+        const float rightW = fpsW + outW + gearW + 46.0f;
 
         ImGui::SameLine();
         ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(),
@@ -314,6 +366,7 @@ void ControlPanel::drawTopBar(const PerfStats& s, UiActions& a) {
         // Chip co vien, giong ban thiet ke.
         {
             theme::pushMono(theme::fs::Small);
+            centerV(ImGui::GetFrameHeight());
             const ImVec2 tsz = ImGui::CalcTextSize(fpsBuf);
             const ImVec2 p0  = ImGui::GetCursorScreenPos();
             const float  pad = 9.0f;
@@ -330,14 +383,16 @@ void ControlPanel::drawTopBar(const PerfStats& s, UiActions& a) {
         }
 
         ImGui::SameLine(0.0f, 18.0f);
+        centerV(ImGui::GetTextLineHeight());
         theme::statusDot(m_activeOutputDisplay >= 0 ? theme::Success : theme::TextFaint);
         ImGui::SameLine(0.0f, 6.0f);
-        ImGui::AlignTextToFramePadding();
         theme::pushMono(theme::fs::Small);
+        centerV(ImGui::GetTextLineHeight());
         ImGui::TextDisabled("%s", outBuf.c_str());
         theme::popFont();
 
         ImGui::SameLine(0.0f, 12.0f);
+        centerV(ImGui::GetFrameHeight());
         if (theme::tabButton(ICON_LC_SETTINGS_2, m_showSettings, ImVec2(gearW, 0))) {
             m_showSettings = !m_showSettings;
         }
@@ -542,23 +597,50 @@ void ControlPanel::drawMonitors(Project& p, const PerfStats& s,
 
     const float halfW = (avail.x - 8.0f) * 0.5f;
 
-    auto monitor = [&](const char* id, const char* label, ImU32 labelCol,
-                       bool showSliceRects, const char* badge, ImU32 badgeCol) {
-        ImGui::BeginChild(id, ImVec2(halfW, 0), ImGuiChildFlags_None,
-                          ImGuiWindowFlags_NoScrollbar);
+    // Chieu cao thanh tieu de moi man hinh — vien tren 2px MAU RIENG cho
+    // tung o, dung mau de phan biet PREVIEW (lam) voi DANG CHIEU (cam)
+    // ngay ca khi nhin luot qua, khong can doc chu.
+    constexpr float kHeadH = 22.0f;
 
-        ImGui::PushStyleColor(ImGuiCol_Text, theme::v4(labelCol));
-        ImGui::TextUnformatted(label);
+    auto monitor = [&](const char* id, const char* label, ImU32 labelCol,
+                       bool showSliceRects, const char* badge, ImU32 badgeCol,
+                       bool pulse) {
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::v4(theme::BgCard));
+        ImGui::BeginChild(id, ImVec2(halfW, 0), ImGuiChildFlags_Borders,
+                          ImGuiWindowFlags_NoScrollbar);
         ImGui::PopStyleColor();
 
-        if (badge != nullptr) {
-            const float bw = ImGui::CalcTextSize(badge).x + 14.0f;
-            ImGui::SameLine();
-            ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(),
-                                          ImGui::GetWindowWidth() - bw - 8.0f));
-            ImGui::PushStyleColor(ImGuiCol_Text, theme::v4(badgeCol));
-            ImGui::TextUnformatted(badge);
+        // ── Thanh tieu de: vien tren mau, chua nhan + badge ────────────
+        {
+            ImDrawList* dl = ImGui::GetWindowDrawList();
+            const ImVec2 wp = ImGui::GetWindowPos();
+            const float ww = ImGui::GetWindowWidth();
+            dl->AddLine(ImVec2(wp.x, wp.y), ImVec2(wp.x + ww, wp.y), labelCol, 2.0f);
+
+            ImGui::SetCursorPosY(6.0f);
+            theme::pushBold(theme::fs::Tiny);
+            ImGui::SetCursorPosX(10.0f);
+            if (pulse) {
+                theme::statusDot(labelCol);
+                ImGui::SameLine(0.0f, 5.0f);
+            }
+            ImGui::PushStyleColor(ImGuiCol_Text, theme::v4(labelCol));
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted(label);
             ImGui::PopStyleColor();
+
+            if (badge != nullptr) {
+                const float bw = ImGui::CalcTextSize(badge).x;
+                ImGui::SameLine();
+                ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(),
+                                              ImGui::GetWindowWidth() - bw - 10.0f));
+                ImGui::PushStyleColor(ImGuiCol_Text, theme::v4(badgeCol));
+                ImGui::AlignTextToFramePadding();
+                ImGui::TextUnformatted(badge);
+                ImGui::PopStyleColor();
+            }
+            theme::popFont();
+            ImGui::SetCursorPosY(kHeadH);
         }
 
         const ImVec2 box = ImGui::GetContentRegionAvail();
@@ -622,20 +704,161 @@ void ControlPanel::drawMonitors(Project& p, const PerfStats& s,
     char fps[32];
     std::snprintf(fps, sizeof(fps), "%.1f FPS", s.fps);
 
-    monitor("##mon_preview", TR("mon.preview"), theme::TextDim, false, nullptr, 0);
+    monitor("##mon_preview", TR("mon.preview"), theme::Info, false, nullptr, 0, false);
     ImGui::SameLine();
     monitor("##mon_active", TR("mon.active"), theme::Primary, true, fps,
-            (s.fps >= 55.0) ? theme::Success : theme::Warning);
+            (s.fps >= 55.0) ? theme::Success : theme::Warning, true);
 }
 
 // ── Bang thuoc tinh ────────────────────────────────────────────────────
 
 void ControlPanel::drawInspector(Project& p) {
-    theme::panelHeader(ICON_LC_LAYOUT_GRID, TR("inspector.title"), theme::Primary);
-    drawClipPanel(p);
+    // ★ Hai tab CLIP / LAYER thay cho MOT tieu de co dinh.
+    //
+    //   Truoc day bang nay chi hien thuoc tinh CLIP. Nhung nguoi van hanh
+    //   cung can xem/sua opacity, blend, transition cua LAYER ma khong
+    //   phai keo mat xuong hang layer o luoi ben duoi — hai khai niem
+    //   khac nhau (clip = mot o trong luoi, layer = ca mot hang) nen
+    //   dung TAB de tach ro, khong nhoi chung mot bang.
+    const float tabW = (ImGui::GetContentRegionAvail().x - 2.0f) * 0.5f;
+
+    const int layerNum = std::clamp(m_activeLayerRow, 0,
+                                    std::max(0, p.composition.layerCount() - 1)) + 1;
+    char layerTabLbl[24];
+    std::snprintf(layerTabLbl, sizeof(layerTabLbl), TR("inspector.tab.layer"), layerNum);
+
+    if (theme::tabButton(TR("inspector.tab.clip"), m_inspectorTab == InspectorTab::Clip,
+                         ImVec2(tabW, 0), theme::Warning)) {
+        m_inspectorTab = InspectorTab::Clip;
+    }
+    ImGui::SameLine(0.0f, 2.0f);
+    if (theme::tabButton(layerTabLbl, m_inspectorTab == InspectorTab::Layer,
+                         ImVec2(tabW, 0), theme::Primary)) {
+        m_inspectorTab = InspectorTab::Layer;
+    }
+    ImGui::Separator();
+
+    if (m_inspectorTab == InspectorTab::Clip) drawClipPanel(p);
+    else                                      drawLayerProperties(p);
+}
+
+void ControlPanel::drawLayerProperties(Project& p) {
+    Composition& comp = p.composition;
+    if (comp.layerCount() <= 0) {
+        ImGui::TextDisabled("%s", TR("comp.empty"));
+        return;
+    }
+    m_activeLayerRow = std::clamp(m_activeLayerRow, 0, comp.layerCount() - 1);
+    Layer& layer = comp.layer(m_activeLayerRow);
+
+    char title[32];
+    std::snprintf(title, sizeof(title), TR("layer.props.title"), m_activeLayerRow + 1);
+    theme::pushBold(theme::fs::Body);
+    ImGui::TextColored(theme::v4(theme::Primary), "%s", title);
+    theme::popFont();
+
+    ImGui::Checkbox(TR("layer.props.solo"), &layer.solo);
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("layer.solo.tip"));
+    ImGui::SameLine(0.0f, 14.0f);
+    ImGui::Checkbox(TR("layer.props.bypass"), &layer.bypass);
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("layer.bypass.tip"));
+
+    ImGui::Spacing();
+
+    const bool layerPlaying = (layer.activeDeck == comp.viewedDeck()
+                              && layer.activeColumn >= 0);
+    double opVal = layer.opacity;
+    if (theme::opacityBar("##layerop", TR("layer.opacity"), &opVal,
+                          layerPlaying ? theme::Primary : theme::Info,
+                          layerPlaying, ImGui::GetContentRegionAvail().x)) {
+        layer.opacity = opVal;
+    }
+
+    ImGui::Spacing();
+    labelAbove(TR("clip.blend"));
+    int blend = static_cast<int>(layer.blend);
+    if (ImGui::Combo("##layerblend", &blend, kBlendNames, IM_ARRAYSIZE(kBlendNames))) {
+        layer.blend = static_cast<BlendMode>(blend);
+    }
+
+    labelAbove(TR("layer.transition.label"));
+    float tr = static_cast<float>(layer.transitionDuration);
+    if (ImGui::DragFloat("##layertr", &tr, 0.01f, 0.0f, 10.0f, "%.2fs")) {
+        layer.transitionDuration = std::max(0.0f, tr);
+    }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("layer.transition.tip"));
 }
 
 // ── Luoi layer × cot ───────────────────────────────────────────────────
+
+bool ControlPanel::drawSharedOpacityBar(const char* label, double* value01,
+                                        ImU32 fillColor) {
+    const float w = ImGui::GetContentRegionAvail().x;
+    constexpr float kH = 26.0f;
+
+    ImVec2 p0 = ImGui::GetCursorScreenPos();
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+
+    // Vach mau ben trai — cung mot ngon ngu voi vach chon trong cay
+    // SCREEN SETUP: bao "cai nay dang duoc dieu khien".
+    dl->AddRectFilled(p0, ImVec2(p0.x + 3.0f, p0.y + kH), fillColor);
+
+    // Vung bam la CA hang (de bam trung), nhung phan tinh gia tri chi
+    // xet toa do trong RANH (giua nhan va % ben phai).
+    ImGui::InvisibleButton("##sharedop_hit", ImVec2(w, kH));
+    bool changed = false;
+
+    const float labelW = 40.0f;
+    const float pctW   = 32.0f;
+    const float trackX0 = p0.x + 10.0f + labelW;
+    const float trackX1 = p0.x + w - pctW - 6.0f;
+    const float trackW  = std::max(20.0f, trackX1 - trackX0);
+    const float trackH  = 6.0f;
+    const float trackY  = p0.y + (kH - trackH) * 0.5f;
+
+    if (ImGui::IsItemActive() && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+        const float mx = ImGui::GetIO().MousePos.x;
+        double t = static_cast<double>((mx - trackX0) / trackW);
+        t = std::clamp(t, 0.0, 1.0);
+        if (t != *value01) { *value01 = t; changed = true; }
+    }
+
+    theme::pushBold(theme::fs::Micro);
+    dl->AddText(theme::fonts().bold, theme::fs::Micro,
+                ImVec2(p0.x + 10.0f, p0.y + (kH - ImGui::GetTextLineHeight()) * 0.5f),
+                fillColor, label);
+    theme::popFont();
+
+    dl->AddRectFilled(ImVec2(trackX0, trackY), ImVec2(trackX0 + trackW, trackY + trackH),
+                      theme::BgSunken, trackH * 0.5f);
+    dl->AddRect(ImVec2(trackX0, trackY), ImVec2(trackX0 + trackW, trackY + trackH),
+                theme::Border, trackH * 0.5f);
+
+    // Gradient Info -> mau da chon: dung MULTICOLOR de tai hien dung
+    // linear-gradient(90deg, info, primary) cua ban thiet ke.
+    const float fillW = static_cast<float>(*value01) * trackW;
+    if (fillW > 0.5f) {
+        dl->AddRectFilledMultiColor(ImVec2(trackX0, trackY),
+                                    ImVec2(trackX0 + fillW, trackY + trackH),
+                                    theme::Info, fillColor, fillColor, theme::Info);
+    }
+
+    constexpr float kThumbR = 5.0f;
+    ImVec2 thumb(std::clamp(trackX0 + fillW, trackX0, trackX0 + trackW),
+                (trackY + trackY + trackH) * 0.5f);
+    dl->AddCircleFilled(thumb, kThumbR, IM_COL32(255, 255, 255, 255));
+
+    char pct[16];
+    std::snprintf(pct, sizeof(pct), "%.0f%%", std::clamp(*value01, 0.0, 1.0) * 100.0);
+    theme::pushMono(theme::fs::Micro);
+    const ImVec2 pctSize = ImGui::CalcTextSize(pct);
+    dl->AddText(ImVec2(p0.x + w - pctSize.x - 6.0f,
+                       p0.y + (kH - pctSize.y) * 0.5f),
+                theme::Text, pct);
+    theme::popFont();
+
+    return changed;
+}
 
 void ControlPanel::drawLayersDeck(Project& p) {
     Composition& comp = p.composition;
@@ -696,9 +919,33 @@ void ControlPanel::drawLayersDeck(Project& p) {
         }
         ImGui::TableSetupScrollFreeze(1, 1);
 
-        // Hang tieu de: bam so cot = phat ca cot (A6).
-        ImGui::TableNextRow(ImGuiTableRowFlags_Headers, 22.0f);
+        // ★ Hang tieu de gio mang CA thanh Opacity dung chung (cot 0)
+        //   lan so cot COL 1..N (cac cot con lai). Hai thu nay o CUNG MOT
+        //   hang vi ca hai deu la "hang tieu de" — cot 0 khong con de
+        //   trong nua.
+        //
+        //   Truoc day moi layer co MOT thanh do mo rieng, chiem het mot
+        //   hang trong o 90px cua no. Ban thiet ke doi sang MOT thanh
+        //   DUNG CHUNG, luon hien o tren cung, dieu khien layer NAO DANG
+        //   DUOC CHON (bam vao ten layer de chon) — do la ly do no nam o
+        //   hang tieu de (dinh, luon thay) chu khong nam trong tung hang.
+        ImGui::TableNextRow(ImGuiTableRowFlags_Headers, 34.0f);
         ImGui::TableSetColumnIndex(0);
+        {
+            m_activeLayerRow = std::clamp(m_activeLayerRow, 0, layers - 1);
+            Layer& activeLayer = comp.layer(m_activeLayerRow);
+            const bool playing = (activeLayer.activeDeck == comp.viewedDeck()
+                                  && activeLayer.activeColumn >= 0);
+
+            char lbl[24];
+            std::snprintf(lbl, sizeof(lbl), TR("layer.opacity.short"), m_activeLayerRow + 1);
+
+            double opVal = activeLayer.opacity;
+            if (drawSharedOpacityBar(lbl, &opVal,
+                                    playing ? theme::Primary : theme::Info)) {
+                activeLayer.opacity = opVal;
+            }
+        }
         for (int c = 0; c < cols; ++c) {
             ImGui::TableSetColumnIndex(c + 1);
             ImGui::PushID(20000 + c);
@@ -734,10 +981,20 @@ void ControlPanel::drawLayersDeck(Project& p) {
                 char nameBuf[16];
                 std::snprintf(nameBuf, sizeof(nameBuf), "%-9.9s", layer.name.c_str());
 
+                // ★ Bam TEN layer -> chon lam "layer dang xem": thanh
+                //   Opacity dung chung o tren doi sang dieu khien layer
+                //   nay, va bang THUOC TINH nhay sang tab LAYER cua no —
+                //   dung dieu nguoi van hanh mong doi khi vua bam chon
+                //   mot layer khac.
+                const bool isActiveRow = (L == m_activeLayerRow);
                 theme::pushBold(theme::fs::Body);
-                ImGui::AlignTextToFramePadding();
-                ImGui::TextUnformatted(nameBuf);
+                const bool hitName = theme::tabButton(nameBuf, isActiveRow,
+                                                      ImVec2(0, 0), theme::Primary);
                 theme::popFont();
+                if (hitName) {
+                    m_activeLayerRow = L;
+                    m_inspectorTab   = InspectorTab::Layer;
+                }
 
                 constexpr float kBtnBlockW = 24.0f * 3.0f + 3.0f * 2.0f;
                 constexpr float kBtnAnchor = 132.0f;   // < LayerCtrlW - kBtnBlockW
@@ -760,28 +1017,41 @@ void ControlPanel::drawLayersDeck(Project& p) {
                 if (theme::tabButton(ICON_LC_SQUARE, false, bs, theme::Danger)) layer.clear();
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("layer.clear.tip"));
 
-                // ★ Model luu 0..1 nhung nguoi van hanh nghi bang PHAN TRAM.
-                //   Dua thang gia tri 0..1 vao dinh dang "%.0f%%" cho ra
-                //   "1%" khi opacity = 1.0 — sai hoan toan va rat de tin.
-                float opPct = static_cast<float>(layer.opacity * 100.0);
-                ImGui::SetNextItemWidth(theme::LayerCtrlW - 8.0f);
-                if (ImGui::SliderFloat("##op", &opPct, 0.0f, 100.0f, "OPACITY  %.0f%%",
-                                       ImGuiSliderFlags_AlwaysClamp)) {
-                    layer.opacity = opPct / 100.0;
-                }
+                // ── Hang "the": BLEND + thoi luong chuyen, gon lai ──────
+                //
+                // ★ Opacity da chuyen sang thanh dung chung o tren; hang
+                //   nay gio chi con hai dieu khien, ep vao mot the phang
+                //   giong ban thiet ke thay vi hai dong rieng nhu truoc.
+                ImGui::Dummy(ImVec2(1.0f, 4.0f));   // khe tho, giong "justify-between"
 
-                ImGui::SetNextItemWidth((theme::LayerCtrlW - 12.0f) * 0.58f);
+                ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::v4(theme::BgSunken));
+                ImGui::BeginChild("##badge", ImVec2(theme::LayerCtrlW - 8.0f, 24.0f),
+                                  ImGuiChildFlags_Borders, ImGuiWindowFlags_NoScrollbar);
+                theme::pushBold(theme::fs::Micro);
+                ImGui::AlignTextToFramePadding();
+                ImGui::TextDisabled("%s", TR("layer.blend.label"));
+                theme::popFont();
+
+                ImGui::SameLine(0.0f, 4.0f);
+                ImGui::SetNextItemWidth(78.0f);
                 int blend = static_cast<int>(layer.blend);
+                theme::pushBold(theme::fs::Micro);
                 if (ImGui::Combo("##blend", &blend, kBlendNames, IM_ARRAYSIZE(kBlendNames))) {
                     layer.blend = static_cast<BlendMode>(blend);
                 }
+                theme::popFont();
+
                 ImGui::SameLine(0.0f, 4.0f);
-                ImGui::SetNextItemWidth((theme::LayerCtrlW - 12.0f) * 0.38f);
+                ImGui::SetNextItemWidth(-FLT_MIN);
                 float tr = static_cast<float>(layer.transitionDuration);
+                theme::pushMono(theme::fs::Micro);
                 if (ImGui::DragFloat("##tr", &tr, 0.01f, 0.0f, 10.0f, "%.2fs")) {
                     layer.transitionDuration = std::max(0.0f, tr);
                 }
+                theme::popFont();
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("layer.transition.tip"));
+                ImGui::EndChild();
+                ImGui::PopStyleColor();
             }
 
             // ── Cac o clip ─────────────────────────────────────────────
@@ -1612,9 +1882,11 @@ void ControlPanel::drawScreenPanel(Project& p, EditState& edit, UiActions& a) {
             s.color.gainB = gain[2];
         }
 
-        float op = static_cast<float>(s.color.opacity);
-        labelAbove(TR("adv.color.opacity"));
-        if (ImGui::SliderFloat("##sop", &op, 0.0f, 1.0f)) s.color.opacity = op;
+        double opVal = s.color.opacity;
+        if (theme::opacityBar("##sop", TR("adv.color.opacity"), &opVal,
+                              theme::Primary, false)) {
+            s.color.opacity = opVal;
+        }
 
         if (ImGui::Button(TR("adv.color.reset"))) s.color.reset();
         ImGui::SameLine();
@@ -2094,8 +2366,11 @@ void ControlPanel::drawClipPanel(Project& p) {
     // ── D3 D4: hoa tron ────────────────────────────────────────────────
     ImGui::SeparatorText(TR("clip.blending"));
 
-    float op = static_cast<float>(c->opacity);
-    if (ImGui::SliderFloat(TR("clip.opacity"), &op, 0.0f, 1.0f)) c->opacity = op;
+    double opVal = c->opacity;
+    if (theme::opacityBar("##clipop", TR("clip.opacity"), &opVal,
+                          theme::Primary, false)) {
+        c->opacity = opVal;
+    }
 
     int bl = static_cast<int>(c->blend);
     if (ImGui::Combo(TR("clip.blend"), &bl, kBlendNames, IM_ARRAYSIZE(kBlendNames))) {

@@ -1,5 +1,7 @@
 #include "ui/Theme.h"
 
+#include <algorithm>
+#include <cstdio>
 #include <cstring>
 
 namespace hexmap {
@@ -296,6 +298,68 @@ bool filledButton(const char* label, ImU32 bg, const ImVec2& size) {
     const bool hit = ImGui::Button(label, size);
     ImGui::PopStyleColor(5);
     return hit;
+}
+
+bool opacityBar(const char* id, const char* label, double* value01,
+                ImU32 fillColor, bool glow, float width) {
+    const float w = (width > 0.0f) ? width : ImGui::GetContentRegionAvail().x;
+
+    // ── Hang nhan: ten (trai) + phan tram (phai), mono nho ─────────────
+    pushMono(fs::Micro);
+    char pct[16];
+    std::snprintf(pct, sizeof(pct), "%.0f%%", std::clamp(*value01, 0.0, 1.0) * 100.0);
+    const ImVec2 pctSize = ImGui::CalcTextSize(pct);
+
+    ImVec2 p0 = ImGui::GetCursorScreenPos();
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    dl->AddText(p0, TextDim, label);
+    dl->AddText(ImVec2(p0.x + w - pctSize.x, p0.y), TextDim, pct);
+    ImGui::Dummy(ImVec2(w, ImGui::GetTextLineHeight()));
+    popFont();
+
+    ImGui::Dummy(ImVec2(w, 3.0f));   // khe he giua nhan va rang, nhu "mb-1"
+
+    // ── Rang dang vien thuoc ────────────────────────────────────────────
+    constexpr float kTrackH = 8.0f;
+    constexpr float kHitH   = 16.0f;   // vung bam RONG hon rang de de keo
+
+    p0 = ImGui::GetCursorScreenPos();
+    ImGui::InvisibleButton(id, ImVec2(w, kHitH));
+
+    bool changed = false;
+    if (ImGui::IsItemActive() && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+        const float mx = ImGui::GetIO().MousePos.x;
+        double t = static_cast<double>((mx - p0.x) / w);
+        t = std::clamp(t, 0.0, 1.0);
+        if (t != *value01) { *value01 = t; changed = true; }
+    }
+
+    const ImVec2 trackP0(p0.x, p0.y + (kHitH - kTrackH) * 0.5f);
+    const ImVec2 trackP1(trackP0.x + w, trackP0.y + kTrackH);
+
+    dl->AddRectFilled(trackP0, trackP1, BgSunken, kTrackH * 0.5f);
+    dl->AddRect(trackP0, trackP1, Border, kTrackH * 0.5f);
+
+    // ★ Fill LUON bo tron toan bo bon goc, khong phai chi hai goc trai.
+    //   Dung y cua ban thiet ke: mot vien thuoc NHO nam trong vien thuoc
+    //   LON — o gia tri 100% hai vien trung khop, o gia tri thap hon no
+    //   la mot khoi tron doc lap troi giua rang, khong phai mot thanh bi
+    //   cat cut o dau phai.
+    const float fillW = static_cast<float>(*value01) * w;
+    if (fillW > 0.5f) {
+        dl->AddRectFilled(trackP0, ImVec2(trackP0.x + fillW, trackP1.y),
+                          fillColor, kTrackH * 0.5f);
+    }
+
+    // ── Num tron trang, noi ra ngoai rang ───────────────────────────────
+    constexpr float kThumbR = 6.0f;
+    ImVec2 thumb(trackP0.x + fillW, (trackP0.y + trackP1.y) * 0.5f);
+    thumb.x = std::clamp(thumb.x, trackP0.x, trackP1.x);
+
+    if (glow) dl->AddCircleFilled(thumb, kThumbR * 2.0f, alpha(fillColor, 0.30f));
+    dl->AddCircleFilled(thumb, kThumbR, IM_COL32(255, 255, 255, 255));
+
+    return changed;
 }
 
 void beginCard(const char* id, const ImVec2& size, ImU32 border) {

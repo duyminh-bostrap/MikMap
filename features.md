@@ -66,6 +66,7 @@
 | **Font Inter** (OFL) | ✅ Xong | `bin/data/fonts/` — đủ dấu tiếng Việt |
 | **F12 — mặt nạ bezier** | ✅ Xong | `BezierMask`, nút ở contentUV, mép mờ |
 | **Giao diện MikMap** | ✅ Xong | 3 trang cố định, bảng màu mới, `ui/Theme` |
+| **Thanh Opacity + canh thanh menu** | ✅ Xong | widget `ui/Theme::opacityBar`, sửa lệch dòng thanh trên cùng |
 
 ### 🟢 Tầng ứng dụng oF — ĐÃ CHẠY
 
@@ -565,6 +566,45 @@ Thanh menu cũ bị ba tab thay thế — và **suýt kéo theo cả lối Lưu 
 project**. Bản thiết kế không vẽ chỗ nào cho việc này, nhưng một phần mềm
 không lưu được công việc thì không dùng được; nên nó quay lại dưới dạng nút
 `Dự án` bật popup, không chiếm chỗ thường trực.
+
+---
+
+## 📏 Thanh Opacity + canh chữ thanh menu
+
+Hai lỗi người dùng chỉ ra sau khi xem giao diện chạy thật: chữ trên thanh
+menu trên cùng nhỏ và lệch dòng, thanh Opacity không giống bản thiết kế.
+
+### Thanh Opacity — vẽ lại từ đầu, không phải `SliderFloat` viết lại
+
+`ImGui::SliderFloat` vẽ nhãn **chồng lên** rãnh trượt. Bản thiết kế đặt
+nhãn thành **một dòng riêng** phía trên ("OPACITY" trái, "100%" phải, chữ
+nhỏ dạng mono), bên dưới là một rãnh **bo tròn hoàn toàn** không chữ, và
+núm là một **chấm tròn trắng nổi hẳn ra ngoài** rãnh. Đây là hai hình dạng
+khác hẳn nhau — phải vẽ lại bằng `ImDrawList` mới ra đúng hình đó.
+
+`ui/Theme::opacityBar()` là widget dùng chung, thay cho ba chỗ dùng
+`SliderFloat` cũ (opacity layer, opacity màu slice F19, opacity clip).
+Layer đang **thực sự phát** (có cột đang chạy) tô màu cam kèm quầng sáng;
+layer rảnh tô màu lam không quầng — quầng sáng dùng tràn lan thì mất hết
+nghĩa "cái này đang nổi bật".
+
+### Thanh menu lệch dòng — nguyên nhân là trộn cỡ chữ trên một hàng
+
+Thanh trên cùng trộn nhiều cỡ chữ trên **cùng một hàng** qua `SameLine()`:
+18px cho "MIKMAP", 11px đậm cho tab, mono cho FPS. `SameLine()` chỉ mang
+theo toạ độ Y của **điểm bắt đầu dòng** — nó không tự căn giữa các phần tử
+có chiều cao khác nhau. Kết quả: `AlignTextToFramePadding()` (gọi cho chữ
+lớn) và `ImGui::Button` (cho các phần tử khác) tính baseline theo hai công
+thức khác nhau, nên chữ trôi lệch dòng dù mắt thường khó chỉ ra vì sao.
+
+Sửa bằng cách **bỏ hoàn toàn** việc dựa vào cơ chế tự canh của `SameLine`:
+mỗi phần tử tự đặt lại `CursorPosY` quanh điểm giữa cố định của thanh
+(`TopBarH * 0.5f`) ngay trước khi vẽ, dùng chiều cao thật của chính nó ở
+cỡ chữ đang dùng. Nút "Dự án" cũng được đổi sang đậm 11px cho khớp các tab
+bên cạnh thay vì chữ thường 12px như trước.
+
+**Kết quả:** `313/313 test xanh · 3829 assertion` · 60.0 fps, `frame_avg`
+16.67 ms — không đổi.
 
 ---
 
