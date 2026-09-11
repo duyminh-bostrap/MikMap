@@ -2169,7 +2169,14 @@ void ControlPanel::drawScreenPanel(Project& p, EditState& edit, UiActions& a) {
     }
 
     Slice& s = sc.slices[static_cast<size_t>(edit.activeSliceIndex)];
-    ImGui::TextWrapped(TR("adv.selected"), s.name.c_str());
+
+    char sliceNameBuf[64];
+    std::snprintf(sliceNameBuf, sizeof(sliceNameBuf), "%s", s.name.c_str());
+    labelAbove(TR("slice.name"));
+    if (ImGui::InputText("##slicename", sliceNameBuf, sizeof(sliceNameBuf))) {
+        s.name = sliceNameBuf;
+    }
+
     if (s.warp() != nullptr && !s.warp()->isInvertible()) {
         ImGui::PushStyleColor(ImGuiCol_Text, theme::v4(theme::Danger));
         ImGui::TextWrapped("%s", TR("adv.broken"));
