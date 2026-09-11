@@ -211,6 +211,21 @@ bool segButton(const char* label, bool active, const ImVec2& size, ImU32 accent)
     return hit;
 }
 
+void beginPanel(const char* id, const ImVec2& size, ImU32 bg,
+                const ImVec2& pad, ImGuiWindowFlags flags) {
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, v4(bg));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, pad);
+    ImGui::BeginChild(id, size,
+                      ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding,
+                      flags);
+}
+
+void endPanel() {
+    ImGui::EndChild();
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor();
+}
+
 void sectionDivider() {
     ImGui::Dummy(ImVec2(0.0f, 1.0f));
     const ImVec2 p = ImGui::GetCursorScreenPos();

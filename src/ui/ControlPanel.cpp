@@ -674,40 +674,34 @@ void ControlPanel::drawCompositionView(Project& p, EditState& edit,
     ImGui::BeginChild("##comp_top", ImVec2(0, topH), ImGuiChildFlags_None,
                       ImGuiWindowFlags_NoScrollbar);
     {
-        ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::v4(theme::BgPanel));
-        ImGui::BeginChild("##browser", ImVec2(theme::BrowserW, 0), ImGuiChildFlags_Borders);
+        theme::beginPanel("##browser", ImVec2(theme::BrowserW, 0), theme::BgPanel,
+                          ImVec2(10, 10));
         drawBrowserPanel(p, a);
-        ImGui::EndChild();
-        ImGui::PopStyleColor();
+        theme::endPanel();
 
         ImGui::SameLine();
 
         const float midW = std::max(240.0f,
             ImGui::GetContentRegionAvail().x - theme::InspectorW - 6.0f);
-        ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::v4(theme::BgApp));
-        ImGui::BeginChild("##monitors", ImVec2(midW, 0), ImGuiChildFlags_Borders,
-                          ImGuiWindowFlags_NoScrollbar);
+        theme::beginPanel("##monitors", ImVec2(midW, 0), theme::BgApp,
+                          ImVec2(8, 8), ImGuiWindowFlags_NoScrollbar);
         drawMonitors(p, s, canvasTex);
-        ImGui::EndChild();
-        ImGui::PopStyleColor();
+        theme::endPanel();
 
         ImGui::SameLine();
 
-        ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::v4(theme::BgPanel));
-        ImGui::BeginChild("##inspector", ImVec2(0, 0), ImGuiChildFlags_Borders);
+        theme::beginPanel("##inspector", ImVec2(theme::InspectorW, 0), theme::BgPanel,
+                          ImVec2(14, 14));
         drawInspector(p);
-        ImGui::EndChild();
-        ImGui::PopStyleColor();
+        theme::endPanel();
     }
     ImGui::EndChild();
 
     // ── Hang duoi: layer × cot, chiem HET chieu ngang ──────────────────
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::v4(theme::BgPanel));
-    ImGui::BeginChild("##deck", ImVec2(0, botH), ImGuiChildFlags_Borders,
-                      ImGuiWindowFlags_NoScrollbar);
+    theme::beginPanel("##deck", ImVec2(0, botH), theme::BgPanel,
+                      ImVec2(10, 0), ImGuiWindowFlags_NoScrollbar);
     drawLayersDeck(p);
-    ImGui::EndChild();
-    ImGui::PopStyleColor();
+    theme::endPanel();
 
     ImGui::PopStyleVar();
 }
@@ -829,8 +823,7 @@ void ControlPanel::drawMonitors(Project& p, const PerfStats& s,
     // Chieu cao thanh tieu de moi man hinh — vien tren 2px MAU RIENG cho
     // tung o, dung mau de phan biet PREVIEW (lam) voi DANG CHIEU (cam)
     // ngay ca khi nhin luot qua, khong can doc chu.
-    // Khop voi ban thiet ke mikmap_UI_pug: h-5 = 20px.
-    constexpr float kHeadH = 20.0f;
+    constexpr float kHeadH = 22.0f;
 
     auto monitor = [&](const char* id, const char* label, ImU32 labelCol,
                        bool showSliceRects, const char* badge, ImU32 badgeCol,
@@ -854,8 +847,11 @@ void ControlPanel::drawMonitors(Project& p, const PerfStats& s,
                 theme::statusDot(labelCol);
                 ImGui::SameLine(0.0f, 5.0f);
             }
+            // ★ KHONG dung AlignTextToFramePadding o day: dai tieu de nay
+            //   cao co dinh 22px, khong phai mot hang widget. Can theo
+            //   FramePadding (9px) se day chu xuong qua khoi dai va bi o
+            //   hinh den ve de len.
             ImGui::PushStyleColor(ImGuiCol_Text, theme::v4(labelCol));
-            ImGui::AlignTextToFramePadding();
             ImGui::TextUnformatted(label);
             ImGui::PopStyleColor();
 
@@ -865,7 +861,6 @@ void ControlPanel::drawMonitors(Project& p, const PerfStats& s,
                 ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(),
                                               ImGui::GetWindowWidth() - bw - 10.0f));
                 ImGui::PushStyleColor(ImGuiCol_Text, theme::v4(badgeCol));
-                ImGui::AlignTextToFramePadding();
                 ImGui::TextUnformatted(badge);
                 ImGui::PopStyleColor();
             }
@@ -874,9 +869,20 @@ void ControlPanel::drawMonitors(Project& p, const PerfStats& s,
         }
 
         const ImVec2 box = ImGui::GetContentRegionAvail();
-        if (box.x < 20.0f || box.y < 20.0f) { ImGui::EndChild(); return; }
+        if (box.x < 20.0f || box.y < 20.0f) {
+            ImGui::Dummy(ImVec2(1.0f, 1.0f));
+            ImGui::EndChild();
+            return;
+        }
 
         const ImVec2 org = ImGui::GetCursorScreenPos();
+
+        // ★ Giu cho cho khung hinh bang MOT item that. Phan duoi day chi
+        //   ve bang ImDrawList; neu khong co item nao sau SetCursorPos()
+        //   thi ImGui bao loi "dung SetCursorPos de noi rong bien cua so"
+        //   va dung chuong trinh.
+        ImGui::Dummy(box);
+
         ImDrawList* dl = ImGui::GetWindowDrawList();
         dl->AddRectFilled(org, ImVec2(org.x + box.x, org.y + box.y),
                           IM_COL32(0, 0, 0, 255), 4.0f);

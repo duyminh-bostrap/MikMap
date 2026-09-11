@@ -152,6 +152,18 @@ bool segButton(const char* label, bool active, const ImVec2& size,
 /// Vạch ngăn mục trong bảng thuộc tính: 1px #222, cách trên dưới 8px.
 void sectionDivider();
 
+/// Mở một BẢNG: child có viền, nền riêng và LỀ TRONG thật.
+///
+/// ★ Bọc BeginChild vì cờ AlwaysUseWindowPadding là bắt buộc mà rất dễ
+///   quên: thiếu nó, ImGui lặng lẽ bỏ qua WindowPadding của child (kể cả
+///   child có viền) và mọi ô nhập tràn sát mép bảng.
+///
+/// Luôn đi cặp với endPanel().
+void beginPanel(const char* id, const ImVec2& size, ImU32 bg,
+                const ImVec2& pad = ImVec2(12, 12),
+                ImGuiWindowFlags flags = 0);
+void endPanel();
+
 /// Nút viền màu, nền trong suốt — kiểu nút phụ trong bản thiết kế.
 bool outlineButton(const char* label, ImU32 accent,
                    const ImVec2& size = ImVec2(0, 0));
