@@ -1,44 +1,90 @@
-# HexMapping / MikMap C++ UI Layer (Dear ImGui)
+# HexMapping / MikMap — 100% Thuần C++20 Project
 
-Thư mục này chứa toàn bộ mã nguồn giao diện **C++20 (Dear ImGui)** được chuyển thể hoàn chỉnh từ bản thiết kế UI MikMap, tuân thủ 100% kiến trúc được quy định trong `architecture.md` và `features.md`:
+Dự án này hiện đã có **toàn bộ mã nguồn C++20 hoàn chỉnh**, không còn phụ thuộc vào Vite hay React cho ứng dụng thực tế.
 
-## Cấu trúc tập tin:
-- `ui/Theme.h` & `ui/Theme.cpp`:
-  - Thiết lập bảng màu chuẩn MikMap: Màu cam chủ đạo (`#FF7F50`), màu nâu trầm/espresso (`#3B1D0E`), viền (`#4A2411`), màu mặt nạ vàng (`#FFD166`), màu slice cyan (`#118AB2`).
-  - Widget kéo Opacity tuỳ chỉnh `Theme::OpacityBar()`.
-  - Các hàm tiện ích button bo góc và màu sắc đồng bộ.
-- `ui/panels/OutputPanel.h` & `ui/panels/OutputPanel.cpp`:
-  - **Tree View bên trái**: Danh sách Screens -> Slices -> Masks.
-  - **3 nút tác vụ cố định góc dưới**: `Add Screen`, `+ Add Slice`, `Add Mask`.
-  - **Stage Toolbar**: Switch Input/Output, **thanh chuyển đổi Screen cuộn ngang (horizontal scroll)** với con lăn chuột và tự động cuộn chống tràn tuyệt đối khi có nhiều screen, nút Reset Warp.
-  - **Stage Canvas tương tác**: Vẽ lưới toạ độ, hình học quad keystone và 4 chốt corner pin (`TL`, `TR`, `BR`, `BL`) kéo thả trực tiếp bằng chuột.
-  - **Inspector thuộc tính bên phải**: Cài đặt Slice (Input Rect, Corner Pins H_w) và Screen Output Info (Tên màn hình, thiết bị đầu ra, độ phân giải, Edge Blending).
-- `ui/panels/LayerPanel.h` & `ui/panels/LayerPanel.cpp`:
-  - Ma trận Clip 4 cột × N Layer.
-  - Clip đang kích hoạt màu cam (`#FF7F50`), clip không kích hoạt màu nâu trầm/espresso (`#3B1D0E`).
-  - Thanh kéo Opacity từng layer và menu lựa chọn Blend Mode.
-- `ui/ControlPanel.h` & `ui/ControlPanel.cpp`:
-  - Thanh Header điều hướng (Composition, Advanced Output, Sensors, Performance), Master Blackout (B), Freeze (F), Master Opacity, và hiển thị FPS.
+## 📁 Cấu trúc cây thư mục C++ (/cpp):
 
-## Cách tích hợp vào dự án openFrameworks / Visual Studio:
-1. Sao chép thư mục `cpp/ui/` vào thư mục `src/ui/` trong project openFrameworks (`HexMapping`).
-2. Trong `ofApp.h`:
+```
+cpp/
+├─ CMakeLists.txt                 # Script build C++20 độc lập (MSVC / GCC / Clang)
+├─ app/
+│  └─ main.cpp                    # Điểm khởi chạy Native Desktop
+├─ core/                          # Tầng Core: C++20 thuần, 0 phụ thuộc thư viện ngoài
+│  ├─ math/
+│  │  ├─ Vec2.h                   # Vector 2D constexpr
+│  │  ├─ Mat3.h / .cpp            # Ma trận đồng nhất 3x3, nghịch đảo, determinant
+│  │  └─ Homography.h / .cpp      # Thuật toán DLT giải Keystone & biến dạng 4 điểm
+│  └─ model/
+│     ├─ IWarp.h                  # Hợp đồng forward() và inverse() cho Warp
+│     ├─ WarpCornerPin.h / .cpp   # Biến dạng góc 4 điểm (Keystone)
+│     ├─ Slice.h                  # Đối tượng Slice với toạ độ Source UV và Warp
+│     ├─ Screen.h                 # Màn hình đầu ra (Projector) với danh sách Slices
+│     └─ Composition.h            # Composition tổng (Layers, Clips, Screens)
+└─ ui/                            # Tầng Giao diện Dear ImGui
+   ├─ Theme.h / .cpp              # Bảng màu MikMap (Vibrant Orange #FF7F50 + Burnt Brown #3B1D0E), widget OpacityBar
+   ├─ ControlPanel.h / .cpp       # Điều hướng chính, Master Controls (B/F/Opacity), FPS counter
+   └─ panels/
+      ├─ OutputPanel.h / .cpp     # Advanced Output: Tree view, 3 nút cố định góc dưới, tab Screen cuộn ngang chống tràn, kéo corner pin trực tiếp
+      └─ LayerPanel.h / .cpp      # Clip matrix 4 cột x N layer, blend modes, thanh kéo opacity
+```
+
+---
+
+## 🚀 Cách chạy trên máy cá nhân (Windows / macOS / Linux):
+
+### Cách 1: Sử dụng CMake (Cực kỳ nhanh và độc lập)
+```bash
+cd cpp
+cmake -B build
+cmake --build build --config Release
+```
+
+### Cách 2: Tích hợp vào dự án openFrameworks / Visual Studio 2022
+1. Mở thư mục `D:\2026\Mike\openFrameworks\apps\myApps\HexMapping\`
+2. Sao chép thư mục `cpp/core/` và `cpp/ui/` vào thư mục `src/` của dự án openFrameworks:
+   - `cpp/core/` $\to$ `src/core/`
+   - `cpp/ui/` $\to$ `src/ui/`
+3. Trong `src/ofApp.h`:
    ```cpp
+   #pragma once
+   #include "ofMain.h"
+   #include "ofxImGui.h"
    #include "ui/ControlPanel.h"
-   // ...
-   HexMap::UI::ControlPanel m_controlPanel;
+
+   class ofApp : public ofBaseApp {
+   public:
+       void setup();
+       void update();
+       void draw();
+
+       ofxImGui::Gui gui;
+       HexMap::UI::ControlPanel controlPanel;
+   };
    ```
-3. Trong `ofApp.cpp`:
+4. Trong `src/ofApp.cpp`:
    ```cpp
+   #include "ofApp.h"
+   #include "ui/Theme.h"
+
    void ofApp::setup() {
-       // Khởi tạo ImGui với theme MikMap
+       ofSetFrameRate(60);
        gui.setup();
        HexMap::UI::Theme::SetupMikMapTheme();
    }
 
+   void ofApp::update() {
+       // Core update
+   }
+
    void ofApp::draw() {
        gui.begin();
-       m_controlPanel.Render();
+       controlPanel.Render();
        gui.end();
    }
    ```
+5. Mở file `HexMapping.sln` trong Visual Studio 2022 và bấm **F5 (Start Debugging)**.
+
+---
+
+## 💡 Lưu ý về môi trường Google AI Studio Cloud:
+Trong môi trường đám mây này (Google Cloud Run), hệ thống luôn cần một tiến trình web nhẹ chạy ở cổng 3000 để duy trì kết nối Live Preview cho trình duyệt của bạn (và cho phép bạn bấm nút **Export ZIP** hoặc kết nối GitHub bất cứ lúc nào). Toàn bộ mã nguồn desktop thực tế bạn cần đã nằm hoàn toàn trong thư mục `/cpp/`!

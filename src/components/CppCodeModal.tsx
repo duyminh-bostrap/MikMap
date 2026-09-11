@@ -148,6 +148,73 @@ private:
 // Nối các panel và tích hợp trực tiếp vào main loop của openFrameworks:
 // - Header điều hướng (Composition, Advanced Output, Sensors, Performance)
 // - Master controls (Blackout B, Freeze F, Master Opacity, FPS badge)`
+  },
+  {
+    name: 'Homography.h',
+    path: 'cpp/core/math/Homography.h',
+    code: `#pragma once
+
+#include "Mat3.h"
+#include "Vec2.h"
+#include <array>
+#include <optional>
+
+namespace HexMap::Core::Math {
+
+class Homography {
+public:
+    // Tính ma trận Homography biến đổi 4 điểm nguồn (src) sang 4 điểm đích (dst) bằng DLT
+    static std::optional<Mat3> find4Point(const std::array<Vec2, 4>& src,
+                                          const std::array<Vec2, 4>& dst);
+};
+
+} // namespace HexMap::Core::Math`
+  },
+  {
+    name: 'CMakeLists.txt',
+    path: 'cpp/CMakeLists.txt',
+    code: `cmake_minimum_required(VERSION 3.20)
+project(HexMapping VERSION 1.0.0 LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+set(CORE_SOURCES
+    core/math/Mat3.cpp
+    core/math/Homography.cpp
+    core/model/WarpCornerPin.cpp
+)
+
+set(UI_SOURCES
+    ui/Theme.cpp
+    ui/panels/OutputPanel.cpp
+    ui/panels/LayerPanel.cpp
+    ui/ControlPanel.cpp
+)
+
+include_directories(
+    \${CMAKE_CURRENT_SOURCE_DIR}
+    \${CMAKE_CURRENT_SOURCE_DIR}/core
+    \${CMAKE_CURRENT_SOURCE_DIR}/ui
+)
+
+add_library(HexMapCore STATIC \${CORE_SOURCES})
+# add_executable(HexMapping app/main.cpp \${UI_SOURCES})`
+  },
+  {
+    name: 'main.cpp',
+    path: 'cpp/app/main.cpp',
+    code: `#include <iostream>
+#include "../ui/Theme.h"
+#include "../ui/ControlPanel.h"
+#include "../core/math/Homography.h"
+
+int main() {
+    std::cout << "MikMap / HexMapping C++20 Native Engine Ready.\\n";
+    HexMap::UI::ControlPanel controlPanel;
+    // Main loop running at 60 FPS on desktop
+    return 0;
+}`
   }
 ];
 
