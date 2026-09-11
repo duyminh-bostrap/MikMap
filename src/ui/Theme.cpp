@@ -1,6 +1,7 @@
 #include "ui/Theme.h"
 
 #include <algorithm>
+#include <cfloat>
 #include <cstdio>
 #include <cstring>
 
@@ -47,7 +48,7 @@ void apply() {
     // đây là một bàn điều khiển liền mạch, không phải một trang web.
     s.WindowRounding    = 0.0f;
     s.ChildRounding     = 4.0f;
-    s.FrameRounding     = 3.0f;
+    s.FrameRounding     = 4.0f;   // rounded (0.25rem) trong bản thiết kế
     s.PopupRounding     = 4.0f;
     s.ScrollbarRounding = 6.0f;
     s.GrabRounding      = 3.0f;
@@ -58,8 +59,9 @@ void apply() {
     s.FrameBorderSize  = 1.0f;
     s.PopupBorderSize  = 1.0f;
 
+    // Ô nhập trong bản thiết kế cao 30px: chữ 12px + đệm dọc 9px hai bên.
     s.WindowPadding    = ImVec2(10, 10);
-    s.FramePadding     = ImVec2(8, 5);
+    s.FramePadding     = ImVec2(10, 9);
     s.ItemSpacing      = ImVec2(8, 7);
     s.ItemInnerSpacing = ImVec2(6, 5);
     s.IndentSpacing    = 18.0f;
@@ -82,7 +84,10 @@ void apply() {
     c[ImGuiCol_Border]               = v4(Border);
     c[ImGuiCol_BorderShadow]         = ImVec4(0, 0, 0, 0);
 
-    c[ImGuiCol_FrameBg]              = v4(BgSunken);
+    // Ô nhập: nền #0a0a0a, viền #333 — đo từ bản thiết kế. Viền sáng hơn
+    // Border thường vì ô nhập phải mời người ta bấm vào, khác với vạch
+    // ngăn vốn chỉ nên tách lớp.
+    c[ImGuiCol_FrameBg]              = v4(BgInput);
     c[ImGuiCol_FrameBgHovered]       = v4(alpha(Info, 0.16f));
     c[ImGuiCol_FrameBgActive]        = v4(alpha(Info, 0.28f));
 
@@ -163,11 +168,16 @@ void sectionLabel(const char* txt) {
 
 bool tabButton(const char* label, bool active, const ImVec2& size, ImU32 accent) {
     if (active) {
-        ImGui::PushStyleColor(ImGuiCol_Button,        v4(BgCard));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, v4(BgCard));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive,  v4(BgCard));
+        // ★ Nut DANG BAT duoc NHUOM theo chinh mau nhan cua no — nen
+        //   accent/15, vien accent/40, chu accent — dung ngu phap cua ban
+        //   thiet ke tham khao (MikMap_Web). Nen xam trung tinh nhu truoc
+        //   thi trang thai bat/tat chi khac nhau o mau CHU, va trong phong
+        //   toi liec qua rat de doc nham la dang tat.
+        ImGui::PushStyleColor(ImGuiCol_Button,        v4(alpha(accent, 0.15f)));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, v4(alpha(accent, 0.22f)));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive,  v4(alpha(accent, 0.30f)));
         ImGui::PushStyleColor(ImGuiCol_Text,          v4(accent));
-        ImGui::PushStyleColor(ImGuiCol_Border,        v4(BorderLit));
+        ImGui::PushStyleColor(ImGuiCol_Border,        v4(alpha(accent, 0.40f)));
     } else {
         ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0, 0, 0, 0));
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, v4(alpha(BgCard, 0.8f)));
@@ -205,10 +215,51 @@ void statusDot(ImU32 c, bool glow) {
     ImGui::Dummy(ImVec2(r * 2.0f, ImGui::GetTextLineHeight()));
 }
 
+void textTracked(ImDrawList* dl, ImFont* f, float size, ImVec2 pos,
+                 ImU32 col, const char* txt, float spacing) {
+    for (const char* p = txt; *p != 0; ) {
+        // UTF-8: gom tron mot ky tu truoc khi ve, neu khong chu co dau
+        // (tieng Viet) se bi cat thanh cac byte vo nghia.
+        const char* next = p + 1;
+        while ((*next & 0xC0) == 0x80) ++next;
+
+        char ch[8] = {0};
+        std::memcpy(ch, p, static_cast<size_t>(next - p));
+        dl->AddText(f, size, pos, col, ch);
+        pos.x += f->CalcTextSizeA(size, FLT_MAX, 0.0f, ch).x + spacing;
+        p = next;
+    }
+}
+
+float trackedWidth(ImFont* f, float size, const char* txt, float spacing) {
+    float w = 0.0f;
+    int   n = 0;
+    for (const char* p = txt; *p != 0; ) {
+        const char* next = p + 1;
+        while ((*next & 0xC0) == 0x80) ++next;
+        char ch[8] = {0};
+        std::memcpy(ch, p, static_cast<size_t>(next - p));
+        w += f->CalcTextSizeA(size, FLT_MAX, 0.0f, ch).x;
+        ++n;
+        p = next;
+    }
+    return w + spacing * static_cast<float>(n > 0 ? n - 1 : 0);
+}
+
+void fieldLabel(const char* txt) {
+    pushBold(fs::Tiny);
+    ImGui::PushStyleColor(ImGuiCol_Text, v4(TextDim));
+    ImGui::TextUnformatted(txt);
+    ImGui::PopStyleColor();
+    popFont();
+}
+
 void panelHeader(const char* icon, const char* title, ImU32 accent) {
     ImDrawList* dl = ImGui::GetWindowDrawList();
 
-    const float h  = ImGui::GetFrameHeight() + 6.0f;
+    // So do lay thang tu ban thiet ke dang chay: dai cao 40px, nen
+    // #181818, chu 10px dam gian 1px.
+    const float h  = PanelHeadH;
     const ImVec2 p = ImGui::GetCursorScreenPos();
 
     // Dai nen chay het chieu ngang cua BANG, khong phai chi rong bang chu.
@@ -217,21 +268,18 @@ void panelHeader(const char* icon, const char* title, ImU32 accent) {
     const ImVec2 a(p.x - ImGui::GetStyle().WindowPadding.x, p.y - ImGui::GetStyle().WindowPadding.y);
     const ImVec2 b(a.x + w, a.y + h);
 
-    dl->AddRectFilled(a, b, BgCard);
+    dl->AddRectFilled(a, b, BgHeader);
     dl->AddLine(ImVec2(a.x, b.y - 1.0f), ImVec2(b.x, b.y - 1.0f), Border);
 
-    pushBold(fs::Body);
-    ImGui::SetCursorScreenPos(ImVec2(p.x, a.y + (h - ImGui::GetTextLineHeight()) * 0.5f));
+    float x = p.x;
+    const float ty = a.y + (h - fs::Tiny) * 0.5f - 1.0f;
     if (icon != nullptr && icon[0] != 0) {
-        ImGui::PushStyleColor(ImGuiCol_Text, v4(accent));
-        ImGui::TextUnformatted(icon);
-        ImGui::PopStyleColor();
-        ImGui::SameLine(0.0f, 7.0f);
+        dl->AddText(g_fonts.regular, fs::Body, ImVec2(x, ty - 1.0f), accent, icon);
+        x += 20.0f;
     }
-    ImGui::TextUnformatted(title);
-    popFont();
+    textTracked(dl, g_fonts.bold, fs::Tiny, ImVec2(x, ty), Text, title, 1.0f);
 
-    ImGui::SetCursorScreenPos(ImVec2(p.x, b.y + 8.0f));
+    ImGui::SetCursorScreenPos(ImVec2(p.x, b.y + 10.0f));
 }
 
 bool treeRow(const char* icon, const char* label, int depth,

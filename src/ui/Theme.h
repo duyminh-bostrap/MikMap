@@ -37,16 +37,28 @@ constexpr ImU32 BgSunken  = IM_COL32(0x05, 0x05, 0x05, 0xFF);
 constexpr ImU32 Border    = IM_COL32(0x2A, 0x2A, 0x2A, 0xFF);
 constexpr ImU32 BorderLit = IM_COL32(0x44, 0x44, 0x44, 0xFF);
 
+// Các sắc nền/viền phụ — đo thẳng từ bản thiết kế tham khảo đang chạy
+// (MikMap_Web), không phỏng đoán. Chúng khác BgCard/Border đủ để mắt
+// nhận ra thứ bậc lớp, nên không gộp chung được.
+constexpr ImU32 BgHeader    = IM_COL32(0x18, 0x18, 0x18, 0xFF);  // dải tiêu đề bảng, thẻ con
+constexpr ImU32 BgDock      = IM_COL32(0x14, 0x14, 0x14, 0xFF);  // khay nút đáy cột
+constexpr ImU32 BgInput     = IM_COL32(0x0A, 0x0A, 0x0A, 0xFF);  // ô nhập liệu
+constexpr ImU32 BgButton    = IM_COL32(0x1C, 0x1C, 0x1C, 0xFF);  // nút phụ
+constexpr ImU32 BorderSoft  = IM_COL32(0x22, 0x22, 0x22, 0xFF);  // vạch ngăn mục
+constexpr ImU32 BorderField = IM_COL32(0x33, 0x33, 0x33, 0xFF);  // viền ô nhập / nút phụ
+
 constexpr ImU32 Text      = IM_COL32(0xE0, 0xE0, 0xE0, 0xFF);
 constexpr ImU32 TextDim   = IM_COL32(0x88, 0x88, 0x88, 0xFF);
+constexpr ImU32 TextMuted = IM_COL32(0x77, 0x77, 0x77, 0xFF);
 constexpr ImU32 TextFaint = IM_COL32(0x55, 0x55, 0x55, 0xFF);
 
 // ── Kích thước cố định (theo bản thiết kế) ─────────────────────────────
-constexpr float TopBarH     = 56.0f;   ///< thanh điều hướng trên cùng (h-14 trong mikmap_UI_pug)
+constexpr float TopBarH     = 56.0f;   ///< thanh điều hướng trên cùng (h-14)
 constexpr float ToolBarH    = 42.0f;   ///< thanh công cụ của trang Mapping
+constexpr float PanelHeadH  = 40.0f;   ///< dải tiêu đề của mỗi bảng
 constexpr float BrowserW    = 220.0f;
-constexpr float InspectorW  = 250.0f;
-constexpr float TreeW       = 260.0f;   ///< cây SCREEN SETUP
+constexpr float InspectorW  = 280.0f;  ///< cột THIẾT LẬP SLICE (w-[280px])
+constexpr float TreeW       = 240.0f;  ///< cây SCREEN SETUP (w-[240px])
 constexpr float LayerCtrlW  = 220.0f;  ///< cột điều khiển bên trái mỗi layer
 constexpr float ClipW       = 120.0f;
 constexpr float LayerRowH   = 90.0f;
@@ -109,6 +121,21 @@ void apply();
 
 /// Nhãn mục nhỏ, chữ hoa, màu mờ — "TRANSFORM", "ACTIVE SENSORS".
 void sectionLabel(const char* txt);
+
+/// Nhãn của MỘT ô nhập: 10px đậm, màu #888 — đúng bản thiết kế.
+void fieldLabel(const char* txt);
+
+/// Vẽ chữ có GIÃN CHỮ (letter-spacing) vào một draw list.
+///
+/// ★ ImGui không có letter-spacing. Các nhãn chữ hoa cỡ 10px trong bản
+///   thiết kế đều giãn 1px — không có nó thì chữ hoa nhỏ dính vào nhau và
+///   đọc như một vệt. Vẽ từng ký tự rồi tự cộng thêm bước nhảy là cách
+///   duy nhất tái tạo được.
+void textTracked(ImDrawList* dl, ImFont* f, float size, ImVec2 pos,
+                 ImU32 col, const char* txt, float spacing);
+
+/// Bề rộng của chuỗi khi vẽ bằng textTracked().
+float trackedWidth(ImFont* f, float size, const char* txt, float spacing);
 
 /// Nút tab (thanh trên cùng và các bộ chuyển chế độ).
 /// @param accent màu chữ khi đang chọn

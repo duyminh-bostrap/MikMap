@@ -43,7 +43,10 @@ std::string winTitle(const char* key, const char* id) {
 ///   đặt nhãn BÊN PHẢI widget, nên "Vùng lấy - kích thước" bị cắt mất
 ///   nửa sau — và người dùng không đoán được ô số đó là gì.
 void labelAbove(const char* text) {
-    ImGui::TextUnformatted(text);
+    // Nhan o tren o nhap: 10px dam mau #888, cach o nhap 4px — do thang
+    // tu ban thiet ke tham khao dang chay, khong doan.
+    theme::fieldLabel(text);
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - (ImGui::GetStyle().ItemSpacing.y - 4.0f));
     ImGui::SetNextItemWidth(-FLT_MIN);
 }
 
@@ -205,8 +208,9 @@ void ControlPanel::drawTopBar(const std::string& projectName, EditState& edit,
     // cao rieng.
     const float rowH = ImGui::GetFrameHeight();
 
-    // Le trai/phai thanh dieu huong: px-5 = 20px trong ban thiet ke pug.
-    constexpr float kTopBarPadX = 20.0f;
+    // Le trai/phai thanh dieu huong: px-4 = 16px (do thang tu <header>
+    // cua ban thiet ke tham khao dang chay, khong doan).
+    constexpr float kTopBarPadX = 16.0f;
     ImGui::SetCursorPosX(kTopBarPadX);
     centerV(rowH);
 
@@ -507,96 +511,118 @@ void ControlPanel::drawTopBar(const std::string& projectName, EditState& edit,
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("topbar.lang.tip"));
     }
 
-    // ── Trang thai ben phai ────────────────────────────────────────────
+    // ── Trang thai ben phai — MOT the so lieu duy nhat ─────────────────
     //
-    // FPS va do phan giai dau ra hien THUONG TRUC, khong phai mo bang moi
-    // thay: hai con so nay la thu duy nhat cho biet buoi dien co on khong,
-    // va luc chung tut thi khong ai co thoi gian di tim cho de xem.
+    // ★ Ba so nay LUON duoc doc cung nhau (buoi dien co dang on khong?),
+    //   nen ban thiet ke tham khao gom ca ba vao MOT the co vien, ngan
+    //   nhau bang gach doc mo — khong phai ba manh roi rac. Gom lai thi
+    //   mat chi phai nhay toi MOT cho.
+    //
+    //   FPS va do phan giai dau ra hien THUONG TRUC, khong phai mo bang
+    //   moi thay: luc chung tut thi khong ai co thoi gian di tim cho xem.
     {
-        char fpsBuf[48];
-        std::snprintf(fpsBuf, sizeof(fpsBuf), "FPS: %.1f", s.fps);
+        char fpsVal[24];
+        std::snprintf(fpsVal, sizeof(fpsVal), "%.1f", s.fps);
 
         // ★ Do tre CHI co nghia khi co sensor dang chay — khong bia so
         //   khi chua ket noi gi ca (architecture.md §10.6: do tre phai
         //   duoc DO, khong duoc DOAN).
-        char latBuf[48];
+        char latVal[24];
         if (s.sensorConnected) {
-            std::snprintf(latBuf, sizeof(latBuf), "%s %.1fms", TR("topbar.latency"),
-                          s.sensorLatencyAvgMs);
+            std::snprintf(latVal, sizeof(latVal), "%.1fms", s.sensorLatencyAvgMs);
         } else {
-            std::snprintf(latBuf, sizeof(latBuf), "%s --", TR("topbar.latency"));
+            std::snprintf(latVal, sizeof(latVal), "--");
         }
 
         std::string outBuf = TR("nav.nooutput");
         for (const DisplayEntry& d : m_displays) {
             if (d.index != m_activeOutputDisplay) continue;
             char b[96];
-            std::snprintf(b, sizeof(b), "OUTPUT %d: %dx%d", d.index + 1, d.w, d.h);
+            std::snprintf(b, sizeof(b), "%dx%d", d.w, d.h);
             outBuf = b;
         }
 
+        const char* kFpsLbl = "FPS:";
+        const char* kLatLbl = TR("topbar.latency");
+
+        // px-3 py-1.5 = 12/6px, gap-3 = 12px giua ba nhom, gap-1.5 = 6px
+        // giua nhan va so, cham w-2 h-2 = 8px — so do ban thiet ke.
+        constexpr float kCardPadX = 12.0f, kCardPadY = 6.0f;
+        constexpr float kGrpGap = 12.0f, kLblGap = 6.0f;
+        constexpr float kDotR = 4.0f, kGearW = 30.0f;
+
         // Uoc luong be rong bang CHINH font se dung de ve (mono), khong
-        // phai font mac dinh — neu khong be rong tinh se sai mot chut so
-        // voi chu that, va nhom trang thai ben phai khong khop sat mep
-        // cua so nhu du dinh.
-        theme::pushMono(theme::fs::Small);
-        const float fpsW = ImGui::CalcTextSize(fpsBuf).x + 18.0f;
-        const float latW = ImGui::CalcTextSize(latBuf).x;
-        const float outW = ImGui::CalcTextSize(outBuf.c_str()).x;
+        // phai font mac dinh — neu khong the se khong khop sat mep phai.
+        theme::pushMono(theme::fs::Body);
+        const float wFpsL = ImGui::CalcTextSize(kFpsLbl).x;
+        const float wFpsV = ImGui::CalcTextSize(fpsVal).x;
+        const float wLatL = ImGui::CalcTextSize(kLatLbl).x;
+        const float wLatV = ImGui::CalcTextSize(latVal).x;
+        const float wOut  = ImGui::CalcTextSize(outBuf.c_str()).x;
+        const float lnH   = ImGui::GetTextLineHeight();
         theme::popFont();
 
-        const float gearW  = 30.0f;
-        const float rightW = fpsW + latW + outW + gearW + 64.0f;
+        const float cardW = kCardPadX * 2.0f
+                          + wFpsL + kLblGap + wFpsV + kGrpGap + 1.0f + kGrpGap
+                          + wLatL + kLblGap + wLatV + kGrpGap + 1.0f + kGrpGap
+                          + kDotR * 2.0f + kLblGap + wOut;
+        // Hop chu cua text-xs trong trinh duyet cao 16px, khong phai dung
+        // bang co chu — the do cao 30px. Giu dung con so do.
+        const float cardH = std::max(lnH, 16.0f) + kCardPadY * 2.0f;
 
         ImGui::SameLine();
         ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(),
-                                      ImGui::GetWindowWidth() - rightW));
+                                      ImGui::GetWindowWidth()
+                                      - (cardW + kGearW + 8.0f + kTopBarPadX)));
+        centerV(cardH);
 
-        // ★ So lieu dung font MONO.
-        //
-        //   Chu so cua font ti le co be rong khac nhau, nen mot gia tri
-        //   doi 60 lan/giay se nhay qua nhay lai va rat kho doc luot —
-        //   dung luc can liec nhanh xem fps co tut khong.
-        const bool ok = (s.fps >= 55.0);
+        const ImVec2 c0 = ImGui::GetCursorScreenPos();
+        const ImVec2 c1(c0.x + cardW, c0.y + cardH);
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        dl->AddRectFilled(c0, c1, theme::BgSunken, 8.0f);
+        dl->AddRect(c0, c1, theme::Border, 8.0f);
 
-        // Chip co vien, giong ban thiet ke.
-        {
-            theme::pushMono(theme::fs::Small);
-            centerV(ImGui::GetFrameHeight());
-            const ImVec2 tsz = ImGui::CalcTextSize(fpsBuf);
-            const ImVec2 p0  = ImGui::GetCursorScreenPos();
-            const float  pad = 9.0f;
-            const float  h   = ImGui::GetFrameHeight();
-            ImDrawList* dl = ImGui::GetWindowDrawList();
-            dl->AddRectFilled(p0, ImVec2(p0.x + tsz.x + pad * 2.0f, p0.y + h),
-                              theme::BgSunken, 3.0f);
-            dl->AddRect(p0, ImVec2(p0.x + tsz.x + pad * 2.0f, p0.y + h),
-                        theme::Border, 3.0f);
-            dl->AddText(ImVec2(p0.x + pad, p0.y + (h - tsz.y) * 0.5f),
-                        ok ? theme::Success : theme::Warning, fpsBuf);
-            ImGui::Dummy(ImVec2(tsz.x + pad * 2.0f, h));
-            theme::popFont();
+        // ★ So lieu dung font MONO: chu so cua font ti le co be rong khac
+        //   nhau, nen mot gia tri doi 60 lan/giay se nhay qua nhay lai va
+        //   rat kho doc luot — dung luc can liec xem fps co tut khong.
+        theme::pushMono(theme::fs::Body);
+        float x = c0.x + kCardPadX;
+        const float ty  = c0.y + (cardH - lnH) * 0.5f;
+        const float cyc = c0.y + cardH * 0.5f;
+
+        auto divider = [&]() {
+            dl->AddLine(ImVec2(x, cyc - 6.0f), ImVec2(x, cyc + 6.0f), theme::Border);
+            x += 1.0f + kGrpGap;
+        };
+
+        dl->AddText(ImVec2(x, ty), theme::TextFaint, kFpsLbl);
+        x += wFpsL + kLblGap;
+        dl->AddText(ImVec2(x, ty), (s.fps >= 55.0) ? theme::Success : theme::Warning, fpsVal);
+        x += wFpsV + kGrpGap;
+        divider();
+
+        dl->AddText(ImVec2(x, ty), theme::TextFaint, kLatLbl);
+        x += wLatL + kLblGap;
+        dl->AddText(ImVec2(x, ty),
+                    s.sensorConnected ? theme::Success : theme::TextFaint, latVal);
+        x += wLatV + kGrpGap;
+        divider();
+
+        const bool hasOut = (m_activeOutputDisplay >= 0);
+        const ImVec2 dotC(x + kDotR, cyc);
+        if (hasOut) {
+            dl->AddCircleFilled(dotC, kDotR + 2.5f, theme::alpha(theme::Success, 0.25f), 12);
         }
-
-        ImGui::SameLine(0.0f, 14.0f);
-        centerV(ImGui::GetTextLineHeight());
-        theme::pushMono(theme::fs::Small);
-        ImGui::TextColored(theme::v4(s.sensorConnected ? theme::Success : theme::TextFaint),
-                           "%s", latBuf);
+        dl->AddCircleFilled(dotC, kDotR, hasOut ? theme::Success : theme::TextFaint, 12);
+        x += kDotR * 2.0f + kLblGap;
+        dl->AddText(ImVec2(x, ty), theme::TextDim, outBuf.c_str());
         theme::popFont();
 
-        ImGui::SameLine(0.0f, 18.0f);
-        centerV(ImGui::GetTextLineHeight());
-        theme::statusDot(m_activeOutputDisplay >= 0 ? theme::Success : theme::TextFaint);
-        ImGui::SameLine(0.0f, 6.0f);
-        theme::pushMono(theme::fs::Small);
-        centerV(ImGui::GetTextLineHeight());
-        ImGui::TextDisabled("%s", outBuf.c_str());
-        theme::popFont();
+        ImGui::Dummy(ImVec2(cardW, cardH));
 
-        ImGui::SameLine(0.0f, 12.0f);
+        ImGui::SameLine(0.0f, 8.0f);
         centerV(ImGui::GetFrameHeight());
-        if (theme::tabButton(ICON_LC_SETTINGS_2, m_showSettings, ImVec2(gearW, 0))) {
+        if (theme::tabButton(ICON_LC_SETTINGS_2, m_showSettings, ImVec2(kGearW, 0))) {
             m_showSettings = !m_showSettings;
         }
     }
@@ -1934,9 +1960,15 @@ void ControlPanel::drawMappingView(Project& p, EditState& edit,
     //   tham khao (MikMap_Web AdvancedMappingView).
     if (m_showMapTree) {
         ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::v4(theme::BgPanel));
-        ImGui::BeginChild("##screentree", ImVec2(theme::TreeW, 0), ImGuiChildFlags_Borders);
+        // Cot cay rong 240px, lot 10px — so do ban thiet ke tham khao.
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10, 10));
+        ImGui::BeginChild("##screentree", ImVec2(theme::TreeW, 0),
+                          ImGuiChildFlags_Borders
+                          | ImGuiChildFlags_AlwaysUseWindowPadding);
         {
-            constexpr float kFooterH = 98.0f;
+            // Ba nut cao 30px + khoang cach + vach ngan — dung do cao that
+            // sau khi o nhap chuyen sang chuan 30px cua ban thiet ke.
+            constexpr float kFooterH = 118.0f;
             ImGui::BeginChild("##screentree_scroll", ImVec2(0, -kFooterH));
             drawScreenTree(p, edit, a);
             ImGui::EndChild();
@@ -1957,6 +1989,7 @@ void ControlPanel::drawMappingView(Project& p, EditState& edit,
             }
         }
         ImGui::EndChild();
+        ImGui::PopStyleVar();
         ImGui::PopStyleColor();
         ImGui::SameLine();
     }
@@ -1991,9 +2024,18 @@ void ControlPanel::drawMappingView(Project& p, EditState& edit,
     if (m_showMapSidebar) {
         ImGui::SameLine();
         ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::v4(theme::BgPanel));
-        ImGui::BeginChild("##sliceset", ImVec2(0, 0), ImGuiChildFlags_Borders);
+        // Cot phai rong DUNG 280px, lot 14px — so do ban thiet ke.
+        //
+        // ★ AlwaysUseWindowPadding la BAT BUOC. Thieu no thi ImGui bo qua
+        //   WindowPadding cua child (ngay ca child co vien) va moi o nhap
+        //   tran sat mep cua so — khong con le phai.
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(14, 14));
+        ImGui::BeginChild("##sliceset", ImVec2(theme::InspectorW, 0),
+                          ImGuiChildFlags_Borders
+                          | ImGuiChildFlags_AlwaysUseWindowPadding);
         drawSliceSettings(p, edit, a);
         ImGui::EndChild();
+        ImGui::PopStyleVar();
         ImGui::PopStyleColor();
     }
 
