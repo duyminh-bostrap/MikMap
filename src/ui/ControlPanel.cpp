@@ -251,11 +251,10 @@ void ControlPanel::drawTopBar(const PerfStats& s, UiActions& a) {
                              p0.y + (rowH - ImGui::GetTextLineHeight()) * 0.5f);
         // ★ Chu MIKMAP trong ban thiet ke la font-black (wght 900); font
         //   nang nhat da cat san chi la Bold (700). Gia det chu bang cach
-        //   ve chong 4 lan lech nua-pixel — khong can cat them mot file
-        //   font rieng chi cho MOT dong chu — tang do day net khoang 1.5x
-        //   so voi Bold thuong.
-        for (float dy = 0.0f; dy <= 0.6f; dy += 0.6f) {
-            for (float dx = 0.0f; dx <= 0.6f; dx += 0.6f) {
+        //   ve chong nhieu lan lech nua-pixel theo luoi 3x3 (thay vi 2x2) —
+        //   net day ro ret hon han Bold thuong, gan sat Black.
+        for (float dy = -0.7f; dy <= 0.7f; dy += 0.7f) {
+            for (float dx = -0.7f; dx <= 0.7f; dx += 0.7f) {
                 dl->AddText(ImVec2(textPos.x + dx, textPos.y + dy), textCol, "MIKMAP");
             }
         }
@@ -1196,10 +1195,10 @@ void ControlPanel::drawLayersDeck(Project& p) {
                 }
 
                 if (empty) {
-                    const ImVec2 ts = ImGui::CalcTextSize(ICON_LC_PLUS);
-                    dl->AddText(ImVec2((r0.x + r1.x - ts.x) * 0.5f,
-                                       (r0.y + r1.y - ts.y) * 0.5f),
-                                theme::alpha(theme::TextFaint, 0.9f), ICON_LC_PLUS);
+                    // ★ O rong khong ve gi ca — van bam CHON duoc (xu ly o
+                    //   tren), nhung khong hien dau cong hay noi dung nao,
+                    //   dung nhu ban thiet ke pug (o rong la mot khoang
+                    //   toi tron, khong co "+" giua o).
                 } else {
                     // ── Anh dai dien gia lap: chuyen sac cheo. Chua co thumbnail
                     //   that (phai giai ma mot frame roi thu nho — viec cho
