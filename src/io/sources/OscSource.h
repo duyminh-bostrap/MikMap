@@ -24,6 +24,7 @@
 #include "core/math/Vec2.h"
 #include "io/ISensorSource.h"
 #include "io/proto/OscMessage.h"
+#include "io/proto/TuioDecoder.h"
 
 #include <atomic>
 #include <chrono>
@@ -34,8 +35,21 @@
 
 namespace hexmap {
 
+/// G4 / G14 — hai phương ngữ chạy trên cùng một socket OSC.
+///
+/// ★ Làm thành CHẾ ĐỘ chứ không phải một lớp nguồn riêng, vì phần khó và
+///   dễ sai của một nguồn sensor không nằm ở việc đọc message: nó nằm ở
+///   socket, thread, vòng sự kiện wait-free, và cơ chế hết hạn điểm khi
+///   UDP đánh rơi gói. Chép lại toàn bộ khối đó cho TUIO nghĩa là nhân
+///   đôi chỗ để sai, và sửa lỗi ở một bản sẽ quên bản kia.
+enum class OscProtocol {
+    Hexmap = 0,   ///< phương ngữ riêng: /hexmap/touch[/down|/up|/clear]
+    Tuio,         ///< TUIO 1.1 — /tuio/2Dcur set|alive|fseq
+};
+
 struct OscConfig {
     uint16_t    port = 9000;
+    OscProtocol protocol = OscProtocol::Hexmap;
     std::string addressPrefix = "/hexmap/touch";
 
     /// Toạ độ đến đã chuẩn hoá [0,1]? Nhiều nguồn (TouchDesigner, app
@@ -78,6 +92,9 @@ public:
 private:
     void threadLoop();
     void handleMessages(const std::vector<OscMessage>& msgs);
+
+    /// G14 — nhánh TUIO của handleMessages.
+    void handleTuio(const std::vector<OscMessage>& msgs);
     void publishFrame();
     void expireStalePoints();
     void setError(const std::string& e);
@@ -102,6 +119,9 @@ private:
     // Chỉ thread OSC chạm vào các trường dưới đây (hoặc feedPacket khi
     // đang dừng, trong test). Không cần khoá.
     std::map<uint32_t, LivePoint> m_points;
+
+    /// G14 — chỉ dùng khi protocol == Tuio.
+    TuioDecoder m_tuio;
     uint64_t m_seq = 0;
     std::chrono::steady_clock::time_point m_startTime;
 

@@ -3,6 +3,7 @@
 #include "core/model/ProjectIO.h"
 #include "core/model/WarpCornerPin.h"
 #include "core/model/WarpMesh.h"
+#include "core/model/WarpBezier.h"
 #include "core/util/Json.h"
 
 #include <cstdio>
@@ -435,4 +436,80 @@ TEST_CASE("★ ProjectIO: ghi de len project cu van an toan") {
 
     std::remove(path.c_str());
     std::remove((path + ".tmp").c_str());
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  F10 — warp Bezier phải sống sót qua lưu / nạp
+// ═══════════════════════════════════════════════════════════════════════
+
+// ★ Khong co test nay thi F10 la mot tinh nang BAY: nguoi van hanh uon
+//   mat cong cho khop cot tron mat nua tieng, bam Luu, mo lai va thay
+//   moi thu ve hinh chu nhat. Loi kieu do khong lam sap gi ca — no chi
+//   lang le nuot cong viec.
+TEST_CASE("★ F10: warp Bezier song sot qua luu / nap") {
+    const std::string path = "hexmap_test_bezier.hexmap";
+
+    Project a;
+    a.composition = Composition(1, 1, 1);
+    Screen sc(0, "Projector 1", Vec2{1920.0, 1080.0});
+    sc.addFullScreenSlice(a.composition.canvasSize);
+    sc.slices[0].convertWarp(WarpType::Bezier);
+
+    auto* b0 = static_cast<WarpBezier*>(sc.slices[0].warp());
+    for (int cy = 0; cy < WarpBezier::kDim; ++cy) {
+        for (int cx = 0; cx < WarpBezier::kDim; ++cx) {
+            const Vec2 p = b0->controlPoint(cx, cy);
+            b0->setControlPoint(cx, cy, Vec2{p.x + cx * 11.0, p.y - cy * 7.0});
+        }
+    }
+    a.screens.push_back(std::move(sc));
+
+    std::string err;
+    REQUIRE(projectio::save(path, a, err));
+
+    Project b;
+    const LoadResult r = projectio::load(path, b);
+    REQUIRE(r.ok);
+    REQUIRE(b.screens.size() == 1u);
+    REQUIRE(b.screens[0].sliceCount() == 1);
+
+    const IWarp* w = b.screens[0].slices[0].warp();
+    REQUIRE(w != nullptr);
+    REQUIRE(w->type() == WarpType::Bezier);
+    REQUIRE(w->controlPointCount() == WarpBezier::kPointCount);
+
+    for (int i = 0; i < WarpBezier::kPointCount; ++i) {
+        const Vec2 want = b0->controlPointAt(i);
+        const Vec2 got  = w->controlPointAt(i);
+        CHECK_NEAR(got.x, want.x, 1e-9);
+        CHECK_NEAR(got.y, want.y, 1e-9);
+    }
+
+    std::remove(path.c_str());
+    std::remove((path + ".tmp").c_str());
+}
+
+// File sua tay thieu diem: phai canh bao va dung mat phang mac dinh,
+// KHONG duoc nhet bua so diem co duoc thanh mot hinh dang rac.
+TEST_CASE("F10: Bezier thieu diem -> canh bao, dung mat phang mac dinh") {
+    const char* text = R"({
+      "version": 1,
+      "screens": [{
+        "name": "S", "resolution": [1920, 1080],
+        "slices": [{
+          "name": "sl",
+          "warp": { "type": "Bezier", "points": [[0,0],[1,0],[2,0]] }
+        }]
+      }]
+    })";
+
+    Project b;
+    const LoadResult r = projectio::fromJson(text, b);
+    REQUIRE(r.ok);
+    REQUIRE(!r.warnings.empty());
+    REQUIRE(b.screens.size() == 1u);
+
+    const IWarp* w = b.screens[0].slices[0].warp();
+    REQUIRE(w->type() == WarpType::Bezier);
+    CHECK(w->isInvertible());       // ★ van dung duoc, khong phai hinh rac
 }

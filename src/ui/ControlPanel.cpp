@@ -6,6 +6,7 @@
 
 #include "core/model/WarpCornerPin.h"
 #include "core/model/WarpMesh.h"
+#include "core/math/Snapping.h"
 
 #include <algorithm>
 #include <cfloat>
@@ -1355,6 +1356,14 @@ void ControlPanel::drawMapToolbar(Project& p, EditState& edit, UiActions& a) {
     }
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("mask.edit.tip"));
 
+    // F21 — nam canh hai cong cu kia vi no cung la mot CHE DO cua thao tac
+    // keo, khong phai mot lenh chay mot lan.
+    ImGui::SameLine(0.0f, 4.0f);
+    if (theme::iconButton(ICON_LC_MAGNET, m_snapEnabled, theme::Success)) {
+        m_snapEnabled = !m_snapEnabled;
+    }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("tool.snap.tip"));
+
     ImGui::SameLine(0.0f, 12.0f);
     {
         char lbl[64];
@@ -1828,6 +1837,46 @@ void ControlPanel::drawScreenPanel(Project& p, EditState& edit, UiActions& a) {
     ImGui::Separator();
     ImGui::TextWrapped(TR("adv.selected"), s.name.c_str());
 
+    // ── F22: lấy nội dung từ đâu ───────────────────────────────────────
+    {
+        const int layerCount = p.composition.layerCount();
+
+        int kind = (s.sourceKind == Slice::SourceKind::Layer) ? 1 : 0;
+        const char* kinds[] = {TR("adv.src.comp"), TR("adv.src.layer")};
+        labelAbove(TR("adv.source"));
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        if (ImGui::Combo("##srckind", &kind, kinds, 2)) {
+            s.sourceKind = (kind == 1) ? Slice::SourceKind::Layer
+                                       : Slice::SourceKind::Composition;
+            // Lần đầu chọn Layer mà chưa có chỉ số thì lấy layer trên
+            // cùng — đó là layer người dùng hay đang làm việc nhất.
+            if (s.sourceKind == Slice::SourceKind::Layer && s.sourceLayer < 0) {
+                s.sourceLayer = std::max(0, layerCount - 1);
+            }
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("adv.source.tip"));
+
+        if (s.sourceKind == Slice::SourceKind::Layer) {
+            int layer = std::clamp(s.sourceLayer, 0, std::max(0, layerCount - 1));
+            labelAbove(TR("adv.src.which"));
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            if (ImGui::DragInt("##srclayer", &layer, 0.1f, 0,
+                               std::max(0, layerCount - 1))) {
+                s.sourceLayer = layer;
+            }
+
+            // ★ Cảnh báo khi chỉ số trỏ vào layer không còn tồn tại.
+            //   Không có dòng này thì slice lặng lẽ lùi về composition và
+            //   người vận hành thấy "nó chiếu nhầm hình" mà không hiểu vì
+            //   sao — trong khi nguyên nhân chỉ là đã xoá bớt layer.
+            if (s.effectiveSourceLayer(layerCount) < 0) {
+                ImGui::PushStyleColor(ImGuiCol_Text, theme::v4(theme::Warning));
+                ImGui::TextWrapped("%s", TR("adv.src.missing"));
+                ImGui::PopStyleColor();
+            }
+        }
+    }
+
     // F4 — vùng lấy trên canvas
     float ox[2] = {static_cast<float>(s.inputOrigin.x), static_cast<float>(s.inputOrigin.y)};
     labelAbove(TR("adv.inputorigin"));
@@ -1842,13 +1891,19 @@ void ControlPanel::drawScreenPanel(Project& p, EditState& edit, UiActions& a) {
     theme::popFont();
     if (insz) s.inputSize = Vec2{std::max(1.0f, sz[0]), std::max(1.0f, sz[1])};
 
-    // Đổi loại warp
-    int warpType = (s.warp()->type() == WarpType::Mesh) ? 1 : 0;
-    const char* warpNames[] = {"Corner pin", "Mesh"};
+    // Đổi loại warp. Thứ tự PHẢI khớp với AppController::applyUiActions.
+    int warpType = 0;
+    switch (s.warp()->type()) {
+    case WarpType::Mesh:   warpType = 1; break;
+    case WarpType::Bezier: warpType = 2; break;
+    default:               warpType = 0; break;
+    }
+    const char* warpNames[] = {"Corner pin", "Mesh", "Bezier"};
     labelAbove(TR("adv.warptype"));
-    if (ImGui::Combo("##warptype", &warpType, warpNames, 2)) {
+    if (ImGui::Combo("##warptype", &warpType, warpNames, 3)) {
         a.convertWarpTo = warpType;
     }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("adv.warptype.tip"));
     char rlbl[64];
     std::snprintf(rlbl, sizeof(rlbl), "%s  %s", ICON_LC_ROTATE_CCW, TR("adv.reset"));
     if (ImGui::Button(rlbl, ImVec2(-FLT_MIN, 0))) a.resetActiveSliceWarp = true;
@@ -2070,9 +2125,11 @@ void ControlPanel::drawSensorPanel(Project& p, const PerfStats& s, UiActions& a)
     static int sensorType = 0;
     // Cot nay chi rong 300px: nhan len tren, nut chiem het be ngang.
     // Xep ngang ca combo + nhan + nut + trang thai thi dong bi cat.
-    const char* types[] = {TR("sen.type.mock"), TR("sen.type.osc")};
+    // Thu tu PHAI khop voi AppController::startSensor: 0 mock, 1 OSC, 2 TUIO.
+    const char* types[] = {TR("sen.type.mock"), TR("sen.type.osc"),
+                           TR("sen.type.tuio")};
     labelAbove(TR("sen.source"));
-    if (ImGui::Combo("##sensrc", &sensorType, types, 2)) a.sensorTypeIndex = sensorType;
+    if (ImGui::Combo("##sensrc", &sensorType, types, 3)) a.sensorTypeIndex = sensorType;
 
     if (s.sensorConnected) {
         char lbl[64];
@@ -2860,6 +2917,72 @@ void ControlPanel::drawMappingEditor(Project& p, EditState& edit,
         const double limY = sc.resolution.y * 0.5;
         target.x = std::clamp(target.x, -limX, sc.resolution.x + limX);
         target.y = std::clamp(target.y, -limY, sc.resolution.y + limY);
+
+        // ── F21: hut ve duong gion ─────────────────────────────────────
+        //
+        // ★ Giu ALT de TAM TAT hut. Bat buoc phai co: khi hai moc nam sat
+        //   nhau, co dung mot vi tri chi cach moc vai pixel la viec that —
+        //   vd co y de ho mot khe 3px giua hai slice. Khong co duong thoat
+        //   thi nguoi dung phai tat hut o bang thuoc tinh roi bat lai, va
+        //   giua buoi dien thi khong ai lam vay.
+        const bool bypass = ImGui::GetIO().KeyAlt;
+        if (m_snapEnabled && !bypass) {
+            std::vector<double> gx, gy;
+
+            // Moc 1 — khung may chieu: hai mep va duong giua.
+            gx.push_back(0.0);
+            gx.push_back(sc.resolution.x);
+            gx.push_back(sc.resolution.x * 0.5);
+            gy.push_back(0.0);
+            gy.push_back(sc.resolution.y);
+            gy.push_back(sc.resolution.y * 0.5);
+
+            // Moc 2 — diem dieu khien CUA CAC SLICE KHAC. Day moi la moc
+            // hay dung nhat: ghep hai may chieu thi mep phai cua slice nay
+            // phai trung mep trai cua slice kia toi tung pixel.
+            for (int si = 0; si < sc.sliceCount(); ++si) {
+                if (si == edit.activeSliceIndex) continue;
+                const IWarp* ow = sc.slices[static_cast<std::size_t>(si)].warp();
+                if (ow == nullptr) continue;
+                for (int k = 0; k < ow->controlPointCount(); ++k) {
+                    const Vec2 q = ow->controlPointAt(k);
+                    gx.push_back(q.x);
+                    gy.push_back(q.y);
+                }
+            }
+
+            // Moc 3 — cac diem KHAC cua chinh slice nay, tru diem dang keo.
+            for (int k = 0; k < n; ++k) {
+                if (k == m_mapDragPoint) continue;
+                const Vec2 q = w->controlPointAt(k);
+                gx.push_back(q.x);
+                gy.push_back(q.y);
+            }
+
+            // ★ Nguong tinh theo PIXEL MAN HINH roi doi ve don vi output.
+            //   Do chinh xac cua ban tay la hang so theo pixel man hinh;
+            //   neu nguong tinh theo don vi output thi thu nho khung nhin
+            //   se lam hut khong bao gio an, con phong to thi hut loan xa.
+            const double thr = snapThresholdFor(8.0, static_cast<double>(scale));
+            const SnapResult snapped = snapPoint(target, gx, gy, thr);
+            target = snapped.position;
+
+            // Ve duong gion dang hut, de nguoi dung THAY minh thang hang
+            // voi cai gi — khong co no thi diem tu nhien "dinh" lai mot
+            // cach kho hieu.
+            if (snapped.snappedX) {
+                const float sx = toWidget(Vec2{snapped.guideX, 0.0}).x;
+                dl->AddLine(ImVec2(sx, origin.y),
+                            ImVec2(sx, origin.y + drawH),
+                            theme::alpha(theme::Warning, 0.75f), 1.0f);
+            }
+            if (snapped.snappedY) {
+                const float sy = toWidget(Vec2{0.0, snapped.guideY}).y;
+                dl->AddLine(ImVec2(origin.x, sy),
+                            ImVec2(origin.x + drawW, sy),
+                            theme::alpha(theme::Warning, 0.75f), 1.0f);
+            }
+        }
 
         w->setControlPointAt(m_mapDragPoint, target);
     }

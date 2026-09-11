@@ -102,4 +102,28 @@ bool Screen::outputToCanvas(const Vec2& outputPx,
     return true;
 }
 
+// ── F22 ────────────────────────────────────────────────────────────────
+
+std::vector<int> layersUsedAsSource(const std::vector<Screen>& screens,
+                                    int layerCount) {
+    std::vector<int> out;
+    for (const Screen& sc : screens) {
+        // ★ KHÔNG lọc theo `sc.enabled` hay `isSliceVisible()`.
+        //
+        //   Nghe thì hợp lý là bỏ qua screen đang tắt cho đỡ tốn. Nhưng
+        //   hậu quả là bật screen lên giữa buổi diễn thì layer nguồn của
+        //   nó chưa được nướng ở frame đó — máy chiếu loé một frame đen
+        //   rồi mới có hình. Giữ nguyên FBO cho cả slice đang tắt đắt hơn
+        //   một chút, và đổi lại là bật/tắt không bao giờ chớp.
+        for (const Slice& s : sc.slices) {
+            const int layer = s.effectiveSourceLayer(layerCount);
+            if (layer >= 0) out.push_back(layer);
+        }
+    }
+
+    std::sort(out.begin(), out.end());
+    out.erase(std::unique(out.begin(), out.end()), out.end());
+    return out;
+}
+
 } // namespace hexmap

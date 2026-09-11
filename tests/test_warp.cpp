@@ -69,6 +69,57 @@ TEST_CASE("pointInQuad: trong / ngoai") {
     REQUIRE(!pointInQuad(a, b, c, d, Vec2{50, -10}));
 }
 
+// ★ Diem nam DUNG TREN duong cheo p00-p11 tung bi tu choi.
+//
+//   Tich co huong doc duong cheo bang 0 ve mat toan hoc, nhung dau phay
+//   dong tra ve nhieu co 1e-13 — co the AM trong khi hai so kia duong.
+//   So dau chat voi 0 thi CA HAI tam giac deu noi "nam ngoai", va tu giac
+//   tu choi mot diem nam chinh giua no.
+//
+//   Khong phai chuyen ly thuyet: TAM cua o hinh binh hanh nam dung tren
+//   duong cheo, ma luoi warp phang hoac uon deu thi moi o deu la hinh
+//   binh hanh. Hau qua la mot VET CHAM CHET chay cheo qua tung o luoi.
+TEST_CASE("★ pointInQuad: diem tren duong cheo van tinh la NAM TRONG") {
+    // Hinh vuong: tam (50,50) nam dung tren ca hai duong cheo.
+    const Vec2 a{0, 0}, b{100, 0}, c{100, 100}, d{0, 100};
+    REQUIRE(pointInQuad(a, b, c, d, Vec2{50, 50}));
+
+    // Hinh binh hanh xien — dung hinh dang ma luoi uon sinh ra.
+    const Vec2 e{250.0, 335.0}, f{400.0, 335.0},
+               g{400.0, 460.62177826491069}, h{250.0, 460.62177826491069};
+    const Vec2 center{(e.x + g.x) * 0.5, (e.y + g.y) * 0.5};
+    REQUIRE(pointInQuad(e, f, g, h, center));
+
+    // Toa do RAT LON: nguong phai theo ti le, hang so tuyet doi se sai o day.
+    const Vec2 p{1.0e6, 1.0e6}, q{2.0e6, 1.0e6},
+               r{2.0e6, 2.0e6}, s{1.0e6, 2.0e6};
+    REQUIRE(pointInQuad(p, q, r, s, Vec2{1.5e6, 1.5e6}));
+
+    // Va van phai TU CHOI diem that su nam ngoai, ngay sat canh.
+    REQUIRE(!pointInQuad(a, b, c, d, Vec2{101.0, 50.0}));
+}
+
+// ★ Cung mot loi, nhung o muc WarpMesh: tam cua MOI o phai nghich dao duoc.
+//   Day moi la thu nguoi dung cham vao — inverse() la duong sensor -> noi dung.
+TEST_CASE("★ Mesh: tam cua moi o deu nghich dao duoc") {
+    WarpMesh m(4, 3, Vec2{0.0, 0.0}, Vec2{800.0, 600.0});
+
+    int checked = 0;
+    for (int cy = 0; cy < 3; ++cy) {
+        for (int cx = 0; cx < 4; ++cx) {
+            const Vec2 uv{(cx + 0.5) / 4.0, (cy + 0.5) / 3.0};
+            const Vec2 px = m.forward(uv);
+
+            Vec2 back;
+            REQUIRE(m.inverse(px, back));
+            CHECK_NEAR(back.x, uv.x, 1e-9);
+            CHECK_NEAR(back.y, uv.y, 1e-9);
+            ++checked;
+        }
+    }
+    REQUIRE(checked == 12);
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 //  WarpCornerPin
 // ═══════════════════════════════════════════════════════════════════════

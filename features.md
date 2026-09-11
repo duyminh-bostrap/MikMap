@@ -232,6 +232,317 @@ toàn. `ofxHapPlayer::getShader()` tồn tại chính vì việc này: nó trả
 Đã sửa: gọi `getShader()` và bind nếu khác null. File demo mặc định là
 `4k_detail_hap_q.mov` nên lỗi này ảnh hưởng trực tiếp.
 
+### ⚠️ Đính chính bảng F (2026-09-10)
+
+Bảng F trước đây tick `[x]` cho **sáu mục chưa có dòng code nào**. Đã kiểm
+lại từng mục bằng cách tìm trong source và bỏ tick:
+
+| Mục | Bằng chứng |
+|---|---|
+| F18 Polygon slice | `WarpType` chỉ có `CornerPin`, `Mesh`, `Bezier` |
+| F21 Snapping | không có gì trong `core/` lẫn `ui/` (chỉ có `PixelSnapH` của font ImGui, không liên quan). **→ đã làm, xem mục F21 bên dưới** |
+| F22 Slice input từ Layer | `Slice` chỉ có `inputOrigin`/`inputSize` — một hình chữ nhật trên canvas, không có trường chọn nguồn. **→ đã làm nửa Layer, xem mục F22 bên dưới** |
+| F23 Spout / NDI | `ScreenOutputType` có sẵn hai giá trị enum nhưng **không nơi nào dùng tới**; `render/` và `app/` không nhắc đến |
+| F24 Art-Net / sACN | không có |
+| F25 SDI | không có |
+
+★ Một bảng tick sai còn tệ hơn không có bảng: nó khiến người lập kế hoạch
+tin là đã xong và không phân bổ thời gian, rồi vỡ ra vào lúc dựng sân khấu.
+
+### 🟢 F10 — Bezier warping (ĐÃ XONG THẬT, 2026-09-10)
+
+Mặt Bézier song bậc ba 4×4 (16 điểm điều khiển) cho bề mặt cong THẬT:
+cột tròn, vòm, tượng, vải rủ.
+
+**Vì sao cần, khi đã có mesh:** mesh nội suy song tuyến tính từng ô nên
+đạo hàm gãy ở biên ô — chiếu lên cột tròn thấy rõ vệt gấp chạy dọc đường
+lưới. Muốn giấu phải tăng mật độ lưới rất cao, và khi đó người vận hành
+phải kéo hàng trăm điểm. Bézier cho bề mặt trơn tuyệt đối với 16 điểm.
+
+**Nghịch đảo** (đường đi của điểm chạm sensor — architecture.md §10.3)
+không có dạng đóng, nên làm hai bước: đoán thô trên lưới mẫu 8×8 rồi nắn
+bằng Newton với Jacobian giải tích.
+
+| Kiểm chứng | Kết quả |
+|---|---|
+| Round-trip trên mặt cong, 3721 điểm | **3721/3721**, sai số lớn nhất **8.88e-16** (≈ 4 ULP) |
+| Bốn góc sau khi uốn | khớp chính xác (Bernstein nội suy hai đầu) |
+| Bề mặt gấp | `isInvertible()` báo false → UI hiện cảnh báo đỏ |
+| Lưu / nạp `.hexmap` | 16 điểm sống sót nguyên vẹn |
+| Đổi từ CornerPin/Mesh sang Bezier | giữ **nguyên bốn góc** đã căn |
+
+**Kết quả:** `333/333 test xanh · 5250 assertion`
+
+### 🐞 Lỗi có sẵn tìm được khi làm F10
+
+Test `Mesh: round-trip trên lưới ĐÃ BIẾN DẠNG` hỏng từ lâu, hoá ra không
+phải sai số vặt mà là **lỗi thật**: `pointInQuad` so dấu tích có hướng với
+0 **không dung sai**, nên điểm nằm đúng trên đường chéo ô lưới bị từ chối.
+Mà tâm hình bình hành nằm đúng trên đường chéo, và lưới warp phẳng hoặc
+uốn đều thì **mọi ô đều là hình bình hành** ⇒ một **vệt chạm chết chạy
+chéo qua từng ô**: chạm đúng đó không phản ứng, lệch một pixel lại chạy.
+
+Đo được: `d3 = -6.82e-13` trong khi hai giá trị kia là `+7.5e+03`.
+
+Đã sửa bằng ngưỡng **theo tỉ lệ** độ lớn tam giác (tích có hướng có đơn vị
+diện tích nên hằng số tuyệt đối sẽ sai với lưới toạ độ lớn hoặc nhỏ).
+Chỉ ảnh hưởng `WarpMesh`; `WarpCornerPin` dùng nghịch đảo homography.
+
+### 🟢 F22 — Slice lấy nội dung từ một Layer riêng (2026-09-10)
+
+`[~]` chứ không phải `[x]`: **nửa Layer đã xong, nửa Group chờ A13** (Group
+chưa tồn tại trong model, xem mục "Xây tiếp").
+
+**Vấn đề F22 giải:** trước đây mọi slice đều lấy từ Composition đã trộn —
+đúng khi nhiều máy chiếu ghép thành MỘT bề mặt lớn. Nhưng khi các bề mặt
+độc lập nhau (màn sau lưng DJ chạy nội dung này, hai cột hai bên chạy nội
+dung khác) thì cách duy nhất trước đây là xếp nội dung vào các góc khác
+nhau của canvas rồi cắt ra — tức là phải dựng nội dung theo đúng bố cục
+sân khấu, và không đổi được nữa.
+
+**Ba quyết định đáng ghi lại:**
+
+★ **Chỉ số trỏ vào layer đã xoá thì LÙI VỀ Composition, không cho ra màn
+đen.** Người dùng trỏ slice vào Layer 3 rồi xoá bớt layer là chuyện thường.
+Màn đen im lặng là kiểu hỏng tệ nhất trong buổi diễn — không thông báo,
+không log, chỉ một máy chiếu tắt ngóm. Lùi về composition vẫn sai ý người
+dùng nhưng **sai thấy được**, và UI hiện cảnh báo vàng ngay cạnh ô chọn.
+
+★ **Chỉ nướng FBO cho layer THẬT SỰ có slice dùng tới** (`layersUsedAsSource`).
+Mỗi FBO ở 4K là ~32 MB VRAM cộng một lần clear + vẽ mỗi frame; nướng cho
+mọi layer là cách chắc chắn làm tụt fps vì một tính năng đa số project
+không dùng. Bộ đệm không còn ai dùng được giải phóng ngay trong frame đó.
+
+★ **Slice/screen đang TẮT vẫn giữ bộ đệm.** Bỏ qua cho đỡ tốn nghe hợp lý,
+nhưng hậu quả là bật lên giữa buổi diễn thì layer nguồn chưa được nướng ở
+frame đó — máy chiếu loé một frame đen rồi mới có hình.
+
+Và trong bộ đệm riêng, clip được vẽ bằng **alpha thường chứ không dùng
+blend mode của layer**: blend mode mô tả cách hoà với layer BÊN DƯỚI, mà
+trong bộ đệm riêng thì không có gì bên dưới.
+
+**Kiểm chứng:** `345/345 test xanh` — 12 test riêng cho F22, gồm chỉ số
+rác, gom layer từ nhiều screen, và file bản cũ thiếu khoá phải ra
+Composition chứ không thành Layer với chỉ số rác.
+
+⚠️ Phần `render/` (nướng FBO theo layer) **chưa được biên dịch** — máy đang
+làm không có openFrameworks. Phải build trên Windows để xác nhận.
+
+### 🟢 F21 — Hút điểm về đường gióng khi kéo (2026-09-10)
+
+Căn mép slice bằng mắt tới từng pixel là việc vừa lâu vừa không bao giờ
+chính xác — mà sai một pixel ở khe ghép hai máy chiếu là một vệt sáng
+hoặc vệt tối chạy dọc suốt buổi diễn.
+
+**Mốc hút:** mép và đường giữa khung máy chiếu · điểm điều khiển của các
+slice KHÁC (mốc hay dùng nhất khi ghép nhiều máy) · các điểm khác của
+chính slice đang kéo.
+
+**Ba quyết định làm nên hay dở của tính năng này:**
+
+★ **Ngưỡng tính theo PIXEL MÀN HÌNH, không phải đơn vị output.** Độ chính
+xác của bàn tay là hằng số theo pixel màn hình. Nếu ngưỡng tính theo đơn
+vị output thì khi thu nhỏ khung nhìn, ngưỡng "8 đơn vị" chỉ còn 2 pixel
+trên màn — hút gần như không bao giờ ăn; phóng to thì nó thành 40 pixel và
+hút loạn xạ. `snapThresholdFor(px, zoom)` chia ngược lại cho hệ số phóng.
+
+★ **Hai trục hút độc lập.** Chỉ hút khi cả x lẫn y cùng khớp thì gần như
+không bao giờ kích hoạt — người dùng hay muốn "thẳng cột với góc kia" mà
+chiều còn lại thì tuỳ ý.
+
+★ **Chọn đường GẦN NHẤT, không phải đường đầu tiên trong ngưỡng.** Khi
+nhiều mốc nằm sát nhau, lấy đường đầu tiên nghĩa là kết quả phụ thuộc thứ
+tự trong mảng — người dùng không đoán được nó sẽ hút vào đâu.
+
+**Giữ ALT để tạm tắt trong lúc kéo.** Bắt buộc phải có: cố ý để hở một khe
+3px giữa hai slice là việc thật, và không có đường thoát thì người dùng
+phải tắt hút ở thanh công cụ rồi bật lại — giữa buổi diễn thì không ai làm
+vậy. Đường gióng đang hút được vẽ ra màu vàng, để người dùng THẤY mình
+thẳng hàng với cái gì.
+
+**Kiểm chứng:** `357/357 test xanh` — 12 test riêng cho F21, gồm mốc NaN
+(warp suy biến lọt vào danh sách) không được làm hỏng cả phép hút, và
+ngưỡng phải đổi theo hệ số phóng.
+
+⚠️ Phần nối vào thao tác kéo nằm ở `ui/` nên **chưa được biên dịch**.
+
+### ⚠️ Đính chính bảng G (2026-09-10)
+
+Kiểm lại bằng source: trong `src/io/sources/` chỉ có **đúng hai** nguồn —
+`MockSource` và `OscSource`. Mọi nhắc tới TUIO / Kinect / Arduino / LiDAR
+trước đây **chỉ nằm trong ghi chú**, không có lớp nào cả.
+
+| Mục | Bằng chứng |
+|---|---|
+| G3 Serial / Arduino | không có lớp nguồn nào; chỉ được nhắc trong ghi chú của `OscSource.h`. **→ đã làm phần giao thức, xem mục G3 bên dưới** |
+| G15 Kinect / Femto | không có; `Kinect` chỉ xuất hiện trong ghi chú giải thích của 5 file |
+| G16 Ghi log + replay | không có lớp ghi/phát lại phiên sensor. **→ đã làm phần lõi, xem mục G16 bên dưới** |
+| G18 Nhiều sensor cho nhiều screen | `AppController` hardcode `calibrations[0]` ở **6 chỗ** — một sensor duy nhất. **→ đã làm, xem mục G18 bên dưới** |
+| G19 LiDAR (Livox / Ouster) | không có |
+
+### 🟢 G14 — Nguồn TUIO (2026-09-10)
+
+TUIO là thứ hầu hết phần mềm tracking nói: Community Core Vision, các bộ
+theo dõi LiDAR thương mại, khung IR, ứng dụng multitouch. Nói được TUIO
+nghĩa là **cắm được vào phần lớn hệ thống có sẵn mà không phải viết driver
+riêng cho từng loại**.
+
+**Làm thành CHẾ ĐỘ của `OscSource`, không phải lớp nguồn riêng.** Phần khó
+và dễ sai của một nguồn sensor không nằm ở việc đọc message — nó nằm ở
+socket, thread, vòng sự kiện wait-free, và cơ chế hết hạn điểm khi UDP
+đánh rơi gói. Chép lại toàn bộ khối đó cho TUIO nghĩa là nhân đôi chỗ để
+sai, và sửa lỗi ở một bản sẽ quên bản kia.
+
+**Hai điểm chết người của giao thức, đều đã khoá bằng test:**
+
+★ **TUIO không có message "nhấc tay".** Cách duy nhất biết một điểm biến
+mất là nó **vắng mặt trong `alive`** của frame kế. Ai chỉ xử lý `set` sẽ
+có bộ theo dõi mà điểm không bao giờ chết — chạm rồi nhấc tay, dấu chạm
+nằm đó mãi. Trong tác phẩm tương tác đó là hiệu ứng kẹt cứng tới khi khởi
+động lại.
+
+★ **UDP không bảo đảm thứ tự.** Gói đến muộn mang trạng thái cũ; áp vào sẽ
+làm điểm nhảy giật về sau rồi nhảy tới. Triệu chứng là hiệu ứng "rung" mà
+đổi bộ lọc bao nhiêu cũng không hết — vì nguyên nhân không nằm ở nhiễu.
+`fseq` cho biết frame nào mới hơn; frame cũ bị bỏ (và `set` của nó cũng bị
+dọn, nếu không sẽ rò sang frame kế thành điểm ma).
+
+Thêm hai chi tiết nhỏ nhưng thật: điểm **đứng yên** chỉ xuất hiện trong
+`alive` không kèm `set` (bên gửi chỉ gửi khi có thay đổi) nên phải nhớ vị
+trí cũ; và id lạ trong `alive` mà chưa từng thấy `set` thì **bỏ qua chứ
+không bịa (0,0)** — góc trên-trái là toạ độ hợp lệ, điểm ma ở đó trông y
+như cú chạm thật và sẽ kích hoạt trigger zone.
+
+Cổng mặc định **3333** theo quy ước TUIO (khác 9000 của phương ngữ Hexmap):
+phần lớn bộ tracking chỉ cho đổi địa chỉ, không cho đổi cổng.
+
+**Kiểm chứng:** `376/376 test xanh` — 19 test cho G14, trong đó có bài
+dựng **gói UDP đúng byte** (bundle: set + alive + fseq) chạy qua cả
+`parseOscPacket` lẫn `TuioDecoder` lẫn `OscSource`, và bài chứng minh nhấc
+tay sinh sự kiện `Up` **ngay** chứ không đợi hết hạn 1 giây.
+
+### 🟢 G16 — Ghi log & phát lại phiên sensor (2026-09-10)
+
+`[~]`: **lõi xong** (định dạng, ghi, đọc, chọn gói tới hạn) — còn phần nối
+vào UI để bấm nút ghi/phát lại lúc đang chạy.
+
+**Vấn đề nó giải:** lỗi sensor gần như không bao giờ tái hiện được ở bàn
+làm việc. Nó xảy ra lúc 11 giờ đêm, giữa buổi diễn, với đúng cái LiDAR đó,
+đúng cách người ta bước qua vùng quét đó. Hôm sau mở máy ra thì mọi thứ
+chạy hoàn hảo. Ghi lại gói thô nghĩa là **mang được nguyên hiện trường về**.
+
+★ **Ghi GÓI THÔ, không ghi `SensorFrame` đã xử lý.** Ghi frame thì chỉ
+phát lại được phần SAU bộ giải mã — mà phần lớn lỗi nằm đúng ở đó: gói dị
+dạng, thứ tự đảo, id trùng, `alive` thiếu. Byte thô giữ được đúng thứ
+người thật đã gửi, kể cả những gói mà bản hiện tại còn đang hiểu sai.
+Đổi lại file to hơn (~60 MB cho 2 giờ ở 40 Hz), không đáng để đánh đổi.
+
+★ **Mốc thời gian là ĐỘ LỆCH, không phải giờ tuyệt đối** — file phát lại
+được ở bất kỳ thời điểm nào, và không vô tình mang theo thông tin lúc nào
+ở đâu.
+
+★ **File cụt vì mất điện vẫn đọc được phần lành**, kèm cảnh báo — và đó
+chính là loại phiên hay cần xem lại nhất. Vứt cả file là vứt đúng bằng
+chứng mình cần.
+
+★ **Trần 64 KB cho một gói.** File hỏng khai độ dài 4 tỉ byte sẽ làm
+`resize()` cố cấp phát 4 GB — chương trình chết vì hết bộ nhớ khi người
+dùng chỉ định *mở* một file. Đọc file là chỗ dữ liệu KHÔNG đáng tin, kể cả
+khi chính mình đã ghi nó ra.
+
+★ **`collectDuePackets` bơm được NHIỀU gói mỗi lần gọi.** Sensor 40 Hz với
+render 60 fps thường là một gói mỗi frame, nhưng chỉ cần một lần khựng
+(nạp media, đổi cửa sổ) là dồn hàng chục gói. Bơm mỗi lần một gói thì bản
+phát lại tụt hậu dần và không bao giờ đuổi kịp — mất đúng tính chất quan
+trọng nhất của replay.
+
+**Kiểm chứng:** `386/386 test xanh` — 10 test cho G16, gồm bài chạy **cả
+vòng**: ghi một phiên → đọc lại → bơm vào `OscSource` thật đúng mốc thời
+gian → ra đúng điểm chạm. (`OscSource::feedPacket` tồn tại sẵn cho việc
+này từ đầu, chỉ chưa ai xây phần còn lại.)
+
+### 🟢 G3 — Phương ngữ Serial cho Arduino (2026-09-10)
+
+`[~]`: **phần giao thức xong** (thứ quyết định firmware chạy được hay
+không) — còn phần mở cổng serial, cần API riêng của từng hệ điều hành.
+
+**Phương ngữ:** `T <id> <x> <y>` · `U <id>` · `C`
+
+★ **ASCII từng dòng, không phải nhị phân.** Nhị phân gọn hơn, nhưng thứ
+quyết định một dự án Arduino chạy được hay không là khả năng **mở Serial
+Monitor ra nhìn**. Với ASCII, người làm phần cứng cắm dây vào là thấy ngay
+thiết bị đang gửi gì, và gõ tay một dòng để thử phần mềm mà không cần nạp
+firmware. Ở 115200 baud, 40 điểm ở 60 Hz chỉ chiếm ~3% băng thông — chỗ
+này không phải nút thắt.
+
+★ **Cái bẫy thật của serial: dòng bị cắt ngang.** Serial KHÔNG giao hàng
+theo dòng — một lần `read()` trả về đúng những byte vừa tới, có thể là nửa
+dòng, có thể là hai dòng rưỡi. Ai giả định "mỗi lần đọc là một dòng" sẽ có
+phần mềm chạy hoàn hảo trên bàn (dữ liệu thưa, mỗi dòng tới trọn vẹn) rồi
+hỏng ngay khi cắm thiết bị thật gửi nhanh — và hỏng theo kiểu **mất rải
+rác vài điểm**, rất khó lần ra. Có test nạp **từng byte một** và đối chiếu
+kết quả phải y hệt nạp cả cục.
+
+★ **Rác từ firmware không được thành điểm chạm ma.** `std::atoi` trả 0 cho
+chuỗi rác, nên `T abc def` sẽ thành một cú chạm ở (0,0) — mà góc trên-trái
+là toạ độ HỢP LỆ, nên nó trông y như chạm thật và sẽ kích hoạt trigger
+zone ở đó. Thiếu một trường thì **bỏ cả dòng**, không lấy phần đọc được.
+
+★ **Trần 128 ký tự một dòng.** Thiết bị hỏng gửi rác không có ký tự xuống
+dòng sẽ làm bộ đệm phình vô hạn tới khi hết RAM. Thiết bị hỏng thì phải
+làm *mất dữ liệu*, không được làm sập phần mềm điều khiển — và phải **đồng
+bộ lại được** ở dòng kế tiếp.
+
+Số dòng rác được đếm (`badLines`) để hiện lên PerfPanel: người làm phần
+cứng nhìn con số tăng là biết firmware đang gửi lẫn thứ khác.
+
+**Kiểm chứng:** `402/402 test xanh` — 16 test cho G3.
+
+**Còn lại:** mở cổng (`CreateFile` trên Windows, `termios` trên POSIX) +
+thread đọc, theo đúng khuôn `OscSource`.
+
+### 🟢 G18 — Nhiều sensor cho nhiều screen (2026-09-11)
+
+Một sân khấu lớn thường có hai hoặc ba cảm biến: LiDAR quét sàn trước,
+khung IR trên tường bên, Kinect nhìn xuống bục. Mỗi cái phủ một vùng khác
+nhau và chiếu lên một máy chiếu khác nhau.
+
+Model đã có sẵn `CalibrationProfile::sourceId` và `targetScreenId` từ đầu
+— thiếu đúng phần **định tuyến**. Trước đây `AppController` gắn cứng
+`calibrations[0]` ở sáu chỗ, nên cảm biến thứ hai cắm vào sẽ **đi qua phép
+hiệu chỉnh của cảm biến thứ nhất**.
+
+★ **Bảng CHỈ SỐ chứ không phải con trỏ.** `SensorMapper` giữ con trỏ thô
+tới `CalibrationProfile` và `Screen`, mà hai thứ đó nằm trong `std::vector`
+của Project — chỉ cần thêm một screen là vector cấp phát lại và mọi con
+trỏ thành treo. Đây không phải lo xa: đúng lỗi đó đã xảy ra khi làm nút
+"Thêm Screen" (F22). Chỉ số sai thì phát hiện được bằng kiểm tra biên; con
+trỏ treo thì im lặng cho tới lúc sập.
+
+★ **Khớp theo `Screen::id`, không theo vị trí trong mảng.** Xoá một screen
+ở giữa làm mọi vị trí sau nó dịch đi một — và khi đó mọi cảm biến lặng lẽ
+chiếu sang **máy chiếu bên cạnh**. Sai theo kiểu trông vẫn "có chạy", nên
+rất lâu mới bị phát hiện.
+
+★ **Screen đích không tồn tại → BỎ tuyến, không lùi về screen 0.** Lùi về
+screen 0 thì điểm chạm vẫn xuất hiện, chỉ là ở sai máy chiếu — trông như
+phần mềm đang chạy, nên người ta đi tìm lỗi ở chỗ khác. Bỏ tuyến thì triệu
+chứng khớp với nguyên nhân: cảm biến đó im lặng, kèm cảnh báo nói rõ.
+
+★ **Hai hồ sơ cùng `sourceId` → giữ cái đầu, nói rõ.** Lấy cái sau nghĩa
+là hành vi phụ thuộc thứ tự trong file, và người vận hành sẽ thấy hiệu ứng
+"tự nhiên nhảy sang chỗ khác" sau khi lưu lại project mà không đổi gì.
+
+★ **Hồ sơ chưa calibrate xong cũng phải cảnh báo.** Người vận hành cắm cảm
+biến vào, không thấy gì xảy ra, và không có cách nào biết là vì chưa
+calibrate.
+
+**Kiểm chứng:** `412/412 test xanh` — 10 test cho G18, gồm bài ba sensor →
+ba screen đi ba đường riêng, và bài một hồ sơ hỏng không được kéo theo các
+tuyến còn lại.
+
+⚠️ Phần nối vào `AppController` **chưa được biên dịch** (lớp oF).
+
 ### Xây tiếp
 
 `E1` FX chain · `A13` group · `C9` cue points · `G14` TUIO
@@ -412,14 +723,14 @@ ctest --test-dir build -C Debug --output-on-failure
 | [x] | **F15** | Nhập toạ độ bằng số (không chỉ kéo chuột) | S | 🟠 P1 |
 | [x] | **F16** | Slice enable / disable / solo | S | 🟠 P1 |
 | [x] | **F17** | Multi-screen (nhiều máy chiếu) | M | 🟠 P1 |
-| [x] | **F18** | Polygon slice (không chỉ hình chữ nhật) | L | 🟡 P2 |
+| [ ] | **F18** | Polygon slice (không chỉ hình chữ nhật) | L | 🟡 P2 |
 | [x] | **F19** | Color correction per-slice (brightness/gamma/RGB) | M | 🟡 P2 |
 | [x] | **F20** | **Soft edge blending** (ghép nhiều máy chiếu) | L | 🟡 P2 |
 | [x] | **F21** | Snapping / đường gióng khi kéo | M | 🟡 P2 |
-| [x] | **F22** | Slice input từ Layer / Group cụ thể | M | 🟡 P2 |
-| [x] | **F23** | Output ra Spout / NDI (screen ảo) | M | 🟡 P2 |
-| [x] | **F24** | LED mapping qua Art-Net / sACN | XL | ⚪ P3 |
-| [x] | **F25** | Output SDI qua capture card | L | ⚪ P3 |
+| [~] | **F22** | Slice input từ Layer / Group cụ thể | M | 🟡 P2 |
+| [ ] | **F23** | Output ra Spout / NDI (screen ảo) | M | 🟡 P2 |
+| [ ] | **F24** | LED mapping qua Art-Net / sACN | XL | ⚪ P3 |
+| [ ] | **F25** | Output SDI qua capture card | L | ⚪ P3 |
 
 ---
 
@@ -429,7 +740,7 @@ ctest --test-dir build -C Debug --output-on-failure
 |:-:|---|---|:-:|:-:|
 | [x] | **G1** | Kiến trúc thread + TripleBuffer + SpscRing | M | 🔴 P0 |
 | [x] | **G2** | MockSource + sensor simulator | S | 🔴 P0 |
-| [x] | **G3** | Serial / Arduino source | M | 🔴 P0 |
+| [~] | **G3** | Serial / Arduino source | M | 🔴 P0 |
 | [x] | **G4** | OSC server (UDP) | M | 🔴 P0 |
 | [x] | **G5** | **Homography solver (DLT + RANSAC)** | M | 🔴 P0 |
 | [x] | **G6** | **Calibration wizard — chạm 4+ điểm** | M | 🔴 P0 |
@@ -441,11 +752,11 @@ ctest --test-dir build -C Debug --output-on-failure
 | [x] | **G12** | PointTracker — gán ID bền vững qua frame | M | 🟠 P1 |
 | [x] | **G13** | Overlay debug điểm sensor lên output | S | 🟠 P1 |
 | [x] | **G14** | TUIO source | M | 🟠 P1 |
-| [x] | **G15** | Kinect / Femto Bolt depth source + blob detect | L | 🟠 P1 |
-| [x] | **G16** | Ghi log + replay phiên sensor để debug | M | 🟡 P2 |
+| [ ] | **G15** | Kinect / Femto Bolt depth source + blob detect | L | 🟠 P1 |
+| [~] | **G16** | Ghi log + replay phiên sensor để debug | M | 🟡 P2 |
 | [x] | **G17** | Trigger clip / FX từ sự kiện sensor | M | 🟠 P1 |
 | [x] | **G18** | Calibration nhiều sensor cho nhiều screen | M | 🟡 P2 |
-| [x] | **G19** | LiDAR source (Livox / Ouster) | L | 🟡 P2 |
+| [ ] | **G19** | LiDAR source (Livox / Ouster) | L | 🟡 P2 |
 
 ---
 

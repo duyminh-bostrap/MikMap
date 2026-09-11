@@ -16,6 +16,7 @@
 #pragma once
 
 #include "core/calib/SensorMapper.h"
+#include "core/calib/SensorRouting.h"
 #include "core/filter/OneEuroFilter.h"
 #include "core/filter/PointTracker.h"
 #include "core/model/ProjectIO.h"
@@ -153,6 +154,15 @@ private:
     // ── G11 G12: lam sach du lieu sensor ───────────────────────────────
     /// Gan ID ben vung truoc, roi moi loc. Thu tu nay BAT BUOC: loc ma
     /// khong co ID on dinh se tron quy dao cua hai ngon tay vao nhau.
+    /// G18 — nguon nao di qua ho so nao, toi screen nao.
+    /// Dung CHI SO chu khong phai con tro: vector cua Project cap phat lai
+    /// khi them screen, va moi con tro dang giu se thanh treo (xem F22).
+    SensorRoutingTable m_routes;
+
+    /// Dung lai bang dinh tuyen. Goi sau MOI thay doi ve calibration hoac
+    /// danh sach screen.
+    void rebuildSensorRoutes();
+
     PointTracker m_tracker;
 
     /// Mot bo loc RIENG cho tung ID. Dung chung mot bo loc cho moi diem

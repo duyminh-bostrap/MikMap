@@ -81,6 +81,7 @@ void AppController::setup() {
     m_mapper.setCalibration(m_project.calibrations.empty()
                             ? nullptr : &m_project.calibrations[0]);
     m_mapper.setScreen(m_project.screens.empty() ? nullptr : &m_project.screens[0]);
+    rebuildSensorRoutes();
 
     // ★ Voi project MAC DINH, dong bo do phan giai screen theo cua so
     //   output that.
@@ -246,7 +247,14 @@ void AppController::update() {
     pollSensor();
     m_project.composition.update(dtSec);
     m_cache.update();
-    m_render.renderComposition(m_project.composition, m_cache);
+
+    // F22 — layer nào đang được slice lấy làm nguồn riêng thì render mới
+    // nướng FBO cho nó. Tính mỗi frame vì người dùng đổi được lúc đang
+    // chạy; hàm này chỉ duyệt vài chục slice nên rẻ hơn nhiều so với việc
+    // giữ một bộ nhớ đệm phải nhớ làm mất hiệu lực đúng chỗ.
+    m_render.renderComposition(m_project.composition, m_cache,
+                               layersUsedAsSource(m_project.screens,
+                                                  m_project.composition.layerCount()));
     m_cache.collectGarbage();
 
     updateStats();
@@ -333,6 +341,22 @@ void AppController::pollSensor() {
     // phình ra vô hạn trong một show dài.
     for (const uint32_t lostId : m_tracker.justLost()) {
         m_filters.erase(lostId);
+    }
+
+    // ── G18: frame nay den tu NGUON NAO? ───────────────────────────────
+    //
+    // ★ Moi cam bien di qua ho so hieu chinh CUA RIENG NO, toi screen cua
+    //   rieng no. Truoc G18 moi thu deu chay qua calibrations[0] — cam
+    //   bien thu hai cam vao se di qua phep hieu chinh cua cam bien thu
+    //   nhat va tha diem o nhung cho TRONG CO VE HOP LY, kieu sai kho
+    //   phat hien nhat vi khong co gi bao loi.
+    //
+    //   Khong tim thay tuyen thi BO CA FRAME, khong muon tam ho so khac.
+    if (const SensorRoute* route = m_routes.find(f.sourceId)) {
+        m_mapper.setCalibration(&m_project.calibrations[route->profileIndex]);
+        m_mapper.setScreen(&m_project.screens[route->screenIndex]);
+    } else if (!m_routes.routes.empty()) {
+        return;
     }
 
     for (const TrackedPoint& tp : m_tracker.activeTracks()) {
@@ -508,16 +532,32 @@ void AppController::outputMouseReleased(ofMouseEventArgs&) {
 void AppController::startSensor(int typeIndex) {
     stopSensor();
 
-    if (typeIndex == 1) {
+    if (typeIndex == 1 || typeIndex == 2) {
+        // G4 / G14 — cung mot lop nguon, khac phuong ngu. Phan kho cua
+        // mot nguon sensor (socket, thread, vong su kien, het han diem)
+        // dung chung; chi cach doc message la khac.
+        const bool tuio = (typeIndex == 2);
+
         OscConfig cfg;
-        cfg.port = 9000;
+        cfg.protocol = tuio ? OscProtocol::Tuio : OscProtocol::Hexmap;
+
+        // ★ TUIO co cong quy uoc rieng la 3333. Dung 9000 cho ca hai thi
+        //   nguoi dung phai vao cau hinh bo tracking doi cong — ma phan
+        //   lon bo tracking chi cho doi dia chi, khong cho doi cong.
+        cfg.port = tuio ? 3333 : 9000;
+
+        // TUIO luon gui toa do chuan hoa [0,1]; nhan len thang sensor.
+        cfg.sensorRange = Vec2{1920.0, 1080.0};
+
         auto src = std::make_unique<OscSource>(cfg);
         if (!src->start()) {
-            m_panel.setStatusMessage("OSC: " + src->lastError(), true);
+            m_panel.setStatusMessage(std::string(tuio ? "TUIO: " : "OSC: ")
+                                     + src->lastError(), true);
             return;
         }
         m_sensor = std::move(src);
-        m_panel.setStatusMessage("OSC dang nghe cong 9000");
+        m_panel.setStatusMessage(tuio ? "TUIO dang nghe cong 3333"
+                                      : "OSC dang nghe cong 9000");
     } else {
         MockConfig cfg;
         cfg.pointCount = 3;
@@ -594,6 +634,20 @@ void AppController::assignClip(int layer, int column, const std::string& path) {
 
     m_project.composition.deck(m_project.composition.viewedDeck())
         .setClip(layer, column, c);
+}
+
+void AppController::rebuildSensorRoutes() {
+    m_routes = buildSensorRoutes(m_project.calibrations, m_project.screens);
+
+    // ★ Canh bao phai NOI RA, khong chi ghi log. Moi muc trong danh sach
+    //   nay deu nghia la "co mot cam bien se khong hoat dong" — va trieu
+    //   chung o phia nguoi dung chi la im lang, khong co gi bao loi.
+    for (const std::string& w : m_routes.warnings) {
+        ofLogWarning("sensor") << w;
+    }
+    if (!m_routes.warnings.empty()) {
+        m_panel.setStatusMessage(m_routes.warnings.front(), true);
+    }
 }
 
 void AppController::applySettings() {
@@ -809,6 +863,7 @@ void AppController::applyUiActions(UiActions& a) {
             m_mapper.setCalibration(m_project.calibrations.empty()
                                     ? nullptr : &m_project.calibrations[0]);
             m_mapper.setScreen(m_project.screens.empty() ? nullptr : &m_project.screens[0]);
+            rebuildSensorRoutes();
             m_edit.activeSliceIndex = 0;
             m_project.triggerZones.resetRuntimeState();
             m_triggerCount = 0;
@@ -835,6 +890,7 @@ void AppController::applyUiActions(UiActions& a) {
         m_cache.clear();
         m_mapper.setCalibration(&m_project.calibrations[0]);
         m_mapper.setScreen(&m_project.screens[0]);
+        rebuildSensorRoutes();
     }
 
     // ── Slice ──────────────────────────────────────────────────────────
@@ -863,8 +919,11 @@ void AppController::applyUiActions(UiActions& a) {
 
     if (a.convertWarpTo >= 0) {
         if (Slice* s = activeSlice()) {
-            s->convertWarp(a.convertWarpTo == 1 ? WarpType::Mesh : WarpType::CornerPin,
-                           6, 6);
+            // Thứ tự khớp với combo ở ControlPanel: 0 pin, 1 mesh, 2 bezier.
+            WarpType t = WarpType::CornerPin;
+            if (a.convertWarpTo == 1)      t = WarpType::Mesh;
+            else if (a.convertWarpTo == 2) t = WarpType::Bezier;
+            s->convertWarp(t, 6, 6);
         }
     }
 

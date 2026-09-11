@@ -2,6 +2,7 @@
 
 #include "core/model/WarpCornerPin.h"
 #include "core/model/WarpMesh.h"
+#include "core/model/WarpBezier.h"
 #include "core/util/Json.h"
 
 #include <cstdio>
@@ -62,6 +63,17 @@ JsonValue warpToJson(const IWarp* w) {
             }
         }
         o.set("points", std::move(pts));
+
+    } else if (w->type() == WarpType::Bezier) {
+        // F10 — 16 điểm điều khiển, thứ tự hàng-trước giống mesh.
+        const auto* b = static_cast<const WarpBezier*>(w);
+        JsonValue pts = JsonValue::array();
+        for (int cy = 0; cy < WarpBezier::kDim; ++cy) {
+            for (int cx = 0; cx < WarpBezier::kDim; ++cx) {
+                pts.push(vecToJson(b->controlPoint(cx, cy)));
+            }
+        }
+        o.set("points", std::move(pts));
     }
 
     return o;
@@ -92,6 +104,31 @@ std::unique_ptr<IWarp> warpFromJson(const JsonValue& j, std::vector<std::string>
             }
         }
         return m;
+    }
+
+    if (type == "Bezier") {
+        auto b = std::make_unique<WarpBezier>(Vec2{0.0, 0.0}, Vec2{1920.0, 1080.0});
+
+        const JsonValue& pts = j["points"];
+        if (pts.size() != static_cast<size_t>(WarpBezier::kPointCount)) {
+            // ★ Giữ nguyên mặt phẳng mặc định thay vì nhét bừa số điểm có
+            //   được. Một mặt Bézier thiếu điểm là hình dạng RÁC — người
+            //   vận hành sẽ thấy nội dung méo mó và tưởng file hỏng nặng,
+            //   trong khi thứ họ cần là biết đúng một dòng cảnh báo này.
+            warn.push_back("Bezier warp: so diem dieu khien khong khop ("
+                           + std::to_string(pts.size()) + " thay vi "
+                           + std::to_string(WarpBezier::kPointCount)
+                           + "), dung mat phang mac dinh");
+            return b;
+        }
+
+        size_t i = 0;
+        for (int cy = 0; cy < WarpBezier::kDim; ++cy) {
+            for (int cx = 0; cx < WarpBezier::kDim; ++cx) {
+                b->setControlPoint(cx, cy, jsonToVec(pts.at(i++)));
+            }
+        }
+        return b;
     }
 
     if (type != "CornerPin") {
@@ -259,6 +296,13 @@ JsonValue sliceToJson(const Slice& s) {
     o.set("inputSize",   vecToJson(s.inputSize));
     o.set("warp",        warpToJson(s.warp()));
 
+    // F22 — chỉ ghi khi KHÁC mặc định, để file project của bản cũ không
+    // phình thêm và vẫn đọc được bằng bản cũ hơn.
+    if (s.sourceKind == Slice::SourceKind::Layer) {
+        o.set("sourceKind",  JsonValue("Layer"));
+        o.set("sourceLayer", JsonValue(s.sourceLayer));
+    }
+
     // F19 — chi ghi khi KHAC mac dinh, de file project gon.
     if (!s.color.isIdentity()) {
         JsonValue c = JsonValue::object();
@@ -314,6 +358,23 @@ Slice sliceFromJson(const JsonValue& j, std::vector<std::string>& warn) {
     s.inputOrigin = jsonToVec(j["inputOrigin"], Vec2{0.0, 0.0});
     s.inputSize   = jsonToVec(j["inputSize"],   Vec2{1920.0, 1080.0});
     s.setWarp(warpFromJson(j["warp"], warn));
+
+    // F22 — nguồn nội dung. Thiếu khoá = file bản cũ = Composition.
+    if (j["sourceKind"].asString("Composition") == "Layer") {
+        s.sourceKind  = Slice::SourceKind::Layer;
+        s.sourceLayer = j["sourceLayer"].asInt(-1);
+
+        // ★ KHÔNG kiểm chỉ số ở đây, vì lúc này chưa biết composition có
+        //   bao nhiêu layer — screens được nạp trước hay sau composition
+        //   là chi tiết của định dạng file, và ràng buộc thứ tự nạp vào
+        //   đây là thứ sẽ hỏng lặng lẽ khi định dạng đổi.
+        //   `Slice::effectiveSourceLayer()` kiểm mỗi lần dùng; chỉ số rác
+        //   tự lùi về composition ở đó.
+        if (s.sourceLayer < 0) {
+            warn.push_back("Slice '" + s.name
+                           + "': nguon la Layer nhung khong co chi so, dung Composition");
+        }
+    }
 
     const JsonValue& c = j["color"];
     s.color.brightness = c["brightness"].asNumber(0.0);

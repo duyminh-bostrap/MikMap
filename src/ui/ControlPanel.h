@@ -384,6 +384,10 @@ private:
     /// 2 ca khoi.
     int  m_inputDragPart = -1;
 
+    /// F21 — hút điểm về đường gióng khi kéo. Bật mặc định vì đó là thứ
+    /// người dùng muốn hầu hết thời gian; giữ ALT để tạm tắt trong lúc kéo.
+    bool m_snapEnabled = true;
+
     /// Cua so Cai dat — thu duy nhat con NOI, vi no khong thuoc luong lam
     /// viec luc dien.
     bool m_showSettings = false;

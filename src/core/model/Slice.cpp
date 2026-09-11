@@ -2,6 +2,7 @@
 
 #include "core/model/WarpCornerPin.h"
 #include "core/model/WarpMesh.h"
+#include "core/model/WarpBezier.h"
 
 #include <cmath>
 
@@ -43,10 +44,25 @@ void Slice::convertWarp(WarpType type, int meshCols, int meshRows) {
         m_warp = std::make_unique<WarpMesh>(meshCols, meshRows, lo, size);
         break;
     }
-    case WarpType::Bezier:
+    case WarpType::Bezier: {
+        // ★ Dựng từ BỀ MẶT HIỆN TẠI, không phải từ hộp bao.
+        //
+        //   CornerPin và Mesh ở trên dựng lại từ hộp bao vì hai loại đó
+        //   khác nhau về bản chất số điểm. Bézier thì lấy mẫu được bề mặt
+        //   nguồn, nên giữ đúng bốn góc đã căn — mà bốn góc lại chính là
+        //   phần người vận hành tốn công nhất. Đổi sang Bézier để uốn
+        //   thêm cho khớp mặt cong là việc thường làm SAU khi đã căn góc;
+        //   bắt căn lại từ đầu thì tính năng này gần như vô dụng.
+        if (m_warp) {
+            m_warp = std::make_unique<WarpBezier>(WarpBezier::fromWarp(*m_warp.get()));
+        } else {
+            m_warp = std::make_unique<WarpBezier>(lo, size);
+        }
+        break;
+    }
     default:
-        // Chưa cài đặt (F10 — P1). Giữ nguyên warp hiện tại thay vì
-        // đặt nullptr, để slice không rơi vào trạng thái hỏng.
+        // Loại không nhận ra: giữ nguyên warp hiện tại thay vì đặt
+        // nullptr, để slice không rơi vào trạng thái hỏng.
         break;
     }
 }

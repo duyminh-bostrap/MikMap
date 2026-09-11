@@ -302,9 +302,12 @@ void RenderEngine::drawClipToCanvas(const Clip& clip, double opacity,
     ofPopMatrix();
 }
 
-void RenderEngine::renderComposition(Composition& comp, MediaCache& cache) {
+void RenderEngine::renderComposition(Composition& comp, MediaCache& cache,
+                                     const std::vector<int>& layerSources) {
     resizeCanvas(comp.canvasSize);
     if (!m_canvas.isAllocated()) return;
+
+    m_layerCount = comp.layerCount();
 
     const std::vector<int> visible = comp.visibleLayers();
     m_lastLayersDrawn = static_cast<int>(visible.size());
@@ -332,6 +335,87 @@ void RenderEngine::renderComposition(Composition& comp, MediaCache& cache) {
     ofEnableBlendMode(OF_BLENDMODE_ALPHA);
     ofSetColor(255);
     m_canvas.end();
+
+    // ── F22: bộ đệm riêng cho các layer được slice lấy làm nguồn ───────
+    //
+    // ★ Giải phóng bộ đệm không còn ai dùng. Người vận hành đổi slice về
+    //   Composition thì VRAM phải trả lại ngay — giữ lại "phòng khi cần"
+    //   nghĩa là một show dài đổi qua đổi lại sẽ tích dần cho tới lúc hết
+    //   VRAM, và triệu chứng lúc đó là tụt fps không rõ nguyên nhân.
+    for (auto it = m_layerFbos.begin(); it != m_layerFbos.end(); ) {
+        const bool stillUsed = std::find(layerSources.begin(), layerSources.end(),
+                                         it->first) != layerSources.end();
+        if (stillUsed) ++it;
+        else           it = m_layerFbos.erase(it);
+    }
+
+    for (const int layerIdx : layerSources) {
+        if (layerIdx < 0 || layerIdx >= m_layerCount) continue;
+        renderLayerToFbo(comp, cache, layerIdx, m_layerFbos[layerIdx]);
+    }
+}
+
+void RenderEngine::renderLayerToFbo(Composition& comp, MediaCache& cache,
+                                    int layerIndex, ofFbo& fbo) {
+    const int w = static_cast<int>(m_canvasSize.x);
+    const int h = static_cast<int>(m_canvasSize.y);
+    if (w <= 0 || h <= 0) return;
+
+    if (!fbo.isAllocated() || fbo.getWidth() != w || fbo.getHeight() != h) {
+        // Cùng thiết lập với canvas chính (xem resizeCanvas) — slice lấy
+        // mẫu hai loại FBO này qua CÙNG một đường code, nên khác định
+        // dạng là mở cửa cho sai màu chỉ xuất hiện ở nguồn Layer.
+        ofFbo::Settings s;
+        s.width = w;
+        s.height = h;
+        s.internalformat = GL_RGBA8;
+        s.useDepth = false;
+        s.useStencil = true;
+        s.numSamples = 0;
+        fbo.allocate(s);
+    }
+    if (!fbo.isAllocated()) return;
+
+    fbo.begin();
+    ofClear(0, 0, 0, 0);
+
+    const Composition::LayerRenderInfo info = comp.renderInfo(layerIndex);
+    if (info.current != nullptr) {
+        // ★ Vẽ bằng ALPHA thường, KHÔNG dùng blend mode của layer.
+        //
+        //   Blend mode mô tả cách layer này hoà với những layer BÊN DƯỚI.
+        //   Trong bộ đệm riêng thì không có gì bên dưới cả — dùng Add hay
+        //   Multiply ở đây chỉ tạo ra kết quả sai một cách khó truy: nội
+        //   dung trông tối đi hoặc sáng rực mà người dùng không hiểu vì
+        //   sao, trong khi họ chỉ chọn "lấy nguồn từ layer này".
+        if (info.previous != nullptr && info.previousOpacity > 0.0) {
+            cache.syncTransport(*info.previous);
+            drawClipToCanvas(*info.previous, info.previousOpacity,
+                             BlendMode::Normal, cache);
+        }
+        cache.syncTransport(*info.current);
+        drawClipToCanvas(*info.current, info.currentOpacity,
+                         BlendMode::Normal, cache);
+    }
+
+    ofEnableBlendMode(OF_BLENDMODE_ALPHA);
+    ofSetColor(255);
+    fbo.end();
+}
+
+const ofFbo& RenderEngine::sourceFboFor(const Slice& slice) const {
+    const int layer = slice.effectiveSourceLayer(m_layerCount);
+    if (layer < 0) return m_canvas;
+
+    const auto it = m_layerFbos.find(layer);
+    // ★ Thiếu bộ đệm thì lùi về canvas, KHÔNG bỏ vẽ.
+    //
+    //   Chuyện này xảy ra ở đúng một frame: người dùng vừa đổi nguồn của
+    //   slice, và frame đó renderComposition chưa kịp nướng bộ đệm mới.
+    //   Bỏ vẽ nghĩa là máy chiếu chớp một frame đen — thứ khán giả thấy
+    //   ngay. Chiếu tạm canvas một frame thì gần như không ai nhận ra.
+    if (it == m_layerFbos.end() || !it->second.isAllocated()) return m_canvas;
+    return it->second;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -465,6 +549,9 @@ void RenderEngine::drawSliceGeometry(const Slice& slice, int sliceIndex,
     //   hoan toan, khong he giong "loi ve mat na".
     const ofFbo* maskFbo = maskTexture(slice, sliceIndex, screenId);
 
+    // F22 — canvas chung, hoac bo dem rieng cua layer nguon.
+    const ofFbo& src = sourceFboFor(slice);
+
     const int sub = std::max(1, w->defaultSubdivisions());
 
     WarpGeometry geo;
@@ -473,8 +560,8 @@ void RenderEngine::drawSliceGeometry(const Slice& slice, int sliceIndex,
 
     // Đổi contentUV [0,1]² sang toạ độ texture của canvas FBO, có tính
     // vùng lấy (inputRect) của slice.
-    const float texW = m_canvas.getWidth();
-    const float texH = m_canvas.getHeight();
+    const float texW = src.getWidth();
+    const float texH = src.getHeight();
 
     m_sliceMesh.clear();
     m_sliceMesh.setMode(OF_PRIMITIVE_TRIANGLES);
@@ -506,7 +593,7 @@ void RenderEngine::drawSliceGeometry(const Slice& slice, int sliceIndex,
         const ColorAdjust& c = slice.color;
 
         m_sliceShader.begin();
-        m_sliceShader.setUniformTexture("tex0", m_canvas.getTexture(), 0);
+        m_sliceShader.setUniformTexture("tex0", src.getTexture(), 0);
         m_sliceShader.setUniform1f("uBrightness", static_cast<float>(c.brightness));
         m_sliceShader.setUniform1f("uContrast",   static_cast<float>(c.contrast));
         m_sliceShader.setUniform1f("uInvGamma",
@@ -547,7 +634,7 @@ void RenderEngine::drawSliceGeometry(const Slice& slice, int sliceIndex,
                 static_cast<float>(f * shortSide / sx),
                 static_cast<float>(f * shortSide / sy));
         } else {
-            m_sliceShader.setUniformTexture("uMask", m_canvas.getTexture(), 1);
+            m_sliceShader.setUniformTexture("uMask", src.getTexture(), 1);
             m_sliceShader.setUniform1f("uMaskOn", 0.0f);
             m_sliceShader.setUniform1f("uMaskInvert", 0.0f);
             m_sliceShader.setUniform2f("uFeatherUV", 0.0f, 0.0f);
@@ -556,9 +643,9 @@ void RenderEngine::drawSliceGeometry(const Slice& slice, int sliceIndex,
         m_sliceMesh.draw();
         m_sliceShader.end();
     } else {
-        m_canvas.getTexture().bind();
+        src.getTexture().bind();
         m_sliceMesh.draw();
-        m_canvas.getTexture().unbind();
+        src.getTexture().unbind();
     }
 }
 

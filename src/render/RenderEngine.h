@@ -89,7 +89,11 @@ public:
     void resizeCanvas(const Vec2& canvasSize);
 
     /// Pass 1 — dựng nội dung canvas từ các layer đang hiện.
-    void renderComposition(Composition& comp, MediaCache& cache);
+    /// @param layerSources F22 — các layer cần một bộ đệm riêng, lấy từ
+    ///        `layersUsedAsSource()`. Rỗng = không slice nào cần, và khi
+    ///        đó engine giải phóng hết bộ đệm layer đang giữ.
+    void renderComposition(Composition& comp, MediaCache& cache,
+                           const std::vector<int>& layerSources = {});
 
     /// Pass 2 + 3 — vẽ canvas lên một screen qua các slice.
     /// Gọi trong ngữ cảnh cửa sổ output.
@@ -180,6 +184,26 @@ private:
 
     ofFbo m_canvas;
     Vec2  m_canvasSize{1920.0, 1080.0};
+
+    // ── F22: bộ đệm riêng cho từng layer ───────────────────────────────
+    //
+    // Chỉ tạo cho layer thật sự có slice lấy làm nguồn (xem
+    // `layersUsedAsSource`). Mỗi FBO ở 4K là ~32 MB VRAM cộng một lần
+    // clear + vẽ mỗi frame, nên nướng cho MỌI layer là cách chắc chắn
+    // làm tụt fps vì một tính năng đa số project không dùng.
+    std::map<int, ofFbo> m_layerFbos;
+
+    /// Số layer của composition ở frame gần nhất — cần để kiểm tra chỉ số
+    /// nguồn của slice (`Slice::effectiveSourceLayer`) lúc vẽ.
+    int m_layerCount = 0;
+
+    /// Vẽ MỘT layer vào bộ đệm riêng của nó.
+    void renderLayerToFbo(Composition& comp, MediaCache& cache,
+                          int layerIndex, ofFbo& fbo);
+
+    /// Texture mà slice này phải lấy mẫu: canvas chung, hoặc bộ đệm của
+    /// layer nguồn. Luôn trả về một FBO ĐÃ CẤP PHÁT.
+    const ofFbo& sourceFboFor(const Slice& slice) const;
 
     /// Lưới tam giác dùng lại giữa các frame — chỉ dựng lại khi warp dirty.
     mutable ofVboMesh m_sliceMesh;
