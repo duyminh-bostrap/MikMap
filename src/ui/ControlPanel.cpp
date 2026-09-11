@@ -1844,8 +1844,12 @@ void ControlPanel::drawMapToolbar(Project& p, EditState& edit, UiActions& a) {
 
 void ControlPanel::drawMappingView(Project& p, EditState& edit,
                                    const ofTexture* canvasTex, UiActions& a) {
-    drawMapToolbar(p, edit, a);
-
+    // ★ KHONG con mot thanh cong cu day rong nam TREN ca 3 cot. Ban thiet
+    //   ke tham khao (MikMap_Web) xep ba tieu de "MAPPING TREE" / thanh
+    //   cong cu / "SLICE PROPERTIES" CUNG MOT HANG, doc thanh MOT dai
+    //   tieu de ba phan — khong phai mot thanh rieng roi moi toi ba cot.
+    //   drawMapToolbar() gio duoc goi BEN TRONG cot workspace (xem duoi),
+    //   lam "tieu de" cho rieng cot do, cung Y voi hai cot kia.
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(6, 6));
 
     // ── Trai: cay SCREEN SETUP ─────────────────────────────────────────
@@ -1893,6 +1897,8 @@ void ControlPanel::drawMappingView(Project& p, EditState& edit,
     ImGui::BeginChild("##workspace", ImVec2(workW, 0), ImGuiChildFlags_Borders,
                       ImGuiWindowFlags_NoScrollbar);
     {
+        drawMapToolbar(p, edit, a);
+
         // Nhan noi cho biet dang nhin vao KHONG GIAN NAO. Hai che do trong
         // rat giong nhau — deu la hinh chu nhat tren nen toi — nen thieu
         // nhan thi rat de chinh nham khong gian.
