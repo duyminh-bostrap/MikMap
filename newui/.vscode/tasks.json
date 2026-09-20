@@ -1,0 +1,24 @@
+﻿{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build MikMap",
+      "type": "shell",
+      "command": "powershell",
+      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/build.ps1"],
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": {
+        "owner": "cpp",
+        "fileLocation": ["relative", "${workspaceFolder}"],
+        "pattern": { "regexp": "^(.*):(\\d+):(\\d+):\\s+(warning|error):\\s+(.*)$", "file": 1, "line": 2, "column": 3, "severity": 4, "message": 5 }
+      }
+    },
+    {
+      "label": "Run MikMap",
+      "type": "shell",
+      "command": "powershell",
+      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/build.ps1", "-Run"],
+      "problemMatcher": []
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+﻿{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "MikMap (run)",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/mikmap.exe",
+      "cwd": "${workspaceFolder}/build",
+      "preLaunchTask": "Build MikMap"
+    },
+    {
+      "name": "MikMap (gdb debug)",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/mikmap.exe",
+      "cwd": "${workspaceFolder}/build",
+      "MIMode": "gdb",
+      "miDebuggerPath": "${workspaceFolder}/.tools/mingw64/bin/gdb.exe",
+      "preLaunchTask": "Build MikMap"
+    }
+  ]
+}

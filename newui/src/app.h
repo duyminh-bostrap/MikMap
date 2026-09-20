@@ -1,0 +1,274 @@
+﻿// Application state (a direct port of the prototype's React state) and screen entry points.
+#pragma once
+#include "ui.h"
+#include <algorithm>
+#include <map>
+#include <string>
+#include <vector>
+
+// ───────────── deck model ─────────────
+struct Fx {
+  int kind = 0;  // index into FX_LIB
+  bool on = true, beat = false, react = false;
+  float mix = 100;
+  float p[2] = {0, 0};
+  int en = 0;  // enum option
+};
+enum PlayMode { PM_LOOP, PM_BOUN, PM_HOLD, PM_ONCE };
+struct Clip {
+  enum St { Empty, Loaded, Selected, Live, LiveSel, Armed };
+  St st = Empty;
+  std::string name, dur;
+  int color = 0;       // index into CLIP_COLORS
+  float progress = 0;  // 0..100, advances only while the clip is selected
+  // transport (C2/C4/C5)
+  int playMode = PM_LOOP;
+  float speed = 100;   // percent
+  int dir = 1;         // +1 forward, -1 reverse (also flipped by PM_BOUN)
+  // transform (D1/D2/D3/D5/D6), in canvas units / percent / degrees
+  float posX = 0, posY = 0, scale = 1, rotation = 0, opacity = 100;
+  bool flipH = false, flipV = false;
+  std::vector<Fx> fx;  // effects belong to the clip
+  bool isLive() const { return st == Live || st == LiveSel; }
+};
+struct Layer {
+  std::string name, group, blend;
+  float blendTime = 0, opacity = 100, audio = 0;
+  bool live = false, solo = false, muted = false, bypassed = false, collapsed = false;
+  std::vector<Clip> clips;
+};
+struct Group {
+  std::string id, name;
+  int role = 2;  // 0 live/coral, 1 audio/mint, 2 preview/cyan
+  bool open = true;
+  int count = 0, activeCol = 0;
+};
+
+// ───────────── mapping model ─────────────
+struct Mask {
+  std::string id, name;
+  bool inverted = true;
+  int feather = 4;
+  ImVec2 pts[4];
+};
+struct Slice {
+  std::string id, name;
+  bool visible = true;
+  int warp = 0;  // 0 cornerPin, 1 mesh
+  int meshCols = 4, meshRows = 3;
+  std::vector<float> meshU, meshV;                 // custom column/row split positions (0..1)
+  std::vector<std::vector<ImVec2>> meshPts;        // dragged mesh points (rows x cols), empty = derived
+  int ix = 0, iy = 0, iw = 1920, ih = 1080;
+  ImVec2 q[4];   // tl, tr, br, bl
+  std::vector<Mask> masks;
+};
+struct Screen {
+  std::string id, name, outDev;
+  int w = 1920, h = 1080, fps = 60;
+  bool edgeBlend = false, visible = true;
+  int role = 0;  // colour role, see RoleHex
+  std::vector<Slice> slices;
+};
+
+// Maps a canvas pixel through a slice (input rect → warped output quad) into projector pixels.
+// Used by the output window so the generated art is drawn already warped, with no intermediate texture.
+struct WarpMap {
+  const Slice* slice = nullptr;
+  float ox = 0, oy = 0, sx = 1, sy = 1;  // output space (1920x1080) → window pixels
+  ImVec2 Map(float canvasX, float canvasY) const;
+};
+ImVec2 SliceMapUV(const Slice& s, float u, float v);  // unit square → output-space point
+
+// ───────────── sensor model ─────────────
+struct Device { std::string id, name, endpoint; bool connected; int fps, latency; std::string packets; };
+struct Route { std::string id, source, target; bool active; };
+struct Touch { int id; float x, y; };
+struct Calib { float tx, ty, mx, my; };
+
+inline uint32_t RoleHex(int r) { return r == 0 ? pal::coral : r == 1 ? pal::mint : pal::cyan; }
+extern const uint32_t CLIP_COLORS[6];
+extern const char* CLIP_COLOR_NAMES[6];
+
+struct Dropdown { bool open = false; int layer = -1; ImRect anchor; };
+struct LayerMenu { bool open = false; int li = 0; ImVec2 pos; };
+struct FxDef { const char* name; const char* icon; int tone; int nparams; const char* pl[2]; float def[2]; const char* enumLabel; const char* opts[3]; };
+extern const FxDef FX_LIB[8];
+constexpr int FX_COUNT = 8;
+struct ColMenu { bool open = false; int ci = 0; ImVec2 pos; };
+struct DragSrc { bool active = false; std::string name, dur; int fxKind = -1; };
+struct Prefs { int lang = 0, ui = 0, mono = 0, accent = 0, surface = 0, scale = 100; };
+struct Popup { bool open = false; ImVec2 pos; int li = 0, ci = 0; };
+struct CtxMenu { bool open = false; ImVec2 pos; std::vector<ui::MenuItem> items; };
+
+struct App {
+  int screen = 0;  // 0 deck, 1 mapping, 2 sensor
+  int canvasW = 1920, canvasH = 1080;  // A1: virtual composition canvas, independent of any projector
+  int outMonitor = 0;                  // F2: which physical display the projector window goes to
+  bool beat = false, playing = true, blackout = false, testCard = false, frozen = true;
+  float progress = 0;
+  double lastBeat = 0;
+
+  // deck
+  int tab = 0;  // 0 comp, 1 layer, 2 clip
+  float topBandPx = 0;
+  bool resizingDeck = false;
+  int activeCol = 1, selLi = 0, selCi = 2, selLayer = 0;
+  std::vector<std::pair<int, int>> selectedCells;
+  std::vector<Group> groups;
+  std::vector<Layer> layers;
+  std::string browserSel = "Particle Vortex";
+  std::string clipMode;
+  float speed = 50;
+  Popup pop;
+  LayerMenu layerMenu;
+  ColMenu colMenu;
+  std::vector<std::string> colNames;
+  int dragCol = -1, dropCol = -1, fxSel = 0;
+  std::map<std::string, bool> browserOpen;   // absent = open
+  DragSrc dragSrc, dragSrcCand;
+  bool browserPress = false; std::string browserPressName; ImVec2 browserPressPos;
+  // Topmost selected clip drives Timeline / Playhead
+  float topProgress() {
+    int best = -1; float p = 0;
+    for (auto& c : selectedCells) if (c.first >= 0 && c.first < (int)layers.size() && c.second >= 0 && c.second < (int)layers[c.first].clips.size()
+        && layers[c.first].clips[c.second].st != Clip::Empty && (best < 0 || c.first < best)) { best = c.first; p = layers[c.first].clips[c.second].progress; }
+    if (best < 0 && selLi < (int)layers.size() && selCi < (int)layers[selLi].clips.size()) p = layers[selLi].clips[selCi].progress;
+    return p;
+  }
+  int colCount() { return layers.empty() ? 8 : (int)layers[0].clips.size(); }
+  std::string colName(int i) { return i < (int)colNames.size() && !colNames[i].empty() ? colNames[i] : "C\xE1\xBB\x99t " + std::to_string(i + 1); }
+  void insertCol(int at); void deleteCol(int ci); void moveColTo(int from, int to);
+  void addFx(int kind); void removeFx(int i); void dupFx(int i); void moveFx(int i, int d); void resetFx(int i);
+  std::vector<Fx>& fxChain() { int li = std::clamp(selLi, 0, (int)layers.size() - 1); return layers[li].clips[std::clamp(selCi, 0, (int)layers[li].clips.size() - 1)].fx; }
+  void loadClip(int li, int ci, const std::string& name, const std::string& dur);
+  // deck selection / drag & drop
+  int selMode = 2;  // 0 layer, 1 clip, 2 column
+  int dragLi = -1, dragCi = -1, dropLi = -1, dropCi = -1;
+  bool dragging = false;
+  int pressLi = -1, pressCi = -1;
+  ImVec2 dragStart;
+  // settings window
+  bool settingsOpen = false;
+  int setTab = 0;
+  Prefs prefs;
+  Dropdown blendDD;
+  CtxMenu ctx;
+  bool projectMenu = false, logoHover = false;
+
+  // mapping
+  std::vector<Screen> screens;
+  std::string selSc = "screen1", selSl = "slice1", selMk;
+  int selKind = -1;  // -1 auto, 0 screen, 1 slice, 2 mask
+  float mapZ = 1, mapScrollX = 0, mapScrollY = 0, mapCx = 0.5f, mapCy = 0.5f;
+  struct MapReq { bool valid = false; float z = 1, cx = 0.5f, cy = 0.5f; } mapReq;
+  void setZoom(float z, float cx = -1, float cy = -1) { mapReq.valid = true; mapReq.z = z; mapReq.cx = cx < 0 ? mapCx : cx; mapReq.cy = cy < 0 ? mapCy : cy; }
+  bool mapFocus = false;
+  char meshArm = 0; bool meshPickOn = false; float meshPickU = 0, meshPickV = 0;
+  std::vector<std::vector<Screen>> undoStack, redoStack;
+  void pushHist() { undoStack.push_back(screens); if (undoStack.size() > 40) undoStack.erase(undoStack.begin()); redoStack.clear(); }
+  void undoMap() { if (undoStack.empty()) return; redoStack.push_back(screens); screens = undoStack.back(); undoStack.pop_back(); }
+  void redoMap() { if (redoStack.empty()) return; undoStack.push_back(screens); screens = redoStack.back(); redoStack.pop_back(); }
+  int MapKind() { return selKind >= 0 ? selKind : (selMk.empty() ? 1 : 2); }
+  int mpage = 1;  // 0 input, 1 output
+  bool treeCollapsed = false;
+  std::map<std::string, bool> collapsedScreens;
+  std::string railScreen;
+
+  // sensor
+  std::vector<Device> devices;
+  std::vector<Route> routes;
+  std::vector<Touch> touchPts;
+  std::vector<Calib> calib;
+  ImVec2 roi[4];
+  bool editRoi = false;
+  int wizardStep = 0;
+  float noise = 1.2f, blobSize = 15;
+  float sweep = 0;
+
+  // helpers
+  Group* group(const std::string& id) { for (auto& g : groups) if (g.id == id) return &g; return nullptr; }
+  Screen* curScreen();
+  Slice* curSlice();
+  Mask* curMask();
+  void init();
+  // deck actions
+  void cue(int li, int ci);
+  void trigger(int li, int ci);
+  void selectColumn(int ci);
+  void fireColumn(int ci);
+  void selectGroupCue(const std::string& gid, int ci);
+  void stepSel(int dir);
+  void moveClip(int fl, int fc, int tl, int tc);
+  // mapping actions
+  void addScreen(); void addSlice(); void addMask(); void deleteMask(); void deleteSlice();
+  void resetWarp();
+  void dupScreen(const std::string& id); void dupSlice(const std::string& sc, const std::string& sl);
+  void removeSlice(const std::string& sc, const std::string& sl);
+  void deleteScreen(const std::string& id);
+  void moveScreen(const std::string& id, int dir); void moveSlice(const std::string& sc, const std::string& sl, int dir);
+  std::vector<ui::MenuItem> screenMenu(const std::string& scId);
+  std::vector<ui::MenuItem> sliceMenu(const std::string& scId, const std::string& slId);
+  std::vector<ui::MenuItem> maskMenu(const std::string& scId, const std::string& slId, const std::string& mkId);
+  void openCtx(ImVec2 pos, std::vector<ui::MenuItem> items) { ctx.open = true; ctx.pos = pos; ctx.items = std::move(items); }
+  int idCounter = 100;
+  std::string uid(const char* p) { return std::string(p) + "-" + std::to_string(++idCounter); }
+};
+extern App A;
+
+struct ScrollArea {
+  ImVec2 origin;
+  ImDrawList* prev = nullptr;
+  bool Begin(const char* id, ImRect r, bool horizontal = false);
+  void End(float contentW, float contentH);
+};
+
+void DrawDeck(ImRect body);
+void DrawMapping(ImRect body);
+void DrawSensor(ImRect body);
+void DrawOverlays(ImVec2 display);
+void DrawSettings(ImVec2 display);
+void ApplyPrefs();
+int ClipStyleOf(const std::string& name);
+void DrawClipContent(ImRect area, const Clip& c, float t, float baseWidth, float alpha, float lod = 1.f);
+void SetAdditive(bool on);
+// blend modes (D4) — index order matches BLEND_NAMES
+constexpr int BLEND_COUNT = 8;
+extern const char* BLEND_NAMES[BLEND_COUNT];
+int BlendIndex(const std::string& name);
+void SetBlendMode(int mode);
+void InitBlendModes(void* (*getProc)(const char*));
+void AdvanceClip(Clip& c, float dt);
+const char* PlayModeName(int m);
+// composition rendering (A1) — shared by the Live Output monitor and the projector window
+ImRect CanvasRect(ImRect fit);                             // letterbox `fit` to the canvas aspect
+void DrawComposite(ImRect canvas, float t, float alpha);   // all live clips, bottom layer first
+// projector output window (F2/I1)
+bool OutputOpen();
+void OpenOutput(struct GLFWwindow* share, int monitorIdx);
+void CloseOutput();
+void ToggleOutput(struct GLFWwindow* share, int monitorIdx);
+void RenderOutput();
+struct GLFWwindow* glfwWin();   // the control window, for opening the output on a shared context
+int MonitorCount();
+std::string MonitorName(int i);
+void SetOutputCapture(const char* path);
+void LoadAllFonts(ImGuiIO& io, const std::string& assets);
+void FitAffine(float out[9], float* rms);
+// G5 homography + G9 perf
+bool FitHomography(const std::vector<Calib>& pts, float H[9], float* rms);
+void ApplyH(const float H[9], float x, float y, float& ox, float& oy);
+void PerfPush(float ms); float PerfFps(); float PerfP99(); int PerfDrops(float budgetMs);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
