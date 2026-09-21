@@ -12,7 +12,7 @@
 #   cmake -S src -B src/build -G Ninja -DCMAKE_BUILD_TYPE=Release
 #   cmake --build src/build
 #
-# Linux/macOS (secondary — for CI/dev-machine sanity builds; GLFW must be
+# Linux/macOS (built and launched for real on both; GLFW must be
 # installed system-wide, e.g. `apt install libglfw3-dev` or `brew install glfw`;
 # Dear ImGui is fetched at configure time, pinned to the same v1.92.9b the
 # Windows .tools/ bundle uses):

@@ -86,7 +86,12 @@ cmake --build src/build
 ```
 
 Đã build+chạy thật kiểm chứng trên Linux (không chỉ compile — chạy dưới Xvfb,
-giao diện render đúng). Tắt engine để dựng riêng phần giao diện:
+giao diện render đúng) và trên macOS (Apple Silicon, Xcode SDK 15.0, GLFW 3.5.1
+qua Homebrew: build sạch, app mở cửa sổ và chạy ổn định, F5 trong VS Code dùng
+`.vscode/launch.json`). Trên macOS app xin OpenGL 3.2 core (+ GLSL 150) vì hệ
+điều hành không cấp context 3.0 thường; sẽ có vài cảnh báo `deprecated` của
+OpenGL khi build — vô hại. Chưa kiểm tra kỹ trên macOS: cửa sổ output máy chiếu
+(F2/I1) và mọi tính năng ngoài việc khởi động. Tắt engine để dựng riêng phần giao diện:
 `-DMIKMAP_WITH_ENGINE=OFF`.
 
 ---
