@@ -1,0 +1,23 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "mikmap: configure (Debug)",
+            "type": "shell",
+            "command": "cmake",
+            "args": ["-S", "src", "-B", "src/build-debug", "-DCMAKE_BUILD_TYPE=Debug"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "problemMatcher": []
+        },
+        {
+            "label": "mikmap: build (Debug)",
+            "type": "shell",
+            "command": "cmake",
+            "args": ["--build", "src/build-debug", "-j"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "dependsOn": "mikmap: configure (Debug)",
+            "problemMatcher": ["$gcc"],
+            "group": { "kind": "build", "isDefault": true }
+        }
+    ]
+}

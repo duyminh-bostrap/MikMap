@@ -168,7 +168,7 @@ static const PMItem PM[] = {
     {"settings", 1, "C\xC3\xA0i \xC4\x91\xE1\xBA\xB7t h\xE1\xBB\x87 th\xE1\xBB\x91ng", "\xC4\x90\xE1\xBB\x99 ph\xC3\xA2n gi\xE1\xBA\xA3i, GPU, OSC/DMX", "", true, true},
     {"circle-help", 3, "Tr\xE1\xBB\xA3 gi\xC3\xBAp & Ph\xC3\xADm t\xE1\xBA\xAFt", "B\xE1\xBA\xA3ng ph\xC3\xADm t\xE1\xBA\xAFt & H\xC6\xB0\xE1\xBB\x9Bng d\xE1\xBA\xABn", "", true, false},
     {"info", 2, "Gi\xE1\xBB\x9Bi thi\xE1\xBB\x87u MikMap", "v1.0.0 Enterprise Engine", "", true, false},
-    {"rotate-ccw", 4, "N\xE1\xBA\xA1p l\xE1\xBA\xA1i m\xE1\xBA\xABu Demo", "Kh\xC3\xB4i ph\xE1\xBB\xA5" "c k\xE1\xBB\x8Bch b\xE1\xBA\xA3n m\xE1\xBA\xABu", "", false, true},
+    {"rotate-ccw", 4, "N\xE1\xBA\xA1p l\xE1\xBA\xA1i m\xE1\xBA\xABu Demo", "Kh\xC3\xB4i ph\xE1\xBB\xA5" "c k\xE1\xBB\x8B" "ch b\xE1\xBA\xA3n m\xE1\xBA\xABu", "", false, true},
 };
 
 static uint32_t PmHex(uint32_t c) { switch (c) { case 1: return pal::red; case 2: return pal::coral; case 3: return pal::cyan; case 4: return pal::mint; default: return pal::t88; } }
@@ -444,8 +444,16 @@ int main(int argc, char** argv) {
   gAssets = FindAssets(argv[0]);
 
   if (!glfwInit()) return 1;
+#ifdef __APPLE__
+  // macOS only hands out GL 2.1 (legacy) or 3.2+ core; a plain "3.0" request fails to create the window.
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
+  glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+  glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
+#else
   glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
   glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
+#endif
   glfwWindowHint(GLFW_SAMPLES, 4);
   if (!shot.empty()) glfwWindowHint(GLFW_VISIBLE, GLFW_TRUE);
   GLFWwindow* win = glfwCreateWindow(W, H, "MikMap Pro \xE2\x80\x94 show_alpha_v3.mikmap", nullptr, nullptr);
@@ -473,7 +481,11 @@ int main(int argc, char** argv) {
   io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
   SetupStyle();
   ImGui_ImplGlfw_InitForOpenGL(win, true);
+  #ifdef __APPLE__
+  ImGui_ImplOpenGL3_Init("#version 150");
+#else
   ImGui_ImplOpenGL3_Init("#version 130");
+#endif
   InitBlendModes([](const char* n) { return (void*)glfwGetProcAddress(n); });
   LoadAllFonts(io, gAssets);
   ApplyPrefs();

@@ -51,6 +51,9 @@ static float Hash(int i, int k = 0) {
 static float Fract(float v) { return v - std::floor(v); }
 
 // ── GL blend modes (D4). glBlendEquation is GL 1.4, not in the Win32 gl.h 1.1 header, so it is loaded at runtime.
+#ifndef APIENTRY  // only <windows.h> defines it; macOS/Linux <GL/gl.h> don't
+#define APIENTRY
+#endif
 typedef void(APIENTRY* PFN_glBlendEquation)(GLenum);
 static PFN_glBlendEquation p_glBlendEquation = nullptr;
 #ifndef GL_FUNC_ADD

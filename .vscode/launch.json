@@ -1,0 +1,18 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "MikMap (Debug)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/build-debug/mikmap",
+            "args": [],
+            "cwd": "${workspaceFolder}/src/build-debug",
+            "stopAtEntry": false,
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "lldb",
+            "preLaunchTask": "mikmap: build (Debug)"
+        }
+    ]
+}
