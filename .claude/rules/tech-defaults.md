@@ -72,7 +72,7 @@ cmake --build src/build
 - Độ trễ đo bằng `tCaptureNs` (đóng dấu lúc thu thập, `steady_clock`), không
   đoán. Mục tiêu: 60 fps ổn định, frame p99 < ~17ms, độ trễ sensor p99 < ~10ms.
 - **Lưu ý về `src/` hiện tại:** đây là mục tiêu kiến trúc của `engine/io`;
-  `src/src/sensor.cpp` hiện là radar mô phỏng, chưa chắc đã theo đúng mô hình
+  `src/sensor.cpp` hiện là radar mô phỏng, chưa chắc đã theo đúng mô hình
   thread này — kiểm trước khi giả định.
 
 ## Hợp đồng `IWarp` (`engine/core/model/IWarp.h`)

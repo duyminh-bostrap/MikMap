@@ -41,7 +41,7 @@ phải git hook, nên `--no-verify` không có tác dụng — nếu hook sai, s
 2. Nếu sửa `src/`: không build được app đầy đủ trên máy này (cần Windows +
    MinGW/GLFW/.tools) — nói rõ điều đó thay vì báo "đã test" khi chỉ đọc code.
    Nếu có máy Windows thật, làm theo `README.md`.
-3. Nếu tick tính năng trong `features.md`: grep `src/src/*.cpp` để xác nhận
+3. Nếu tick tính năng trong `features.md`: grep `src/*.cpp` để xác nhận
    code thật tồn tại và được GỌI tới (không chỉ vì `engine/core` đã hỗ trợ
    tính năng đó), đừng tin theo trí nhớ hay theo yêu cầu. `[~]` nghĩa là chỉ
    có UI/một phần hành vi, không phải "gần xong" — đọc "Ghi chú kiểm tra" cuối

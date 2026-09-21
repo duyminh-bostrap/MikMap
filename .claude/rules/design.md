@@ -1,7 +1,7 @@
 # Quy ước giao diện (Dear ImGui + GLFW, `src/`)
 
 > **Cập nhật sau khi đổi tên `newui/` → `src/`:** helper vẽ UI của app hiện
-> tại nằm trong namespace `ui::` (`src/src/ui.h`/`ui.cpp`), **khác hoàn toàn**
+> tại nằm trong namespace `ui::` (`src/ui.h`/`ui.cpp`), **khác hoàn toàn**
 > API `theme::*` (`beginPanel`, `panelHeader`, `fieldLabel`...) của bản UI cũ
 > — bản đó đã lưu trữ ở nhánh git `legacy-oF-ui`, không còn trong working tree
 > này. Đừng tìm/gọi `theme::` trong `src/` nữa.
@@ -25,7 +25,7 @@ Composition · Advanced Mapping · Sensor I/O    (+ cửa sổ Cài đặt riên
 là mô tả *máy/người*, không phải *một buổi diễn*, cùng lý do
 `engine/i18n/Localization` tách khỏi model project.
 
-## Helper vẽ dùng chung (`namespace ui::`, `src/src/ui.h`)
+## Helper vẽ dùng chung (`namespace ui::`, `src/ui.h`)
 
 Luôn dùng lại, đừng viết widget riêng lẻ trùng chức năng — đọc `ui.h` trước
 khi thêm helper mới, danh sách dưới đây chỉ là các nhóm chính đã xác nhận
@@ -53,7 +53,7 @@ con số chung.
 ## Font — người dùng chọn được, không cố định
 
 **Khác bản cũ:** đây không phải một bộ font cố định (Inter+RobotoMono+Lucide)
-mà là **lựa chọn trong Cài đặt** (`src/src/settings.cpp`):
+mà là **lựa chọn trong Cài đặt** (`src/settings.cpp`):
 
 | Vai trò | Các lựa chọn |
 |---|---|
@@ -79,7 +79,7 @@ mới, đừng hard-code tên file font.
 | Kéo khung ở VÙNG LẤY | Đổi phần canvas mà slice lấy |
 
 Đây là nguyên tắc thiết kế chung kế thừa từ bản tham khảo — **grep
-`src/src/deck.cpp`/`mapping.cpp` để xác nhận hành vi thật** trước khi khẳng
+`src/deck.cpp`/`mapping.cpp` để xác nhận hành vi thật** trước khi khẳng
 định với người dùng, vì theo `features.md` nhiều hành vi ở đây mới là `[~]`
 (một phần), chưa chắc khớp 100% mô tả trên.
 
@@ -92,7 +92,7 @@ keystone không phải vẽ lại (nguyên tắc #8 trong `.claude/CLAUDE.md`, t
 
 ## Trước khi tick một mục UI là "đã xong"
 
-Grep `src/src/*.cpp` để xác nhận widget/hàm thật tồn tại và chạy được —
+Grep `src/*.cpp` để xác nhận widget/hàm thật tồn tại và chạy được —
 `features.md` chấm điểm nghiêm khắc, `[~]` nghĩa là còn giả một phần, không
 phải "gần xong". Xem mục "Ghi chú kiểm tra" cuối `features.md` trước khi đổi
 trạng thái một dòng.

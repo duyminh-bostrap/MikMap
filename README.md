@@ -22,7 +22,7 @@ còn ở giai đoạn prototype:
 |---|---|
 | Giao diện | 3 màn Composition · Advanced Mapping · Sensor I/O + cửa sổ Cài đặt, bám bản thiết kế `MikMap Workspace.dc.html` |
 | Engine dùng chung (`engine/core`, `engine/io`) | Đã biên dịch & link vào app, **UI chưa gọi tới** |
-| Mô hình dữ liệu app hiện tại | Struct riêng trong `src/src/app.h`, chưa dùng `core/model` thật |
+| Mô hình dữ liệu app hiện tại | Struct riêng trong `src/app.h`, chưa dùng `core/model` thật |
 | Đối chiếu chi tiết | `features.md` — 18 mục `[x]` hành vi thật · 34 mục `[~]` một phần · 83 mục `[ ]`, trên 135 mục Resolume-parity |
 
 Xem [`features.md`](features.md) để biết chính xác cái gì thật/cái gì chỉ có
@@ -81,19 +81,19 @@ phần giao diện: `-DMIKMAP_WITH_ENGINE=OFF`.
 
 ## Việc còn lại để ghép trọn engine thật vào `src/`
 
-`src/` hiện giữ mô hình dữ liệu riêng (`src/src/app.h`); bước tiếp theo là
+`src/` hiện giữ mô hình dữ liệu riêng (`src/app.h`); bước tiếp theo là
 chuyển sang mô hình thật của `engine/`, làm từng mảng để luôn build được:
 
 1. `core/model/ProjectIO` → lưu/mở `.hexmap` (các mục P0 còn thiếu: I2, F8, G8).
 2. `core/calib/*` → thay phép tính homography và SensorMapper tự viết trong
-   `src/src/calib.cpp` (G5, G7).
+   `src/calib.cpp` (G5, G7).
 3. `core/model/Slice` + `WarpCornerPin`/`WarpMesh`/`WarpBezier` → thay phép
-   warp trong `src/src/mapping.cpp`, qua đó có luôn Bezier (F10) và mặt nạ
+   warp trong `src/mapping.cpp`, qua đó có luôn Bezier (F10) và mặt nạ
    bezier (F12).
 4. `io/*` → nguồn sensor thật (G1–G4, G14) thay cho radar mô phỏng trong
-   `src/src/sensor.cpp`.
+   `src/sensor.cpp`.
 5. `core/model/Composition` · `Layer` · `Clip` · `Transport` → thay mô hình
-   deck trong `src/src/app.h`.
+   deck trong `src/app.h`.
 
 ---
 

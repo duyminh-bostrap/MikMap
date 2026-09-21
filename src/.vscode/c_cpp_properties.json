@@ -6,7 +6,7 @@
       "intelliSenseMode": "windows-gcc-x64",
       "cppStandard": "c++17",
       "includePath": [
-        "${workspaceFolder}/src",
+        "${workspaceFolder}",
         "${workspaceFolder}/.tools/imgui-1.92.9b",
         "${workspaceFolder}/.tools/imgui-1.92.9b/backends",
         "${workspaceFolder}/.tools/glfw-3.5.1.bin.WIN64/include",

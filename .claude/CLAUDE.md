@@ -35,7 +35,7 @@ architecture.md kiến trúc ĐÍCH (xem ghi chú vị trí vật lý ở đầu
 features.md     backlog 135 mục, chấm điểm theo code thật của src/
 ```
 
-`src/` hiện là struct riêng (`src/src/app.h` và các file phẳng
+`src/` hiện là struct riêng (`src/app.h` và các file phẳng
 `calib.cpp`/`deck.cpp`/`mapping.cpp`/`sensor.cpp`/...), **link `engine/core`+
 `engine/io` vào nhưng CHƯA gọi tới** — xem "Việc còn lại để ghép trọn" ở
 `README.md`. Đừng nhầm đây là cây thư mục layered đầy đủ ở `architecture.md`
@@ -77,7 +77,7 @@ tiên khớp thắng) → slice.warp.inverse() → UV cục bộ → ×inputRect
 Mặt nạ bezier **không phải một phép biến đổi** — là hàm che alpha ở
 `contentUV`, nên tự động đi theo `H_w` khi kéo lại keystone.
 
-**Lưu ý về `src/` hiện tại:** homography ở đây (`src/src/calib.cpp`) mới là
+**Lưu ý về `src/` hiện tại:** homography ở đây (`src/calib.cpp`) mới là
 affine 2 tỉ lệ + dịch, **chưa phải DLT+RANSAC thật** (đó là `engine/core/calib/`
 — đã có, đúng thuật toán, nhưng `src/` chưa gọi tới). Đừng tưởng nhầm `src/`
 đã có calibration chuẩn chỉ vì `engine/core/calib` tồn tại trong repo.
@@ -144,7 +144,7 @@ homography là affine tạm; `B3` generator vẽ bằng CPU, chưa phải shader
 `Warp*` thay `mapping.cpp`, (4) `io/*` thay radar mô phỏng trong `sensor.cpp`,
 (5) `Composition`/`Layer`/`Clip`/`Transport` thay `app.h`.
 
-Khi tick một mục hoặc báo "đã làm", grep đúng `src/src/*.cpp` để xác nhận,
+Khi tick một mục hoặc báo "đã làm", grep đúng `src/*.cpp` để xác nhận,
 đừng suy diễn từ tên file hay từ những gì `engine/core` đã hỗ trợ.
 
 ## Build & test nhanh
@@ -196,7 +196,7 @@ Quy ước build/test/style mặc định ở `.claude/rules/tech-defaults.md`.
 - Không báo một mục trong `features.md` là xong dựa trên việc `engine/core`
   đã hỗ trợ — phải xác nhận `src/` thật sự GỌI tới, không chỉ link vào.
 - Không tìm/dùng API `theme::*` trong `src/` — đó là API của bản cũ (nhánh
-  `legacy-oF-ui`); `src/` dùng `namespace ui::` (`src/src/ui.h`).
+  `legacy-oF-ui`); `src/` dùng `namespace ui::` (`src/ui.h`).
 - Không đưa file mô tả *máy này và người này* vào git
   (`.claude/CLAUDE.local.md`, `.claude/settings.local.json`).
 

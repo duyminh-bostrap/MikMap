@@ -4,7 +4,9 @@
 # touching the root CMakeLists.txt, so this target can never conflict with the
 # engine+test build. This directory was promoted from newui/ to be the current
 # src/ — the old openFrameworks+MSBuild UI it replaced lives on the `legacy-oF-ui`
-# git branch, not in this working tree.
+# git branch, not in this working tree. The app's own sources used to live one
+# level deeper at newui/src/*.cpp; flattened to src/*.cpp directly after the
+# promotion so the tree doesn't read as src/src/.
 #   cmake -S src -B src/build -G Ninja -DCMAKE_BUILD_TYPE=Release
 #   cmake --build src/build
 cmake_minimum_required(VERSION 3.20)
@@ -27,7 +29,7 @@ else()
   set(ENGINE_SOURCES "")
 endif()
 
-file(GLOB NEWUI_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
+file(GLOB NEWUI_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp")
 
 add_executable(mikmap
   ${NEWUI_SOURCES}
@@ -36,7 +38,7 @@ add_executable(mikmap
   ${IMGUI_DIR}/backends/imgui_impl_glfw.cpp ${IMGUI_DIR}/backends/imgui_impl_opengl3.cpp)
 
 target_include_directories(mikmap PRIVATE
-  src ${REPO}/engine ${IMGUI_DIR} ${IMGUI_DIR}/backends ${GLFW_DIR}/include third_party/stb)
+  ${CMAKE_CURRENT_SOURCE_DIR} ${REPO}/engine ${IMGUI_DIR} ${IMGUI_DIR}/backends ${GLFW_DIR}/include third_party/stb)
 
 if(MIKMAP_WITH_ENGINE)
   target_compile_definitions(mikmap PRIVATE MIKMAP_WITH_ENGINE=1)

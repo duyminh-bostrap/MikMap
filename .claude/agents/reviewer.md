@@ -50,7 +50,7 @@ dấu hiệu diff đang nhắm nhầm nhánh.
 7. **File riêng máy/người** — diff có vô tình đưa `.claude/CLAUDE.local.md`,
    `.claude/settings.local.json`, hay file cấu hình máy/người khác vào không?
 8. **Tick tài liệu sai sự thật** — nếu diff sửa `features.md` để tick
-   `[x]`/`[~]`, xác nhận bằng grep `src/src/*.cpp` rằng code tương ứng thật
+   `[x]`/`[~]`, xác nhận bằng grep `src/*.cpp` rằng code tương ứng thật
    sự tồn tại, được GỌI (không chỉ compile vào qua `engine/`), và chạy được
    — không phải chỉ vì `engine/core` đã có thuật toán đó.
 

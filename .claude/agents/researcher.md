@@ -29,7 +29,7 @@ hoặc nói rõ phải xem ở nhánh đó.
    "Ghi chú kiểm tra" cuối file để biết chính xác cái gì còn giả) · `[ ]`
    chưa làm. Chỉ còn MỘT `features.md` đang hoạt động (bản cũ theo dõi engine
    oF nằm trong lịch sử git/nhánh `legacy-oF-ui`).
-4. Source thật (`engine/core`, `engine/io`, `engine/i18n`, `src/src/*.cpp`,
+4. Source thật (`engine/core`, `engine/io`, `engine/i18n`, `src/*.cpp`,
    `tests/`) — luôn xác nhận bằng grep, đừng chỉ tin theo tài liệu.
 
 ## Quy tắc bắt buộc
@@ -37,7 +37,7 @@ hoặc nói rõ phải xem ở nhánh đó.
 - **Không bao giờ báo một tính năng "đã xong" chỉ vì `engine/core` đã hỗ trợ
   nó.** `src/` link `engine/core`+`engine/io` vào nhưng phần lớn CHƯA gọi tới
   (xem "Việc còn lại để ghép trọn" trong `README.md`) — luôn grep
-  `src/src/*.cpp` để xác nhận code thật sự GỌI, không chỉ được compile vào.
+  `src/*.cpp` để xác nhận code thật sự GỌI, không chỉ được compile vào.
 - Khi trả lời "chỗ này nằm ở đâu": cho `file:line` cụ thể, không mô tả chung
   chung. Nói rõ nếu câu trả lời chỉ tồn tại trên nhánh `legacy-oF-ui`.
 - Khi trả lời về kiến trúc: đối chiếu với quy tắc phụ thuộc
