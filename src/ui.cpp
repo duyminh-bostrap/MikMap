@@ -190,6 +190,7 @@ void Icon(const char* n, ImVec2 c, float sz, ImU32 col) {
   if (is("chevron-down")) Poly({P(6, 9), P(12, 15), P(18, 9)});
   else if (is("chevron-right")) Poly({P(9, 6), P(15, 12), P(9, 18)});
   else if (is("play")) Poly({P(6, 3), P(20, 12), P(6, 21)}, true);
+  else if (is("square")) Rect(6, 6, 18, 18, 1.5f);
   else if (is("pause")) { Rect(14, 4, 18, 20, 1); Rect(6, 4, 10, 20, 1); }
   else if (is("skip-back")) { Poly({P(19, 20), P(9, 12), P(19, 4)}, true); Line(5, 19, 5, 5); }
   else if (is("skip-forward")) { Poly({P(5, 4), P(15, 12), P(5, 20)}, true); Line(19, 5, 19, 19); }

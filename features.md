@@ -60,7 +60,7 @@
 
 | ✓ | ID | Tính năng | Công sức | Đề xuất |
 |:-:|---|---|:-:|:-:|
-| [~] | **C1** | Play / pause / stop | S | 🔴 P0 |
+| [x] | **C1** | Play / pause / stop | S | 🔴 P0 |
 | [x] | **C2** | Loop | S | 🔴 P0 |
 | [ ] | **C3** | Trigger style: Piano (giữ) / Toggle | S | 🟠 P1 |
 | [x] | **C4** | Playback direction (thuận / ngược / ping-pong / random) | S | 🟠 P1 |
@@ -131,8 +131,8 @@
 | [~] | **F12** | **Bezier mask per-slice** | L | 🟠 P1 |
 | [ ] | **F13** | Slice transform (position/scale/rotate/flip) | S | 🟠 P1 |
 | [x] | **F14** | Test card / lưới calibration overlay | S | 🟠 P1 |
-| [~] | **F15** | Nhập toạ độ bằng số (không chỉ kéo chuột) | S | 🟠 P1 |
-| [~] | **F16** | Slice enable / disable / solo | S | 🟠 P1 |
+| [x] | **F15** | Nhập toạ độ bằng số (không chỉ kéo chuột) | S | 🟠 P1 |
+| [x] | **F16** | Slice enable / disable / solo | S | 🟠 P1 |
 | [~] | **F17** | Multi-screen (nhiều máy chiếu) | M | 🟠 P1 |
 | [ ] | **F18** | Polygon slice (không chỉ hình chữ nhật) | L | 🟡 P2 |
 | [ ] | **F19** | Color correction per-slice (brightness/gamma/RGB) | M | 🟡 P2 |
@@ -161,7 +161,7 @@
 | [x] | **G10** | Hiển thị sai số tái chiếu (reprojection error) | S | 🟠 P1 |
 | [ ] | **G11** | OneEuroFilter khử nhiễu | S | 🟠 P1 |
 | [ ] | **G12** | PointTracker — gán ID bền vững qua frame | M | 🟠 P1 |
-| [~] | **G13** | Overlay debug điểm sensor lên output | S | 🟠 P1 |
+| [x] | **G13** | Overlay debug điểm sensor lên output | S | 🟠 P1 |
 | [ ] | **G14** | TUIO source | M | 🟠 P1 |
 | [ ] | **G15** | Kinect / Femto Bolt depth source + blob detect | L | 🟠 P1 |
 | [ ] | **G16** | Ghi log + replay phiên sensor để debug | M | 🟡 P2 |
@@ -214,7 +214,7 @@
 
 ## Ghi chú kiểm tra (prototype `mikmap-cpp`)
 
-**Tổng kết:** 40 mục `[x]` · 24 mục `[~]` · 71 mục `[ ]` (trên tổng 135 mục; đếm từ các dòng bảng ở trên, 2026-09-21). Các danh sách `[x]`/`[~]`/"Chưa làm" ngay dưới là bản chụp trước đợt bổ sung P0 — đợt đó (mục kế tiếp) đã làm thêm A1, A6, C2/C4/C5, D1–D6, F2, I1, G9 và thay G5 bằng DLT. G5 vẫn `[~]`: có DLT + chuẩn hoá Hartley trong `src/calib.cpp` nhưng chưa có RANSAC (grep `ransac` trong `src/*.cpp` = 0).
+**Tổng kết:** 44 mục `[x]` · 20 mục `[~]` · 71 mục `[ ]` (trên tổng 135 mục; đếm từ các dòng bảng ở trên, 2026-09-21). Các danh sách `[x]`/`[~]`/"Chưa làm" ngay dưới là bản chụp trước đợt bổ sung P0 — đợt đó (mục kế tiếp) đã làm thêm A1, A6, C2/C4/C5, D1–D6, F2, I1, G9 và thay G5 bằng DLT. G5 vẫn `[~]`: có DLT + chuẩn hoá Hartley trong `src/calib.cpp` nhưng chưa có RANSAC (grep `ransac` trong `src/*.cpp` = 0).
 
 **Đã có hành vi thật (`[x]`)**
 - A2/A3/A5/A8/A15 — layer xếp chồng (layer trên đè lên), cột động (chèn/xoá/đổi chỗ/tự thêm), click = cue, đúp = trigger, solo/mute/bypass + xoá clip, thu gọn layer/group. Nguồn: `deck.cpp`.
@@ -265,3 +265,8 @@
 - **C12 `[~]` (tiến thêm):** BPM chỉnh được — bấm vào `xxx.x BPM` ở thanh trạng thái để tap tempo, lăn chuột để tinh chỉnh, chuột phải về 128; lưu trong dự án. Chưa đồng bộ nguồn ngoài (MIDI clock / Link).
 - **Timeline / playhead:** tổng thời lượng và tốc độ chạy playhead nay theo thời lượng thật của clip (`16s`); generator `∞` lặp mỗi 10s.
 - **A13 — fader nhóm `[x]`:** mỗi nhóm có fader tổng trên header (kéo được; bấm vào fader không làm thu gọn nhóm), nhân vào độ mờ của mọi layer trong nhóm khi vẽ composite; lưu trong dự án.
+- **C1 — Stop `[x]`:** nút ■ trên transport dừng và tua playhead của clip trên cùng về 0 (cùng Play/Pause).
+- **F15 `[x]`:** toạ độ 4 góc corner-pin nhập được bằng số (X/Y cho từng góc, đơn vị px không gian output), đồng bộ hai chiều với kéo chuột trên sân khấu.
+- **G13 `[x]`:** nút **Output overlay** ở thanh Radar bật hiển thị điểm chạm (chấm + gợn sóng) lên **cửa sổ output máy chiếu thật** sau khi chiếu qua H_s; mặc định tắt vì là công cụ gỡ lỗi; chỉ với Screen đầu tiên (chỗ calibration nhắm tới). Đã chụp cửa sổ output xác nhận trên macOS.
+- **F16 `[x]`:** chuột phải slice → **Solo/Unsolo**; khi một screen có slice solo, cửa sổ output chỉ vẽ các slice solo (cây hiện nhãn `SOLO`), lưu trong dự án. Đã có sẵn ẩn/hiện bằng nút mắt.
+- **FX thật (E5/E8/E10 vẫn `[~]`):** trước đây chỉ Strobe vẽ thật và **chỉ ở monitor Preview**. Nay `DrawClipContent` (đường vẽ chung của Preview, Live Output và cửa sổ máy chiếu) áp dụng: **Strobe** (mọi nơi), **Hue Shift** (xoay màu chủ đạo của clip + độ bão hoà) và **Mirror** (H / V / QUAD, vẽ 2–4 vùng lật). Chưa làm được vì cần framebuffer: Blur, Pixelate, Trails/feedback, Kaleidoscope, RGB Shift, Twirl/Ripple, Levels. Cờ test: `mikmap --fx <kind>` thêm FX vào clip đang chọn để chụp ảnh.

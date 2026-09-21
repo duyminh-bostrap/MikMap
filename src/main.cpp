@@ -586,7 +586,7 @@ struct Script { int kind; float x0, y0, x1, y1; };
 int main(int argc, char** argv) {
   std::vector<Script> script;
   bool openOut = false; std::string outShot;
-  std::string roundtrip;
+  std::string roundtrip; std::vector<int> fxTest;
   std::string shot; int startScreen = 0, frames = 12, W = 1440, H = 900, tab = -1, page = -1;
   bool sel = false, scaleGiven = false; int selLi = 0, selCi = 0, ctxTest = 0, cliScale = 100;
   for (int i = 1; i < argc; ++i) {
@@ -609,6 +609,7 @@ int main(int argc, char** argv) {
       sscanf(argv[++i], "%f,%f,%f,%f", &s.x0, &s.y0, &s.x1, &s.y1);
       script.push_back(s);
     }
+    else if (a == "--fx" && i + 1 < argc) fxTest.push_back(atoi(argv[++i]));   // test aid: add FX kind N to the selected clip
     else if (a == "--cell" && i + 2 < argc) { sel = true; selLi = atoi(argv[++i]); selCi = atoi(argv[++i]); }
   }
   if (!roundtrip.empty()) {
@@ -618,7 +619,7 @@ int main(int argc, char** argv) {
     NewProject();
     if (ProjectDirty()) return fail("fresh project reports dirty");
     A.layers[0].name = "Edited"; A.layers[0].clips[1].fx.push_back(Fx()); A.colNames.resize(A.colCount()); A.colNames[1] = "Renamed";
-    A.screens[0].slices[0].q[2] = ImVec2(1500, 900); A.calib[0].mx = 0.123f; A.bpm = 97.5f;
+    A.screens[0].slices[0].q[2] = ImVec2(1500, 900); A.calib[0].mx = 0.123f; A.bpm = 97.5f; A.screens[0].slices[1].solo = true;
     if (!ProjectDirty()) return fail("edit not detected as dirty");
     if (!SaveProject(roundtrip, err)) return fail(err.c_str());
     if (ProjectDirty()) return fail("dirty right after save");
@@ -627,6 +628,7 @@ int main(int argc, char** argv) {
     if (A.layers[0].name != "Edited" || A.colName(1) != "Renamed" || A.screens[0].slices[0].q[2].x != 1500.f || std::fabs(A.calib[0].mx - 0.123f) > 1e-6f) return fail("state not restored");
     if (A.layers[0].clips[1].fx.empty()) return fail("fx chain lost");
     if (A.bpm != 97.5f) return fail("bpm not restored");
+    if (!A.screens[0].slices[1].solo || A.screens[0].slices[0].solo) return fail("slice solo not restored");
     if (ProjectDirty()) return fail("dirty right after load");
     NewBlankProject();
     if (A.layers.size() != 4 || A.screens.size() != 1) return fail("blank project shape");
@@ -716,6 +718,7 @@ int main(int argc, char** argv) {
   if (openOut) OpenOutput(win, A.outMonitor);
   if (ctxTest) A.openCtx(ImVec2(500, 300), A.sliceMenu("screen1", "slice1"));
   if (sel) A.cue(selLi, selCi);
+  for (int k : fxTest) if (k >= 0 && k < FX_COUNT) A.addFx(k);
 
   double last = glfwGetTime(); double progAcc = 0; int frame = 0;
   while (!glfwWindowShouldClose(win)) {
@@ -845,7 +848,7 @@ int main(int argc, char** argv) {
       break;
     }
     glfwSwapBuffers(win);
-    if (!outShot.empty() && frame >= 6) { SetOutputCapture(outShot.c_str()); outShot.clear(); }
+    if (!outShot.empty() && frame >= std::max(6, 3 + 6 * (int)script.size() + 2)) { SetOutputCapture(outShot.c_str()); outShot.clear(); }
     RenderOutput();   // F2: draw the warped slices into the projector window, if it is open
   }
   CloseOutput();

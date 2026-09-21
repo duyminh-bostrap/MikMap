@@ -57,6 +57,7 @@ struct Mask {
 struct Slice {
   std::string id, name;
   bool visible = true;
+  bool solo = false;   // F16: while any slice of a screen is solo, only solo slices reach the output
   int warp = 0;  // 0 cornerPin, 1 mesh
   int meshCols = 4, meshRows = 3;
   std::vector<float> meshU, meshV;                 // custom column/row split positions (0..1)
@@ -207,6 +208,7 @@ struct App {
   std::vector<Calib> calib;
   ImVec2 roi[4];
   bool editRoi = false;
+  bool sensorOverlay = false;   // G13: draw live sensor touches on the projector output window (debug aid, off by default)
   int wizardStep = 0;
   float noise = 1.2f, blobSize = 15;
   float sweep = 0;

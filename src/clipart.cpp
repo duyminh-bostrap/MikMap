@@ -163,13 +163,60 @@ void DrawComposite(ImRect canvas, float t, float alpha) {
   }
 }
 
-// ── clip art ──
+// ── clip FX that can be done on vector art (E5 hue shift · E8 mirror · E10 strobe) ──
+// Every place that shows a clip (Preview, Live Output, projector window) goes through DrawClipContent, so an effect
+// applied here is seen everywhere. Blur / pixelate / trails / kaleidoscope need a framebuffer and are not implemented.
+static uint32_t HueSat(uint32_t hex, float hueDeg, float satMul) {
+  float r = ((hex >> 16) & 255) / 255.f, gr = ((hex >> 8) & 255) / 255.f, b = (hex & 255) / 255.f;
+  float mx = std::max({r, gr, b}), mn = std::min({r, gr, b}), d = mx - mn, h = 0;
+  if (d > 1e-6f) { if (mx == r) h = std::fmod((gr - b) / d, 6.f); else if (mx == gr) h = (b - r) / d + 2.f; else h = (r - gr) / d + 4.f; h *= 60.f; if (h < 0) h += 360.f; }
+  float s = mx > 0 ? d / mx : 0, v = mx;
+  h = std::fmod(h + hueDeg + 720.f, 360.f); s = std::clamp(s * satMul, 0.f, 1.f);
+  float cc = v * s, x = cc * (1.f - std::fabs(std::fmod(h / 60.f, 2.f) - 1.f)), m = v - cc, R = 0, G = 0, B = 0;
+  int sec = (int)(h / 60.f) % 6;
+  switch (sec) { case 0: R = cc; G = x; break; case 1: R = x; G = cc; break; case 2: G = cc; B = x; break; case 3: G = x; B = cc; break; case 4: R = x; B = cc; break; default: R = cc; B = x; }
+  auto q = [](float u) { return (uint32_t)std::clamp(u * 255.f + 0.5f, 0.f, 255.f); };
+  return (q(R + m) << 16) | (q(G + m) << 8) | q(B + m);
+}
+
+static void DrawClipCore(ImRect a, const Clip& c, float t, float base, float alpha, float lod);
+
 void DrawClipContent(ImRect a, const Clip& c, float t, float base, float alpha, float lod) {
   if (c.st == Clip::Empty || c.st == Clip::Armed) return;
+  const Fx* mirror = nullptr;
+  for (const Fx& f : c.fx) {
+    if (!f.on) continue;
+    if (f.kind == 4) {   // strobe: dim to near-black during the "off" part of each cycle
+      float rate = 0.5f + f.p[0] * 0.12f, duty = (10 + f.p[1] * 0.6f) / 100.f;
+      if (std::fmod((float)g.time * rate, 1.f) > duty) alpha *= 1.f - 0.9f * std::clamp(f.mix / 100.f, 0.f, 1.f);
+    } else if (f.kind == 3 && !mirror) mirror = &f;
+  }
+  if (!mirror) { DrawClipCore(a, c, t, base, alpha, lod); return; }
+  // mirror: draw the clip in 2 or 4 clipped regions, flipping the copies (the inner call has no mirror, so no recursion)
+  Clip cc = c;
+  cc.fx.erase(std::remove_if(cc.fx.begin(), cc.fx.end(), [](const Fx& f) { return f.kind == 3; }), cc.fx.end());
+  float mx = (a.Min.x + a.Max.x) * 0.5f, my = (a.Min.y + a.Max.y) * 0.5f;
+  bool h = mirror->en == 0 || mirror->en == 2, v = mirror->en == 1 || mirror->en == 2;
+  int nx = h ? 2 : 1, ny = v ? 2 : 1;
+  for (int iy = 0; iy < ny; ++iy) for (int ix = 0; ix < nx; ++ix) {
+    ImRect part(nx == 2 ? (ix ? mx : a.Min.x) : a.Min.x, ny == 2 ? (iy ? my : a.Min.y) : a.Min.y,
+                nx == 2 ? (ix ? a.Max.x : mx) : a.Max.x, ny == 2 ? (iy ? a.Max.y : my) : a.Max.y);
+    Clip part_c = cc;
+    if (ix) part_c.flipH = !cc.flipH;
+    if (iy) part_c.flipV = !cc.flipV;
+    g.dl->PushClipRect(part.Min, part.Max, true);
+    DrawClipCore(a, part_c, t, base, alpha, lod);
+    g.dl->PopClipRect();
+  }
+}
+
+static void DrawClipCore(ImRect a, const Clip& c, float t, float base, float alpha, float lod) {
   alpha *= std::clamp(c.opacity / 100.f, 0.f, 1.f);
   if (alpha <= 0.004f) return;
   ImDrawList* dl = g.dl;
   uint32_t col = CLIP_COLORS[std::clamp(c.color, 0, 5)];
+  for (const Fx& f : c.fx) if (f.on && f.kind == 7)   // hue shift (p0 = hue, 0..100 -> 0..360 deg; p1 = saturation, 50 = unchanged)
+    col = HueSat(col, f.p[0] * 3.6f * (f.mix / 100.f), 1.f + (f.p[1] - 50.f) / 50.f * (f.mix / 100.f));
   float W = a.GetWidth(), k = W / base;
   ImVec2 C((a.Min.x + a.Max.x) * 0.5f, (a.Min.y + a.Max.y) * 0.5f);
   float bw = base, bh = base * 9.f / 16.f;  // logical canvas units

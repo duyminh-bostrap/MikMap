@@ -181,6 +181,8 @@ std::vector<MenuItem> App::sliceMenu(const std::string& scId, const std::string&
     auto sel = [this, scId, slId] { selSc = scId; selSl = slId; selMk.clear(); selKind = -1; };
     m.push_back(mk(vis ? "Hide from output" : "Show on output", vis ? "eye-off" : "eye", false, false, [this, scId, slId] {
       for (auto& s : screens) if (s.id == scId) for (auto& l : s.slices) if (l.id == slId) l.visible = !l.visible; }));
+    m.push_back(mk(sc.slices[i].solo ? "Unsolo" : "Solo", "target", false, false, [this, scId, slId] {
+      for (auto& s : screens) if (s.id == scId) for (auto& l : s.slices) if (l.id == slId) l.solo = !l.solo; }));
     m.push_back(mk("Move up", "arrow-up", i <= 0, false, [this, scId, slId] { moveSlice(scId, slId, -1); }));
     m.push_back(mk("Move down", "arrow-down", i >= n - 1, false, [this, scId, slId] { moveSlice(scId, slId, 1); }));
     m.push_back(mk("Duplicate slice", "copy", false, false, [this, scId, slId] { dupSlice(scId, slId); }));
@@ -286,7 +288,7 @@ static std::vector<Node> BuildTree(bool onlyScreen, const std::string& only) {
       if (!open) continue;
     }
     for (auto& sl : sc.slices) {
-      Node s; s.kind = Node::SliceN; s.sc = sc.id; s.sl = sl.id; s.name = sl.name; s.h = onlyScreen ? 24 : 26; s.pad = onlyScreen ? 6 : 16; s.vis = sl.visible; out.push_back(s);
+      Node s; s.kind = Node::SliceN; s.sc = sc.id; s.sl = sl.id; s.name = sl.name; s.meta = sl.solo ? "SOLO" : ""; s.h = onlyScreen ? 24 : 26; s.pad = onlyScreen ? 6 : 16; s.vis = sl.visible; out.push_back(s);
       for (auto& m : sl.masks) {
         Node k; k.kind = Node::MaskN; k.sc = sc.id; k.sl = sl.id; k.mk = m.id; k.name = m.name; k.h = 24; k.pad = onlyScreen ? 20 : 28; k.canHide = false; out.push_back(k);
       }
@@ -862,8 +864,12 @@ static void PropsPanel(ImRect r) {
         ImRect cr(x, oy + y, x + w, oy + y + 24);
         Box(cr, K(pal::g18), K(pal::g2a), 3);
         Text(cr.Min.x + 8, cr.Min.y + 12, MONO_B, 10, K(pal::coral), ck[i]);
-        char v[64]; snprintf(v, sizeof v, "X: %d  |  Y: %d", (int)sl->q[i].x, (int)sl->q[i].y);
-        TextR(cr.Max.x - 8, cr.Min.y + 12, MONO_M, 10, K(pal::tcc), v);
+        // F15: type exact coordinates (output-space px); dragging on the stage still works and stays in sync
+        float fw = (cr.GetWidth() - 34 - 6) / 2.f;
+        int vx = (int)std::round(sl->q[i].x), vy = (int)std::round(sl->q[i].y);
+        char idx[24], idy[24]; snprintf(idx, sizeof idx, "##cpx%d", i); snprintf(idy, sizeof idy, "##cpy%d", i);
+        if (IntField(idx, Rc(cr.Min.x + 30, cr.Min.y, fw, 24), vx)) sl->q[i].x = (float)std::clamp(vx, -4000, 8000);
+        if (IntField(idy, Rc(cr.Min.x + 30 + fw + 6, cr.Min.y, fw, 24), vy)) sl->q[i].y = (float)std::clamp(vy, -4000, 8000);
         y += 24 + 4;
       }
       y += 4;

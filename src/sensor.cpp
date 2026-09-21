@@ -174,7 +174,17 @@ static void Radar(ImRect r) {
     Text(br.Min.x + 10 + 12 + 6, cy, UI_B, 10, fg, lb);
     if (h.hover) CursorHand();
     if (h.click) A.editRoi = !A.editRoi;
-    TextEll(lx, cy, br.Min.x - 8 - lx, MONO_R, 10, K(pal::t88), "40.0 Hz real-time sweep");
+    const char* ol = "Output overlay";
+    float ow = TextW(UI_B, 10, ol) + 10 + 6 + 12 + 10;
+    ImRect ob(br.Min.x - 6 - ow, cy - 12, br.Min.x - 6, cy + 12);
+    Hit oh = HitR(ob);
+    Box(ob, A.sensorOverlay ? K(pal::mint, 0.18f) : K(pal::g1c), A.sensorOverlay ? K(pal::mint) : K(pal::g22), 3);
+    ImU32 ofg = K(A.sensorOverlay ? pal::mint : pal::t88);
+    Icon("activity", ImVec2(ob.Min.x + 10 + 6, cy), 12, ofg);
+    Text(ob.Min.x + 10 + 12 + 6, cy, UI_B, 10, ofg, ol);
+    if (oh.hover) CursorHand();
+    if (oh.click) A.sensorOverlay = !A.sensorOverlay;
+    TextEll(lx, cy, ob.Min.x - 8 - lx, MONO_R, 10, K(pal::t88), "40.0 Hz real-time sweep");
   }
   ImRect area(r.Min.x, r.Min.y + 44, r.Max.x, r.Max.y);
   float D = std::min({area.GetWidth() - 32, 540.f, area.GetHeight() - 32 - 6 - 10});

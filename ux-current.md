@@ -127,7 +127,7 @@ Cây thư mục: Sources · Generators · Effects · Composition — **dữ li�
   clip đã cue / toàn bộ composite. Live có TestCard khi bật.
 - **Timeline**: hiển thị timecode theo clip trên cùng đang chọn (tổng = thời lượng thật của clip, vd `16s`; generator `∞` lặp mỗi 10s) và
   có **thanh kéo (scrub)** ở đáy — bấm/kéo để đổi playhead. ✅
-- 4 nút transport: ⏮ ⏭ (nhảy sang clip chọn trước/sau ✅), ▶ ⏸ (bật/tắt chạy ✅).
+- 5 nút transport: ⏮ ⏭ (nhảy sang clip chọn trước/sau ✅), ▶ ⏸ (bật/tắt chạy ✅), ■ **Stop** (dừng và tua playhead về 0 ✅).
 
 ### 2.6 Properties (phải, 236px) — 3 tab **Comp / Layer / Clip**
 - **Comp**: bảng chỉ đọc (canvas, số layer/nhóm/cột, BPM, FPS, độ trễ, output).
@@ -135,7 +135,7 @@ Cây thư mục: Sources · Generators · Effects · Composition — **dữ li�
   bảng thông tin.
 - **Clip**: ảnh xem trước, PLAYHEAD, **PLAY MODE** (LOOP/BOUN/HOLD/ONCE), **SPEED**
   + REV, **TRANSFORM** (X, Y, Scale, Rotation, Opacity + FLIP H/V + RESET) ✅;
-  **FX CHAIN**: ADD, danh sách hiệu ứng (chuột phải: bật/tắt, lên/xuống,
+  **FX CHAIN** (chỉ **Strobe, Hue Shift, Mirror** tác động lên hình, ở mọi màn hình; các hiệu ứng khác chỉnh được tham số nhưng chưa vẽ): ADD, danh sách hiệu ứng (chuột phải: bật/tắt, lên/xuống,
   nhân đôi, reset, xoá), tham số, mix, cờ BEAT/AUDIO. ✅
 
 ### 2.7 Kích thước
@@ -153,7 +153,7 @@ Ba vùng: **cây Screen/Slice/Mask** (trái) | **Stage canvas** (giữa) | **Pro
 |---|---|---|
 | M1 | Bấm dòng Screen/Slice/Mask → chọn | ✅ |
 | M2 | ▾ thu gọn Screen; 👁 ẩn/hiện | ✅ |
-| M3 | **Chuột phải** → menu: Screen (Move up/down, Duplicate, Add slice, Delete) · Slice (… Reset warp, Add mask, Delete) · Mask (Duplicate, Delete) | ✅ |
+| M3 | **Chuột phải** → menu: Screen (Move up/down, Duplicate, Add slice, Delete) · Slice (Hide/Show, **Solo/Unsolo**, … Reset warp, Add mask, Delete) · Mask (Duplicate, Delete) | ✅ |
 | M4 | Nút thêm **Screen / Slice / Mask** | ✅ |
 | M5 | Thu gọn cây thành rail; bấm tên Screen trong rail để mở tạm | ✅ |
 
@@ -180,7 +180,7 @@ Ba vùng: **cây Screen/Slice/Mask** (trái) | **Stage canvas** (giữa) | **Pro
 | M11 | Chip 🔍 cạnh tên slice → zoom vào slice | ✅ |
 
 ### 3.3 Properties (phải)
-Slice: số cột/hàng mesh (+/−), reset lưới, thêm cột/hàng ở vị trí đã chọn. Mask:
+Slice: **toạ độ 4 góc nhập được bằng số** (X/Y, đồng bộ với kéo chuột), số cột/hàng mesh (+/−), reset lưới, thêm cột/hàng ở vị trí đã chọn. Mask:
 đảo, độ mờ, xoá. Screen: **Edge blend** (công tắc), chọn **màn hình xuất** (bấm
 xoay vòng qua các display), nút **mở/đóng cửa sổ output** (`F11`).
 
@@ -195,6 +195,7 @@ Ba cột: **Devices + Calibration** | **Radar view** | **Parameter routing**.
 | S1 | Thẻ thiết bị | Nút **CONNECT/DISCONNECT** đổi cờ; hiện FPS/LATENCY/PACKETS khi "kết nối" | 🟡 dữ liệu mẫu, **không có thiết bị thật** |
 | S2 | **Calibration wizard** | *Start wizard* → 4 bước (TOP-LEFT → BOTTOM-LEFT): **bấm vào radar** để đặt từng điểm; có *Cancel*. Hiện RMS và ma trận H_s 3×3 | ✅ (DLT thật, chưa RANSAC) |
 | S3 | **Radar** | Bấm radar = **giả lập một điểm chạm** (thay điểm cũ, chỉ có 1 điểm). Điểm này được chiếu qua calibration lên sân khấu Mapping (trang Output, Screen đầu) và kích hoạt các dây `touch.down` đang bật | 🟡 giả lập nguồn, chuỗi phía sau chạy thật |
+| S7 | Nút **Output overlay** (thanh Radar) | Bật/tắt vẽ điểm chạm lên cửa sổ output máy chiếu (sau H_s; Screen đầu; mặc định tắt) | ✅ |
 | S4 | **Edit ROI** | Đổi màu sang vàng, hiện 4 chấm — **kéo được** (giới hạn trong đĩa radar); trong lúc sửa ROI, bấm radar không tạo điểm chạm giả | ✅ |
 | S5 | Blob tracking | Slider *Noise threshold* và *Blob size* | ✅ đổi số, chưa có nguồn thật để tác động |
 | S6 | Parameter routing | Bấm dây để bật/tắt. Dây `touch.down → "<layer> · <clip>"` đang bật sẽ trigger clip đó khi chạm radar | 🟡 chỉ nguồn `touch.down`; các dây khác chưa nối |

@@ -85,7 +85,7 @@ std::vector<float> ReadFloats(const JsonValue& a) { std::vector<float> v; if (a.
 
 JsonValue SliceJ(const Slice& s) {
   JsonValue o = JsonValue::object();
-  o.set("id", s.id); o.set("name", s.name); o.set("visible", s.visible); o.set("warp", s.warp);
+  o.set("id", s.id); o.set("name", s.name); o.set("visible", s.visible); o.set("solo", s.solo); o.set("warp", s.warp);
   o.set("meshCols", s.meshCols); o.set("meshRows", s.meshRows);
   o.set("meshU", FloatsJ(s.meshU)); o.set("meshV", FloatsJ(s.meshV));
   JsonValue mp = JsonValue::array();
@@ -107,7 +107,7 @@ JsonValue SliceJ(const Slice& s) {
 }
 Slice ReadSlice(const JsonValue& o) {
   Slice s;
-  s.id = o["id"].asString(); s.name = o["name"].asString(); s.visible = o["visible"].asBool(true);
+  s.id = o["id"].asString(); s.name = o["name"].asString(); s.visible = o["visible"].asBool(true); s.solo = o["solo"].asBool(false);
   s.warp = std::clamp(o["warp"].asInt(0), 0, 1);
   s.meshCols = std::clamp(o["meshCols"].asInt(4), 2, 64); s.meshRows = std::clamp(o["meshRows"].asInt(3), 2, 64);
   s.meshU = ReadFloats(o["meshU"]); s.meshV = ReadFloats(o["meshV"]);

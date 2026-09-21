@@ -522,10 +522,6 @@ static void Monitor(ImRect r, bool live) {
     int act = 0; for (auto& f : chain) if (f.on) act++;
     Fill(well, K(0x080808));
     DrawClipContent(well, sc, (float)g.time * 1.5f, 480.f, 1.f);
-    for (auto& f : chain) if (f.on && f.kind == 4) {   // Strobe
-      float rate = 0.5f + f.p[0] * 0.12f, duty = (10 + f.p[1] * 0.6f) / 100.f, ph = std::fmod((float)g.time * rate, 1.f);
-      if (ph > duty) Fill(well, K(0x050505, 0.9f * f.mix / 100.f));
-    }
     g.dl->PushClipRect(well.Min, well.Max, true);
     for (float x = well.Min.x + 13; x < well.Max.x; x += 14) VLine(std::floor(x), well.Min.y, well.Max.y, K(0xffffff, 0.045f));
     for (float y = well.Min.y + 13; y < well.Max.y; y += 14) HLine(well.Min.x, well.Max.x, std::floor(y), K(0xffffff, 0.045f));
@@ -1236,10 +1232,10 @@ void DrawDeck(ImRect body) {
       }
       g.dl->AddCircleFilled(ImVec2(track.Min.x + track.GetWidth() * frac, (track.Min.y + track.Max.y) * 0.5f), 4.f, Ca(K(pal::white)), 12);
     }
-    ImRect grp(mid - 59, tl.Min.y + 9, mid + 59, tl.Min.y + 39);
+    ImRect grp(mid - 74, tl.Min.y + 9, mid + 74, tl.Min.y + 39);
     Box(grp, K(pal::g050), K(pal::g22), 2);
-    struct TB { const char* ico; Tone t; bool on; } tb[4] = {{"skip-back", T_LIVE, false}, {"play", T_LIVE, A.playing}, {"pause", T_STANDBY, !A.playing}, {"skip-forward", T_LIVE, false}};
-    for (int i = 0; i < 4; ++i) {
+    struct TB { const char* ico; Tone t; bool on; } tb[5] = {{"skip-back", T_LIVE, false}, {"play", T_LIVE, A.playing}, {"pause", T_STANDBY, !A.playing}, {"square", T_ALERT, false}, {"skip-forward", T_LIVE, false}};
+    for (int i = 0; i < 5; ++i) {
       ImRect br(grp.Min.x + 2 + i * 29, grp.Min.y + 1 + 0, grp.Min.x + 2 + i * 29 + 28, grp.Min.y + 1 + 28);
       Hit h = HitR(br);
       uint32_t hex = ToneHex(tb[i].t);
@@ -1248,7 +1244,9 @@ void DrawDeck(ImRect body) {
       Icon(tb[i].ico, ImVec2((br.Min.x + br.Max.x) * 0.5f, (br.Min.y + br.Max.y) * 0.5f), 14, K(tb[i].on ? hex : h.hover ? pal::white : pal::t77));
       if (h.hover) CursorHand();
       if (h.click) {
-        if (i == 0) A.stepSel(-1); else if (i == 1) A.playing = true; else if (i == 2) A.playing = false; else A.stepSel(1);
+        if (i == 0) A.stepSel(-1); else if (i == 1) A.playing = true; else if (i == 2) A.playing = false;
+        else if (i == 3) { A.playing = false; A.setTopProgress(0.f); }   // C1 stop: pause and rewind the playhead
+        else A.stepSel(1);
       }
     }
   }
