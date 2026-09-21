@@ -139,6 +139,21 @@ static void Devices(ImRect r) {
   sa.End(W, y);
 }
 
+// G17: a "touch.down" patch cord that is switched on fires the clip named in its target ("<layer> · <clip>").
+static void FireTouchRoutes() {
+  for (auto& r : A.routes) {
+    if (!r.active || r.source != "touch.down") continue;
+    size_t sep = r.target.find(" \xC2\xB7 ");
+    if (sep == std::string::npos) continue;
+    std::string ln = r.target.substr(0, sep), cn = r.target.substr(sep + 4);
+    for (int li = 0; li < (int)A.layers.size(); ++li) {
+      if (A.layers[li].name != ln) continue;
+      for (int ci = 0; ci < (int)A.layers[li].clips.size(); ++ci)
+        if (A.layers[li].clips[ci].st != Clip::Empty && A.layers[li].clips[ci].name == cn) { A.trigger(li, ci); A.notify("Route fired: " + r.target, 2.0); return; }
+    }
+  }
+}
+
 static void Radar(ImRect r) {
   Fill(r, K(pal::g050));
   ImRect tb(r.Min.x, r.Min.y, r.Max.x, r.Min.y + 44);
@@ -187,6 +202,23 @@ static void Radar(ImRect r) {
   for (int i = 1; i + 1 < 4; ++i) dl->AddTriangleFilled(rp[0], rp[i], rp[i + 1], Ca(A.editRoi ? K(pal::yellow, 0.15f) : K(pal::cyan, 0.10f)));
   dl->AddPolyline(rp, 4, Ca(K(A.editRoi ? pal::yellow : pal::cyan)), ImDrawFlags_Closed, 2 * k);
   if (A.editRoi) for (int i = 0; i < 4; ++i) dl->AddCircleFilled(rp[i], 6 * k, Ca(K(pal::yellow)), 20);
+  static int roiDrag = -1;   // S4: while "Edit ROI" is on, the four yellow handles can be dragged (clamped to the radar disc)
+  if (!A.editRoi) roiDrag = -1;
+  else {
+    ImVec2 mm = ImGui::GetIO().MousePos;
+    bool nearH = false;
+    for (int i = 0; i < 4; ++i) if (std::hypot(mm.x - rp[i].x, mm.y - rp[i].y) <= 12 * k + 4) nearH = true;
+    if (roiDrag < 0 && !g.blocked && ImGui::IsMouseClicked(0))
+      for (int i = 0; i < 4; ++i) if (std::hypot(mm.x - rp[i].x, mm.y - rp[i].y) <= 12 * k + 4) { roiDrag = i; break; }
+    if (roiDrag >= 0) {
+      if (ImGui::IsMouseDown(0)) {
+        float nx = (mm.x - c.x) / maxR, ny = (mm.y - c.y) / maxR, len = std::hypot(nx, ny);
+        if (len > 1.f) { nx /= len; ny /= len; }
+        A.roi[roiDrag] = ImVec2(std::round(nx * 1000) / 1000, std::round(ny * 1000) / 1000);
+        ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+      } else roiDrag = -1;
+    } else if (nearH) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+  }
   // sweep
   float a = A.sweep;
   RadialFan(c, maxR, K(pal::mint, 0.30f), K(pal::mint, 0.f), a - 0.35f, a, 24);
@@ -206,11 +238,11 @@ static void Radar(ImRect r) {
     Text(t.x + 22 * k, t.y - 6 * k - 1, MONO_B, 12 * k, K(pal::yellow), lb);
   }
   dl->AddCircle(c, D * 0.5f - 0.5f, Ca(K(pal::g2a)), 96, 1.f);
-  TextC(cx, top + D + 6 + 5, MONO_R, 10, K(pal::t66), "Click the radar to inject a simulated touch point");
+  TextC(cx, top + D + 6 + 5, MONO_R, 10, K(pal::t66), A.editRoi ? "Drag the yellow handles to reshape the region of interest" : "Click the radar to inject a simulated touch point");
   // click
   ImVec2 m = ImGui::GetIO().MousePos;
   float dist = std::hypot(m.x - c.x, m.y - c.y);
-  if (Hover(ImRect(c.x - D * 0.5f, c.y - D * 0.5f, c.x + D * 0.5f, c.y + D * 0.5f)) && dist <= D * 0.5f) {
+  if (!A.editRoi && Hover(ImRect(c.x - D * 0.5f, c.y - D * 0.5f, c.x + D * 0.5f, c.y + D * 0.5f)) && dist <= D * 0.5f) {
     ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
     if (ImGui::IsMouseClicked(0)) {
       float nx = (m.x - c.x) / maxR, ny = (m.y - c.y) / maxR;
@@ -220,6 +252,7 @@ static void Radar(ImRect r) {
           A.wizardStep = A.wizardStep == 4 ? 0 : A.wizardStep + 1;
         } else {
           A.touchPts.clear(); A.touchPts.push_back({100 + rand() % 900, nx, ny});
+          FireTouchRoutes();
         }
       }
     }

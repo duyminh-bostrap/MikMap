@@ -422,10 +422,9 @@ bool TextField(const char* id, ImRect r, std::string& v, FontId f, float sz, ImU
 }
 
 bool IntField(const char* id, ImRect r, int& v) {
-  static std::string edit; static ImGuiID editId = 0;
+  static std::string edit;
   ImGuiID gid = ImGui::GetID(id);
-  if (ImGui::GetActiveID() != gid) { edit = std::to_string(v); editId = 0; }
-  else editId = gid;
+  if (ImGui::GetActiveID() != gid) edit = std::to_string(v);
   ImGui::SetCursorScreenPos(r.Min);
   ImGui::PushFont(F(MONO_R), 11);
   ImGui::PushStyleColor(ImGuiCol_FrameBg, K(pal::g050));

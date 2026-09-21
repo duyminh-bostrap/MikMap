@@ -181,7 +181,7 @@ void DrawClipContent(ImRect a, const Clip& c, float t, float base, float alpha, 
   auto N = [&](int n) { return std::max(3, (int)(n * lod)); };
   dl->PushClipRect(a.Min, a.Max, true);
 
-  switch (ClipStyleOf(c.name)) {
+  switch (c.style >= 0 ? c.style : ClipStyleOf(c.name)) {
     case S_PLASMA: {
       RadialFan(Ctr(), Rk(bw * 0.7f), Col(col, 0.33f), Col(col, 0.f), 0, TAU, N(64));
       RadialFan(Ctr(), Rk(bw * 0.35f), Col(pal::cyan, 0.25f), Col(pal::cyan, 0.f), 0, TAU, N(48));

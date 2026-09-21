@@ -499,7 +499,7 @@ static void Stage(ImRect r) {
     float hx = hg.Min.x + 3;
     for (int i = 0; i < 2; ++i) {
       ImRect br(hx, cy - 10, hx + 20, cy + 10);
-      bool can = i == 0 ? !A.undoStack.empty() : !A.redoStack.empty();
+      bool can = i == 0 ? CanUndo() : CanRedo();
       Hit h = HitR(br);
       if (h.hover && can) Fill(br, K(pal::g1c), 2);
       float prev = g.alpha; if (!can) g.alpha *= 0.4f;
@@ -730,6 +730,23 @@ static void Stage(ImRect r) {
       Box(zb, K(pal::g1c, 0.8f), K(pal::g22), 2);
       Icon("scan-search", ImVec2((zb.Min.x + zb.Max.x) * 0.5f, c.y), 10, K(pal::coral));
       if (inArea && zb.Contains(m)) CursorHand();
+    }
+    // G13: sensor touches projected through the calibration homography H_s into output space (first screen only —
+    // the calibration targets are in that screen's 1920x1080 pixels). Sensor coordinates stay raw until here (principle #5).
+    if (!A.touchPts.empty() && sc == &A.screens[0]) {
+      float H[9], rms; bool ok = FitHomography(A.calib, H, &rms);
+      if (!ok) FitAffine(H, &rms);
+      for (auto& t : A.touchPts) {
+        float ox, oy; ApplyH(H, t.x, t.y, ox, oy);
+        ImVec2 p = toPx(ImVec2(ox, oy));
+        float ph = std::fmod((float)g.time * 1.4f, 1.f);
+        g.dl->AddCircle(p, (10 + 40 * ph) * s, Ca(K(pal::mint, 0.7f * (1.f - ph))), 32, 2.f);
+        g.dl->AddCircleFilled(p, 6 * s + 2, Ca(K(pal::mint)), 20);
+        g.dl->AddLine(ImVec2(p.x - 14 * s - 6, p.y), ImVec2(p.x + 14 * s + 6, p.y), Ca(K(pal::mint)), 1.f);
+        g.dl->AddLine(ImVec2(p.x, p.y - 14 * s - 6), ImVec2(p.x, p.y + 14 * s + 6), Ca(K(pal::mint)), 1.f);
+        char lb[48]; snprintf(lb, sizeof lb, "ID:%d  %d,%d px", t.id, (int)std::round(ox), (int)std::round(oy));
+        Text(p.x - TextW(MONO_B, 10, lb) * 0.5f, p.y + 14 * s + 18, MONO_B, 10, K(pal::mint), lb);
+      }
     }
     if (mk) for (int i = 0; i < 4; ++i) {
       ImVec2 p = toPx(mk->pts[i]);

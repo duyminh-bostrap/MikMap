@@ -20,6 +20,7 @@ struct Clip {
   St st = Empty;
   std::string name, dur;
   int color = 0;       // index into CLIP_COLORS
+  int style = -1;      // generator look; -1 = derive from the name. Pinned on rename so a new name never changes the picture
   float progress = 0;  // 0..100, advances only while the clip is selected
   // transport (C2/C4/C5)
   int playMode = PM_LOOP;
@@ -97,7 +98,10 @@ constexpr int FX_COUNT = 8;
 struct ColMenu { bool open = false; int ci = 0; ImVec2 pos; };
 struct DragSrc { bool active = false; std::string name, dur; int fxKind = -1; };
 struct Prefs { int lang = 0, ui = 0, mono = 0, accent = 0, surface = 0, scale = 100; };
+struct ProjectFile { std::string path, name; long long mtime = 0; };
+void UndoStep(bool redo);   // defined in project.cpp
 struct Popup { bool open = false; ImVec2 pos; int li = 0, ci = 0; };
+struct RenameBox { bool open = false, fresh = false; int kind = 0, idx = 0; ImVec2 pos; char buf[64] = {}; };
 struct CtxMenu { bool open = false; ImVec2 pos; std::vector<ui::MenuItem> items; };
 
 struct App {
@@ -128,6 +132,7 @@ struct App {
   DragSrc dragSrc, dragSrcCand;
   bool browserPress = false; std::string browserPressName; ImVec2 browserPressPos;
   // Topmost selected clip drives Timeline / Playhead
+  void setTopProgress(float pct);   // scrub: move the playhead of the topmost selected clip (0..100)
   float topProgress() {
     int best = -1; float p = 0;
     for (auto& c : selectedCells) if (c.first >= 0 && c.first < (int)layers.size() && c.second >= 0 && c.second < (int)layers[c.first].clips.size()
@@ -135,7 +140,7 @@ struct App {
     if (best < 0 && selLi < (int)layers.size() && selCi < (int)layers[selLi].clips.size()) p = layers[selLi].clips[selCi].progress;
     return p;
   }
-  int colCount() { return layers.empty() ? 8 : (int)layers[0].clips.size(); }
+  int colCount() const { return layers.empty() ? 8 : (int)layers[0].clips.size(); }
   std::string colName(int i) { return i < (int)colNames.size() && !colNames[i].empty() ? colNames[i] : "C\xE1\xBB\x99t " + std::to_string(i + 1); }
   void insertCol(int at); void deleteCol(int ci); void moveColTo(int from, int to);
   void addFx(int kind); void removeFx(int i); void dupFx(int i); void moveFx(int i, int d); void resetFx(int i);
@@ -153,7 +158,17 @@ struct App {
   Prefs prefs;
   Dropdown blendDD;
   CtxMenu ctx;
+  RenameBox rename;   // inline rename box for layers (kind 0) and columns (kind 1)
+  void beginRename(int kind, int idx, ImVec2 pos, const std::string& cur);
+  void commitRename(const char* text);
   bool projectMenu = false, logoHover = false;
+  // project file (X1): path empty = never saved; savedSnapshot = compact JSON at last save/load, used to detect unsaved edits
+  std::string projectPath, projectName = "MikMap Stage 01", savedSnapshot;
+  bool projectDirty = false;
+  bool openDialog = false; std::vector<ProjectFile> openList; int openSel = -1;
+  std::string toast; double toastUntil = 0, discardUntil = 0;   // discardUntil: a 2nd press before this time confirms dropping unsaved edits
+  bool helpOpen = false, showMode = false;   // showMode: hide all editing UI, show only the live composite
+  void notify(const std::string& s, double secs = 3.0);
 
   // mapping
   std::vector<Screen> screens;
@@ -164,10 +179,11 @@ struct App {
   void setZoom(float z, float cx = -1, float cy = -1) { mapReq.valid = true; mapReq.z = z; mapReq.cx = cx < 0 ? mapCx : cx; mapReq.cy = cy < 0 ? mapCy : cy; }
   bool mapFocus = false;
   char meshArm = 0; bool meshPickOn = false; float meshPickU = 0, meshPickV = 0;
-  std::vector<std::vector<Screen>> undoStack, redoStack;
-  void pushHist() { undoStack.push_back(screens); if (undoStack.size() > 40) undoStack.erase(undoStack.begin()); redoStack.clear(); }
-  void undoMap() { if (undoStack.empty()) return; redoStack.push_back(screens); screens = undoStack.back(); undoStack.pop_back(); }
-  void redoMap() { if (redoStack.empty()) return; undoStack.push_back(screens); screens = redoStack.back(); redoStack.pop_back(); }
+  // Undo/redo is global (project.cpp): snapshots are taken automatically when input goes idle, so pushHist() is a
+  // no-op kept only so the many call sites in mapping.cpp stay valid.
+  void pushHist() {}
+  void undoMap() { UndoStep(false); }
+  void redoMap() { UndoStep(true); }
   int MapKind() { return selKind >= 0 ? selKind : (selMk.empty() ? 1 : 2); }
   int mpage = 1;  // 0 input, 1 output
   bool treeCollapsed = false;
@@ -228,6 +244,22 @@ void DrawSensor(ImRect body);
 void DrawOverlays(ImVec2 display);
 void DrawSettings(ImVec2 display);
 void ApplyPrefs();
+// project / settings persistence (project.cpp)
+std::string ProjectsDir();
+std::vector<ProjectFile> ListProjects();
+bool SaveProject(const std::string& path, std::string& err);
+bool LoadProject(const std::string& path, std::string& err);
+void NewProject();       // demo show
+void NewBlankProject();  // empty deck + one screen/slice
+void MarkSaved();
+bool ProjectDirty();
+std::string DoSave(bool asCopy);
+bool CanUndo();
+bool CanRedo();
+void UndoTick(bool inputActive, double now);   // call once per frame
+bool UndoCommit();                              // force a snapshot now (used by tests)
+void SaveSettings();
+void LoadSettings();
 int ClipStyleOf(const std::string& name);
 void DrawClipContent(ImRect area, const Clip& c, float t, float baseWidth, float alpha, float lod = 1.f);
 void SetAdditive(bool on);
