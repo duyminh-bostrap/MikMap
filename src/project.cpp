@@ -59,7 +59,7 @@ JsonValue ClipJ(const Clip& c) {
   // The cue/live *selection* highlight is UI state, not show content: store Selected as Loaded, LiveSel as Live.
   int st = c.st == Clip::Selected ? Clip::Loaded : c.st == Clip::LiveSel ? Clip::Live : c.st;
   if (gForDirty && st == Clip::Live) st = Clip::Loaded;
-  o.set("st", st); o.set("name", c.name); o.set("dur", c.dur); o.set("color", c.color); o.set("style", c.style); o.set("progress", gForDirty ? 0.f : c.progress);
+  o.set("st", st); o.set("name", c.name); o.set("dur", c.dur); o.set("color", c.color); o.set("style", c.style); o.set("media", c.media); o.set("progress", gForDirty ? 0.f : c.progress);
   o.set("playMode", c.playMode); o.set("speed", c.speed); o.set("dir", c.dir);
   o.set("posX", c.posX); o.set("posY", c.posY); o.set("scale", c.scale); o.set("rotation", c.rotation); o.set("opacity", c.opacity);
   o.set("flipH", c.flipH); o.set("flipV", c.flipV);
@@ -71,7 +71,7 @@ Clip ReadClip(const JsonValue& o) {
   Clip c;
   c.st = (Clip::St)std::clamp(o["st"].asInt(0), 0, (int)Clip::Armed);
   if (c.st == Clip::Selected) c.st = Clip::Loaded; else if (c.st == Clip::LiveSel) c.st = Clip::Live;
-  c.name = o["name"].asString(); c.dur = o["dur"].asString(); c.color = std::clamp(o["color"].asInt(0), 0, 5); c.style = o["style"].asInt(-1);
+  c.name = o["name"].asString(); c.dur = o["dur"].asString(); c.color = std::clamp(o["color"].asInt(0), 0, 5); c.style = o["style"].asInt(-1); c.media = o["media"].asString();
   c.progress = F(o, "progress", 0); c.playMode = std::clamp(o["playMode"].asInt(PM_LOOP), 0, (int)PM_ONCE);
   c.speed = F(o, "speed", 100); c.dir = o["dir"].asInt(1) < 0 ? -1 : 1;
   c.posX = F(o, "posX", 0); c.posY = F(o, "posY", 0); c.scale = F(o, "scale", 1); c.rotation = F(o, "rotation", 0); c.opacity = F(o, "opacity", 100);
@@ -281,6 +281,19 @@ static fs::path ConfigDir() {
 #endif
 }
 
+std::string MediaDir() { return (fs::path(ProjectsDir()) / "media").string(); }
+std::vector<std::string> ListMedia() {
+  std::vector<std::string> out; std::error_code ec;
+  for (auto& e : fs::directory_iterator(MediaDir(), ec)) {
+    if (!e.is_regular_file(ec)) continue;
+    std::string ext = e.path().extension().string();
+    for (auto& ch : ext) ch = (char)std::tolower((unsigned char)ch);
+    if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".bmp" || ext == ".tga") out.push_back(e.path().string());
+  }
+  std::sort(out.begin(), out.end());
+  return out;
+}
+
 std::vector<ProjectFile> ListProjects() {
   std::vector<ProjectFile> out;
   std::error_code ec;
@@ -332,6 +345,7 @@ bool LoadProject(const std::string& path, std::string& err) {
   A.railScreen.clear(); A.mapScrollX = A.mapScrollY = 0;
   A.wizardStep = 0; A.editRoi = false; A.touchPts.clear(); A.pending.clear();
   A.idCounter = 1000;
+  for (auto& l : A.layers) for (auto& c : l.clips) if (!c.media.empty()) PreloadMedia(c.media);
   A.cue(0, 0);
   A.projectPath = path; A.projectName = fs::path(path).stem().string();
   MarkSaved();

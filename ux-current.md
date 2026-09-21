@@ -115,8 +115,8 @@ fps). Ô đang chọn viền coral phát sáng; clip đang phát nhưng không c
 `Column` ✅ thêm cột trống ở cuối · `Sync` ✅ **quantize theo nhịp**: khi bật (mặc định tắt), trigger clip/cột chờ tới nhịp kế tiếp của BPM mới phát (yêu cầu mới thay thế yêu cầu cũ trên cùng layer); tắt hoặc đang pause thì phát ngay. Trạng thái lưu trong dự án.
 
 ### 2.4 Browser (trái, 200px)
-Cây thư mục: Sources · Generators · Effects · Composition — **dữ liệu mẫu cố
-định, không đọc thư mục media thật**.
+Cây thư mục: **Media** (✅ ảnh thật trong `~/Documents/MikMap/media`, bấm thư mục để quét lại) · Sources · Generators · Effects · Composition — bốn thư mục sau vẫn là **dữ liệu mẫu cố
+định**. Kéo ảnh vào ô để tạo clip ảnh (căn vừa canvas, có alpha, đi qua warp).
 - Bấm thư mục: mở/đóng. Bấm mục: chọn. ✅
 - **Bấm đúp một Effect**: thêm vào FX chain của clip đang chọn. ✅
 - **Chuột phải một Effect**: menu "Add to <clip>" / "Show FX chain". ✅

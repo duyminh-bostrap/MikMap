@@ -131,8 +131,8 @@ ngoài". Định nghĩa ở `engine/core/model/IWarp.h`; mọi `IWarp` mới ph�
 
 ## `src/` — tình trạng THẬT (theo `features.md`, không theo vẻ ngoài)
 
-44 mục `[x]` (hành vi thật) · 20 mục `[~]` (chỉ UI/một phần — đọc "Ghi chú
-kiểm tra" cuối `features.md` để biết chính xác cái gì còn giả) · 71 mục `[ ]`,
+46 mục `[x]` (hành vi thật) · 19 mục `[~]` (chỉ UI/một phần — đọc "Ghi chú
+kiểm tra" cuối `features.md` để biết chính xác cái gì còn giả) · 70 mục `[ ]`,
 trên 135 mục Resolume-parity (đếm lại 2026-09-21 từ các dòng bảng).
 
 **Đã có thật sau đợt bổ sung P0** (đã grep `src/*.cpp`): output ra cửa sổ máy

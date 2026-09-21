@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstring>
 #include <algorithm>
+#include <filesystem>
 
 using namespace ui;
 
@@ -287,8 +288,8 @@ void App::moveColTo(int from, int to) {
   activeCol = remap(activeCol);
   for (auto& c : selectedCells) c.second = remap(c.second);
 }
-void App::loadClip(int li, int ci, const std::string& name, const std::string& dur) {
-  Clip c; c.st = Clip::Loaded; c.name = name; c.dur = dur.empty() ? "\xE2\x88\x9E" : dur;
+void App::loadClip(int li, int ci, const std::string& name, const std::string& dur, const std::string& media) {
+  Clip c; c.st = Clip::Loaded; c.name = name; c.media = media; if (!media.empty()) PreloadMedia(media); c.dur = dur.empty() ? "\xE2\x88\x9E" : dur;
   layers[li].clips[ci] = c;
   selLayer = li; selLi = li; selCi = ci; selectedCells = {{li, ci}}; selMode = 1;
 }
@@ -936,7 +937,7 @@ static void Browser(ImRect r) {
   float ox = sa.origin.x, oy = sa.origin.y, W = r.GetWidth() - 1;
   float y = 2;
   // Build rows dynamically so Effects always mirrors FX_LIB (8 items, correct icons).
-  struct Row { std::string name, icon, dur; int depth; int fxKind; bool folder; bool open; int count; };
+  struct Row { std::string name, icon, dur; int depth; int fxKind; bool folder; bool open; int count; std::string path; };
   std::vector<Row> rows;
   auto folder = [&](const char* n, const char* ic) {
     bool open = A.browserOpen.find(n) == A.browserOpen.end() ? true : A.browserOpen[n];
@@ -947,6 +948,10 @@ static void Browser(ImRect r) {
     rows.push_back({n, ic, d ? d : "", 1, fx, false, true, 0});
     rows[fi].count++;
   };
+  if (A.mediaStale) { A.mediaList = ListMedia(); A.mediaStale = false; }
+  int fMed = folder("Media", "folder");   // B2: images from Documents/MikMap/media
+  for (auto& p : A.mediaList) { item(fMed, std::filesystem::path(p).filename().string().c_str(), "video", "\xE2\x88\x9E", -1); rows.back().path = p; }
+  if (A.mediaList.empty()) rows.push_back({"Add PNG/JPG to Documents/MikMap/media", "info", "", 1, -3, false, true, 0, ""});
   int fSrc = folder("Sources", "folder");
   item(fSrc, "Particle Vortex", "video", "10s", -1); item(fSrc, "Cyber Hex Grid", "video", "8s", -1);
   item(fSrc, "Plasma Waves 01", "video", "12s", -1); item(fSrc, "Strobe Tunnel", "video", "6s", -1);
@@ -989,10 +994,11 @@ static void Browser(ImRect r) {
       if (it.folder) {
         bool cur = A.browserOpen.find(it.name) == A.browserOpen.end() ? true : A.browserOpen[it.name];
         A.browserOpen[it.name] = !cur;
-      } else A.browserSel = it.name;
+        if (it.name == "Media") A.mediaStale = true;   // rescan the folder next frame
+      } else if (it.fxKind != -3) A.browserSel = it.name;
     }
     if (!it.folder && it.fxKind >= 0 && h.dbl) A.addFx(it.fxKind);
-    if (!it.folder && h.click) { A.browserPress = true; A.browserPressPos = ImGui::GetIO().MousePos; A.dragSrcCand.name = it.name; A.dragSrcCand.dur = it.dur; A.dragSrcCand.fxKind = it.fxKind; }
+    if (!it.folder && it.fxKind != -3 && h.click) { A.browserPress = true; A.browserPressPos = ImGui::GetIO().MousePos; A.dragSrcCand.name = it.name; A.dragSrcCand.dur = it.dur; A.dragSrcCand.fxKind = it.fxKind; A.dragSrcCand.media = it.path; }
     if (!it.folder && h.rclick && it.fxKind >= 0) { int fk = it.fxKind; std::vector<MenuItem> mi; MenuItem a; a.label = "Add to " + (A.layers[A.selLi].clips[A.selCi].name.empty() ? std::string("clip") : A.layers[A.selLi].clips[A.selCi].name); a.icon = "plus"; a.run = [fk] { A.addFx(fk); }; mi.push_back(a); MenuItem b; b.label = "Show FX chain"; b.icon = "wand-sparkles"; b.run = [] { A.tab = 2; }; mi.push_back(b); A.openCtx(ImGui::GetIO().MousePos, mi); }
     y += 22;
   }
@@ -1187,7 +1193,7 @@ static void Deck(ImRect r) {
   if (A.dragSrc.active && ImGui::IsMouseReleased(0)) {
     if (A.dropLi >= 0) {
       if (A.dragSrc.fxKind >= 0) { A.cue(A.dropLi, A.dropCi); A.addFx(A.dragSrc.fxKind); }
-      else A.loadClip(A.dropLi, A.dropCi, A.dragSrc.name, A.dragSrc.dur);
+      else A.loadClip(A.dropLi, A.dropCi, A.dragSrc.name, A.dragSrc.dur, A.dragSrc.media);
     }
     A.dragSrc = DragSrc(); A.browserPress = false; A.dropLi = A.dropCi = -1;
   }

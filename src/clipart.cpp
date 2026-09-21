@@ -20,6 +20,10 @@
 #include <GL/gl.h>
 #endif
 
+#include "stb_image.h"   // declarations only; the implementation lives in main.cpp
+#include <map>
+#include <string>
+
 using namespace ui;
 
 static const float TAU = 6.2831853f;
@@ -163,6 +167,29 @@ void DrawComposite(ImRect canvas, float t, float alpha) {
   }
 }
 
+// ── image sources (B2) ──
+#ifndef GL_CLAMP_TO_EDGE
+#define GL_CLAMP_TO_EDGE 0x812F
+#endif
+struct MediaTex { unsigned tex = 0; int w = 0, h = 0; bool failed = false; };
+static std::map<std::string, MediaTex> gMedia;
+static const MediaTex* GetMedia(const std::string& path) {
+  auto it = gMedia.find(path);
+  if (it != gMedia.end()) return it->second.failed ? nullptr : &it->second;
+  MediaTex m; int n = 0;
+  unsigned char* px = stbi_load(path.c_str(), &m.w, &m.h, &n, 4);
+  if (!px || m.w <= 0 || m.h <= 0) { if (px) stbi_image_free(px); m.failed = true; gMedia[path] = m; return nullptr; }
+  GLuint t = 0; glGenTextures(1, &t);
+  glBindTexture(GL_TEXTURE_2D, t);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR); glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE); glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, m.w, m.h, 0, GL_RGBA, GL_UNSIGNED_BYTE, px);
+  stbi_image_free(px);
+  m.tex = t; gMedia[path] = m;
+  return &gMedia[path];
+}
+void PreloadMedia(const std::string& path) { GetMedia(path); }   // do the disk read + upload at load time, not mid-frame
+
 // ── clip FX that can be done on vector art (E5 hue shift · E8 mirror · E10 strobe) ──
 // Every place that shows a clip (Preview, Live Output, projector window) goes through DrawClipContent, so an effect
 // applied here is seen everywhere. Blur / pixelate / trails / kaleidoscope need a framebuffer and are not implemented.
@@ -241,7 +268,22 @@ static void DrawClipCore(ImRect a, const Clip& c, float t, float base, float alp
   auto N = [&](int n) { return std::max(3, (int)(n * lod)); };
   dl->PushClipRect(a.Min, a.Max, true);
 
-  switch (c.style >= 0 ? c.style : ClipStyleOf(c.name)) {
+  if (!c.media.empty()) {
+    // B2: aspect-fit the image inside the canvas (art units: canvas = bw x bh centred on the origin); it goes through the same
+    // transform P() as generators, and is drawn as a grid of quads when warped so a mesh/keystone bends it correctly
+    if (const MediaTex* mt = GetMedia(c.media)) {
+      float s0 = std::min(bw / mt->w, bh / mt->h), hw = mt->w * s0 * 0.5f, hh = mt->h * s0 * 0.5f;
+      ImTextureID tid = (ImTextureID)(intptr_t)mt->tex;
+      ImU32 tint = Col(0xffffff, 1.f);
+      int seg = g.warp ? 12 : 1;
+      for (int iy = 0; iy < seg; ++iy) for (int ix = 0; ix < seg; ++ix) {
+        float u0 = (float)ix / seg, u1 = (float)(ix + 1) / seg, v0 = (float)iy / seg, v1 = (float)(iy + 1) / seg;
+        dl->AddImageQuad(tid, P(-hw + 2 * hw * u0, -hh + 2 * hh * v0), P(-hw + 2 * hw * u1, -hh + 2 * hh * v0),
+                         P(-hw + 2 * hw * u1, -hh + 2 * hh * v1), P(-hw + 2 * hw * u0, -hh + 2 * hh * v1),
+                         ImVec2(u0, v0), ImVec2(u1, v0), ImVec2(u1, v1), ImVec2(u0, v1), tint);
+      }
+    } else TextC(Ctr().x, Ctr().y, MONO_M, 11, K(pal::red), "MISSING MEDIA");
+  } else switch (c.style >= 0 ? c.style : ClipStyleOf(c.name)) {
     case S_PLASMA: {
       RadialFan(Ctr(), Rk(bw * 0.7f), Col(col, 0.33f), Col(col, 0.f), 0, TAU, N(64));
       RadialFan(Ctr(), Rk(bw * 0.35f), Col(pal::cyan, 0.25f), Col(pal::cyan, 0.f), 0, TAU, N(48));

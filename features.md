@@ -39,7 +39,7 @@
 | ✓ | ID | Tính năng | Công sức | Đề xuất |
 |:-:|---|---|:-:|:-:|
 | [ ] | **B1** | Phát video **HAP / HAP Q** (GPU) | L | 🔴 P0 |
-| [ ] | **B2** | Ảnh tĩnh PNG/JPG (có alpha) | S | 🔴 P0 |
+| [x] | **B2** | Ảnh tĩnh PNG/JPG (có alpha) | S | 🔴 P0 |
 | [~] | **B3** | Generator shader (solid, gradient, noise, plasma) | M | 🟠 P1 |
 | [ ] | **B4** | **Generative FX phản ứng sensor** ⭐ giá trị riêng | M | 🟠 P1 |
 | [ ] | **B5** | Text / text animator | M | 🟡 P2 |
@@ -214,7 +214,7 @@
 
 ## Ghi chú kiểm tra (prototype `mikmap-cpp`)
 
-**Tổng kết:** 45 mục `[x]` · 19 mục `[~]` · 71 mục `[ ]` (trên tổng 135 mục; đếm từ các dòng bảng ở trên, 2026-09-21). Các danh sách `[x]`/`[~]`/"Chưa làm" ngay dưới là bản chụp trước đợt bổ sung P0 — đợt đó (mục kế tiếp) đã làm thêm A1, A6, C2/C4/C5, D1–D6, F2, I1, G9 và thay G5 bằng DLT. G5 nay đã `[x]`: `src/calib.cpp` có DLT + Hartley và RANSAC (≥6 điểm, seed cố định, loại điểm hiệu chuẩn lệch rồi fit lại trên inlier).
+**Tổng kết:** 46 mục `[x]` · 19 mục `[~]` · 70 mục `[ ]` (trên tổng 135 mục; đếm từ các dòng bảng ở trên, 2026-09-21). Các danh sách `[x]`/`[~]`/"Chưa làm" ngay dưới là bản chụp trước đợt bổ sung P0 — đợt đó (mục kế tiếp) đã làm thêm A1, A6, C2/C4/C5, D1–D6, F2, I1, G9 và thay G5 bằng DLT. G5 nay đã `[x]`: `src/calib.cpp` có DLT + Hartley và RANSAC (≥6 điểm, seed cố định, loại điểm hiệu chuẩn lệch rồi fit lại trên inlier).
 
 **Đã có hành vi thật (`[x]`)**
 - A2/A3/A5/A8/A15 — layer xếp chồng (layer trên đè lên), cột động (chèn/xoá/đổi chỗ/tự thêm), click = cue, đúp = trigger, solo/mute/bypass + xoá clip, thu gọn layer/group. Nguồn: `deck.cpp`.
@@ -272,3 +272,4 @@
 - **FX thật (E5/E8/E10 vẫn `[~]`):** trước đây chỉ Strobe vẽ thật và **chỉ ở monitor Preview**. Nay `DrawClipContent` (đường vẽ chung của Preview, Live Output và cửa sổ máy chiếu) áp dụng: **Strobe** (mọi nơi), **Hue Shift** (xoay màu chủ đạo của clip + độ bão hoà) và **Mirror** (H / V / QUAD, vẽ 2–4 vùng lật). Chưa làm được vì cần framebuffer: Blur, Pixelate, Trails/feedback, Kaleidoscope, RGB Shift, Twirl/Ripple, Levels. Cờ test: `mikmap --fx <kind>` thêm FX vào clip đang chọn để chụp ảnh.
 - **Sync / quantize (bổ sung, không có mã riêng):** nút `Sync` trên Deck làm trigger clip/cột chờ nhịp kế tiếp theo BPM (`App::pending` + `flushPending` ở cạnh lên của nhịp trong vòng lặp chính). Mặc định tắt để giữ hành vi cũ. Kiểm bằng `--roundtrip`.
 - **Hiệu năng undo:** snapshot lịch sử tốn ~5 ms (Release), nên chỉ chụp sau khi có thao tác của người dùng rồi im lặng ≥0,2 s, không chụp định kỳ khi để yên (tránh giật khung hình khi trình diễn). `MIKMAP_BENCH=1 mikmap --roundtrip f` in chi phí này.
+- **B2 — ảnh tĩnh `[x]`** (`clipart.cpp`, `Clip::media`): Browser có thư mục **Media** liệt kê PNG/JPG/BMP/TGA trong `~/Documents/MikMap/media` (quét lại khi bấm thư mục, không quét mỗi khung hình). Kéo vào ô để tạo clip ảnh: căn vừa canvas, có alpha, đi qua cùng transform/opacity/blend/FX và **warp** (vẽ lưới ô khi qua slice nên keystone/mesh uốn ảnh đúng) như clip generator; lưu đường dẫn trong dự án. **Giới hạn:** ảnh cần còn ở đúng đường dẫn (thiếu thì hiện `MISSING MEDIA`), chưa thu nhỏ ảnh quá lớn, texture chưa được giải phóng, thumbnail ô clip vẫn là gradient. Đây **chưa phải video/HAP** (`B1`).

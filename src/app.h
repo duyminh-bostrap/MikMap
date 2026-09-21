@@ -20,6 +20,7 @@ struct Clip {
   St st = Empty;
   std::string name, dur;
   int color = 0;       // index into CLIP_COLORS
+  std::string media;   // B2: path of an image file; empty = procedural generator
   int style = -1;      // generator look; -1 = derive from the name. Pinned on rename so a new name never changes the picture
   float progress = 0;  // 0..100, advances only while the clip is selected
   // transport (C2/C4/C5)
@@ -99,7 +100,7 @@ struct FxDef { const char* name; const char* icon; int tone; int nparams; const 
 extern const FxDef FX_LIB[8];
 constexpr int FX_COUNT = 8;
 struct ColMenu { bool open = false; int ci = 0; ImVec2 pos; };
-struct DragSrc { bool active = false; std::string name, dur; int fxKind = -1; };
+struct DragSrc { bool active = false; std::string name, dur, media; int fxKind = -1; };
 struct Prefs { int lang = 0, ui = 0, mono = 0, accent = 0, surface = 0, scale = 100; };
 struct ProjectFile { std::string path, name; long long mtime = 0; };
 void UndoStep(bool redo);   // defined in project.cpp
@@ -161,7 +162,8 @@ struct App {
   void insertCol(int at); void deleteCol(int ci); void moveColTo(int from, int to);
   void addFx(int kind); void removeFx(int i); void dupFx(int i); void moveFx(int i, int d); void resetFx(int i);
   std::vector<Fx>& fxChain() { int li = std::clamp(selLi, 0, (int)layers.size() - 1); return layers[li].clips[std::clamp(selCi, 0, (int)layers[li].clips.size() - 1)].fx; }
-  void loadClip(int li, int ci, const std::string& name, const std::string& dur);
+  void loadClip(int li, int ci, const std::string& name, const std::string& dur, const std::string& media = std::string());
+  std::vector<std::string> mediaList; bool mediaStale = true;   // Browser "Media" folder cache (rescanned on demand, never per frame)
   // deck selection / drag & drop
   int selMode = 2;  // 0 layer, 1 clip, 2 column
   int dragLi = -1, dragCi = -1, dropLi = -1, dropCi = -1;
@@ -263,6 +265,9 @@ void DrawSettings(ImVec2 display);
 void ApplyPrefs();
 // project / settings persistence (project.cpp)
 std::string ProjectsDir();
+std::string MediaDir();                       // ~/Documents/MikMap/media
+std::vector<std::string> ListMedia();        // image files there, sorted by name
+void PreloadMedia(const std::string& path);   // upload the texture now instead of on first draw
 std::vector<ProjectFile> ListProjects();
 bool SaveProject(const std::string& path, std::string& err);
 bool LoadProject(const std::string& path, std::string& err);

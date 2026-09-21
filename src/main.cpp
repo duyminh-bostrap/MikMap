@@ -620,7 +620,7 @@ int main(int argc, char** argv) {
     NewProject();
     if (ProjectDirty()) return fail("fresh project reports dirty");
     A.layers[0].name = "Edited"; A.layers[0].clips[1].fx.push_back(Fx()); A.colNames.resize(A.colCount()); A.colNames[1] = "Renamed";
-    A.screens[0].slices[0].q[2] = ImVec2(1500, 900); A.calib[0].mx = 0.123f; A.bpm = 97.5f; A.screens[0].slices[1].solo = true;
+    A.screens[0].slices[0].q[2] = ImVec2(1500, 900); A.calib[0].mx = 0.123f; A.bpm = 97.5f; A.screens[0].slices[1].solo = true; A.layers[0].clips[1].media = "/no/such/file.png";
     if (!ProjectDirty()) return fail("edit not detected as dirty");
     if (!SaveProject(roundtrip, err)) return fail(err.c_str());
     if (ProjectDirty()) return fail("dirty right after save");
@@ -629,6 +629,7 @@ int main(int argc, char** argv) {
     if (A.layers[0].name != "Edited" || A.colName(1) != "Renamed" || A.screens[0].slices[0].q[2].x != 1500.f || std::fabs(A.calib[0].mx - 0.123f) > 1e-6f) return fail("state not restored");
     if (A.layers[0].clips[1].fx.empty()) return fail("fx chain lost");
     if (A.bpm != 97.5f) return fail("bpm not restored");
+    if (A.layers[0].clips[1].media != "/no/such/file.png") return fail("image clip path not restored");
     if (!A.screens[0].slices[1].solo || A.screens[0].slices[0].solo) return fail("slice solo not restored");
     if (ProjectDirty()) return fail("dirty right after load");
     NewBlankProject();
