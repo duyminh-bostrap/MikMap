@@ -74,3 +74,14 @@ bin/imgui.ini            # vi tri cua so, rieng tung nguoi
 # dong nghiep clone ve se bi doi ngon ngu va bi day output ra mot man
 # hinh khong ton tai. Day chinh la ly do no tach khoi file project.
 bin/data/settings.json
+
+# ── .claude/ : cung ly do nhu tren, ap dung cho cau hinh Claude Code ──
+#
+# CLAUDE.local.md va settings.local.json mo ta MAY NAY va NGUOI NAY
+# (duong dan cuc bo, thiet bi sensor test tai cho, override rieng).
+# memory/ la bo nho ca nhan giua cac phien tren may nay - README.md giai
+# thich quy uoc thi giu lai, con noi dung ghi chu thi khong vao git.
+.claude/CLAUDE.local.md
+.claude/settings.local.json
+.claude/memory/*
+!.claude/memory/README.md

@@ -1,0 +1,68 @@
+{
+  "permissions": {
+    "allow": [
+      "Read",
+      "Grep",
+      "Glob",
+      "Bash(git status)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git show*)",
+      "Bash(git branch*)",
+      "Bash(git add*)",
+      "Bash(git commit*)",
+      "Bash(git push*)",
+      "Bash(git fetch*)",
+      "Bash(git pull*)",
+      "Bash(git checkout*)",
+      "Bash(git switch*)",
+      "Bash(git stash*)",
+      "Bash(cmake*)",
+      "Bash(ctest*)",
+      "Bash(cppcheck*)",
+      "Bash(./build*)",
+      "Bash(build/*)",
+      "Bash(ffmpeg*)",
+      "Bash(.claude/hooks/*.sh)",
+      "Bash(.claude/skills/*.sh)",
+      "Edit(src/**)",
+      "Edit(tests/**)",
+      "Edit(newui/**)",
+      "Edit(tools/**)",
+      "Edit(.claude/**)",
+      "Edit(*.md)"
+    ],
+    "deny": [
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git reset --hard*)",
+      "Bash(git clean -f*)",
+      "Bash(git branch -D*)",
+      "Bash(rm -rf*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/pre-commit.sh",
+            "if": "Bash(git commit*)",
+            "timeout": 60,
+            "statusMessage": "Kiểm tra trước khi commit (pre-commit.sh)..."
+          },
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/pre-push.sh",
+            "if": "Bash(git push*)",
+            "timeout": 300,
+            "statusMessage": "Build + test trước khi push (pre-push.sh)..."
+          }
+        ]
+      }
+    ]
+  }
+}
