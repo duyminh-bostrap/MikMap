@@ -7,8 +7,8 @@ description: Hỗ trợ tìm/so sánh linh kiện phần cứng AV-tương tác 
 
 Ghi chú: môi trường này không có công cụ duyệt/mua hàng trực tiếp trên
 Amazon. Skill này định hướng **tiêu chí chọn hàng** khớp với kiến trúc sensor
-của MikMap (`architecture.md` §"calib", `newui/SKILL.md` mục "Sensor (nhóm
-G)") — khi có quyền truy cập web/agent duyệt web, dùng skill này làm checklist
+của MikMap (`architecture.md` §"calib", `features.md` mục "G. Sensor & Calibration" (nhóm
+G)) — khi có quyền truy cập web/agent duyệt web, dùng skill này làm checklist
 trước khi chốt đơn.
 
 ## Ánh xạ nhu cầu phần cứng → module code tương ứng

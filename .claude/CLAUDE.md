@@ -36,7 +36,7 @@ features.md     backlog 135 mục, chấm điểm theo code thật của src/
 ```
 
 `src/` hiện là struct riêng (`src/app.h` và các file phẳng
-`calib.cpp`/`deck.cpp`/`mapping.cpp`/`sensor.cpp`/...), **link `engine/core`+
+`calib.cpp`/`deck.cpp`/`mapping.cpp`/`sensor.cpp`/`output.cpp`/`clipart.cpp`/...), **link `engine/core`+
 `engine/io` vào nhưng CHƯA gọi tới** — xem "Việc còn lại để ghép trọn" ở
 `README.md`. Đừng nhầm đây là cây thư mục layered đầy đủ ở `architecture.md`
 §2 (`app/`,`ui/`,`render/`,`io/`,`core/`) — cây đó mô tả bản cũ trên nhánh
@@ -77,9 +77,9 @@ tiên khớp thắng) → slice.warp.inverse() → UV cục bộ → ×inputRect
 Mặt nạ bezier **không phải một phép biến đổi** — là hàm che alpha ở
 `contentUV`, nên tự động đi theo `H_w` khi kéo lại keystone.
 
-**Lưu ý về `src/` hiện tại:** homography ở đây (`src/calib.cpp`) mới là
-affine 2 tỉ lệ + dịch, **chưa phải DLT+RANSAC thật** (đó là `engine/core/calib/`
-— đã có, đúng thuật toán, nhưng `src/` chưa gọi tới). Đừng tưởng nhầm `src/`
+**Lưu ý về `src/` hiện tại:** homography ở đây (`src/calib.cpp`) là
+DLT + chuẩn hoá Hartley tự viết, **chưa có RANSAC** (bản đủ DLT+RANSAC là
+`engine/core/calib/` — đã có, đúng thuật toán, nhưng `src/` chưa gọi tới). Đừng tưởng nhầm `src/`
 đã có calibration chuẩn chỉ vì `engine/core/calib` tồn tại trong repo.
 
 ## Hợp đồng `IWarp` — bài học đã trả giá (`architecture.md` §4.2)
@@ -131,13 +131,22 @@ ngoài". Định nghĩa ở `engine/core/model/IWarp.h`; mọi `IWarp` mới ph�
 
 ## `src/` — tình trạng THẬT (theo `features.md`, không theo vẻ ngoài)
 
-18 mục `[x]` (hành vi thật) · 34 mục `[~]` (chỉ UI/một phần — đọc "Ghi chú
-kiểm tra" cuối `features.md` để biết chính xác cái gì còn giả) · 83 mục `[ ]`,
-trên 135 mục Resolume-parity. Ví dụ đã bị đánh giá thấp hơn vẻ ngoài: `A7`/`D4`
-blend mode chọn được 8 mode nhưng chỉ Add/Screen thật sự cộng sáng; `G5`
-homography là affine tạm; `B3` generator vẽ bằng CPU, chưa phải shader GLSL;
-`A4` thumbnail là gradient tĩnh (cố ý — thumbnail động làm deck tụt còn
-~16s/khung).
+35 mục `[x]` (hành vi thật) · 24 mục `[~]` (chỉ UI/một phần — đọc "Ghi chú
+kiểm tra" cuối `features.md` để biết chính xác cái gì còn giả) · 76 mục `[ ]`,
+trên 135 mục Resolume-parity (đếm lại 2026-09-21 từ các dòng bảng).
+
+**Đã có thật sau đợt bổ sung P0** (đã grep `src/*.cpp`): output ra cửa sổ máy
+chiếu riêng, không viền (`F2`/`I1`, `output.cpp`); canvas ảo 1920×1080 (`A1`);
+transform clip D1–D6; transport LOOP/BOUN/HOLD/ONCE + REV + tốc độ (`C2/C4/C5`);
+blend mode dùng hàm trộn GL thật, 8 mode (`A7`/`D4`, `clipart.cpp` — riêng
+Overlay tạm dùng Screen); bấm đúp header cột = bắn cả cột (`A6`); PerfPanel
+FPS/P99/frame rớt (`G9`, `calib.cpp`).
+
+**Vẫn còn giả/thiếu — dễ bị đánh giá cao hơn thực tế:** `G5` homography là
+DLT+Hartley nhưng **chưa RANSAC** nên `[~]`; `B3` generator vẽ bằng CPU, chưa
+phải shader GLSL; `A4` thumbnail là gradient tĩnh (cố ý — thumbnail động làm
+deck tụt còn ~16s/khung); chưa có nguồn video/ảnh thật (`B1`), chưa lưu/mở
+project qua `ProjectIO` (`I2`/`F8`/`G8`), chưa có thread sensor thật (`G1`).
 
 **Việc còn lại để ghép engine thật vào `src/`** (chi tiết ở `README.md`): (1)
 `ProjectIO`, (2) `core/calib/*` thay `calib.cpp` tự viết, (3) `Slice`+
