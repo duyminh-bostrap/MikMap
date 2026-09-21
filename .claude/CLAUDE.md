@@ -78,7 +78,7 @@ Mặt nạ bezier **không phải một phép biến đổi** — là hàm che a
 `contentUV`, nên tự động đi theo `H_w` khi kéo lại keystone.
 
 **Lưu ý về `src/` hiện tại:** homography ở đây (`src/calib.cpp`) là
-DLT + chuẩn hoá Hartley tự viết, **chưa có RANSAC** (bản đủ DLT+RANSAC là
+DLT + chuẩn hoá Hartley + RANSAC tự viết (≥6 điểm; bản đủ là
 `engine/core/calib/` — đã có, đúng thuật toán, nhưng `src/` chưa gọi tới). Đừng tưởng nhầm `src/`
 đã có calibration chuẩn chỉ vì `engine/core/calib` tồn tại trong repo.
 
@@ -146,8 +146,7 @@ FPS/P99/frame rớt (`G9`, `calib.cpp`).
 undo/redo toàn app theo snapshot, Show Mode (`Tab`), phím tắt Composition, đổi tên layer/cột/clip, scrub Timeline,
 ROI kéo được. Kiểm tự động: `mikmap --roundtrip <file>` (không cần cửa sổ). `Clip::style` cố định hình vẽ khi đổi tên.
 
-**Vẫn còn giả/thiếu — dễ bị đánh giá cao hơn thực tế:** `G5` homography là
-DLT+Hartley nhưng **chưa RANSAC** nên `[~]`; `B3` generator vẽ bằng CPU, chưa
+**Vẫn còn giả/thiếu — dễ bị đánh giá cao hơn thực tế:** `B3` generator vẽ bằng CPU, chưa
 phải shader GLSL; `A4` thumbnail là gradient tĩnh (cố ý — thumbnail động làm
 deck tụt còn ~16s/khung); chưa có nguồn video/ảnh thật (`B1`), chưa có thread sensor thật (`G1`).
 `I2` (lưu/mở dự án) **đã chạy** qua `src/project.cpp` (định dạng `.mikmap`, schema riêng của

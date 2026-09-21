@@ -102,7 +102,7 @@ OpenGL khi build — vô hại. Cửa sổ output máy chiếu (F2/I1) cũng đ�
 chuyển sang mô hình thật của `engine/`, làm từng mảng để luôn build được:
 
 1. `core/model/ProjectIO` → thay `src/project.cpp` (hiện lưu `.mikmap` bằng schema riêng của `src/`, đã chạy được — I2); còn thiếu preset output/calibration dùng chung giữa dự án (F8, G8).
-2. `core/calib/*` → thay phép tính homography (DLT tự viết, chưa RANSAC) và
+2. `core/calib/*` → thay phép tính homography (DLT+RANSAC tự viết) và
    SensorMapper trong `src/calib.cpp` (G5, G7).
 3. `core/model/Slice` + `WarpCornerPin`/`WarpMesh`/`WarpBezier` → thay phép
    warp trong `src/mapping.cpp`, qua đó có luôn Bezier (F10) và mặt nạ

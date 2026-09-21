@@ -153,7 +153,7 @@
 | [x] | **G2** | MockSource + sensor simulator | S | 🔴 P0 |
 | [ ] | **G3** | Serial / Arduino source | M | 🔴 P0 |
 | [ ] | **G4** | OSC server (UDP) | M | 🔴 P0 |
-| [~] | **G5** | **Homography solver (DLT + RANSAC)** | M | 🔴 P0 |
+| [x] | **G5** | **Homography solver (DLT + RANSAC)** | M | 🔴 P0 |
 | [x] | **G6** | **Calibration wizard — chạm 4+ điểm** | M | 🔴 P0 |
 | [ ] | **G7** | **SensorMapper: sensor → slice → clip pixel** | M | 🔴 P0 |
 | [~] | **G8** | Lưu / nạp calibration profile | S | 🔴 P0 |
@@ -214,7 +214,7 @@
 
 ## Ghi chú kiểm tra (prototype `mikmap-cpp`)
 
-**Tổng kết:** 44 mục `[x]` · 20 mục `[~]` · 71 mục `[ ]` (trên tổng 135 mục; đếm từ các dòng bảng ở trên, 2026-09-21). Các danh sách `[x]`/`[~]`/"Chưa làm" ngay dưới là bản chụp trước đợt bổ sung P0 — đợt đó (mục kế tiếp) đã làm thêm A1, A6, C2/C4/C5, D1–D6, F2, I1, G9 và thay G5 bằng DLT. G5 vẫn `[~]`: có DLT + chuẩn hoá Hartley trong `src/calib.cpp` nhưng chưa có RANSAC (grep `ransac` trong `src/*.cpp` = 0).
+**Tổng kết:** 45 mục `[x]` · 19 mục `[~]` · 71 mục `[ ]` (trên tổng 135 mục; đếm từ các dòng bảng ở trên, 2026-09-21). Các danh sách `[x]`/`[~]`/"Chưa làm" ngay dưới là bản chụp trước đợt bổ sung P0 — đợt đó (mục kế tiếp) đã làm thêm A1, A6, C2/C4/C5, D1–D6, F2, I1, G9 và thay G5 bằng DLT. G5 nay đã `[x]`: `src/calib.cpp` có DLT + Hartley và RANSAC (≥6 điểm, seed cố định, loại điểm hiệu chuẩn lệch rồi fit lại trên inlier).
 
 **Đã có hành vi thật (`[x]`)**
 - A2/A3/A5/A8/A15 — layer xếp chồng (layer trên đè lên), cột động (chèn/xoá/đổi chỗ/tự thêm), click = cue, đúp = trigger, solo/mute/bypass + xoá clip, thu gọn layer/group. Nguồn: `deck.cpp`.
