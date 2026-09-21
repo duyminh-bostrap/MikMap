@@ -5,11 +5,19 @@
 #include <GLFW/glfw3.h>
 #include "imgui_impl_opengl3.h"
 
+// <windows.h> is only needed here because <GL/gl.h> requires it on Windows
+// (APIENTRY/WINGDIAPI macros) — no actual Win32 API is called in this file.
+#ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
 #include <GL/gl.h>
+#elif defined(__APPLE__)
+#include <OpenGL/gl.h>
+#else
+#include <GL/gl.h>
+#endif
 
 #include <cmath>
 

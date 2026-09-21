@@ -2,9 +2,11 @@
 #include "app.h"
 
 #include <GLFW/glfw3.h>
+#ifdef _WIN32
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3native.h>
 #include <dwmapi.h>
+#endif
 
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
@@ -452,12 +454,17 @@ int main(int argc, char** argv) {
   glfwMakeContextCurrent(win);
   glfwSwapInterval(1);
   glfwSetWindowSizeLimits(win, 1100, 640, GLFW_DONT_CARE, GLFW_DONT_CARE);
+#ifdef _WIN32
   {
+    // Dark titlebar to match the app's own dark theme — Windows-only DWM
+    // attribute, no equivalent needed on Linux/macOS (window manager already
+    // follows the OS-level dark mode there).
     HWND hwnd = glfwGetWin32Window(win);
     BOOL dark = TRUE; DwmSetWindowAttribute(hwnd, 20, &dark, sizeof dark);
     COLORREF cap = RGB(0x1c, 0x1c, 0x1c), txt = RGB(0xf3, 0xf3, 0xf3), bd = RGB(0x2a, 0x2a, 0x2a);
     DwmSetWindowAttribute(hwnd, 35, &cap, sizeof cap); DwmSetWindowAttribute(hwnd, 36, &txt, sizeof txt); DwmSetWindowAttribute(hwnd, 34, &bd, sizeof bd);
   }
+#endif
 
   IMGUI_CHECKVERSION();
   ImGui::CreateContext();
