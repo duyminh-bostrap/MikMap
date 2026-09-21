@@ -11,12 +11,19 @@ không sửa file.
 ## Thứ tự tra cứu
 
 1. `.claude/CLAUDE.md` và `.claude/rules/*.md` — quy tắc kiến trúc, quy ước.
-2. `architecture.md` — vì sao mọi thứ nằm ở đó (bản đồ tầng, quy tắc phụ thuộc).
-3. `features.md` — backlog 135 mục, cột trạng thái theo mã (A1, F10, G7...).
-4. `UI_UPDATE_PROGRESS.md` — tiến độ UI theo mảng lớn, phần "Chưa làm".
-5. `newui/SKILL.md` — tổng hợp cô đọng + "Bẫy đã mắc" + "Nguyên tắc thiết kế".
-6. Source thật trong `src/core`, `src/io`, `src/render`, `src/ui`, `src/app`,
-   `tests/` — luôn xác nhận bằng grep source, đừng chỉ tin theo tài liệu.
+2. `architecture.md` — vì sao mọi thứ nằm ở đó (bản đồ tầng, quy tắc phụ
+   thuộc, chuỗi `H_w⁻¹·H_s`, hợp đồng `IWarp`, mô hình thread/TripleBuffer).
+3. **Hai track riêng biệt, đừng lẫn:**
+   - Câu hỏi về engine chính (`src/`) → `/features.md` (backlog 135 mục, mã
+     A1/F10/G7...) + `UI_UPDATE_PROGRESS.md` + `newui/SKILL.md` (tổng hợp
+     cô đọng + "Bẫy đã mắc").
+   - Câu hỏi về `newui/` (GLFW prototype) → `newui/README.md` +
+     `newui/features.md` (backlog 135 mục CÙNG mã nhưng chấm điểm riêng cho
+     prototype — thấp hơn hẳn, xem "Ghi chú kiểm tra" cuối file). Model dữ
+     liệu ở đây là struct riêng trong `newui/src/app.h`, KHÔNG phải
+     `core/model/*` thật, dù `core/`+`io/` đã link vào.
+4. Source thật (`src/core`, `src/io`, `src/render`, `src/ui`, `src/app`,
+   `newui/src`, `tests/`) — luôn xác nhận bằng grep, đừng chỉ tin theo tài liệu.
 
 ## Quy tắc bắt buộc
 
@@ -28,8 +35,9 @@ không sửa file.
   chung.
 - Khi trả lời về kiến trúc: đối chiếu với quy tắc phụ thuộc
   `core -> (không ai) <- io/render/ui <- app` — nói rõ nếu phát hiện vi phạm.
-- Nếu câu hỏi liên quan `newui/`, đọc `newui/SKILL.md` và `newui/README.md`
-  trước — đây là nhánh song song, có mô hình dữ liệu riêng (`src/app.h`) chưa
-  ghép hết vào `core/` thật.
+- Nếu câu hỏi liên quan `newui/`, đọc `newui/README.md` + `newui/features.md`
+  trước (KHÔNG phải `newui/SKILL.md`, tài liệu đó tổng hợp engine chính) — đây
+  là nhánh song song, có mô hình dữ liệu riêng (`newui/src/app.h`) chưa ghép
+  hết vào `core/` thật dù engine đã link vào.
 - Trả lời ngắn gọn, có trích dẫn đường dẫn/dòng, kết luận rõ ràng (có/chưa,
   đúng/sai) thay vì liệt kê khả năng.

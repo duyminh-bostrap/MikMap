@@ -50,9 +50,42 @@ ctest --test-dir build --output-on-failure
 
 - Render thread (`render/`, vòng lặp `ofApp::draw`) **không lock, không
   alloc, không I/O**. Mọi cấp phát động phải nằm ngoài đường vẽ mỗi frame.
-- Mỗi sensor (Serial/OSC/TUIO/Mock/Kinect) chạy thread riêng, giao tiếp qua
-  buffer wait-free (SPSC ring / TripleBuffer) — không mutex trên đường nóng.
-- Mục tiêu: 60 fps ổn định, frame p99 < ~17ms, độ trễ sensor p99 < ~10ms.
+- Mỗi sensor (Serial/OSC/TUIO/Mock/Kinect) chạy thread riêng, **được phép
+  chặn** ở `read()`/`recvfrom()`/SDK — nhưng không bao giờ chia sẻ dữ liệu với
+  render thread bằng mutex, chỉ qua:
+  - `TripleBuffer<SensorFrame>` — kênh **state**, cho phép rơi frame cũ (vd vị
+    trí ngón tay đang di chuyển; render chỉ cần frame mới nhất).
+  - `SpscRingBuffer<TouchEvent>` — kênh **event**, KHÔNG được rơi (vd
+    TOUCH_DOWN/UP; rơi 1 sự kiện = hiệu ứng không kích hoạt hoặc kẹt vĩnh viễn).
+- `SensorFrame`/`TouchPoint` (`io/SensorFrame.h`) là POD kích thước cố định,
+  memcpy-able — không `std::vector`, không con trỏ, để không cấp phát heap
+  trong hot path.
+- **Toạ độ thô đi qua biên thread; ngữ nghĩa (`H_w⁻¹·H_s`) áp dụng tại nơi
+  dùng (render thread)** — quyết định cố ý, không phải thiếu sót: `H_w` đổi
+  bất cứ lúc nào người dùng kéo góc, chia sẻ nó với sensor thread sẽ bắt buộc
+  phải lock và phá vỡ ràng buộc render-không-lock ở trên.
+- Độ trễ đo bằng `tCaptureNs` (đóng dấu lúc thu thập, `steady_clock`), không
+  đoán. Mục tiêu: 60 fps ổn định, frame p99 < ~17ms, độ trễ sensor p99 < ~10ms.
+
+## Hợp đồng `IWarp`
+
+```cpp
+virtual Vec2 forward(const Vec2& contentUV) const = 0;
+virtual bool inverse(const Vec2& outputPx, Vec2& outUV) const = 0;  // bool, KHÔNG phải Vec2
+```
+
+`inverse()` phải trả `bool` + tham số ra vì phép nghịch đảo có thể thất bại
+hợp lệ (điểm ngoài vùng warp, ô lưới suy biến) — trả thẳng `Vec2` buộc phải
+bịa giá trị (`{0,0}` lại là toạ độ hợp lệ ở góc trên-trái), khiến người gọi
+không phân biệt được "chạm góc" với "trượt ra ngoài". Mọi warp mới (kể cả
+Bezier) phải theo đúng chữ ký này ngay từ `IWarp`, không thêm muộn.
+
+## `core/` chỉ phụ thuộc STL
+
+Nếu một tính năng trong `core/` (vd RANSAC) muốn dùng OpenCV, đặt sau macro
+`HEXMAP_USE_OPENCV` kèm fallback tự viết — để `hexmap_tests` vẫn build được ở
+môi trường tối giản (CI, máy không có OpenCV). Đừng thêm dependency ngoài STL
+vào `core/` mà không có fallback này.
 
 ## Video
 

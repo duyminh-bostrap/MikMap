@@ -13,7 +13,17 @@ dự án này — không phải checklist C++ chung chung. Đọc `.claude/CLAUD
 1. **Quy tắc phụ thuộc** — diff có thêm `#include` nào phá vỡ
    `core -> (không ai)`, `io -> core`, `render -> core`, `ui -> core` không?
    Cụ thể: `core/`/`io/` có include `ofMain.h`, `<GL/...>`, `imgui.h` không?
-   `render/` có gọi hàm `ui/` không? Đây là lỗi nghiêm trọng nhất có thể có.
+   `render/` có gọi hàm `ui/` không? `core/` có thêm dependency ngoài STL mà
+   không bọc sau macro kiểu `HEXMAP_USE_OPENCV` + fallback không? Đây là lỗi
+   nghiêm trọng nhất có thể có.
+1b. **Hợp đồng `IWarp`** — nếu diff thêm/sửa một cài đặt `IWarp`: `inverse()`
+   có đúng chữ ký `bool inverse(const Vec2&, Vec2&) const` không (KHÔNG được
+   trả thẳng `Vec2`, lý do xem `.claude/CLAUDE.md`)? Có test round-trip
+   `forward(inverse(p)) == p` chưa?
+1c. **Biên thread sensor** — nếu diff chạm `io/` hoặc chỗ đọc `TripleBuffer`/
+   `SpscRingBuffer`: có mutex nào chia sẻ giữa sensor thread và render thread
+   không (không được có)? Toạ độ gửi qua biên thread có còn là toạ độ THÔ
+   (chưa áp `H_w`/`H_s`) không?
 2. **Build sạch** — chạy:
    ```
    cmake -S . -B build && cmake --build build --target hexmap_tests -j
@@ -35,9 +45,12 @@ dự án này — không phải checklist C++ chung chung. Đọc `.claude/CLAUD
    file chỉ dùng trong CMake của `core/`/`io/`/`newui/`)?
 8. **File riêng máy/người** — diff có vô tình đưa `bin/data/settings.json`,
    `bin/data/perf.log`, `.vs/`, `imgui.ini` vào không?
-9. **Tick tài liệu sai sự thật** — nếu diff sửa `features.md` hay
-   `UI_UPDATE_PROGRESS.md` để tick `[x]`, xác nhận bằng grep rằng code tương
-   ứng thật sự tồn tại và chạy được, không phải stub.
+9. **Tick tài liệu sai sự thật** — nếu diff sửa `features.md`,
+   `newui/features.md`, hay `UI_UPDATE_PROGRESS.md` để tick `[x]`/`[~]`, xác
+   nhận bằng grep rằng code tương ứng thật sự tồn tại và chạy được (không
+   phải stub), **và đúng file cho đúng thư mục** — sửa `newui/src/` phải tick
+   ở `newui/features.md`, không phải `/features.md` gốc (hai file chấm điểm
+   hai track khác nhau, xem `.claude/CLAUDE.md`).
 
 ## Cách báo cáo
 

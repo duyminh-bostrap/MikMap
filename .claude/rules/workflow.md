@@ -36,10 +36,18 @@ phải git hook, nên `--no-verify` không có tác dụng — nếu hook sai, s
 2. Nếu sửa `src/ui/` hoặc `newui/`: không build được app đầy đủ trên máy này
    (cần Windows/MSVC/openFrameworks) — nói rõ điều đó thay vì báo "đã test"
    khi chỉ đọc code. Nếu có máy Windows thật, làm theo `README.md`.
-3. Nếu tick tính năng trong `features.md`/`UI_UPDATE_PROGRESS.md`: grep source
-   để xác nhận code thật tồn tại, đừng tin theo trí nhớ hay theo yêu cầu.
-4. Cập nhật `UI_UPDATE_PROGRESS.md` khi hoàn thành **một mảng lớn** — không
-   phải mỗi commit nhỏ.
+3. Nếu tick tính năng: grep source để xác nhận code thật tồn tại, đừng tin
+   theo trí nhớ hay theo yêu cầu. **Repo có hai file `features.md` chấm điểm
+   hai thứ khác nhau — xác định đúng cái trước khi tick:**
+   - `/features.md` (gốc) — engine chính `src/` (oF thật, HAP thật, đã xa hơn
+     nhiều). Cập nhật cùng `UI_UPDATE_PROGRESS.md` khi hoàn thành **một mảng
+     lớn**, không phải mỗi commit nhỏ.
+   - `/newui/features.md` — prototype `newui/src/` (GLFW, model giả trong
+     `app.h`). Chấm điểm nghiêm khắc hơn hẳn: `[~]` nghĩa là chỉ có UI/một
+     phần hành vi, không phải "gần xong" — đọc mục "Ghi chú kiểm tra" cuối
+     file để biết chính xác cái gì còn giả trước khi đổi trạng thái một dòng.
+   Tick sai file, hoặc tick theo tiêu chí của file kia, coi như tick sai sự
+   thật — đúng loại lỗi mà cả hai file đều từng phải đính chính.
 
 ## Sub-agent riêng của repo
 
