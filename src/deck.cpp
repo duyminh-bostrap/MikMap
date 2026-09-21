@@ -941,11 +941,11 @@ static void Browser(ImRect r) {
   std::vector<Row> rows;
   auto folder = [&](const char* n, const char* ic) {
     bool open = A.browserOpen.find(n) == A.browserOpen.end() ? true : A.browserOpen[n];
-    rows.push_back({n, ic, "", 0, -1, true, open, 0});
+    rows.push_back({n, ic, "", 0, -1, true, open, 0, ""});
     return (int)rows.size() - 1;
   };
   auto item = [&](int fi, const char* n, const char* ic, const char* d, int fx) {
-    rows.push_back({n, ic, d ? d : "", 1, fx, false, true, 0});
+    rows.push_back({n, ic, d ? d : "", 1, fx, false, true, 0, ""});
     rows[fi].count++;
   };
   if (A.mediaStale) { A.mediaList = ListMedia(); A.mediaStale = false; }
