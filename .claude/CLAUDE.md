@@ -156,9 +156,15 @@ ctest --test-dir build --output-on-failure
 ```
 
 ```powershell
-# app (src/) — chỉ Windows, cần MinGW/GLFW/.tools trong src/.tools/
+# app (src/) — Windows: cần MinGW/GLFW/.tools trong src/.tools/
 cmake -S src -B src/build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build src/build
+```
+
+```bash
+# app (src/) — Linux/macOS: cần GLFW hệ thống (apt/brew), ImGui tự tải lúc
+# configure. Đã build+chạy thật kiểm chứng (Xvfb) — xem README.md.
+cmake -S src -B src/build && cmake --build src/build
 ```
 
 Quy ước build/test/style mặc định ở `.claude/rules/tech-defaults.md`.

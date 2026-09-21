@@ -65,17 +65,29 @@ ctest --test-dir build --output-on-failure
 Không cần GPU, không cần GLFW/ImGui. Toàn bộ toán học mapping và calibration
 nằm ở `engine/core`, test trong vài giây.
 
-### `src/` — app GLFW + ImGui, chỉ Windows
+### `src/` — app GLFW + ImGui, cả Windows/Linux/macOS
 
 ```powershell
+# Windows — bộ công cụ (MinGW GCC, CMake, Ninja, Dear ImGui, GLFW) nằm trong
+# src/.tools/, không vào git. Xem src/build.ps1 để build nhanh.
 cmake -S src -B src/build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build src/build
 .\src\build\mikmap.exe
 ```
 
-Bộ công cụ (MinGW GCC, CMake, Ninja, Dear ImGui, GLFW) nằm trong `src/.tools/`,
-không vào git. Xem `src/build.ps1` để build nhanh. Tắt engine để dựng riêng
-phần giao diện: `-DMIKMAP_WITH_ENGINE=OFF`.
+```bash
+# Linux/macOS — cần GLFW cài qua package manager hệ thống
+# (Linux: apt install libglfw3-dev libgl-dev · macOS: brew install glfw).
+# Dear ImGui (v1.92.9b, khớp bản Windows) được CMake tự tải lúc configure,
+# không vendor vào repo.
+cmake -S src -B src/build -DCMAKE_BUILD_TYPE=Release
+cmake --build src/build
+./src/build/mikmap
+```
+
+Đã build+chạy thật kiểm chứng trên Linux (không chỉ compile — chạy dưới Xvfb,
+giao diện render đúng). Tắt engine để dựng riêng phần giao diện:
+`-DMIKMAP_WITH_ENGINE=OFF`.
 
 ---
 

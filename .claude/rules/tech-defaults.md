@@ -28,15 +28,27 @@ ctest --test-dir build --output-on-failure
 ```
 
 ```powershell
-# app (src/) — chỉ Windows, cần MinGW/GLFW/.tools trong src/.tools/
+# app (src/) — Windows: MinGW/GLFW/.tools trong src/.tools/ (không vào git)
 cmake -S src -B src/build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build src/build
+```
+
+```bash
+# app (src/) — Linux: apt install libglfw3-dev libgl-dev trước
+# app (src/) — macOS: brew install glfw trước
+# ImGui v1.92.9b tự tải qua FetchContent lúc configure, không vào git.
+cmake -S src -B src/build && cmake --build src/build
 ```
 
 - `src/CMakeLists.txt` tự `file(GLOB_RECURSE ...)` `../engine/core` +
   `../engine/io` — KHÔNG cần thêm file mới vào đâu thủ công (khác bản cũ với
   `.vcxproj`). Tắt bằng `-DMIKMAP_WITH_ENGINE=OFF` nếu chỉ muốn dựng riêng
   phần giao diện.
+- Đã build+chạy thật kiểm chứng trên Linux (build sạch, chạy dưới Xvfb, giao
+  diện render đúng) — không chỉ suy đoán từ việc compile được. macOS dùng
+  cùng nhánh CMake (`WIN32`/`APPLE`/else trong `src/CMakeLists.txt`) nhưng
+  chưa có máy thật để tự kiểm; nếu build lỗi trên macOS, khả năng cao là do
+  tên framework/link flag chưa đúng, không phải do code app.
 - *(Chỉ nhánh `legacy-oF-ui`)* App oF cũ build bằng MSBuild + `HexMapping.vcxproj`,
   file mới phải thêm thủ công vào đó, và phải chạy lại `tools/fix_project.ps1`
   sau mỗi lần chạy oF Project Generator. Không áp dụng cho `new_UI`.

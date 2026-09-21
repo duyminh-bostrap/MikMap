@@ -38,9 +38,13 @@ phải git hook, nên `--no-verify` không có tác dụng — nếu hook sai, s
 1. Nếu sửa `engine/core`/`engine/io`: chạy `cmake --build build --target
    hexmap_tests && ctest --test-dir build --output-on-failure` — 0 test đỏ,
    0 cảnh báo mới.
-2. Nếu sửa `src/`: không build được app đầy đủ trên máy này (cần Windows +
-   MinGW/GLFW/.tools) — nói rõ điều đó thay vì báo "đã test" khi chỉ đọc code.
-   Nếu có máy Windows thật, làm theo `README.md`.
+2. Nếu sửa `src/`: build được cả trên Linux/macOS (cần `libglfw3-dev`
+   +`libgl-dev` trên Linux, hoặc `brew install glfw` trên macOS — xem
+   `README.md`), không chỉ Windows như trước — chạy
+   `cmake -S src -B src/build && cmake --build src/build` để xác nhận build
+   sạch trước khi báo "đã sửa xong", đừng chỉ đọc code. Nếu máy không có
+   GLFW/OpenGL để thử chạy thật (không chỉ build), nói rõ điều đó thay vì báo
+   "đã test" khi chỉ build được nhị phân.
 3. Nếu tick tính năng trong `features.md`: grep `src/*.cpp` để xác nhận
    code thật tồn tại và được GỌI tới (không chỉ vì `engine/core` đã hỗ trợ
    tính năng đó), đừng tin theo trí nhớ hay theo yêu cầu. `[~]` nghĩa là chỉ
