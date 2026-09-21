@@ -38,7 +38,8 @@ phải git hook, nên `--no-verify` không có tác dụng — nếu hook sai, s
 1. Nếu sửa `engine/core`/`engine/io`: chạy `cmake --build build --target
    hexmap_tests && ctest --test-dir build --output-on-failure` — 0 test đỏ,
    0 cảnh báo mới.
-2. Nếu sửa `src/`: build được cả trên Linux/macOS (cần `libglfw3-dev`
+2. Nếu sửa `src/`: chạy thêm `ctest --test-dir src/build` (test `project_roundtrip`: lưu/nạp/undo, không cần cửa sổ)
+   và build được cả trên Linux/macOS (cần `libglfw3-dev`
    +`libgl-dev` trên Linux, hoặc `brew install glfw` trên macOS — xem
    `README.md`), không chỉ Windows như trước — chạy
    `cmake -S src -B src/build && cmake --build src/build` để xác nhận build

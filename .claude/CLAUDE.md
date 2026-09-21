@@ -36,8 +36,8 @@ features.md     backlog 135 mục, chấm điểm theo code thật của src/
 ```
 
 `src/` hiện là struct riêng (`src/app.h` và các file phẳng
-`calib.cpp`/`deck.cpp`/`mapping.cpp`/`sensor.cpp`/`output.cpp`/`clipart.cpp`/...), **link `engine/core`+
-`engine/io` vào nhưng CHƯA gọi tới** — xem "Việc còn lại để ghép trọn" ở
+`calib.cpp`/`deck.cpp`/`mapping.cpp`/`sensor.cpp`/`output.cpp`/`clipart.cpp`/`project.cpp`/...), **link `engine/core`+
+`engine/io` vào, nhưng chỉ gọi `core/util/Json` (ở `project.cpp`); phần còn lại CHƯA gọi tới** — xem "Việc còn lại để ghép trọn" ở
 `README.md`. Đừng nhầm đây là cây thư mục layered đầy đủ ở `architecture.md`
 §2 (`app/`,`ui/`,`render/`,`io/`,`core/`) — cây đó mô tả bản cũ trên nhánh
 `legacy-oF-ui` và là đích mà `src/` đang được ghép dần vào.
@@ -131,8 +131,8 @@ ngoài". Định nghĩa ở `engine/core/model/IWarp.h`; mọi `IWarp` mới ph�
 
 ## `src/` — tình trạng THẬT (theo `features.md`, không theo vẻ ngoài)
 
-35 mục `[x]` (hành vi thật) · 24 mục `[~]` (chỉ UI/một phần — đọc "Ghi chú
-kiểm tra" cuối `features.md` để biết chính xác cái gì còn giả) · 76 mục `[ ]`,
+38 mục `[x]` (hành vi thật) · 26 mục `[~]` (chỉ UI/một phần — đọc "Ghi chú
+kiểm tra" cuối `features.md` để biết chính xác cái gì còn giả) · 71 mục `[ ]`,
 trên 135 mục Resolume-parity (đếm lại 2026-09-21 từ các dòng bảng).
 
 **Đã có thật sau đợt bổ sung P0** (đã grep `src/*.cpp`): output ra cửa sổ máy
@@ -142,11 +142,17 @@ blend mode dùng hàm trộn GL thật, 8 mode (`A7`/`D4`, `clipart.cpp` — ri�
 Overlay tạm dùng Screen); bấm đúp header cột = bắn cả cột (`A6`); PerfPanel
 FPS/P99/frame rớt (`G9`, `calib.cpp`).
 
+**Đợt UX 2026-09-21** (`project.cpp`, xem `ux-current.md`): lưu/mở/mới dự án `.mikmap` + cài đặt máy tách riêng,
+undo/redo toàn app theo snapshot, Show Mode (`Tab`), phím tắt Composition, đổi tên layer/cột/clip, scrub Timeline,
+ROI kéo được. Kiểm tự động: `mikmap --roundtrip <file>` (không cần cửa sổ). `Clip::style` cố định hình vẽ khi đổi tên.
+
 **Vẫn còn giả/thiếu — dễ bị đánh giá cao hơn thực tế:** `G5` homography là
 DLT+Hartley nhưng **chưa RANSAC** nên `[~]`; `B3` generator vẽ bằng CPU, chưa
 phải shader GLSL; `A4` thumbnail là gradient tĩnh (cố ý — thumbnail động làm
-deck tụt còn ~16s/khung); chưa có nguồn video/ảnh thật (`B1`), chưa lưu/mở
-project qua `ProjectIO` (`I2`/`F8`/`G8`), chưa có thread sensor thật (`G1`).
+deck tụt còn ~16s/khung); chưa có nguồn video/ảnh thật (`B1`), chưa có thread sensor thật (`G1`).
+`I2` (lưu/mở dự án) **đã chạy** qua `src/project.cpp` (định dạng `.mikmap`, schema riêng của
+`src/`) nhưng **vẫn chưa gọi `ProjectIO`/`.hexmap` của `engine/`**; cài đặt máy lưu ở
+thư mục config OS, tách khỏi dự án.
 
 **Việc còn lại để ghép engine thật vào `src/`** (chi tiết ở `README.md`): (1)
 `ProjectIO`, (2) `core/calib/*` thay `calib.cpp` tự viết, (3) `Slice`+

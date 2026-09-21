@@ -124,7 +124,7 @@
 | [x] | **F5** | **Corner pin / keystone** (kéo 4 góc) | M | 🔴 P0 |
 | [x] | **F6** | Kéo thả handle bằng chuột trên UI | M | 🔴 P0 |
 | [x] | **F7** | Nhiều slice trên 1 screen | S | 🔴 P0 |
-| [ ] | **F8** | Lưu / nạp preset output | M | 🔴 P0 |
+| [~] | **F8** | Lưu / nạp preset output | M | 🔴 P0 |
 | [x] | **F9** | **Mesh / linear warping** (lưới N×M) | L | 🟠 P1 |
 | [ ] | **F10** | **Bezier warping** (bề mặt cong, tượng) | L | 🟠 P1 |
 | [x] | **F11** | Điều chỉnh mật độ lưới warp (subdivision) | S | 🟠 P1 |
@@ -156,7 +156,7 @@
 | [~] | **G5** | **Homography solver (DLT + RANSAC)** | M | 🔴 P0 |
 | [x] | **G6** | **Calibration wizard — chạm 4+ điểm** | M | 🔴 P0 |
 | [ ] | **G7** | **SensorMapper: sensor → slice → clip pixel** | M | 🔴 P0 |
-| [ ] | **G8** | Lưu / nạp calibration profile | S | 🔴 P0 |
+| [~] | **G8** | Lưu / nạp calibration profile | S | 🔴 P0 |
 | [x] | **G9** | PerfPanel — đo độ trễ p99, FPS, frame drop | S | 🔴 P0 |
 | [x] | **G10** | Hiển thị sai số tái chiếu (reprojection error) | S | 🟠 P1 |
 | [ ] | **G11** | OneEuroFilter khử nhiễu | S | 🟠 P1 |
@@ -175,7 +175,7 @@
 
 | ✓ | ID | Tính năng | Công sức | Đề xuất |
 |:-:|---|---|:-:|:-:|
-| [ ] | **H1** | Phím tắt bàn phím (trigger clip/column) | S | 🟠 P1 |
+| [~] | **H1** | Phím tắt bàn phím (trigger clip/column) | S | 🟠 P1 |
 | [ ] | **H2** | OSC input điều khiển app (trigger, param) | M | 🟠 P1 |
 | [ ] | **H3** | MIDI mapping | M | 🟡 P2 |
 | [ ] | **H4** | Parameter animation (LFO) | M | 🟡 P2 |
@@ -195,12 +195,12 @@
 | ✓ | ID | Tính năng | Công sức | Đề xuất |
 |:-:|---|---|:-:|:-:|
 | [x] | **I1** | Cửa sổ control tách khỏi cửa sổ output | S | 🔴 P0 |
-| [ ] | **I2** | Save / load project (.hexmap) | M | 🔴 P0 |
+| [x] | **I2** | Save / load project (.hexmap) | M | 🔴 P0 |
 | [x] | **I3** | Preview output trong control window | M | 🔴 P0 |
 | [x] | **I4** | Panel thông số (chỉnh param clip/slice) | M | 🔴 P0 |
-| [ ] | **I5** | **Show Mode** — ẩn toàn bộ overlay chỉnh sửa | S | 🟠 P1 |
+| [x] | **I5** | **Show Mode** — ẩn toàn bộ overlay chỉnh sửa | S | 🟠 P1 |
 | [~] | **I6** | File browser / quản lý media | M | 🟠 P1 |
-| [~] | **I7** | Undo / redo | L | 🟠 P1 |
+| [x] | **I7** | Undo / redo | L | 🟠 P1 |
 | [ ] | **I8** | Tool convert media sang HAP (bọc ffmpeg) | S | 🟠 P1 |
 | [ ] | **I9** | Cảnh báo khi import file không phải HAP | S | 🟠 P1 |
 | [x] | **I10** | Preview clip riêng trước khi phát | M | 🟡 P2 |
@@ -214,7 +214,7 @@
 
 ## Ghi chú kiểm tra (prototype `mikmap-cpp`)
 
-**Tổng kết:** 35 mục `[x]` · 24 mục `[~]` · 76 mục `[ ]` (trên tổng 135 mục; đếm từ các dòng bảng ở trên, 2026-09-21). Các danh sách `[x]`/`[~]`/"Chưa làm" ngay dưới là bản chụp trước đợt bổ sung P0 — đợt đó (mục kế tiếp) đã làm thêm A1, A6, C2/C4/C5, D1–D6, F2, I1, G9 và thay G5 bằng DLT. G5 vẫn `[~]`: có DLT + chuẩn hoá Hartley trong `src/calib.cpp` nhưng chưa có RANSAC (grep `ransac` trong `src/*.cpp` = 0).
+**Tổng kết:** 38 mục `[x]` · 26 mục `[~]` · 71 mục `[ ]` (trên tổng 135 mục; đếm từ các dòng bảng ở trên, 2026-09-21). Các danh sách `[x]`/`[~]`/"Chưa làm" ngay dưới là bản chụp trước đợt bổ sung P0 — đợt đó (mục kế tiếp) đã làm thêm A1, A6, C2/C4/C5, D1–D6, F2, I1, G9 và thay G5 bằng DLT. G5 vẫn `[~]`: có DLT + chuẩn hoá Hartley trong `src/calib.cpp` nhưng chưa có RANSAC (grep `ransac` trong `src/*.cpp` = 0).
 
 **Đã có hành vi thật (`[x]`)**
 - A2/A3/A5/A8/A15 — layer xếp chồng (layer trên đè lên), cột động (chèn/xoá/đổi chỗ/tự thêm), click = cue, đúp = trigger, solo/mute/bypass + xoá clip, thu gọn layer/group. Nguồn: `deck.cpp`.
@@ -246,3 +246,18 @@
 
 **Không làm được trong đợt này:** A4 thumbnail động — vẽ hình sinh trong cả 40 ô làm deck tụt xuống ~16 giây/khung (kiểu STARS nặng nhất), nên ô clip giữ nền gradient; hình thật chỉ hiện ở tab Clip và hai monitor.
 
+
+### Đợt bổ sung UX & lưu/mở dự án (2026-09-21)
+Đã grep `src/*.cpp` xác nhận từng mục:
+- **I2 — lưu/mở dự án `[x]`** (`src/project.cpp`): định dạng `.mikmap` (JSON, dùng `engine/core/util/Json`, ghi qua file tạm rồi rename), thư mục `~/Documents/MikMap`. Có Dự án mới (trống) / Mở (hộp thoại liệt kê, mới nhất trước) / Lưu / Lưu bản sao, phát hiện thay đổi chưa lưu (bỏ qua playhead và trạng thái live) và cảnh báo khi bỏ/thoát, nạp file hỏng hoặc rỗng không làm hỏng trạng thái đang chạy. **Lưu ý:** đây là schema riêng của `src/`, **chưa gọi `ProjectIO`/`.hexmap` của `engine/`**. Kiểm bằng `mikmap --roundtrip <file>` (chạy không cần cửa sổ).
+- **Cài đặt máy tách khỏi dự án:** ngôn ngữ/font/màu/cỡ chữ/màn hình output lưu ở thư mục config của hệ điều hành (`settings.json`), tự lưu khi đổi.
+- **F8, G8 `[~]`:** output (screen/slice/mask) và calibration được lưu **cùng dự án**, chưa có preset/profile riêng để nạp lẫn giữa các dự án.
+- **H1 `[~]`:** Space play/pause, Enter trigger clip đang chọn, ←/→ đổi cột, L loop, Delete xoá clip, Ctrl/Cmd+N/O/S/Shift+S/Z/Y. Chưa có phím gán tuỳ ý cho từng clip/cột.
+- **A12 `[~]`:** đổi tên layer (bấm đúp hàng layer hoặc menu) và cột (menu chuột phải) chạy thật; đổi tên clip/deck chưa.
+- **Sửa lỗi:** chip blend mode ở tab Layer dùng tên "Alpha"/"Additive" không khớp danh sách chuẩn nên rơi về Normal — nay dùng chung 8 chế độ; ROI ở Sensor I/O kéo được; nút Group/Column trên Deck chạy; Timeline kéo (scrub) được; thanh trạng thái không còn hiển thị MIDI/Art-Net/NDI giả.
+- **I7 — undo/redo `[x]`** (`project.cpp`: `UndoTick`/`UndoStep`): toàn app (Deck, Mapping, Sensor), không chỉ Mapping. Snapshot tự động khi chuột/bàn phím ngừng thao tác (kéo slider/góc = một bước), tối đa 60 bước, `Ctrl/Cmd+Z`, `Ctrl/Cmd+Shift+Z`/`Y` và nút trên thanh Mapping. Hành động trình diễn (trigger, playhead) **không** vào lịch sử, và clip đang phát không bị cắt khi undo. Kiểm bằng `mikmap --roundtrip`.
+- **I5 — Show Mode `[x]`:** phím `Tab` hoặc menu Project → chỉ hiện composite toàn màn hình, không có gì để bấm nhầm; `Esc`/`Tab` để thoát.
+- **A12** thêm đổi tên clip (popover chuột phải → Rename); mục vẫn `[~]` vì chưa đổi tên deck. Tên clip không còn quyết định hình vẽ (`Clip::style` được cố định khi đổi tên).
+- **F2/I1 trên macOS đã kiểm chứng:** cửa sổ output máy chiếu mở và vẽ đúng các slice đã warp (chụp bằng `--outshot`).
+- **G13 `[~]` (tiến thêm):** điểm chạm từ radar được chiếu qua homography calibration (`FitHomography` → `ApplyH`) và hiện trên sân khấu Mapping ở trang Output (chấm + gợn sóng + toạ độ px, chỉ với Screen đầu tiên vì đích calibration nằm ở không gian 1920×1080 của nó). **Chưa phủ lên cửa sổ output máy chiếu thật.** Toạ độ sensor vẫn thô cho tới lúc vẽ (nguyên tắc #5).
+- **G17 `[~]` (tiến thêm):** dây `touch.down → "<layer> · <clip>"` đang bật sẽ trigger clip có tên đó khi chạm radar (thanh trạng thái báo "Route fired"). Mới hỗ trợ nguồn `touch.down`; các nguồn khác (`touch.x`, `blob.count`, `touch.velocity`) vẫn chưa nối vào tham số nào.

@@ -21,9 +21,9 @@ còn ở giai đoạn prototype:
 | | |
 |---|---|
 | Giao diện | 3 màn Composition · Advanced Mapping · Sensor I/O + cửa sổ Cài đặt, bám bản thiết kế `MikMap Workspace.dc.html` |
-| Engine dùng chung (`engine/core`, `engine/io`) | Đã biên dịch & link vào app, **UI chưa gọi tới** |
+| Engine dùng chung (`engine/core`, `engine/io`) | Đã biên dịch & link vào app; `src/` mới chỉ gọi `core/util/Json` (cho lưu/mở dự án), **chưa gọi model/calib/io thật** |
 | Mô hình dữ liệu app hiện tại | Struct riêng trong `src/app.h`, chưa dùng `core/model` thật |
-| Đối chiếu chi tiết | `features.md` — 35 mục `[x]` hành vi thật · 24 mục `[~]` một phần · 76 mục `[ ]`, trên 135 mục Resolume-parity |
+| Đối chiếu chi tiết | `features.md` — 38 mục `[x]` hành vi thật · 26 mục `[~]` một phần · 71 mục `[ ]`, trên 135 mục Resolume-parity |
 
 Xem [`features.md`](features.md) để biết chính xác cái gì thật/cái gì chỉ có
 UI, và [`architecture.md`](architecture.md) để biết đích đến kiến trúc (chuỗi
@@ -90,8 +90,8 @@ giao diện render đúng) và trên macOS (Apple Silicon, Xcode SDK 15.0, GLFW 
 qua Homebrew: build sạch, app mở cửa sổ và chạy ổn định, F5 trong VS Code dùng
 `.vscode/launch.json`). Trên macOS app xin OpenGL 3.2 core (+ GLSL 150) vì hệ
 điều hành không cấp context 3.0 thường; sẽ có vài cảnh báo `deprecated` của
-OpenGL khi build — vô hại. Chưa kiểm tra kỹ trên macOS: cửa sổ output máy chiếu
-(F2/I1) và mọi tính năng ngoài việc khởi động. Tắt engine để dựng riêng phần giao diện:
+OpenGL khi build — vô hại. Cửa sổ output máy chiếu (F2/I1) cũng đã mở và vẽ đúng trên macOS
+(chụp bằng `--outshot`); chưa thử với nhiều màn hình thật. Tắt engine để dựng riêng phần giao diện:
 `-DMIKMAP_WITH_ENGINE=OFF`.
 
 ---
@@ -101,7 +101,7 @@ OpenGL khi build — vô hại. Chưa kiểm tra kỹ trên macOS: cửa sổ ou
 `src/` hiện giữ mô hình dữ liệu riêng (`src/app.h`); bước tiếp theo là
 chuyển sang mô hình thật của `engine/`, làm từng mảng để luôn build được:
 
-1. `core/model/ProjectIO` → lưu/mở `.hexmap` (các mục P0 còn thiếu: I2, F8, G8).
+1. `core/model/ProjectIO` → thay `src/project.cpp` (hiện lưu `.mikmap` bằng schema riêng của `src/`, đã chạy được — I2); còn thiếu preset output/calibration dùng chung giữa dự án (F8, G8).
 2. `core/calib/*` → thay phép tính homography (DLT tự viết, chưa RANSAC) và
    SensorMapper trong `src/calib.cpp` (G5, G7).
 3. `core/model/Slice` + `WarpCornerPin`/`WarpMesh`/`WarpBezier` → thay phép

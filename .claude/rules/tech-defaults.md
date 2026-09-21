@@ -50,8 +50,9 @@ cmake -S src -B src/build && cmake --build src/build
   được cửa sổ, chạy ổn định. Khác biệt riêng của macOS trong code: `main.cpp`
   xin context GL 3.2 core + forward-compat và GLSL `#version 150` (context
   3.0 thường bị từ chối, app thoát mã 2); `clipart.cpp` tự định nghĩa
-  `APIENTRY` rỗng. Chưa kiểm tra trên macOS: output máy chiếu (F2/I1) và các
-  tính năng sâu hơn khởi động. Debug bằng F5 trong VS Code
+  `APIENTRY` rỗng. Output máy chiếu (F2/I1) đã mở và vẽ đúng trên macOS (chụp bằng
+  `--outshot`); chưa thử nhiều màn hình thật. Kiểm tự động lưu/mở/undo:
+  `mikmap --roundtrip <file>` (không cần cửa sổ). Debug bằng F5 trong VS Code
   (`.vscode/launch.json`, build vào `src/build-debug/`, đã gitignore).
 - Chuỗi hex trong literal (`"\xE1\xBB\x8B"`) mà đứng ngay trước ký tự hex
   (`0-9a-fA-F`) sẽ bị GCC/Clang coi là một escape dài và báo lỗi (MSVC bỏ
