@@ -1,80 +1,98 @@
-# Quy ước giao diện (ImGui)
+# Quy ước giao diện (Dear ImGui + GLFW, `src/`)
 
-Nguồn sự thật cho giao diện là bản thiết kế tham khảo `MikMap_Web`
-(React/Vite/Tailwind, xem `README.md`/`UI_UPDATE_PROGRESS.md`) và `sampleUI/`
-— **không đoán từ lớp Tailwind, đối chiếu bằng số đo DOM thật**:
+> **Cập nhật sau khi đổi tên `newui/` → `src/`:** helper vẽ UI của app hiện
+> tại nằm trong namespace `ui::` (`src/src/ui.h`/`ui.cpp`), **khác hoàn toàn**
+> API `theme::*` (`beginPanel`, `panelHeader`, `fieldLabel`...) của bản UI cũ
+> — bản đó đã lưu trữ ở nhánh git `legacy-oF-ui`, không còn trong working tree
+> này. Đừng tìm/gọi `theme::` trong `src/` nữa.
 
-```js
-// console tại localhost:3000 của MikMap_Web
-el.getBoundingClientRect()   // vị trí + kích thước px thật
-getComputedStyle(el)         // font-size, padding, border, color thật
-```
+Nguồn sự thật cho giao diện là bản thiết kế tham khảo `MikMap Workspace.dc.html`
+của Claude Design (xem `src/CMakeLists.txt` comment) và `MikMap_Web`/`sampleUI/`
+— đối chiếu bằng số đo DOM thật khi có bản web để so, đừng đoán từ mắt.
 
 ## Bố cục
 
 Ba trang cố định qua tab trên cùng — **không phải cửa sổ nổi**: trong phòng
 tối giữa buổi diễn không ai có thời gian sắp lại bàn làm việc, và một bảng
-trôi ra ngoài màn hình là chuyện xảy ra thật.
+trôi ra ngoài màn hình là chuyện xảy ra thật. `src/README` cũ (nay gộp vào
+`README.md` gốc) xác nhận đúng 3 màn này đã có trong `src/`:
 
 ```
-MIKMAP  Dự án │ COMPOSITION │ ADVANCED MAPPING │ SENSOR I/O    FPS 60.0  ...
+Composition · Advanced Mapping · Sensor I/O    (+ cửa sổ Cài đặt riêng)
 ```
 
-Riêng **Cài đặt** là popup (ngôn ngữ, màn hình output mặc định, vsync) —
-đây là mô tả *máy/người*, tách khỏi file project (`.hexmap`) mô tả *một buổi
-diễn*. Trộn hai thứ nghĩa là mở project đồng nghiệp sẽ đổi ngôn ngữ giao diện
-của bạn. Vì vậy `bin/data/settings.json` cố ý không vào git.
+**Cài đặt** cho phép chọn cả ngôn ngữ lẫn **font giao diện** (xem dưới) — đây
+là mô tả *máy/người*, không phải *một buổi diễn*, cùng lý do
+`engine/i18n/Localization` tách khỏi model project.
 
-## Helper dùng chung (`Theme.h`/`Theme.cpp`)
+## Helper vẽ dùng chung (`namespace ui::`, `src/src/ui.h`)
 
-Luôn dùng lại, đừng viết widget riêng lẻ trùng chức năng:
+Luôn dùng lại, đừng viết widget riêng lẻ trùng chức năng — đọc `ui.h` trước
+khi thêm helper mới, danh sách dưới đây chỉ là các nhóm chính đã xác nhận
+trong source, không phải toàn bộ API:
 
-- `theme::beginPanel`/`endPanel` — mọi panel con. Cần
-  `ImGuiChildFlags_AlwaysUseWindowPadding` nếu không lề trong bị ImGui bỏ qua.
-- `theme::panelHeader` — dải 40px nền `#181818`, chữ 10px in hoa giãn 1px
-  (`textTracked`/`trackedWidth` — ImGui không có letter-spacing, phải tự vẽ
-  từng ký tự UTF-8 rồi cộng bước nhảy).
-- `theme::fieldLabel` (nhãn ô nhập 10px đậm #888), `theme::sectionDivider`
-  (vạch ngăn mục 1px #222), `theme::segButton` (bộ chọn phân đoạn, ô không
-  chọn vẫn thấy khung — khác `tabButton`), `theme::tabButton` (active nhuộm
-  accent), `theme::opacityBar`, `theme::treeRow`.
-- `FramePadding (10,9)`, `FrameRounding 4px` — khớp ô nhập cao 30px của bản
-  thiết kế, đừng đổi cho panel riêng lẻ.
+- `ui::Text`/`TextR`/`TextC`/`TextEll` — vẽ chữ căn trái/phải/giữa/cắt bớt,
+  nhận `FontId` + cỡ chữ + màu tường minh (không dựa vào `ImGui::PushFont`
+  ngầm).
+- `ui::Fill`/`Border`/`Box`/`Glow`/`HLine`/`VLine`/`GradDiag`/`RadialFan`/`Dot`/
+  `DashedPoly` — vẽ hình học cơ bản qua `ImDrawList`, không qua widget ImGui
+  chuẩn.
+- `ui::Icon` — icon vẽ tay kiểu Lucide trên lưới 24 đơn vị (không nạp từ file
+  `.ttf` icon).
+- `ui::PanelHeader`, `ui::Badge`, `ui::PropertyRow` — mảnh UI ghép sẵn cho
+  header panel, nhãn trạng thái, hàng thuộc tính.
+- `ui::Hit` — struct kết quả tương tác chuột dùng chung (`hover/click/dbl/
+  rclick/down/release`) thay vì gọi rời `ImGui::IsItemClicked()` nhiều chỗ.
 
-## Font & thang cỡ chữ
+`FrameRounding` dùng **3.f** ở các nơi đã kiểm (không phải 4px như bản cũ).
+`FramePadding` **không cố định một giá trị cho toàn app** — mỗi nhóm widget tự
+`PushStyleVar` theo ngữ cảnh (vd `(8, cao_động)` cho input, `(0,1)` cho ô nhỏ
+trong deck) — kiểm trực tiếp trong `ui.cpp`/`deck.cpp` trước khi giả định một
+con số chung.
 
-- Inter 400/600/700 — chữ giao diện. Cắt từ `Inter.ttf` (variable, trục
-  `wght`) bằng `fontTools`, không tải thêm file.
-- RobotoMono — **riêng cho số liệu** (toạ độ, FPS, độ phân giải). Số liệu đổi
-  60 lần/giây với font tỉ lệ sẽ nhảy bề rộng, khó liếc nhanh lúc cần xem fps
-  có tụt không.
-- Lucide (`lucide.ttf`, đúng bản `lucide-react`) — icon. Nút chỉ có icon
-  **luôn kèm tooltip**.
-- Thang cỡ chữ cố định: **9 / 10 / 11 / 12 / 14 / 18 px** — lấy đúng từ bản
-  thiết kế, đừng thêm cỡ mới tuỳ tiện. Sự chênh lệch giữa các cỡ tạo thứ bậc
-  thị giác (tiêu đề bảng / nhãn mục / giá trị).
+## Font — người dùng chọn được, không cố định
 
-## Thao tác chuẩn (đừng đổi mà không hỏi)
+**Khác bản cũ:** đây không phải một bộ font cố định (Inter+RobotoMono+Lucide)
+mà là **lựa chọn trong Cài đặt** (`src/src/settings.cpp`):
+
+| Vai trò | Các lựa chọn |
+|---|---|
+| Interface face | Archivo · Barlow Condensed · IBM Plex Sans (variable) · Space Grotesk (variable) |
+| Technical face (số liệu) | JetBrains Mono · IBM Plex Mono · Roboto Mono (variable) |
+
+Font nằm ở `src/assets/fonts/` (đóng gói cùng OFL.txt). Nguyên tắc **số liệu
+dùng font mono riêng** vẫn giữ nguyên tinh thần từ bản cũ — lý do: chữ số của
+font tỉ lệ có bề rộng khác nhau, giá trị đổi liên tục (FPS, toạ độ) sẽ nhảy
+qua nhảy lại nếu dùng font tỉ lệ, khó liếc nhanh.
+
+`FontId` trong `ui::` có các hằng `UI_R/UI_S/UI_B/UI_X` (interface, 4 độ đậm)
+và `MONO_R/MONO_M/MONO_B` (mono, 3 độ đậm) — dùng đúng hằng này khi vẽ chữ
+mới, đừng hard-code tên file font.
+
+## Thao tác chuẩn (đối chiếu lại nếu nghi ngờ — đây là kỳ vọng thiết kế, không phải đã verify từng dòng)
 
 | Thao tác | Kết quả |
 |---|---|
 | Bấm ô clip | **Chọn** (không phát) — để chỉnh clip sắp dùng mà không làm gián đoạn clip đang chiếu |
 | Bấm đúp ô clip | Phát clip |
-| Bấm ô trống | Mở hộp thoại chọn file |
 | Kéo điểm ở ĐƯỜNG RA | Keystone / mesh warp |
 | Kéo khung ở VÙNG LẤY | Đổi phần canvas mà slice lấy |
-| Tick "Chỉnh mặt nạ" | Chuyển sang kéo nút mặt nạ bezier (F12) |
+
+Đây là nguyên tắc thiết kế chung kế thừa từ bản tham khảo — **grep
+`src/src/deck.cpp`/`mapping.cpp` để xác nhận hành vi thật** trước khi khẳng
+định với người dùng, vì theo `features.md` nhiều hành vi ở đây mới là `[~]`
+(một phần), chưa chắc khớp 100% mô tả trên.
 
 ## Sai phải thấy được
 
 Mask/TriggerZone luôn ở contentUV/canvas, không ở pixel máy chiếu — chỉnh lại
-keystone không phải vẽ lại. Khi một tham chiếu bị hỏng (ví dụ index layer bị
-xoá), **lùi về trạng thái mặc định + cảnh báo màu vàng** thay vì màn đen im
-lặng — xem cách `F22` xử lý layer bị xoá trong `newui/SKILL.md`.
+keystone không phải vẽ lại (nguyên tắc #8 trong `.claude/CLAUDE.md`, từ
+`architecture.md` §10). Khi một tham chiếu bị hỏng, lùi về trạng thái mặc
+định + cảnh báo thay vì im lặng.
 
 ## Trước khi tick một mục UI là "đã xong"
 
-Grep source để xác nhận widget/hàm thật tồn tại và chạy được — repo đã từng
-phải đính chính 6 mục tick sai trong `features.md`. Cập nhật
-`UI_UPDATE_PROGRESS.md` khi xong **một mảng lớn**, không phải mỗi lần chỉnh
-pixel nhỏ.
+Grep `src/src/*.cpp` để xác nhận widget/hàm thật tồn tại và chạy được —
+`features.md` chấm điểm nghiêm khắc, `[~]` nghĩa là còn giả một phần, không
+phải "gần xong". Xem mục "Ghi chú kiểm tra" cuối `features.md` trước khi đổi
+trạng thái một dòng.

@@ -5,6 +5,17 @@
 > Target: Windows 10/11 · MSVC 2022 · NVIDIA RTX A4000
 > Version: 0.1 (draft) — 2026-09-09
 
+> **Ghi chú vị trí vật lý (cập nhật sau khi đổi tên `newui/` → `src/`):**
+> `core/`, `io/` (§1, §2 dưới đây) nay nằm ở `engine/core`, `engine/io` ở gốc
+> repo — dùng chung, không thuộc riêng UI nào. `engine/i18n/Localization.*`
+> cũng tách ra theo cách này (trước ở `src/ui/`). Cây thư mục layered đầy đủ ở
+> §2 (`src/render`, `src/ui`, `src/app`) là **đích kiến trúc**, khớp với bản
+> engine oF+MSBuild cũ — bản đó đã lưu trữ nguyên vẹn ở nhánh git
+> `legacy-oF-ui`. `src/` hiện tại (đổi tên từ `newui/`) là một prototype
+> GLFW+ImGui phẳng hơn nhiều, **chưa** khớp cây này — xem `README.md` và
+> `features.md` để biết trạng thái thật, và mục "Việc còn lại để ghép trọn"
+> trong `README.md` để biết lộ trình đưa nó khớp dần vào đích này.
+
 ---
 
 ## 0. Mục tiêu & Ràng buộc
@@ -526,22 +537,26 @@ Mục 4.1 là dạng rút gọn. Trong hệ thống thật có thêm một tần
 
 ## 7. Chiến lược Build
 
-**Vấn đề:** openFrameworks trên Windows dùng **Project Generator → `.vcxproj`**, trong khi `core/` cần build được **độc lập bằng CMake** để chạy unit test trên CI không cần GPU.
+**Vấn đề gốc (bản engine oF/MSBuild, nay ở nhánh `legacy-oF-ui`):** openFrameworks trên Windows dùng **Project Generator → `.vcxproj`**, trong khi `core/` cần build được **độc lập bằng CMake** để chạy unit test trên CI không cần GPU.
 
-**Giải pháp — hai hệ build cùng đọc một tập mã nguồn:**
+**Giải pháp — hai hệ build cùng đọc một tập mã nguồn:** vẫn giữ nguyên tinh
+thần trên `new_UI`, chỉ khác chỗ đặt vật lý — `core/`/`io/` nay ở `engine/`
+(gốc repo, dùng chung), và ứng dụng dùng CMake+GLFW (`src/`) thay vì
+`.vcxproj`+oF:
 
 ```
-             src/core/*.cpp   (C++20 thuần, chỉ phụ thuộc STL)
+          engine/core/*.cpp   (C++20 thuần, chỉ phụ thuộc STL)
                     │
         ┌───────────┴────────────┐
         ▼                        ▼
-  CMakeLists.txt           HexMapping.vcxproj
-  (tests + core)           (oF Project Generator)
+  CMakeLists.txt (gốc)      src/CMakeLists.txt
+  (tests + core, glob           (app GLFW+ImGui, glob
+   ../engine/core)               ../engine/core, ../engine/io)
         │                        │
         ▼                        ▼
-  hexmapping_tests.exe     HexMapping.exe
-  chạy trên CI, ~2 giây    ứng dụng thật
-  KHÔNG cần oF / GPU
+  hexmap_tests               mikmap.exe
+  chạy trên CI, ~2 giây      ứng dụng, chỉ Windows
+  KHÔNG cần GLFW/ImGui       (bản oF cũ: HexMapping.exe, nhánh legacy-oF-ui)
 ```
 
 **Ràng buộc để mô hình này hoạt động:** `core/` chỉ được phụ thuộc STL. Nếu cần OpenCV cho RANSAC, đặt sau macro `HEXMAP_USE_OPENCV` kèm một fallback DLT tự viết — để test vẫn build được ở môi trường tối giản.

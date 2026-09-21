@@ -1,250 +1,122 @@
 # MikMap
 
-Projection mapping engine kết hợp hệ thống calibration sensor.
+Projection mapping engine kết hợp hệ thống calibration sensor: **chạm vào vật
+thể thật, hiệu ứng nổ đúng chỗ đó**.
 
-> **Lưu ý về tên:** repo tên `MikMap`, nhưng mã nguồn dùng tên nội bộ
-> **HexMapping** — namespace `hexmap`, `HexMapping.sln`, `bin/HexMapping.exe`.
-> Hai tên này chỉ khác nhau ở nhãn, không phải hai thứ khác nhau.
-
-Lưới clip kiểu Resolume (deck · layer · column) → composition canvas ảo →
-slice có keystone/mesh warp → máy chiếu. Kèm chuỗi ánh xạ ngược từ sensor
-về toạ độ nội dung: **chạm vào vật thể thật, hiệu ứng nổ đúng chỗ đó**.
+> **Lưu ý về tên:** repo tên `MikMap`, mã nguồn dùng tên nội bộ **HexMapping**
+> (namespace `hexmap`, target `hexmap_core`/`hexmap_io`). Hai tên này chỉ khác
+> nhau ở nhãn, không phải hai thứ khác nhau.
 
 ```
-C++20 · openFrameworks 0.12.x · OpenGL · Dear ImGui · Windows / MSVC 2022
+C++20 · Dear ImGui + GLFW (app) · CMake (engine + app, hai project riêng)
 ```
 
 ---
 
-## Trạng thái
+## Trạng thái hiện tại
+
+`src/` (app GLFW+ImGui, được đổi tên từ `newui/`) là **bản đang phát triển**,
+còn ở giai đoạn prototype:
 
 | | |
 |---|---|
-| Unit test | **313 passed, 0 failed** · 3829 assertion · 0 cảnh báo `/W4` |
-| Hiệu năng | 60 fps · frame p99 ~17 ms · độ trễ sensor p99 ~9 ms |
-| Video | 4K HAP Q — 1–5 luồng giữ đúng tốc độ gốc (đo thật, xem `features.md`) |
-| Giao diện | Tiếng Việt / English, đổi ngay trong **Cài đặt** |
+| Giao diện | 3 màn Composition · Advanced Mapping · Sensor I/O + cửa sổ Cài đặt, bám bản thiết kế `MikMap Workspace.dc.html` |
+| Engine dùng chung (`engine/core`, `engine/io`) | Đã biên dịch & link vào app, **UI chưa gọi tới** |
+| Mô hình dữ liệu app hiện tại | Struct riêng trong `src/src/app.h`, chưa dùng `core/model` thật |
+| Đối chiếu chi tiết | `features.md` — 18 mục `[x]` hành vi thật · 34 mục `[~]` một phần · 83 mục `[ ]`, trên 135 mục Resolume-parity |
 
-Xem [`features.md`](features.md) để biết tiến độ từng tính năng và
-[`architecture.md`](architecture.md) để biết vì sao mọi thứ được đặt ở đó.
+Xem [`features.md`](features.md) để biết chính xác cái gì thật/cái gì chỉ có
+UI, và [`architecture.md`](architecture.md) để biết đích đến kiến trúc (chuỗi
+`H_w⁻¹·H_s`, hợp đồng `IWarp`, mô hình thread) mà prototype này đang được ghép
+dần vào.
+
+> **Bản engine cũ (oF + MSBuild + ImGui-trên-oF, 313+ unit test, HAP 4K thật,
+> giao diện hoàn chỉnh hơn) đã được lưu trữ nguyên vẹn ở nhánh git
+> [`legacy-oF-ui`](../../tree/legacy-oF-ui)** — tham khảo hoặc khôi phục từ đó
+> nếu cần, đừng tìm trong `main`/`new_UI` nữa.
 
 ---
 
-## Bố cục thư mục BẮT BUỘC
-
-openFrameworks phải là **thư mục anh em** của repo này. File `.vcxproj`
-trỏ tới `../openFrameworks` bằng đường dẫn tương đối.
+## Bố cục thư mục
 
 ```
-D:\...\Mike\
-├── openFrameworks\        ← tải từ openframeworks.cc (bản vs)
-│   └── addons\
-│       ├── ofxHapPlayer\  ← git clone --recursive
-│       └── ofxImGui\      ← git clone --recursive
-├── tools\ffmpeg\          ← bản build có --enable-libsnappy
-└── MikMap\                ← repo này (tên thư mục đặt gì cũng được)
-```
-
-Tên thư mục repo không quan trọng — điều bắt buộc là `openFrameworks` và
-`tools` phải nằm **cùng cấp** với nó, vì `.vcxproj` trỏ tới `../openFrameworks`.
-
-### Cài đặt
-
-```powershell
-# 1. openFrameworks (bản vs, ~717 MB)
-#    https://openframeworks.cc/download/  → giải nén thành ../openFrameworks
-
-# 2. Addon
-cd ../openFrameworks/addons
-git clone --recursive --depth 1 https://github.com/bangnoise/ofxHapPlayer.git
-git clone --recursive --depth 1 https://github.com/Daandelange/ofxImGui.git
-
-# 3. ffmpeg có encoder HAP (bắt buộc: --enable-libsnappy)
-#    https://github.com/BtbN/FFmpeg-Builds/releases → giải nén thành ../tools/ffmpeg
+engine/     core/ + io/ + i18n — C++20 THUẦN, build bằng CMake gốc, không cần GPU/GLFW
+            (dùng chung, không thuộc riêng UI nào)
+src/        App GLFW + Dear ImGui hiện tại — CMake riêng (src/CMakeLists.txt)
+tests/      Unit test cho engine/ — chạy được trên CI, không cần GPU
+architecture.md   Kiến trúc đích: quy tắc phụ thuộc, chuỗi biến đổi toạ độ, mô hình thread
+features.md       Backlog 135 mục kiểu Resolume, chấm điểm theo code thật của src/
 ```
 
 ---
 
 ## Build
 
-Dự án có **hai hệ build** (lý do ở `architecture.md` §7):
+Hai hệ build **tách biệt**, đọc chung `engine/`:
 
-### `core/` + unit test — CMake thuần, KHÔNG cần openFrameworks
+### `engine/` + unit test — CMake thuần, chạy trên Linux/macOS/Windows
 
-```powershell
-cmake -S . -B build -G "Visual Studio 17 2022" -A x64
-cmake --build build --config Debug
-./build/Debug/hexmap_tests.exe
+```bash
+cmake -S . -B build
+cmake --build build --target hexmap_tests -j
+ctest --test-dir build --output-on-failure
 ```
 
-Chạy được trên máy trắng, không cần GPU. Toàn bộ toán học mapping và
-calibration nằm ở đây.
+Không cần GPU, không cần GLFW/ImGui. Toàn bộ toán học mapping và calibration
+nằm ở `engine/core`, test trong vài giây.
 
-### App chính — MSBuild
+### `src/` — app GLFW + ImGui, chỉ Windows
 
 ```powershell
-& "C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe" `
-  HexMapping.sln /p:Configuration=Release /p:Platform=x64 /m
-./bin/HexMapping.exe
+cmake -S src -B src/build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build src/build
+.\src\build\mikmap.exe
 ```
 
-> ⚠️ Sau **mỗi lần** chạy oF Project Generator, phải chạy lại
-> `tools/fix_project.ps1`. PG chèn hai stub không tồn tại và bỏ sót `src`
-> trong include path — script vá cả hai.
-
-### VS Code
-
-Mở thư mục repo rồi:
-
-| Phím | Việc |
-|---|---|
-| `Ctrl+Shift+B` | Build app (Release) |
-| `F5` | Chạy app — chọn cấu hình ở panel Run and Debug |
-| `Ctrl+Shift+P` → *Run Task* | Toàn bộ task: build, test, đổi video sang HAP, sinh lại project |
+Bộ công cụ (MinGW GCC, CMake, Ninja, Dear ImGui, GLFW) nằm trong `src/.tools/`,
+không vào git. Xem `src/build.ps1` để build nhanh. Tắt engine để dựng riêng
+phần giao diện: `-DMIKMAP_WITH_ENGINE=OFF`.
 
 ---
 
-## Dùng
+## Việc còn lại để ghép trọn engine thật vào `src/`
 
-```powershell
-./bin/HexMapping.exe          # bình thường
-./bin/HexMapping.exe --demo   # bật mock sensor + auto-calibrate sẵn
-```
+`src/` hiện giữ mô hình dữ liệu riêng (`src/src/app.h`); bước tiếp theo là
+chuyển sang mô hình thật của `engine/`, làm từng mảng để luôn build được:
 
-### Bố cục
-
-Ba trang, chuyển bằng tab trên thanh trên cùng. **Bố cục cố định, không
-phải cửa sổ nổi**: trong phòng tối giữa buổi diễn không ai có thời gian sắp
-lại bàn làm việc, và một bảng trôi ra ngoài màn hình là chuyện xảy ra thật.
-
-```
-MIKMAP  Dự án │ COMPOSITION │ ADVANCED MAPPING │ SENSOR I/O    FPS 60.0  ● OUTPUT 1: 1920x1080  ...
-```
-
-| Trang | Nội dung |
-|---|---|
-| **COMPOSITION** | thư viện media · hai màn hình xem · thuộc tính clip · lưới layer × cột |
-| **ADVANCED MAPPING** | công tắc VÙNG LẤY / ĐƯỜNG RA · khung chỉnh · thiết lập slice |
-| **SENSOR I/O** | thiết bị + hiệu năng · khung nhìn điểm chạm · calibration + vùng cảm ứng |
-
-`Dự án` mở menu Lưu / Mở / Tạo mới, đưa output ra màn hình, và các lệnh
-sensor. `...` bên phải mở **Cài đặt** (ngôn ngữ, màn hình mặc định, vsync).
-
-### Thao tác
-
-| | |
-|---|---|
-| Bấm ô clip | **Chọn** ô đó (không phát) |
-| Bấm đúp ô clip | Phát clip |
-| Bấm `COL n` | Phát cả cột trên mọi layer |
-| Bấm ô trống | Mở hộp thoại chọn file |
-| Bấm file trong **THƯ VIỆN** | Gán vào ô clip đang chọn |
-| **Kéo điểm ở ĐƯỜNG RA** | Keystone / mesh warp |
-| **Kéo khung ở VÙNG LẤY** | Đổi phần canvas mà slice lấy |
-| Tick **Chỉnh mặt nạ** | Chuyển sang kéo nút mặt nạ bezier (F12) |
-| Bấm lên đường mặt nạ | Thêm một nút ngay chỗ bấm |
-| Chuột phải lên nút | Xoá nút |
-| `Ctrl`+kéo nút / `Shift`+bấm nút | Uốn cong / duỗi thẳng |
-
-Bấm ô clip **chọn** chứ không phát: người vận hành phải chỉnh được clip
-*sắp* dùng mà không làm gián đoạn clip đang chiếu — bấm nhầm một ô giữa
-buổi diễn là khán giả thấy ngay.
-
-### Đưa hình ra máy chiếu
-
-`Output` → `Đưa output ra màn hình 2` — tự đẩy cửa sổ sang màn hình đó rồi
-fullscreen, và đồng bộ độ phân giải screen theo màn hình đích.
-
-Không cần kéo cửa sổ bằng tay: thao tác đó dễ làm cửa sổ rơi vào khe giữa
-hai màn hình.
-
-| Phím tắt | |
-|---|---|
-| `Space` | Show Mode — tắt/bật overlay chỉnh sửa |
-| `G` | Lưới test card |
-| `M` / `O` | Bật/tắt sensor Mock / OSC (cổng 9000) |
-| `A` | Auto-calibrate cho Mock |
-| `C` | Dấu thập calibration trên máy chiếu |
-| `P` | Chấm sensor trên output |
-| `F11` | Fullscreen máy chiếu |
+1. `core/model/ProjectIO` → lưu/mở `.hexmap` (các mục P0 còn thiếu: I2, F8, G8).
+2. `core/calib/*` → thay phép tính homography và SensorMapper tự viết trong
+   `src/src/calib.cpp` (G5, G7).
+3. `core/model/Slice` + `WarpCornerPin`/`WarpMesh`/`WarpBezier` → thay phép
+   warp trong `src/src/mapping.cpp`, qua đó có luôn Bezier (F10) và mặt nạ
+   bezier (F12).
+4. `io/*` → nguồn sensor thật (G1–G4, G14) thay cho radar mô phỏng trong
+   `src/src/sensor.cpp`.
+5. `core/model/Composition` · `Layer` · `Clip` · `Transport` → thay mô hình
+   deck trong `src/src/app.h`.
 
 ---
 
-## Ngôn ngữ giao diện
+## Đa ngôn ngữ
 
-**Cài đặt → Ngôn ngữ**: Tiếng Việt hoặc English, đổi có hiệu lực ngay.
-Lựa chọn được ghi vào `bin/data/settings.json` sau khi bấm **Lưu cài đặt**.
-
-`settings.json` **cố ý không vào git**. Nó mô tả *máy này và người này* —
-ngôn ngữ, màn hình nào làm output, ngân sách cache. File project thì mô tả
-*một buổi diễn* và đi theo người. Trộn hai thứ vào nhau nghĩa là mở project
-của đồng nghiệp sẽ đổi ngôn ngữ giao diện của bạn và đẩy output ra một màn
-hình không tồn tại.
-
-Font đóng gói kèm (xem `bin/data/fonts/LICENSES.txt`):
-
-| File | Giấy phép | Dùng cho |
-|---|---|---|
-| `Inter-Regular/SemiBold/Bold.ttf` | OFL 1.1 | chữ giao diện, ba độ đậm 400/600/700 |
-| `RobotoMono.ttf` | Apache 2.0 | **riêng cho số liệu** — toạ độ, FPS, độ phân giải |
-| `lucide.ttf` | ISC | bộ icon, ghim ở phiên bản trong `lucide-version.txt` |
-
-Ba độ đậm được **cắt ra từ `Inter.ttf`** (font variable, trục `wght`) bằng
-`fontTools`, nên không phải tải thêm file nào.
-
-Thang cỡ chữ lấy đúng từ bản thiết kế: **9 / 10 / 11 / 12 / 14 / 18 px**.
-Một cỡ chữ duy nhất cho cả giao diện là sai theo kiểu khó thấy — chính sự
-chênh lệch giữa các cỡ tạo ra thứ bậc, liếc mắt là biết đâu là tiêu đề
-bảng, đâu là nhãn mục, đâu là giá trị.
-
-Số liệu dùng font **mono** vì chữ số của font tỉ lệ có bề rộng khác nhau,
-nên một giá trị đổi 60 lần/giây sẽ nhảy qua nhảy lại và rất khó đọc lướt —
-đúng lúc cần liếc nhanh xem fps có tụt không.
-
-Icon dùng **đúng bộ Lucide** mà bản thiết kế dùng (`lucide-react`), nạp từ
-TTF chính thức và ghép thẳng vào từng độ đậm, nên nét vẽ khớp chính xác.
-Nút chỉ có icon **luôn kèm tooltip** — một icon không nhãn chỉ đọc được nếu
-người dùng đã biết nó là gì.
-
-Thêm ngôn ngữ mới: chép một bảng trong `src/ui/Localization.cpp`, dịch phần
-giá trị, thêm vào `enum class Language`. `tests/test_localization.cpp` sẽ
-báo ngay nếu thiếu khoá hoặc lệch chuỗi định dạng `%d`/`%s` giữa các bảng.
-
----
-
-## ⚠️ Video phải là HAP
-
-Đây là nguyên nhân số một khiến show tụt fps: kéo một file `.mp4` vào và
-không hiểu vì sao từ 60 xuống 12 fps.
-
-```powershell
-../tools/ffmpeg/bin/ffmpeg.exe -i input.mp4 -c:v hap -format hap_q -chunks 8 output.mov
-```
-
-Băng thông đo thật, 4K @30fps:
-
-| Nội dung | Codec | 1 luồng | 4 luồng |
-|---|---|---:|---:|
-| Đồ hoạ / animation | HAP Q | 20 MB/s | 81 MB/s |
-| Quay thật, chi tiết cao | HAP Q | 237 MB/s | 949 MB/s |
-
-Nội dung đồ hoạ nén tốt hơn ~12 lần. **NVMe chỉ bắt buộc khi chiếu footage
-quay thật độ chi tiết cao** — nội dung mapping điển hình thì SATA SSD đủ.
+`engine/i18n/Localization.{h,cpp}` là bảng chuỗi Tiếng Việt/English dùng
+chung, KHÔNG chạm ImGui — build và test độc lập (`tests/test_localization.cpp`
+báo ngay nếu thiếu khoá hoặc lệch định dạng `%d`/`%s` giữa các bảng). Thêm
+ngôn ngữ mới: chép một bảng trong `Localization.cpp`, dịch giá trị, thêm vào
+`enum class Language`.
 
 ---
 
 ## Kiến trúc
 
 ```
-app/      AppController — nơi DUY NHẤT bốn tầng gặp nhau
-ui/       Dear ImGui — chỉ đọc model và phát lệnh
-render/   OpenGL + oF — chỉ đọc model
-io/       Thread sensor — không biết model tồn tại
-core/     C++20 THUẦN — math, model, calib. Zero GL / oF / ImGui
+core   ──▶ (không phụ thuộc ai)      engine/core — math, model, calib, filter
+io     ──▶ core                     engine/io — thread sensor
+ui/render/app  ──▶ core (+io)       tuỳ UI — hiện là src/ (GLFW+ImGui)
 ```
 
 `core/` không phụ thuộc gì ngoài STL. Nhờ vậy toàn bộ toán học mapping và
-calibration test được trong ~2 giây mà không cần GPU hay openFrameworks.
+calibration test được trong vài giây mà không cần GPU hay GLFW.
 
 Công thức trung tâm:
 
@@ -255,6 +127,10 @@ p_content = H_w⁻¹ · H_s · p_sensor
 `H_s` (calibration sensor) và `H_w` (keystone của slice) là **hai ma trận
 tách rời** — chỉnh lại keystone không làm hỏng calibration. Chi tiết ở
 `architecture.md` §4.
+
+**Video HAP** (không phải H.264/MP4) là bắt buộc khi engine phát video thật —
+lý do và băng thông đo được ở `architecture.md`; `src/` hiện chưa phát video
+thật (B1 trong `features.md`), nên chưa áp dụng cho prototype.
 
 ---
 

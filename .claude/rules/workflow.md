@@ -4,6 +4,10 @@
 
 - Nhánh chính hiện tại: `new_UI`. Kiểm `git branch -a`/`git status` trước khi
   bắt đầu — đừng giả định.
+- Nhánh `legacy-oF-ui` giữ nguyên vẹn bản engine oF+MSBuild cũ (trước khi
+  `newui/` được đổi tên thành `src/` và `core/`/`io/` chuyển sang `engine/`) —
+  chỉ đọc/tham khảo/khôi phục từ đó, không phát triển tiếp trên nhánh này trừ
+  khi được yêu cầu tường minh.
 - Commit message ngắn gọn, mô tả **vì sao** hơn là liệt kê file đã đổi. Nếu
   đổi một quy tắc kiến trúc (layering, HAP-only, `/fp:precise`...), nói rõ lý
   do trong commit để người đọc sau không tưởng đó là tai nạn.
@@ -22,7 +26,7 @@
   lỡ bị stage.
 - `git push*` → chạy `pre-push.sh`: build `hexmap_core` + `hexmap_tests` bằng
   CMake và chạy `ctest`; chặn push nếu build lỗi hoặc test đỏ. Cũng chạy một
-  bản kiểm layering nhẹ (grep include cấm trong `core/`/`io/`).
+  bản kiểm layering nhẹ (grep include cấm trong `engine/core/`/`engine/io/`).
 
 Hook chặn bằng cách thoát mã khác 0 — nếu bị chặn, đọc thông báo lỗi, sửa, rồi
 thử lại. Đừng bỏ qua bằng `--no-verify` (đây là hook của Claude Code, không
@@ -31,23 +35,19 @@ phải git hook, nên `--no-verify` không có tác dụng — nếu hook sai, s
 
 ## Trước khi báo "xong"
 
-1. Nếu sửa `core/`/`io/`: chạy `cmake --build build --target hexmap_tests &&
-   ctest --test-dir build --output-on-failure` — 0 test đỏ, 0 cảnh báo mới.
-2. Nếu sửa `src/ui/` hoặc `newui/`: không build được app đầy đủ trên máy này
-   (cần Windows/MSVC/openFrameworks) — nói rõ điều đó thay vì báo "đã test"
-   khi chỉ đọc code. Nếu có máy Windows thật, làm theo `README.md`.
-3. Nếu tick tính năng: grep source để xác nhận code thật tồn tại, đừng tin
-   theo trí nhớ hay theo yêu cầu. **Repo có hai file `features.md` chấm điểm
-   hai thứ khác nhau — xác định đúng cái trước khi tick:**
-   - `/features.md` (gốc) — engine chính `src/` (oF thật, HAP thật, đã xa hơn
-     nhiều). Cập nhật cùng `UI_UPDATE_PROGRESS.md` khi hoàn thành **một mảng
-     lớn**, không phải mỗi commit nhỏ.
-   - `/newui/features.md` — prototype `newui/src/` (GLFW, model giả trong
-     `app.h`). Chấm điểm nghiêm khắc hơn hẳn: `[~]` nghĩa là chỉ có UI/một
-     phần hành vi, không phải "gần xong" — đọc mục "Ghi chú kiểm tra" cuối
-     file để biết chính xác cái gì còn giả trước khi đổi trạng thái một dòng.
-   Tick sai file, hoặc tick theo tiêu chí của file kia, coi như tick sai sự
-   thật — đúng loại lỗi mà cả hai file đều từng phải đính chính.
+1. Nếu sửa `engine/core`/`engine/io`: chạy `cmake --build build --target
+   hexmap_tests && ctest --test-dir build --output-on-failure` — 0 test đỏ,
+   0 cảnh báo mới.
+2. Nếu sửa `src/`: không build được app đầy đủ trên máy này (cần Windows +
+   MinGW/GLFW/.tools) — nói rõ điều đó thay vì báo "đã test" khi chỉ đọc code.
+   Nếu có máy Windows thật, làm theo `README.md`.
+3. Nếu tick tính năng trong `features.md`: grep `src/src/*.cpp` để xác nhận
+   code thật tồn tại và được GỌI tới (không chỉ vì `engine/core` đã hỗ trợ
+   tính năng đó), đừng tin theo trí nhớ hay theo yêu cầu. `[~]` nghĩa là chỉ
+   có UI/một phần hành vi, không phải "gần xong" — đọc "Ghi chú kiểm tra" cuối
+   file trước khi đổi trạng thái một dòng. Repo chỉ còn MỘT `features.md`
+   đang hoạt động (ở gốc, theo dõi `src/`); bản cũ theo dõi engine oF nằm
+   trong lịch sử/nhánh `legacy-oF-ui`, không sửa nó trên `new_UI`.
 
 ## Sub-agent riêng của repo
 

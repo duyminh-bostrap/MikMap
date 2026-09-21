@@ -16,7 +16,7 @@
 // ════════════════════════════════════════════════════════════════════════
 #include "TestHarness.h"
 
-#include "ui/Localization.h"
+#include "i18n/Localization.h"
 
 #include <map>
 #include <string>

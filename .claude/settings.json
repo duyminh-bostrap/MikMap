@@ -26,10 +26,9 @@
       "Bash(ffmpeg*)",
       "Bash(.claude/hooks/*.sh)",
       "Bash(.claude/skills/*.sh)",
+      "Edit(engine/**)",
       "Edit(src/**)",
       "Edit(tests/**)",
-      "Edit(newui/**)",
-      "Edit(tools/**)",
       "Edit(.claude/**)",
       "Edit(*.md)"
     ],

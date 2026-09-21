@@ -61,10 +61,10 @@ fi
 
 # ── 4. Static analysis C++ (tuỳ chọn, chỉ khi có cppcheck) ────────────────
 echo
-echo "-- 4. cppcheck cho core/ + io/ (bỏ qua nếu chưa cài) --"
+echo "-- 4. cppcheck cho engine/core + engine/io (bỏ qua nếu chưa cài) --"
 if command -v cppcheck >/dev/null 2>&1; then
     cppcheck --quiet --enable=warning,portability --std=c++20 \
-        --error-exitcode=0 src/core src/io 2>/tmp/mikmap_cppcheck.$$ || true
+        --error-exitcode=0 engine/core engine/io 2>/tmp/mikmap_cppcheck.$$ || true
     if [ -s /tmp/mikmap_cppcheck.$$ ]; then
         echo "  cppcheck có ghi chú (không tự chặn build, xem lại thủ công):"
         sed 's/^/        /' /tmp/mikmap_cppcheck.$$

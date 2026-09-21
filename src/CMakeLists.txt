@@ -1,11 +1,14 @@
-# New MikMap UI (Dear ImGui + GLFW), built against the repo's own engine libraries.
+# MikMap UI (Dear ImGui + GLFW), built against the repo's own engine libraries.
 #
-# Standalone on purpose: it globs ../src/core and ../src/io itself instead of touching the
-# root CMakeLists.txt or HexMapping.vcxproj, so this target can never conflict with main.
-#   cmake -S newui -B newui/build -G Ninja -DCMAKE_BUILD_TYPE=Release
-#   cmake --build newui/build
+# Standalone on purpose: it globs ../engine/core and ../engine/io itself instead of
+# touching the root CMakeLists.txt, so this target can never conflict with the
+# engine+test build. This directory was promoted from newui/ to be the current
+# src/ — the old openFrameworks+MSBuild UI it replaced lives on the `legacy-oF-ui`
+# git branch, not in this working tree.
+#   cmake -S src -B src/build -G Ninja -DCMAKE_BUILD_TYPE=Release
+#   cmake --build src/build
 cmake_minimum_required(VERSION 3.20)
-project(MikMapNewUI CXX)
+project(MikMapUI CXX)
 
 set(CMAKE_CXX_STANDARD 20)          # matches the engine (hexmap_core is C++20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -19,7 +22,7 @@ option(MIKMAP_WITH_ENGINE "Compile the repo's core/io engine into this target" O
 
 # ── the engine, straight from the repo (pure C++20, no openFrameworks/GL/ImGui) ──
 if(MIKMAP_WITH_ENGINE)
-  file(GLOB_RECURSE ENGINE_SOURCES CONFIGURE_DEPENDS "${REPO}/src/core/*.cpp" "${REPO}/src/io/*.cpp")
+  file(GLOB_RECURSE ENGINE_SOURCES CONFIGURE_DEPENDS "${REPO}/engine/core/*.cpp" "${REPO}/engine/io/*.cpp")
 else()
   set(ENGINE_SOURCES "")
 endif()
@@ -33,7 +36,7 @@ add_executable(mikmap
   ${IMGUI_DIR}/backends/imgui_impl_glfw.cpp ${IMGUI_DIR}/backends/imgui_impl_opengl3.cpp)
 
 target_include_directories(mikmap PRIVATE
-  src ${REPO}/src ${IMGUI_DIR} ${IMGUI_DIR}/backends ${GLFW_DIR}/include third_party/stb)
+  src ${REPO}/engine ${IMGUI_DIR} ${IMGUI_DIR}/backends ${GLFW_DIR}/include third_party/stb)
 
 if(MIKMAP_WITH_ENGINE)
   target_compile_definitions(mikmap PRIVATE MIKMAP_WITH_ENGINE=1)

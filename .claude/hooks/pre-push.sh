@@ -19,11 +19,11 @@ issues=0
 fail() { printf '[pre-push] %s\n' "$1" >&2; issues=$((issues + 1)); }
 info() { printf '[pre-push] %s\n' "$1"; }
 
-# ── 1. Kiểm layering: core/ và io/ không được include GL/oF/ImGui ────────
-info "Kiểm quy tắc phụ thuộc core/io (xem architecture.md §1)..."
-forbidden_includes="$(grep -rIlE '#include\s*[<"](ofMain\.h|GL/|imgui\.h|imgui_internal\.h)' src/core src/io 2>/dev/null || true)"
+# ── 1. Kiểm layering: engine/core/ và engine/io/ không được include GL/oF/ImGui ──
+info "Kiểm quy tắc phụ thuộc engine/core, engine/io (xem architecture.md §1)..."
+forbidden_includes="$(grep -rIlE '#include\s*[<"](ofMain\.h|GL/|imgui\.h|imgui_internal\.h)' engine/core engine/io 2>/dev/null || true)"
 if [ -n "$forbidden_includes" ]; then
-    fail "core/ hoặc io/ include thứ bị cấm (ofMain.h/GL/imgui.h) — phá quy tắc phụ thuộc bất khả xâm phạm:"
+    fail "engine/core/ hoặc engine/io/ include thứ bị cấm (ofMain.h/GL/imgui.h) — phá quy tắc phụ thuộc bất khả xâm phạm:"
     echo "$forbidden_includes" | sed 's/^/    /' >&2
 fi
 

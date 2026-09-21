@@ -1,11 +1,13 @@
 # ════════════════════════════════════════════════════════════════════════
-#  HexMapping — build cho core/ + tests
+#  HexMapping — build cho engine/ (core + io + i18n) + tests
 #
-#  QUAN TRỌNG: File này KHÔNG build ứng dụng chính.
-#  Ứng dụng chính dùng openFrameworks Project Generator (.vcxproj).
+#  QUAN TRỌNG: File này KHÔNG build ứng dụng. Ứng dụng (GLFW + Dear ImGui)
+#  ở src/, build riêng bằng src/CMakeLists.txt (xem src/README.md). Bản
+#  engine cũ dùng openFrameworks Project Generator (.vcxproj) đã lưu trữ ở
+#  nhánh git `legacy-oF-ui`, không còn trên nhánh này.
 #
-#  Mục đích: core/ là C++20 thuần (chỉ phụ thuộc STL) nên build và test
-#  được độc lập — không cần openFrameworks, không cần GPU.
+#  Mục đích: engine/core là C++20 thuần (chỉ phụ thuộc STL) nên build và
+#  test được độc lập — không cần openFrameworks, không cần GPU.
 #  ⇒ Unit test toán học chạy trong vài giây, hợp cho CI.
 #
 #  Cách dùng:
@@ -32,14 +34,14 @@ endif()
 
 # ── Thư viện core: C++ thuần, KHÔNG GL / oF / ImGui ─────────────────────
 file(GLOB_RECURSE HEXMAP_CORE_SOURCES CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/core/*.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/engine/core/*.cpp"
 )
 file(GLOB_RECURSE HEXMAP_CORE_HEADERS CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/core/*.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/engine/core/*.h"
 )
 
 add_library(hexmap_core STATIC ${HEXMAP_CORE_SOURCES} ${HEXMAP_CORE_HEADERS})
-target_include_directories(hexmap_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_include_directories(hexmap_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/engine")
 
 # ── Thư viện io: thu thập sensor. Phụ thuộc core, KHÔNG phụ thuộc GL/oF ─
 #
@@ -47,28 +49,29 @@ target_include_directories(hexmap_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
 # ở architecture.md §1: io → core, không bao giờ ngược lại. Nếu ai đó lỡ
 # viết #include "io/..." trong core/, linker sẽ báo lỗi ngay.
 file(GLOB_RECURSE HEXMAP_IO_SOURCES CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/io/*.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/engine/io/*.cpp"
 )
 file(GLOB_RECURSE HEXMAP_IO_HEADERS CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/io/*.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/engine/io/*.h"
 )
 
 find_package(Threads REQUIRED)
 
 add_library(hexmap_io STATIC ${HEXMAP_IO_SOURCES} ${HEXMAP_IO_HEADERS})
-target_include_directories(hexmap_io PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_include_directories(hexmap_io PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/engine")
 target_link_libraries(hexmap_io PUBLIC hexmap_core Threads::Threads)
 
 # ── Thư viện i18n: bảng chuỗi giao diện ────────────────────────────────
 #
-# Nằm trong ui/ nhưng KHÔNG chạm ImGui — chỉ std + core. Tách ra thành
-# target riêng để test đối chiếu được hai bảng ngôn ngữ mà không phải
-# kéo cả openFrameworks vào bản build test.
+# KHÔNG chạm ImGui — chỉ std + core, nên tách khỏi bất kỳ UI cụ thể nào
+# (cả UI cũ lẫn src/ hiện tại đều có thể dùng lại). Target riêng để test
+# đối chiếu được hai bảng ngôn ngữ mà không phải kéo cả một UI vào bản
+# build test.
 add_library(hexmap_i18n STATIC
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/ui/Localization.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/ui/Localization.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/engine/i18n/Localization.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/engine/i18n/Localization.h"
 )
-target_include_directories(hexmap_i18n PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_include_directories(hexmap_i18n PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/engine")
 target_link_libraries(hexmap_i18n PUBLIC hexmap_core)
 
 # ── Unit tests ─────────────────────────────────────────────────────────
