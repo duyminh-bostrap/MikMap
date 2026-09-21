@@ -111,6 +111,11 @@ struct App {
   int screen = 0;  // 0 deck, 1 mapping, 2 sensor
   int canvasW = 1920, canvasH = 1080;  // A1: virtual composition canvas, independent of any projector
   int outMonitor = 0;                  // F2: which physical display the projector window goes to
+  bool quantize = false;               // "Sync": triggers wait for the next beat instead of firing immediately
+  struct PendingTrig { int li, ci; bool column; };
+  std::vector<PendingTrig> pending;    // triggers waiting for the next beat
+  bool flushing = false;
+  void flushPending();
   float bpm = 128.f;                   // tempo the beat indicator / beat-synced FX follow (tap in the status bar)
   bool beat = false, playing = true, blackout = false, testCard = false, frozen = true;
   float progress = 0;
@@ -269,6 +274,7 @@ std::string DoSave(bool asCopy);
 bool CanUndo();
 bool CanRedo();
 void UndoTick(bool inputActive, double now);   // call once per frame
+void UndoNote();                                // mark "the user just did something" so the next idle tick snapshots
 bool UndoCommit();                              // force a snapshot now (used by tests)
 void SaveSettings();
 void LoadSettings();

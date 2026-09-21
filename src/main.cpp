@@ -20,6 +20,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <chrono>
 #include <ctime>
 #include <filesystem>
 #include <functional>
@@ -657,6 +658,37 @@ int main(int argc, char** argv) {
     if (prevName.empty() || A.layers[0].fadeT != 0.f || A.layers[0].fadeFrom.name != prevName) return fail("dissolve not started");
     A.layers[0].blendTime = 0.f; A.layers[0].fadeT = 1.f; A.trigger(0, 1);
     if (A.layers[0].fadeT != 1.f) return fail("dissolve started with blend time 0");
+    // columns: insert/delete/move stay consistent across layers and can be undone
+    NewProject(); int cols0 = A.colCount();
+    A.insertCol(2); UndoCommit(); A.deleteCol(0); UndoCommit();
+    if (A.colCount() != cols0) return fail("col count after insert+delete");
+    for (auto& l : A.layers) if ((int)l.clips.size() != A.colCount()) return fail("layers have different column counts");
+    UndoStep(false); if (A.colCount() != cols0 + 1) return fail("undo delete column");
+    UndoStep(false); if (A.colCount() != cols0) return fail("undo insert column");
+    // groups: opacity persists, a dangling group id is dropped on load instead of crashing the deck
+    NewProject(); Group ng; ng.id = "gx"; ng.name = "Extra"; ng.opacity = 40.f; A.groups.push_back(ng); A.layers[0].group = "gx";
+    if (!SaveProject(roundtrip, err) || !LoadProject(roundtrip, err)) return fail(err.c_str());
+    if (!A.group("gx") || A.group("gx")->opacity != 40.f || A.layers[0].group != "gx") return fail("group not restored");
+    A.groups.erase(std::remove_if(A.groups.begin(), A.groups.end(), [](const Group& g) { return g.id == "gx"; }), A.groups.end());
+    if (!SaveProject(roundtrip, err) || !LoadProject(roundtrip, err)) return fail(err.c_str());
+    if (!A.layers[0].group.empty()) return fail("dangling group reference survived load");
+    // rename: commit trims, ignores empty text, and pins the clip look so the picture does not change
+    NewProject(); { int st0 = ClipStyleOf(A.layers[0].clips[0].name); A.beginRename(2, 0, ImVec2(0, 0), ""); A.commitRename("  My clip  ");
+      if (A.layers[0].clips[0].name != "My clip" || A.layers[0].clips[0].style != st0) return fail("clip rename / style pin"); }
+    A.beginRename(0, 0, ImVec2(0, 0), ""); A.commitRename("   "); if (A.layers[0].name.empty() || A.layers[0].name == "   ") return fail("empty rename accepted");
+    // Sync (quantize): a trigger waits for the next beat; the latest request per layer wins; off = immediate
+    NewProject(); A.quantize = true; A.playing = true;
+    A.trigger(0, 0); A.trigger(0, 1);
+    if (A.layers[0].clips[0].isLive() || A.layers[0].clips[1].isLive() || A.pending.size() != 1) return fail("sync should queue exactly one trigger");
+    A.flushPending();
+    if (!A.layers[0].clips[1].isLive() || A.layers[0].clips[0].isLive() || !A.pending.empty()) return fail("sync flush");
+    A.quantize = false; A.trigger(0, 0); if (!A.layers[0].clips[0].isLive()) return fail("trigger with sync off must be immediate");
+    if (std::getenv("MIKMAP_BENCH")) {   // cost of one dirty/undo snapshot: it runs ~5x per second while the UI is idle
+      auto t0 = std::chrono::steady_clock::now();
+      for (int i = 0; i < 200; ++i) (void)ProjectDirty();
+      double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count() / 200.0;
+      std::printf("snapshot: %.3f ms each\n", ms);
+    }
     std::printf("roundtrip OK\n"); return 0;
   }
   gAssets = FindAssets(argv[0]);
@@ -731,7 +763,9 @@ int main(int argc, char** argv) {
     double now = glfwGetTime(), dt = std::min(0.1, now - last); last = now;
     g.time = now;
     const double beatMs = 60000.0 / std::clamp((double)A.bpm, 40.0, 240.0);
-    A.beat = std::fmod(now * 1000.0, beatMs) < beatMs * 0.35;
+    bool beatNow = std::fmod(now * 1000.0, beatMs) < beatMs * 0.35;
+    if (beatNow && !A.beat) A.flushPending();   // rising edge = a new beat: release queued triggers (Sync)
+    A.beat = beatNow;
     // C1/C2/C4/C5: the selected clips run their own transport (loop / bounce / hold / once, speed, direction)
     if (A.playing)
       for (auto& sc : A.selectedCells)
@@ -770,6 +804,8 @@ int main(int argc, char** argv) {
     ImGui::NewFrame();
     {
       static Prefs lastPrefs = A.prefs; static int lastMon = A.outMonitor; static std::string lastTitle;
+      if (io.MouseDown[0] || io.MouseDown[1] || io.MouseDown[2] || io.MouseWheel != 0.f || io.MouseWheelH != 0.f || io.InputQueueCharacters.Size > 0 ||
+          ImGui::IsKeyPressed(ImGuiKey_Delete, false) || ImGui::IsKeyPressed(ImGuiKey_Backspace, false) || ImGui::IsKeyPressed(ImGuiKey_L, false)) UndoNote();
       UndoTick(ImGui::IsMouseDown(0) || ImGui::IsMouseDown(1) || io.WantTextInput || A.rename.open, glfwGetTime());   // also keeps A.projectDirty current
       if (shot.empty() && (std::memcmp(&lastPrefs, &A.prefs, sizeof(Prefs)) != 0 || lastMon != A.outMonitor)) { lastPrefs = A.prefs; lastMon = A.outMonitor; SaveSettings(); }
       std::string title = "MikMap Pro \xE2\x80\x94 " + A.projectName + ".mikmap" + (A.projectDirty ? " *" : "");

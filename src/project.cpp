@@ -131,7 +131,7 @@ JsonValue Serialize(const App& a) {
   root.set("format", kFormat);
   root.set("app", "MikMap");
   JsonValue comp = JsonValue::object();
-  comp.set("canvasW", a.canvasW); comp.set("canvasH", a.canvasH); comp.set("bpm", a.bpm);
+  comp.set("canvasW", a.canvasW); comp.set("canvasH", a.canvasH); comp.set("bpm", a.bpm); comp.set("quantize", a.quantize);
   JsonValue cn = JsonValue::array();
   for (int i = 0; i < a.colCount(); ++i) cn.push(i < (int)a.colNames.size() ? a.colNames[i] : std::string());
   comp.set("colNames", cn);
@@ -192,7 +192,7 @@ bool Deserialize(const JsonValue& root, App& out, std::string& err) {
   const JsonValue& comp = root["composition"];
   if (!comp["layers"].isArray() || comp["layers"].size() == 0) { err = "no layers in file"; return false; }
   out.canvasW = std::clamp(comp["canvasW"].asInt(1920), 64, 16384); out.canvasH = std::clamp(comp["canvasH"].asInt(1080), 64, 16384);
-  out.bpm = std::clamp(F(comp, "bpm", 128.f), 40.f, 240.f);
+  out.bpm = std::clamp(F(comp, "bpm", 128.f), 40.f, 240.f); out.quantize = comp["quantize"].asBool(false);
   out.groups.clear();
   if (comp["groups"].isArray()) for (auto& go : comp["groups"].arrayItems()) {
     Group g; g.id = go["id"].asString(); g.name = go["name"].asString(); g.role = std::clamp(go["role"].asInt(2), 0, 2);
@@ -302,6 +302,8 @@ static std::string Snapshot() { gForDirty = true; std::string s = Serialize(A).d
 static std::vector<std::string> gUndo, gRedo;
 static std::string gLast;               // snapshot the undo history is currently based on
 static double gLastCheck = 0;
+static bool gPending = false;         // set by user input; a snapshot (~5 ms) is only taken after input, never while the UI is idle
+void UndoNote() { gPending = true; }
 static void UndoReset() { gUndo.clear(); gRedo.clear(); gLast = Snapshot(); }
 void MarkSaved() { A.savedSnapshot = Snapshot(); UndoReset(); }
 void App::notify(const std::string& s, double secs) { toast = s; toastUntil = ui::g.time + secs; }
@@ -328,7 +330,7 @@ bool LoadProject(const std::string& path, std::string& err) {
   A.pop.open = A.layerMenu.open = A.colMenu.open = A.ctx.open = A.blendDD.open = A.rename.open = false;
   A.selSc = A.screens[0].id; A.selSl = A.screens[0].slices.empty() ? "" : A.screens[0].slices[0].id; A.selMk.clear(); A.selKind = -1;
   A.railScreen.clear(); A.mapScrollX = A.mapScrollY = 0;
-  A.wizardStep = 0; A.editRoi = false; A.touchPts.clear();
+  A.wizardStep = 0; A.editRoi = false; A.touchPts.clear(); A.pending.clear();
   A.idCounter = 1000;
   A.cue(0, 0);
   A.projectPath = path; A.projectName = fs::path(path).stem().string();
@@ -376,8 +378,8 @@ bool UndoCommit() {
 // Called every frame. While a button is held or text is being typed, edits are still "in progress" (a slider drag or a
 // corner drag is ONE undo step), so only snapshot once input is idle, at most 5 times a second.
 void UndoTick(bool inputActive, double now) {
-  if (inputActive || now - gLastCheck < 0.2) return;
-  gLastCheck = now;
+  if (!gPending || inputActive || now - gLastCheck < 0.2) return;
+  gLastCheck = now; gPending = false;
   UndoCommit();
   A.projectDirty = gLast != A.savedSnapshot;
 }

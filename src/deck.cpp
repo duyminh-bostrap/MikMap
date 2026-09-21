@@ -126,9 +126,24 @@ static void StartDissolve(Layer& l, int toCi) {
   for (int k = 0; k < (int)l.clips.size(); ++k)
     if (k != toCi && l.clips[k].isLive()) { l.fadeFrom = l.clips[k]; l.fadeT = 0.f; return; }
 }
+void App::flushPending() {
+  if (pending.empty()) return;
+  std::vector<PendingTrig> p; p.swap(pending);
+  flushing = true;
+  for (auto& t : p) {
+    if (t.column) { if (t.ci >= 0 && t.ci < colCount()) fireColumn(t.ci); }
+    else if (t.li >= 0 && t.li < (int)layers.size() && t.ci >= 0 && t.ci < (int)layers[t.li].clips.size()) trigger(t.li, t.ci);
+  }
+  flushing = false;
+}
 void App::trigger(int li, int ci) {
   Layer& l = layers[li];
   if (l.clips[ci].st == Clip::Empty) return;
+  if (quantize && playing && !flushing) {   // Sync: queue it; the main loop fires it on the next beat (a repeat just replaces the earlier one)
+    for (auto& q : pending) if (!q.column && q.li == li) { q.ci = ci; return; }
+    pending.push_back({li, ci, false});
+    return;
+  }
   StartDissolve(l, ci);
   for (auto& c : l.clips) if (c.isLive()) c.st = Clip::Loaded;
   l.clips[ci].st = Clip::Live;
@@ -137,6 +152,11 @@ void App::trigger(int li, int ci) {
 }
 // A6: fire every non-empty clip in a column at once
 void App::fireColumn(int ci) {
+  if (quantize && playing && !flushing) {
+    for (auto& q : pending) if (q.column) { q.ci = ci; return; }
+    pending.push_back({0, ci, true});
+    return;
+  }
   for (int li = 0; li < (int)layers.size(); ++li) {
     Layer& l = layers[li];
     if (ci >= (int)l.clips.size() || l.clips[ci].st == Clip::Empty || l.clips[ci].st == Clip::Armed) continue;
@@ -1025,7 +1045,7 @@ static void Deck(ImRect r) {
   // header tools (right aligned)
   {
     float cy = r.Min.y + 11.5f, xr = r.Max.x - 6;
-    struct TB { const char* l; Tone t; bool act; const char* ico; } tb[4] = {{"Layer", T_LIVE, false, "plus"}, {"Group", T_LIVE, false, "folder-plus"}, {"Column", T_LIVE, false, "plus"}, {"Sync", T_AUDIO, true, nullptr}};
+    struct TB { const char* l; Tone t; bool act; const char* ico; } tb[4] = {{"Layer", T_LIVE, false, "plus"}, {"Group", T_LIVE, false, "folder-plus"}, {"Column", T_LIVE, false, "plus"}, {"Sync", T_AUDIO, A.quantize, nullptr}};
     for (int i = 3; i >= 0; --i) {
       float w = ButtonW(tb[i].l, 0, tb[i].ico != nullptr);
       ImRect br(xr - w, cy - 8, xr, cy + 8);
@@ -1041,7 +1061,8 @@ static void Deck(ImRect r) {
         A.groups.push_back(ng);
         A.layers[li].group = ng.id;
       }
-      if (cl && i == 2) A.insertCol(A.colCount());   // Column: append an empty column
+      if (cl && i == 2) A.insertCol(A.colCount());
+      if (cl && i == 3) { A.quantize = !A.quantize; A.pending.clear(); A.notify(A.quantize ? "Sync on \xE2\x80\x94 triggers wait for the next beat" : "Sync off \xE2\x80\x94 triggers fire immediately", 2.5); }   // Column: append an empty column
       xr = br.Min.x - 4;
     }
   }

@@ -112,7 +112,7 @@ fps). Ô đang chọn viền coral phát sáng; clip đang phát nhưng không c
 
 ### 2.3 Thanh công cụ của Deck (góc phải header)
 `Layer` ✅ thêm layer mới (8 ô trống) · `Group` ✅ đưa layer đang chọn vào nhóm mới ·
-`Column` ✅ thêm cột trống ở cuối · `Sync` ⛔ (vẫn chỉ là hình).
+`Column` ✅ thêm cột trống ở cuối · `Sync` ✅ **quantize theo nhịp**: khi bật (mặc định tắt), trigger clip/cột chờ tới nhịp kế tiếp của BPM mới phát (yêu cầu mới thay thế yêu cầu cũ trên cùng layer); tắt hoặc đang pause thì phát ngay. Trạng thái lưu trong dự án.
 
 ### 2.4 Browser (trái, 200px)
 Cây thư mục: Sources · Generators · Effects · Composition — **dữ liệu mẫu cố
@@ -238,7 +238,7 @@ Trạng thái sau đợt sửa 2026-09-21 (✅ đã sửa · ⛔ còn tồn tạ
 | Mã | Vấn đề | |
 |---|---|---|
 | X1 | Không lưu/mở dự án và cài đặt | ✅ Đã có `.mikmap` + settings; **chưa dùng `ProjectIO`/`.hexmap` của engine** |
-| X2 | Menu Project và nút Group/Column là hình | ✅ Đã nối (trừ nút `Sync` ⛔) |
+| X2 | Menu Project và nút Group/Column/Sync là hình | ✅ Đã nối hết |
 | X3 | Rename layer/cột, Loop trong popover không làm gì | ✅ Đã sửa |
 | X4 | Chip blend mode có tên khác dropdown, chọn Alpha/Additive rơi về Normal | ✅ Đã sửa (đã xác nhận đúng là lỗi thật) |
 | X5 | Không phím tắt thật; không undo cho Composition | ✅ Đã có phím tắt (mục 6) và undo/redo toàn app |
