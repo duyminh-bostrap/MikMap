@@ -39,9 +39,27 @@ static ImFont* AddFont(ImGuiIO& io, const std::string& path, const std::vector<s
 }
 
 void LoadAllFonts(ImGuiIO& io, const std::string& assets) {
-  const std::string win = "C:\\Windows\\Fonts\\", fd = assets + "/fonts/";
-  ImFont* dflt = io.Fonts->AddFontDefault();
+  // CJK/system-font fallback paths for merging glyphs the bundled UI fonts
+  // don't cover (user-entered clip/layer/device names are never translated —
+  // see the Settings text below — so a Chinese/Japanese/Korean name is
+  // plausible on any OS). Missing files fail silently in Blob() and just
+  // fall back to ImGui's built-in default font, same as before — this only
+  // changes WHICH paths get tried per platform, not the failure behavior.
+const std::string fd = assets + "/fonts/";
+#ifdef _WIN32
+  const std::string sysFontDir = "C:\\Windows\\Fonts\\";
+  const std::vector<std::string> cjkFallback = {sysFontDir + "msyh.ttc", sysFontDir + "YuGothM.ttc", sysFontDir + "malgun.ttf"};
   const char* segoe[4] = {"segoeui.ttf", "seguisb.ttf", "segoeuib.ttf", "seguibl.ttf"};
+#elif defined(__APPLE__)
+  const std::string sysFontDir = "/System/Library/Fonts/";
+  const std::vector<std::string> cjkFallback = {sysFontDir + "PingFang.ttc"};
+#else
+  const std::string sysFontDir = "/usr/share/fonts/";
+  const std::vector<std::string> cjkFallback = {
+      sysFontDir + "opentype/noto/NotoSansCJK-Regular.ttc",
+      sysFontDir + "truetype/noto/NotoSansCJK-Regular.ttc"};
+#endif
+  ImFont* dflt = io.Fonts->AddFontDefault();
   const char* uiFiles[4][4] = {
       {"Archivo-Regular.ttf", "Archivo-SemiBold.ttf", "Archivo-Bold.ttf", "Archivo-ExtraBold.ttf"},
       {"BarlowCondensed-Regular.ttf", "BarlowCondensed-SemiBold.ttf", "BarlowCondensed-Bold.ttf", "BarlowCondensed-ExtraBold.ttf"},
@@ -51,9 +69,16 @@ void LoadAllFonts(ImGuiIO& io, const std::string& assets) {
                                  {"IBMPlexMono-Regular.ttf", "IBMPlexMono-Medium.ttf", "IBMPlexMono-Bold.ttf"},
                                  {"RobotoMono-Var.ttf", "RobotoMono-Var.ttf", "RobotoMono-Var.ttf"}};
   for (int f = 0; f < 4; ++f) for (int w = 0; w < 4; ++w) {
-    std::vector<std::string> fb = {win + segoe[w], win + "msyh.ttc", win + "YuGothM.ttc", win + "malgun.ttf"};
+#ifdef _WIN32
+    std::vector<std::string> fb = {sysFontDir + segoe[w]};
+    fb.insert(fb.end(), cjkFallback.begin(), cjkFallback.end());
+#else
+    std::vector<std::string> fb = cjkFallback;
+#endif
     ImFont* x = AddFont(io, fd + uiFiles[f][w], fb);
-    if (!x) x = AddFont(io, win + segoe[w], {win + "msyh.ttc", win + "YuGothM.ttc", win + "malgun.ttf"});
+#ifdef _WIN32
+    if (!x) x = AddFont(io, sysFontDir + segoe[w], cjkFallback);
+#endif
     famUI[f][w] = x ? x : dflt;
   }
   for (int f = 0; f < 3; ++f) for (int w = 0; w < 3; ++w) {
