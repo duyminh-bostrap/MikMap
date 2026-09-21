@@ -102,6 +102,7 @@ void App::init() {
   roi[0] = {-0.7f, -0.6f}; roi[1] = {0.7f, -0.6f}; roi[2] = {0.85f, 0.7f}; roi[3] = {-0.85f, 0.7f};
 }
 
+static std::string BpmStr() { char b[16]; snprintf(b, sizeof b, "%.1f", A.bpm); return b; }
 void App::setTopProgress(float pct) {
   pct = std::clamp(pct, 0.f, 100.f);
   int best = -1, bc = 0;
@@ -120,9 +121,15 @@ void App::cue(int li, int ci) {
   if (cell.st == Clip::Empty) return;
   cell.st = cell.st == Clip::Live ? Clip::LiveSel : Clip::Selected;
 }
+static void StartDissolve(Layer& l, int toCi) {
+  if (l.blendTime <= 0.f) return;
+  for (int k = 0; k < (int)l.clips.size(); ++k)
+    if (k != toCi && l.clips[k].isLive()) { l.fadeFrom = l.clips[k]; l.fadeT = 0.f; return; }
+}
 void App::trigger(int li, int ci) {
   Layer& l = layers[li];
   if (l.clips[ci].st == Clip::Empty) return;
+  StartDissolve(l, ci);
   for (auto& c : l.clips) if (c.isLive()) c.st = Clip::Loaded;
   l.clips[ci].st = Clip::Live;
   l.live = true;
@@ -133,6 +140,7 @@ void App::fireColumn(int ci) {
   for (int li = 0; li < (int)layers.size(); ++li) {
     Layer& l = layers[li];
     if (ci >= (int)l.clips.size() || l.clips[ci].st == Clip::Empty || l.clips[ci].st == Clip::Armed) continue;
+    StartDissolve(l, ci);
     for (auto& c : l.clips) if (c.isLive()) c.st = Clip::Loaded;
     l.clips[ci].st = Clip::Live;
     l.live = true;
@@ -638,7 +646,7 @@ static void Inspector(ImRect r) {
     std::vector<std::array<std::string, 4>> rows = {
         {"Composition", A.projectName, "", ""}, {"Canvas", std::to_string(A.canvasW) + "\xC3\x97" + std::to_string(A.canvasH), "", ""},
         {"Layers", std::to_string(A.layers.size()), "", ""},
-        {"Groups", std::to_string(A.groups.size()), "", ""}, {"Columns", std::to_string(A.colCount()), "", ""}, {"BPM", "128.0", "", "audio"},
+        {"Groups", std::to_string(A.groups.size()), "", ""}, {"Columns", std::to_string(A.colCount()), "", ""}, {"BPM", BpmStr(), "", "audio"},
         {"Beat sync", "1/4", "", "audio"}, {"Rate", fb2, "fps", ""}, {"Latency", pb2, "ms", PerfP99() > 20.f ? "alert" : "audio"},
         {"Output", A.blackout ? "Blackout" : "Live", "", A.blackout ? "alert" : "live"}};
     rowsOf(rows);
@@ -1081,7 +1089,14 @@ static void Deck(ImRect r) {
         char cn[8]; snprintf(cn, sizeof cn, "%d", nInGroup);
         Text(gr.Min.x + 3 + 6 + 10 + 4 + nw + 4, cy, MONO_M, 10, K(pal::t77), cn);
         if (gh.hover) CursorHand();
-        if (gh.click) gp->open = !gp->open;
+        {   // A13: master fader on the right of the header; pressing it must not collapse the group
+          ImRect sr(gr.Max.x - 66, cy - 3, gr.Max.x - 30, cy + 3);
+          bool overFader = ImRect(sr.Min.x - 4, gr.Min.y, gr.Max.x, gr.Max.y).Contains(ImGui::GetIO().MousePos);
+          Slider(0x5000 + (uint32_t)(gp - &A.groups[0]), sr, gp->opacity, RoleHex(gp->role));
+          char gpb[8]; snprintf(gpb, sizeof gpb, "%d%%", (int)std::round(gp->opacity));
+          TextR(gr.Max.x - 6, cy, MONO_M, 9, K(pal::tcc), gpb);
+          if (gh.click && !overFader) gp->open = !gp->open;
+        }
         if (gh.rclick) {   // group menu: rename, cycle the colour role, or dissolve the group (layers are kept)
           std::string gid = gp->id; std::vector<MenuItem> mi; ImVec2 mp = ImGui::GetIO().MousePos;
           MenuItem a; a.label = "Rename group"; a.icon = "pencil";
@@ -1198,11 +1213,13 @@ void DrawDeck(ImRect body) {
     Box(tl, K(pal::g18), K(pal::g2a), 3);
     float mid = (tl.Min.x + tl.Max.x) * 0.5f;
     Text(tl.Min.x + 8, tl.Min.y + 15, UI_B, 9, K(pal::t88), "TIMELINE", 0.14f);
-    float total = 212, t = A.topProgress() / 100.f * total;
+    const Clip* tc0 = A.topClip();
+    float total = tc0 ? ClipSeconds(*tc0) : 10.f, t = A.topProgress() / 100.f * total;
     char tc[32]; snprintf(tc, sizeof tc, "00:%02d:%02d:%02d", (int)(t / 60), (int)fmodf(t, 60.f), (int)(fmodf(t, 1.f) * 25));
     Text(tl.Min.x + 8, tl.Min.y + 33, MONO_B, 13, K(pal::coral), tc, 0.04f);
     float tw = TextW(MONO_B, 13, tc, 0.04f);
-    Text(tl.Min.x + 8 + tw + 6, tl.Min.y + 35, MONO_B, 9, K(pal::t66), "/ 00:03:32:00", 0.09f);
+    char tot[32]; snprintf(tot, sizeof tot, "/ 00:%02d:%02d:00", (int)(total / 60), (int)fmodf(total, 60.f));
+    Text(tl.Min.x + 8 + tw + 6, tl.Min.y + 35, MONO_B, 9, K(pal::t66), tot, 0.09f);
     {   // X6: scrub bar — click or drag to move the playhead of the topmost selected clip
       ImRect track(tl.Min.x + 8, tl.Max.y - 9, tl.Max.x - 8, tl.Max.y - 5);
       Fill(track, K(pal::g22), 2);

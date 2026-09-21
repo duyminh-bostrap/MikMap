@@ -131,13 +131,13 @@ JsonValue Serialize(const App& a) {
   root.set("format", kFormat);
   root.set("app", "MikMap");
   JsonValue comp = JsonValue::object();
-  comp.set("canvasW", a.canvasW); comp.set("canvasH", a.canvasH);
+  comp.set("canvasW", a.canvasW); comp.set("canvasH", a.canvasH); comp.set("bpm", a.bpm);
   JsonValue cn = JsonValue::array();
   for (int i = 0; i < a.colCount(); ++i) cn.push(i < (int)a.colNames.size() ? a.colNames[i] : std::string());
   comp.set("colNames", cn);
   JsonValue gs = JsonValue::array();
   for (auto& g : a.groups) {
-    JsonValue go = JsonValue::object(); go.set("id", g.id); go.set("name", g.name); go.set("role", g.role); go.set("open", g.open); go.set("activeCol", g.activeCol);
+    JsonValue go = JsonValue::object(); go.set("id", g.id); go.set("name", g.name); go.set("role", g.role); go.set("open", g.open); go.set("activeCol", g.activeCol); go.set("opacity", g.opacity);
     gs.push(go);
   }
   comp.set("groups", gs);
@@ -192,10 +192,11 @@ bool Deserialize(const JsonValue& root, App& out, std::string& err) {
   const JsonValue& comp = root["composition"];
   if (!comp["layers"].isArray() || comp["layers"].size() == 0) { err = "no layers in file"; return false; }
   out.canvasW = std::clamp(comp["canvasW"].asInt(1920), 64, 16384); out.canvasH = std::clamp(comp["canvasH"].asInt(1080), 64, 16384);
+  out.bpm = std::clamp(F(comp, "bpm", 128.f), 40.f, 240.f);
   out.groups.clear();
   if (comp["groups"].isArray()) for (auto& go : comp["groups"].arrayItems()) {
     Group g; g.id = go["id"].asString(); g.name = go["name"].asString(); g.role = std::clamp(go["role"].asInt(2), 0, 2);
-    g.open = go["open"].asBool(true); g.activeCol = go["activeCol"].asInt(0); out.groups.push_back(g);
+    g.open = go["open"].asBool(true); g.activeCol = go["activeCol"].asInt(0); g.opacity = std::clamp(F(go, "opacity", 100), 0.f, 100.f); out.groups.push_back(g);
   }
   out.layers.clear();
   size_t cols = 1;

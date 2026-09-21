@@ -3,6 +3,7 @@
 // Clip transform (position / scale / rotation / flip) and opacity are applied here, matching LiveCanvas's ctx transform.
 #include "app.h"
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 
 // <windows.h> is only needed here because <GL/gl.h> requires it on Windows
@@ -101,9 +102,15 @@ void SetBlendMode(int mode) {
 void SetAdditive(bool on) { SetBlendMode(on ? 1 : 0); }
 
 // ── playback (C1/C2/C4/C5) ──
+float ClipSeconds(const Clip& c) {
+  float v = 0; int n = 0;
+  if (std::sscanf(c.dur.c_str(), "%f%n", &v, &n) == 1 && n > 0 && v > 0.f) return v;   // "16s"; "∞" or empty do not parse
+  return 10.f;
+}
+
 void AdvanceClip(Clip& c, float dt) {
   if (c.st == Clip::Empty || c.st == Clip::Armed) return;
-  float d = dt * 10.f * (c.speed / 100.f) * (c.dir < 0 ? -1.f : 1.f);
+  float d = dt * (100.f / ClipSeconds(c)) * (c.speed / 100.f) * (c.dir < 0 ? -1.f : 1.f);
   float p = c.progress + d;
   switch (c.playMode) {
     case PM_BOUN:
@@ -145,7 +152,13 @@ void DrawComposite(ImRect canvas, float t, float alpha) {
     if (!lc) continue;
     int bm = BlendIndex(l.blend);
     if (bm) SetBlendMode(bm);
-    DrawClipContent(canvas, *lc, t, 960.f, std::clamp(l.opacity / 100.f, 0.f, 1.f) * alpha);
+    float la = std::clamp(l.opacity / 100.f, 0.f, 1.f) * alpha;
+    if (!l.group.empty()) if (const Group* gp = A.group(l.group)) la *= std::clamp(gp->opacity / 100.f, 0.f, 1.f);
+    if (l.fadeT < 1.f) {   // A10: cross-dissolve from the previous clip
+      DrawClipContent(canvas, l.fadeFrom, t, 960.f, la * (1.f - l.fadeT));
+      la *= l.fadeT;
+    }
+    DrawClipContent(canvas, *lc, t, 960.f, la);
     if (bm) SetBlendMode(0);
   }
 }

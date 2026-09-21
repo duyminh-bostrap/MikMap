@@ -25,10 +25,10 @@
 | [x] | **A7** | Layer opacity + blend mode | S | 🔴 P0 |
 | [x] | **A8** | Layer solo / bypass / clear | S | 🟠 P1 |
 | [ ] | **A9** | Deck — nhiều lưới clip, chuyển không ngắt playback | M | 🟠 P1 |
-| [~] | **A10** | Transition giữa clip (dissolve + thời lượng) | M | 🟠 P1 |
+| [x] | **A10** | Transition giữa clip (dissolve + thời lượng) | M | 🟠 P1 |
 | [ ] | **A11** | Master opacity toàn composition | S | 🟠 P1 |
 | [~] | **A12** | Đặt tên / gán màu cho clip, layer, deck | S | 🟡 P2 |
-| [~] | **A13** | Group (sub-composition, nhiều layer 1 fader) | L | 🟡 P2 |
+| [x] | **A13** | Group (sub-composition, nhiều layer 1 fader) | L | 🟡 P2 |
 | [ ] | **A14** | Crossfader A/B | M | ⚪ P3 |
 | [x] | **A15** | Layer/Group folding (thu gọn UI) | S | ⚪ P3 |
 
@@ -214,7 +214,7 @@
 
 ## Ghi chú kiểm tra (prototype `mikmap-cpp`)
 
-**Tổng kết:** 38 mục `[x]` · 26 mục `[~]` · 71 mục `[ ]` (trên tổng 135 mục; đếm từ các dòng bảng ở trên, 2026-09-21). Các danh sách `[x]`/`[~]`/"Chưa làm" ngay dưới là bản chụp trước đợt bổ sung P0 — đợt đó (mục kế tiếp) đã làm thêm A1, A6, C2/C4/C5, D1–D6, F2, I1, G9 và thay G5 bằng DLT. G5 vẫn `[~]`: có DLT + chuẩn hoá Hartley trong `src/calib.cpp` nhưng chưa có RANSAC (grep `ransac` trong `src/*.cpp` = 0).
+**Tổng kết:** 40 mục `[x]` · 24 mục `[~]` · 71 mục `[ ]` (trên tổng 135 mục; đếm từ các dòng bảng ở trên, 2026-09-21). Các danh sách `[x]`/`[~]`/"Chưa làm" ngay dưới là bản chụp trước đợt bổ sung P0 — đợt đó (mục kế tiếp) đã làm thêm A1, A6, C2/C4/C5, D1–D6, F2, I1, G9 và thay G5 bằng DLT. G5 vẫn `[~]`: có DLT + chuẩn hoá Hartley trong `src/calib.cpp` nhưng chưa có RANSAC (grep `ransac` trong `src/*.cpp` = 0).
 
 **Đã có hành vi thật (`[x]`)**
 - A2/A3/A5/A8/A15 — layer xếp chồng (layer trên đè lên), cột động (chèn/xoá/đổi chỗ/tự thêm), click = cue, đúp = trigger, solo/mute/bypass + xoá clip, thu gọn layer/group. Nguồn: `deck.cpp`.
@@ -261,3 +261,7 @@
 - **F2/I1 trên macOS đã kiểm chứng:** cửa sổ output máy chiếu mở và vẽ đúng các slice đã warp (chụp bằng `--outshot`).
 - **G13 `[~]` (tiến thêm):** điểm chạm từ radar được chiếu qua homography calibration (`FitHomography` → `ApplyH`) và hiện trên sân khấu Mapping ở trang Output (chấm + gợn sóng + toạ độ px, chỉ với Screen đầu tiên vì đích calibration nằm ở không gian 1920×1080 của nó). **Chưa phủ lên cửa sổ output máy chiếu thật.** Toạ độ sensor vẫn thô cho tới lúc vẽ (nguyên tắc #5).
 - **G17 `[~]` (tiến thêm):** dây `touch.down → "<layer> · <clip>"` đang bật sẽ trigger clip có tên đó khi chạm radar (thanh trạng thái báo "Route fired"). Mới hỗ trợ nguồn `touch.down`; các nguồn khác (`touch.x`, `blob.count`, `touch.velocity`) vẫn chưa nối vào tham số nào.
+- **A10 — dissolve `[x]`:** đổi clip trên layer có `blend time` > 0 sẽ cross-dissolve từ clip cũ sang clip mới trong đúng khoảng thời gian đó (áp dụng cả Live Output lẫn cửa sổ máy chiếu; bắn cả cột cũng dissolve). Kiểm logic bằng `mikmap --roundtrip`.
+- **C12 `[~]` (tiến thêm):** BPM chỉnh được — bấm vào `xxx.x BPM` ở thanh trạng thái để tap tempo, lăn chuột để tinh chỉnh, chuột phải về 128; lưu trong dự án. Chưa đồng bộ nguồn ngoài (MIDI clock / Link).
+- **Timeline / playhead:** tổng thời lượng và tốc độ chạy playhead nay theo thời lượng thật của clip (`16s`); generator `∞` lặp mỗi 10s.
+- **A13 — fader nhóm `[x]`:** mỗi nhóm có fader tổng trên header (kéo được; bấm vào fader không làm thu gọn nhóm), nhân vào độ mờ của mọi layer trong nhóm khi vẽ composite; lưu trong dự án.

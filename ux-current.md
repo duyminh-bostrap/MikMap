@@ -47,7 +47,7 @@
 | | Nút ⚙ (bánh răng) | ✅ Mở cửa sổ Cài đặt |
 
 ### 1.2 Thanh trạng thái (cao 22px) — `StatusBar`
-- Trái: chấm nhịp (nhấp nháy theo 128 BPM giả) + `SENSORS n/m` (đếm thiết bị đang
+- Trái: chấm nhịp (nhấp nháy theo BPM của dự án) + **`xxx.x BPM`** (✅ bấm = tap tempo, lăn chuột = chỉnh ±1, chuột phải = về 128; lưu trong dự án) + `SENSORS n/m` (đếm thiết bị đang
   "kết nối") + `OUTPUT OPEN/CLOSED` (cửa sổ máy chiếu) — ✅ phản ánh trạng thái thật.
 - Khi có thông báo (lưu, mở, cảnh báo chưa lưu…), dòng gợi ý bên phải hiện thông báo
   đó trong vài giây.
@@ -91,6 +91,7 @@ Timeline | Properties; **dải dưới** = Deck (lưới layer × cột).
 | C8 | **Kéo header cột** | Đổi thứ tự cột | ✅ |
 | C9 | **Chuột phải header cột** | Menu *Column*: chèn trước/sau, dịch trái/phải, **Rename** (ô nhập nổi), Clear, Delete | ✅ |
 | C10 | Hàng nhóm: nút **Cue 1…n** | Chọn cue của nhóm; bấm tiêu đề nhóm thu gọn/mở | ✅ |
+| C13 | **Kéo fader trên tiêu đề nhóm** | Độ mờ tổng của nhóm, nhân vào mọi layer thành viên (bấm vào fader không thu gọn nhóm) | ✅ |
 | C12 | **Chuột phải tiêu đề nhóm** | Menu: Rename group · Change color · Ungroup (bỏ nhóm, giữ nguyên các layer) | ✅ |
 | C11 | Bấm ô cuối của cột cuối | **Tự thêm cột mới** khi có clip ở cột cuối | ✅ |
 
@@ -106,7 +107,8 @@ fps). Ô đang chọn viền coral phát sáng; clip đang phát nhưng không c
 - Nút **S / M / B** (Solo/Mute/Bypass). ✅
 - Slider **V** (opacity) và **A** (audio) — kéo được ✅ (chưa kiểm chứng slider A có tác động lên âm thanh/hiển thị nào không).
 - Ô blend: bấm mở danh sách 8 chế độ. ✅
-- Ô **blend time**: gõ số trực tiếp (ô nhập thật của ImGui). ✅
+- Ô **blend time**: số giây **cross-dissolve** khi đổi clip trên layer (0 = cắt cứng). ✅
+- Ô **blend time** nhận số gõ trực tiếp (ô nhập thật của ImGui). ✅
 
 ### 2.3 Thanh công cụ của Deck (góc phải header)
 `Layer` ✅ thêm layer mới (8 ô trống) · `Group` ✅ đưa layer đang chọn vào nhóm mới ·
@@ -123,7 +125,7 @@ Cây thư mục: Sources · Generators · Effects · Composition — **dữ li�
 ### 2.5 Hai monitor + Timeline (giữa)
 - **Preview Cue** (cyan) và **Live Output** (coral, có nhãn COMPOSITE): xem hình
   clip đã cue / toàn bộ composite. Live có TestCard khi bật.
-- **Timeline**: hiển thị timecode theo clip trên cùng đang chọn (tổng cố định 3:32) và
+- **Timeline**: hiển thị timecode theo clip trên cùng đang chọn (tổng = thời lượng thật của clip, vd `16s`; generator `∞` lặp mỗi 10s) và
   có **thanh kéo (scrub)** ở đáy — bấm/kéo để đổi playhead. ✅
 - 4 nút transport: ⏮ ⏭ (nhảy sang clip chọn trước/sau ✅), ▶ ⏸ (bật/tắt chạy ✅).
 
@@ -239,7 +241,7 @@ Trạng thái sau đợt sửa 2026-09-21 (✅ đã sửa · ⛔ còn tồn tạ
 | X3 | Rename layer/cột, Loop trong popover không làm gì | ✅ Đã sửa |
 | X4 | Chip blend mode có tên khác dropdown, chọn Alpha/Additive rơi về Normal | ✅ Đã sửa (đã xác nhận đúng là lỗi thật) |
 | X5 | Không phím tắt thật; không undo cho Composition | ✅ Đã có phím tắt (mục 6) và undo/redo toàn app |
-| X6 | Timeline không scrub được | ✅ Đã sửa (tổng thời lượng vẫn cố định 3:32 ⛔) |
+| X6 | Timeline không scrub được | ✅ Đã sửa; tổng thời lượng và tốc độ playhead nay theo thời lượng thật của clip |
 | X7 | Edit ROI không kéo được; radar chỉ giả lập 1 điểm chạm | ✅ ROI kéo được — ⛔ radar vẫn chỉ giả lập |
 | X8 | Thanh trạng thái hiện MIDI/Art-Net/NDI giả | ✅ Đã thay bằng số thiết bị và trạng thái output thật |
 | X9 | Tên dự án không cập nhật tiêu đề | ✅ Đã sửa |

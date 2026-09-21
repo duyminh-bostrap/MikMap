@@ -153,6 +153,24 @@ static void StatusBar(ImRect r) {
     int on = 0; for (auto& d : A.devices) if (d.connected) ++on;
     char dv[64]; snprintf(dv, sizeof dv, "SENSORS %d/%d", on, (int)A.devices.size());
     Text(x, cy, MONO_M, 10, K(pal::t66), dv); x += TextW(MONO_M, 10, dv) + 8;
+    {   // tempo: click = tap tempo (average of the last taps), wheel = fine adjust, right-click = reset to 128
+      char bp[24]; snprintf(bp, sizeof bp, "%.1f BPM", A.bpm);
+      float bw = TextW(MONO_M, 10, bp) + 8;
+      ImRect br(x - 2, r.Min.y + 2, x + bw, r.Max.y - 2);
+      Hit bh = HitR(br);
+      if (bh.hover) { CursorHand(); Fill(br, K(pal::g18), 2); }
+      static double taps[6]; static int nt = 0;
+      if (bh.click) {
+        double now = g.time;
+        if (nt > 0 && now - taps[nt - 1] > 2.0) nt = 0;                    // a pause starts a new tap sequence
+        if (nt == 6) { for (int i = 1; i < 6; ++i) taps[i - 1] = taps[i]; nt = 5; }
+        taps[nt++] = now;
+        if (nt >= 2) A.bpm = std::clamp((float)(60.0 * (nt - 1) / (taps[nt - 1] - taps[0])), 40.f, 240.f);
+      }
+      if (bh.rclick) A.bpm = 128.f;
+      if (bh.hover && ImGui::GetIO().MouseWheel != 0.f) A.bpm = std::clamp(std::round((A.bpm + ImGui::GetIO().MouseWheel) * 10.f) / 10.f, 40.f, 240.f);
+      Text(x, cy, MONO_M, 10, K(bh.hover ? pal::coral : pal::t66), bp); x += bw + 4;
+    }
     char out[64]; snprintf(out, sizeof out, "OUTPUT %s", OutputOpen() ? "OPEN" : "CLOSED");
     Text(x, cy, MONO_M, 10, K(OutputOpen() ? pal::mint : pal::t66), out); x += TextW(MONO_M, 10, out) + 8;
   }
@@ -600,7 +618,7 @@ int main(int argc, char** argv) {
     NewProject();
     if (ProjectDirty()) return fail("fresh project reports dirty");
     A.layers[0].name = "Edited"; A.layers[0].clips[1].fx.push_back(Fx()); A.colNames.resize(A.colCount()); A.colNames[1] = "Renamed";
-    A.screens[0].slices[0].q[2] = ImVec2(1500, 900); A.calib[0].mx = 0.123f;
+    A.screens[0].slices[0].q[2] = ImVec2(1500, 900); A.calib[0].mx = 0.123f; A.bpm = 97.5f;
     if (!ProjectDirty()) return fail("edit not detected as dirty");
     if (!SaveProject(roundtrip, err)) return fail(err.c_str());
     if (ProjectDirty()) return fail("dirty right after save");
@@ -608,6 +626,7 @@ int main(int argc, char** argv) {
     if (!LoadProject(roundtrip, err)) return fail(err.c_str());
     if (A.layers[0].name != "Edited" || A.colName(1) != "Renamed" || A.screens[0].slices[0].q[2].x != 1500.f || std::fabs(A.calib[0].mx - 0.123f) > 1e-6f) return fail("state not restored");
     if (A.layers[0].clips[1].fx.empty()) return fail("fx chain lost");
+    if (A.bpm != 97.5f) return fail("bpm not restored");
     if (ProjectDirty()) return fail("dirty right after load");
     NewBlankProject();
     if (A.layers.size() != 4 || A.screens.size() != 1) return fail("blank project shape");
@@ -629,6 +648,13 @@ int main(int argc, char** argv) {
     if (CanUndo()) return fail("history should be empty");
     UndoStep(true); if (A.layers[0].name != "A1") return fail("redo");
     A.layers[0].name = "A3"; UndoCommit(); if (CanRedo()) return fail("new edit should clear redo");
+    // A10: triggering another clip on a layer with blend time > 0 starts a dissolve from the previous live clip
+    NewProject(); A.layers[0].blendTime = 2.f;
+    std::string prevName; for (auto& c : A.layers[0].clips) if (c.isLive()) prevName = c.name;
+    A.trigger(0, 0);
+    if (prevName.empty() || A.layers[0].fadeT != 0.f || A.layers[0].fadeFrom.name != prevName) return fail("dissolve not started");
+    A.layers[0].blendTime = 0.f; A.layers[0].fadeT = 1.f; A.trigger(0, 1);
+    if (A.layers[0].fadeT != 1.f) return fail("dissolve started with blend time 0");
     std::printf("roundtrip OK\n"); return 0;
   }
   gAssets = FindAssets(argv[0]);
@@ -701,7 +727,7 @@ int main(int argc, char** argv) {
     if (glfwGetWindowAttrib(win, GLFW_ICONIFIED)) { glfwWaitEventsTimeout(0.1); continue; }
     double now = glfwGetTime(), dt = std::min(0.1, now - last); last = now;
     g.time = now;
-    const double beatMs = 60000.0 / 128.0;
+    const double beatMs = 60000.0 / std::clamp((double)A.bpm, 40.0, 240.0);
     A.beat = std::fmod(now * 1000.0, beatMs) < beatMs * 0.35;
     // C1/C2/C4/C5: the selected clips run their own transport (loop / bounce / hold / once, speed, direction)
     if (A.playing)
@@ -709,6 +735,7 @@ int main(int argc, char** argv) {
         if (sc.first < (int)A.layers.size() && sc.second < (int)A.layers[sc.first].clips.size())
           AdvanceClip(A.layers[sc.first].clips[sc.second], (float)dt);
     (void)progAcc;
+    for (auto& l : A.layers) if (l.fadeT < 1.f) l.fadeT = std::min(1.f, l.fadeT + (float)dt / std::max(0.05f, l.blendTime));
     A.sweep = std::fmod(A.sweep + (float)dt * 2.4f, 6.2831853f);
     PerfPush((float)dt * 1000.f);   // G9
 

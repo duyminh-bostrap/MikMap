@@ -23,7 +23,7 @@ còn ở giai đoạn prototype:
 | Giao diện | 3 màn Composition · Advanced Mapping · Sensor I/O + cửa sổ Cài đặt, bám bản thiết kế `MikMap Workspace.dc.html` |
 | Engine dùng chung (`engine/core`, `engine/io`) | Đã biên dịch & link vào app; `src/` mới chỉ gọi `core/util/Json` (cho lưu/mở dự án), **chưa gọi model/calib/io thật** |
 | Mô hình dữ liệu app hiện tại | Struct riêng trong `src/app.h`, chưa dùng `core/model` thật |
-| Đối chiếu chi tiết | `features.md` — 38 mục `[x]` hành vi thật · 26 mục `[~]` một phần · 71 mục `[ ]`, trên 135 mục Resolume-parity |
+| Đối chiếu chi tiết | `features.md` — 40 mục `[x]` hành vi thật · 24 mục `[~]` một phần · 71 mục `[ ]`, trên 135 mục Resolume-parity |
 
 Xem [`features.md`](features.md) để biết chính xác cái gì thật/cái gì chỉ có
 UI, và [`architecture.md`](architecture.md) để biết đích đến kiến trúc (chuỗi

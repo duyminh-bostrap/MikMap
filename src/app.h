@@ -37,12 +37,14 @@ struct Layer {
   float blendTime = 0, opacity = 100, audio = 0;
   bool live = false, solo = false, muted = false, bypassed = false, collapsed = false;
   std::vector<Clip> clips;
+  Clip fadeFrom; float fadeT = 1.f;   // A10 dissolve: the clip being replaced fades out while fadeT runs 0 -> 1 over blendTime (runtime only, not saved)
 };
 struct Group {
   std::string id, name;
   int role = 2;  // 0 live/coral, 1 audio/mint, 2 preview/cyan
   bool open = true;
   int count = 0, activeCol = 0;
+  float opacity = 100;   // A13: group master fader, multiplies every member layer's opacity
 };
 
 // ───────────── mapping model ─────────────
@@ -108,6 +110,7 @@ struct App {
   int screen = 0;  // 0 deck, 1 mapping, 2 sensor
   int canvasW = 1920, canvasH = 1080;  // A1: virtual composition canvas, independent of any projector
   int outMonitor = 0;                  // F2: which physical display the projector window goes to
+  float bpm = 128.f;                   // tempo the beat indicator / beat-synced FX follow (tap in the status bar)
   bool beat = false, playing = true, blackout = false, testCard = false, frozen = true;
   float progress = 0;
   double lastBeat = 0;
@@ -132,6 +135,13 @@ struct App {
   DragSrc dragSrc, dragSrcCand;
   bool browserPress = false; std::string browserPressName; ImVec2 browserPressPos;
   // Topmost selected clip drives Timeline / Playhead
+  const Clip* topClip() const {   // topmost selected non-empty clip (drives Timeline)
+    int best = -1, bc = 0;
+    for (auto& c : selectedCells) if (c.first >= 0 && c.first < (int)layers.size() && c.second >= 0 && c.second < (int)layers[c.first].clips.size()
+        && layers[c.first].clips[c.second].st != Clip::Empty && (best < 0 || c.first < best)) { best = c.first; bc = c.second; }
+    if (best < 0 && selLi < (int)layers.size() && selCi < (int)layers[selLi].clips.size()) { best = selLi; bc = selCi; }
+    return best >= 0 ? &layers[best].clips[bc] : nullptr;
+  }
   void setTopProgress(float pct);   // scrub: move the playhead of the topmost selected clip (0..100)
   float topProgress() {
     int best = -1; float p = 0;
@@ -271,6 +281,7 @@ void SetBlendMode(int mode);
 void InitBlendModes(void* (*getProc)(const char*));
 void AdvanceClip(Clip& c, float dt);
 const char* PlayModeName(int m);
+float ClipSeconds(const Clip& c);   // real length from Clip::dur ("16s"); generators (∞) loop over 10 s
 // composition rendering (A1) — shared by the Live Output monitor and the projector window
 ImRect CanvasRect(ImRect fit);                             // letterbox `fit` to the canvas aspect
 void DrawComposite(ImRect canvas, float t, float alpha);   // all live clips, bottom layer first
