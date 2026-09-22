@@ -24,10 +24,10 @@
 | [x] | **A6** | Trigger cả column bằng click | S | 🔴 P0 |
 | [x] | **A7** | Layer opacity + blend mode | S | 🔴 P0 |
 | [x] | **A8** | Layer solo / bypass / clear | S | 🟠 P1 |
-| [ ] | **A9** | Deck — nhiều lưới clip, chuyển không ngắt playback | M | 🟠 P1 |
+| [x] | **A9** | Deck — nhiều lưới clip, chuyển không ngắt playback | M | 🟠 P1 |
 | [x] | **A10** | Transition giữa clip (dissolve + thời lượng) | M | 🟠 P1 |
 | [ ] | **A11** | Master opacity toàn composition | S | 🟠 P1 |
-| [~] | **A12** | Đặt tên / gán màu cho clip, layer, deck | S | 🟡 P2 |
+| [x] | **A12** | Đặt tên / gán màu cho clip, layer, deck | S | 🟡 P2 |
 | [x] | **A13** | Group (sub-composition, nhiều layer 1 fader) | L | 🟡 P2 |
 | [ ] | **A14** | Crossfader A/B | M | ⚪ P3 |
 | [x] | **A15** | Layer/Group folding (thu gọn UI) | S | ⚪ P3 |
@@ -67,7 +67,7 @@
 | [x] | **C5** | Speed control (chỉnh tốc độ tự do) | M | 🟠 P1 |
 | [ ] | **C6** | In/Out point (cắt đầu cuối clip) | M | 🟠 P1 |
 | [ ] | **C7** | Autopilot (hết clip: loop / clip kế / random / dừng) | M | 🟠 P1 |
-| [ ] | **C8** | Playhead scrub (kéo tua) | M | 🟡 P2 |
+| [x] | **C8** | Playhead scrub (kéo tua) | M | 🟡 P2 |
 | [ ] | **C9** | Cue points | M | 🟡 P2 |
 | [ ] | **C10** | Sinh thumbnail tự động | M | 🟡 P2 |
 | [ ] | **C11** | Preload / quản lý VRAM nhiều clip | L | 🟠 P1 |
@@ -214,7 +214,7 @@
 
 ## Ghi chú kiểm tra (prototype `mikmap-cpp`)
 
-**Tổng kết:** 46 mục `[x]` · 19 mục `[~]` · 70 mục `[ ]` (trên tổng 135 mục; đếm từ các dòng bảng ở trên, 2026-09-21). Các danh sách `[x]`/`[~]`/"Chưa làm" ngay dưới là bản chụp trước đợt bổ sung P0 — đợt đó (mục kế tiếp) đã làm thêm A1, A6, C2/C4/C5, D1–D6, F2, I1, G9 và thay G5 bằng DLT. G5 nay đã `[x]`: `src/calib.cpp` có DLT + Hartley và RANSAC (≥6 điểm, seed cố định, loại điểm hiệu chuẩn lệch rồi fit lại trên inlier).
+**Tổng kết:** 49 mục `[x]` · 18 mục `[~]` · 68 mục `[ ]` (trên tổng 135 mục; đếm từ các dòng bảng ở trên, 2026-09-21). Các danh sách `[x]`/`[~]`/"Chưa làm" ngay dưới là bản chụp trước đợt bổ sung P0 — đợt đó (mục kế tiếp) đã làm thêm A1, A6, C2/C4/C5, D1–D6, F2, I1, G9 và thay G5 bằng DLT. G5 nay đã `[x]`: `src/calib.cpp` có DLT + Hartley và RANSAC (≥6 điểm, seed cố định, loại điểm hiệu chuẩn lệch rồi fit lại trên inlier).
 
 **Đã có hành vi thật (`[x]`)**
 - A2/A3/A5/A8/A15 — layer xếp chồng (layer trên đè lên), cột động (chèn/xoá/đổi chỗ/tự thêm), click = cue, đúp = trigger, solo/mute/bypass + xoá clip, thu gọn layer/group. Nguồn: `deck.cpp`.
@@ -282,3 +282,9 @@
 - **Sửa lỗi UX gốc: ô trống không có vùng bấm rõ ràng (2026-09-22, người dùng báo tiếp lần 3):** sau 2 lần sửa trước, `trigger()`/`fireColumn()` đã dừng đúng layer về mặt logic (xác nhận bằng test quét toàn bộ layer) — nhưng **ô clip trống không vẽ gì phân biệt bar/body** (toàn bộ chỉ là 1 khối phẳng), nên người dùng không có cách nào biết bấm ở đâu mới vào đúng vùng "body" (phát/dừng) thay vì vùng "bar" (chỉ chọn). Hệ quả: bấm vào phần trên ô trống trúng vùng bar cũ → chỉ cue, không dừng gì → tưởng nhầm là lỗi. Đã hỏi lại người dùng để xác nhận phạm vi mong muốn (chỉ dừng layer chứa ô đó, giữ mô hình nhiều-layer-độc-lập — **không** đổi thành "1 ô trống tắt hết mọi layer"). Sửa: **ô trống không tách vùng nữa** — toàn bộ ô là một vùng bấm duy nhất (tương đương "body"), bấm ở bất kỳ đâu trong ô đều dừng layer đó; chuột phải ở bất kỳ đâu vẫn mở popover như cũ. Đã xác nhận bằng ảnh chụp: bấm sát mép trên ô trống (vùng bar cũ) vẫn dừng đúng layer; chuột phải vẫn mở popover bình thường.
 - **Setting mới: auto-start column khi mở dự án (2026-09-22, theo yêu cầu người dùng):** chuột phải header cột → "Set as auto-start on open" (biểu tượng ⚡). Lưu trong dự án dưới dạng `autoStartCol` (mặc định `-1` = tắt, đúng yêu cầu "default là không bật gì"). Khi `LoadProject()` mở dự án có đặt giá trị này, nó gọi `fireColumn()` ngay lập tức (bỏ qua Sync/quantize để không phải chờ nhịp). Giá trị lệch phạm vi (vd cột đã bị xoá từ lần lưu trước) tự rơi về tắt (`-1`) thay vì đọc tràn mảng. **Phạm vi:** áp dụng khi MỞ một file `.mikmap` đã lưu (Ctrl+O), không áp dụng cho "Dự án mới"/"Nạp lại mẫu Demo" (luôn tắt) — vì bản thân app hiện tại luôn khởi động bằng dự án demo, chưa có tính năng "nhớ và mở lại project cuối cùng lúc khởi động ứng dụng"; nếu cần đúng nghĩa "khi mở app" thì cần thêm tính năng đó riêng. Đã xác nhận bằng ảnh chụp: đặt Cột 1 làm auto-start, lưu, mở lại → cả 5 layer tự Live đúng nội dung Cột 1 ngay khi mở, không cần bấm gì thêm. Kiểm tự động: mặc định tắt, lưu/nạp đúng giá trị, tự bắn đúng cột khi mở, và giá trị tràn phạm vi tự rơi về tắt.
 - **Nút transport ⏮/⏭ giờ phát thật, không chỉ đổi lựa chọn (2026-09-22, theo yêu cầu người dùng):** trước đây `A.stepSel()` chỉ di chuyển `activeCol`/`selectedCells`, không tác động phát/dừng gì — bấm ⏭ liên tục không đổi Live Output. Thêm `App::stepFireColumn(dir)` (`src/deck.cpp`): di chuyển cột rồi gọi thẳng `fireColumn()` — vừa chọn vừa phát đúng cột mới (dừng layer nào trống ở đó, theo Sync/quantize nếu bật), y hệt bấm vào header cột. Hai nút ⏮/⏭ trên Timeline nối vào hàm mới; phím tắt `←`/`→` vẫn dùng `stepSel()` cũ (chỉ duyệt, không phát) để không đổi bất ngờ hành vi phím tắt đã ghi tài liệu. ▶/⏸/■ đã hoạt động đúng từ trước (`A.playing`), không cần sửa. Đã xác nhận bằng ảnh chụp: bấm ⏭ từ Cột 2 nhảy đúng sang Cột 3, Particle Vortex chuyển Live, Live Output đổi hình ngay. Kiểm tự động: `stepFireColumn` di chuyển đúng cột, thật sự phát nội dung, và kẹp đúng biên (không vượt cột đầu/cuối).
+- **Cập nhật UI phần deck theo `MikMap Workspace.dc.html` (2026-09-22, theo yêu cầu người dùng, đối chiếu file thiết kế thật trong `mikmap-pro-vj-interface/`):**
+  - **Màu ô clip đúng 3 trạng thái** (token thiết kế §3.2): đã nạp (cam ấm), đang cue/preview (xanh lạnh — trước đây KHÔNG có, trộn lẫn với "đang live"), đang live (cam cháy đậm `#8a3c14`, khác màu cam thuần trước đây). Viền chọn cũng đổi: coral cho live, cyan cho preview.
+  - **A9 — Multi-deck `[x]`:** tab deck ở đầu vùng Deck (chuyển/đổi tên/nhân bản/xoá), mỗi deck có layer/nhóm/cột hoàn toàn riêng, lưu trong dự án (`decks[]`/`curDeckIdx`), undo/redo phủ luôn hành động thêm/xoá/chuyển deck. **Lưu ý:** chuyển deck đổi ngay Live Output sang deck mới (không giữ deck cũ chạy nền) — khớp đúng hành vi của chính bản thiết kế tham chiếu (`switchDeck` trong `MikMap Workspace.dc.html`), không phải "chuyển deck mà không ngắt phát" theo nghĩa 2 deck cùng phát song song.
+  - **C8 — Playhead scrub `[x]`:** đã có từ trước (thanh kéo dưới 2 monitor, sửa ở đợt 2026-09-21 nhưng quên tích) và nay thêm cả thanh tick % trong Timeline mode.
+  - **Timeline run mode (tính năng mới, không có mã Resolume-parity riêng vì đây không phải tính năng Resolume):** toggle GRID/TIMELINE cạnh tab deck. Đọc lại CHÍNH dữ liệu lưới (không có cấu trúc block riêng) — mỗi layer là 1 lane, clip không rỗng xếp nối tiếp theo thời lượng thật, chạy trên playhead chung 0–100%. Advancing playhead tự set `Clip::st` giống hệt trigger() nên chuyển Grid⇄Timeline luôn nhất quán. Kéo clip từ Browser vào lane = nạp vào ô trống đầu layer đó. Transport đổi thành 7 nút khi ở Timeline (thêm 2 nút "lùi/tiến 1 bar"). Playhead/loop **không lưu vào dự án** (runtime-only).
+  - Đã kiểm bằng ảnh chụp: 3 màu ô clip, tab deck + menu chuột phải, chuyển Grid→Timeline (5 lane đúng thời lượng, playhead 0%), playhead tự chạy sau ~5s (đổi đúng clip live theo từng lane, Live Output đổi hẳn). Kiểm tự động (`--roundtrip`): tlLayout không có khoảng hở, tlSync bật/tắt đúng ô theo playhead, addDeck tạo deck trống độc lập, switchDeck khôi phục đúng nội dung từng deck, lưu/nạp đa-deck round-trip đúng, xoá deck cuối cùng bị chặn.

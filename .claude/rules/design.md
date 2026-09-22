@@ -10,6 +10,14 @@ Nguồn sự thật cho giao diện là bản thiết kế tham khảo `MikMap W
 của Claude Design (xem `src/CMakeLists.txt` comment) và `MikMap_Web`/`sampleUI/`
 — đối chiếu bằng số đo DOM thật khi có bản web để so, đừng đoán từ mắt.
 
+**Đã đối chiếu trực tiếp với file `MikMap Workspace.dc.html` thật (2026-09-22)**
+cho riêng phần Deck (Composition), gồm cả phần JS state phía sau (`tlLayout`,
+`syncTimeline`, `switchDeck`...), không chỉ nhìn layout HTML. Token màu
+(`colors.css`) và spacing (`spacing.css`) đã khớp sẵn với `pal::`/kích thước
+hiện có trước khi đối chiếu — chỉ 3 chỗ lệch thật: màu 3 trạng thái ô clip
+(đã sửa), Multi-deck (đã thêm), Timeline run mode (đã thêm). Xem "Ghi chú
+kiểm tra" cuối `features.md` để biết chi tiết.
+
 ## Bố cục
 
 Ba trang cố định qua tab trên cùng — **không phải cửa sổ nổi**: trong phòng

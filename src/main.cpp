@@ -394,6 +394,7 @@ void DrawOverlays(ImVec2 disp) {
   static bool prevBlend = false, prevPop = false, prevCtx = false, prevLayer = false;
   bool freshBlend = A.blendDD.open && !prevBlend, freshPop = A.pop.open && !prevPop, freshCtx = A.ctx.open && !prevCtx, freshLayer = A.layerMenu.open && !prevLayer;
   static bool prevCol = false; bool freshCol = A.colMenu.open && !prevCol; prevCol = A.colMenu.open;
+  static bool prevDeckMenu = false; bool freshDeckMenu = A.deckMenu.open && !prevDeckMenu; prevDeckMenu = A.deckMenu.open;
   prevBlend = A.blendDD.open; prevPop = A.pop.open; prevCtx = A.ctx.open; prevLayer = A.layerMenu.open;
   g.blocked = false;
   ImGuiIO& io = ImGui::GetIO();
@@ -498,6 +499,21 @@ void DrawOverlays(ImVec2 disp) {
     g.blocked = true;
   }
 
+  // deck tab menu
+  if (A.deckMenu.open) {
+    int di = A.deckMenu.idx, n = (int)A.decks.size();
+    std::vector<PItem> items = {{"Rename deck", "pencil", "", 0, false, false}, {"Duplicate deck", "copy", "", 0, false, false},
+                                {"Delete deck", "trash-2", "", 2, n < 2, false}};
+    ImRect pr; int hit = PopoverList(A.deckMenu.pos, disp, "Deck", items, freshDeckMenu, pr);
+    if (hit >= 0) {
+      if (hit == 0) A.beginRename(4, di, A.deckMenu.pos, A.decks[di].name);
+      else if (hit == 1) A.duplicateDeck(di);
+      else if (hit == 2) A.deleteDeck(di);
+      A.deckMenu.open = false;
+    } else if (!freshDeckMenu && (io.MouseClicked[0] || io.MouseClicked[1]) && !Raw(pr)) A.deckMenu.open = false;
+    g.blocked = true;
+  }
+
   // drag ghost (browser source)
   if (A.dragSrc.active) {
     ImVec2 m = io.MousePos;
@@ -554,7 +570,7 @@ void DrawOverlays(ImVec2 disp) {
     bool submit = false;
     ImGui::Begin("##rename", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize);
     ImGui::PushFont(F(UI_B), 12);
-    ImGui::TextUnformatted(A.rename.kind == 0 ? "RENAME LAYER" : A.rename.kind == 1 ? "RENAME COLUMN" : A.rename.kind == 3 ? "RENAME GROUP" : "RENAME CLIP");
+    ImGui::TextUnformatted(A.rename.kind == 0 ? "RENAME LAYER" : A.rename.kind == 1 ? "RENAME COLUMN" : A.rename.kind == 3 ? "RENAME GROUP" : A.rename.kind == 4 ? "RENAME DECK" : "RENAME CLIP");
     ImGui::SetNextItemWidth(-1);
     if (A.rename.fresh) ImGui::SetKeyboardFocusHere();
     submit = ImGui::InputText("##rn", A.rename.buf, sizeof A.rename.buf, ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll);
@@ -567,7 +583,7 @@ void DrawOverlays(ImVec2 disp) {
     A.rename.fresh = false;
     g.blocked = true;
   }
-  if (ImGui::IsKeyPressed(ImGuiKey_Escape)) { A.pop.open = A.ctx.open = A.blendDD.open = A.projectMenu = A.rename.open = A.openDialog = A.helpOpen = false; }
+  if (ImGui::IsKeyPressed(ImGuiKey_Escape)) { A.pop.open = A.ctx.open = A.blendDD.open = A.projectMenu = A.rename.open = A.openDialog = A.helpOpen = A.deckMenu.open = false; }
   g.dl = rootDl;
 }
 
@@ -763,6 +779,44 @@ int main(int argc, char** argv) {
       if (!any && !A.layers[0].clips[1].name.empty()) return fail("stepFireColumn must actually fire the column, not just select it"); }
     A.stepFireColumn(-100);   // clamps, does not go negative/out of range
     if (A.activeCol != 0) return fail("stepFireColumn must clamp to the first column");
+    // Multi-deck: switching mirrors content in/out, addDeck starts blank+independent, delete keeps >=1.
+    NewProject();
+    if (A.decks.size() != 1 || A.decks[0].name != "Deck A") return fail("fixture: expected exactly Deck A");
+    std::string deckAClip0 = A.layers[0].clips[0].name;
+    A.addDeck();
+    if (A.decks.size() != 2 || A.curDeckIdx != 1) return fail("addDeck must create and switch to a new deck");
+    if (A.layers.empty() || !A.layers[0].clips[0].name.empty()) return fail("a new deck must start with empty clips, not a copy of Deck A");
+    A.layers[0].name = "Solo"; A.trigger(0, 0);   // trigger on an empty cell just stops (already covered elsewhere); rename is the real check
+    A.switchDeck(0);
+    if (A.curDeckIdx != 0 || A.layers[0].clips[0].name != deckAClip0) return fail("switching back to Deck A must restore its own content");
+    A.switchDeck(1);
+    if (A.layers[0].name != "Solo") return fail("switching to Deck B must restore the edit made there");
+    if (!SaveProject(roundtrip, err)) return fail(err.c_str());
+    NewProject();
+    if (!LoadProject(roundtrip, err)) return fail(err.c_str());
+    if (A.decks.size() != 2 || A.curDeckIdx != 1 || A.layers[0].name != "Solo") return fail("multi-deck save/load did not round-trip");
+    A.switchDeck(0);
+    if (A.layers[0].clips[0].name != deckAClip0) return fail("Deck A content lost across save/load");
+    A.deleteDeck(0);
+    if (A.decks.size() != 1 || A.layers[0].name != "Solo") return fail("deleting the non-active deck must keep the active one showing");
+    NewProject();
+    if (A.decks.size() != 1) return fail("fixture: expected exactly 1 deck before the guard check");
+    A.deleteDeck(0);
+    if (A.decks.size() != 1) return fail("deleteDeck must refuse to remove the last remaining deck");
+    // Timeline: tlLayout lays clips back-to-back by real duration; tlSync flips exactly the clip under the playhead live.
+    NewProject();
+    auto lay = A.tlLayout();
+    if (lay.empty() || lay[0].empty()) return fail("fixture: expected timeline blocks on layer 0");
+    if (lay[0][0].start != 0.f) return fail("first timeline block must start at 0%");
+    for (size_t i = 1; i < lay[0].size(); ++i) if (std::fabs(lay[0][i].start - lay[0][i - 1].end) > 0.01f) return fail("timeline blocks must be back-to-back with no gap");
+    for (auto& l : A.layers) for (auto& c : l.clips) if (c.isLive()) c.st = Clip::Loaded;   // clean baseline
+    for (auto& l : A.layers) l.live = false;
+    A.tlSync(0.f);
+    if (!A.layers[0].clips[lay[0][0].ci].isLive()) return fail("tlSync(0) must make the first block live");
+    float midPct = (lay[0].back().start + lay[0].back().end) * 0.5f;
+    A.tlSync(midPct);
+    if (!A.layers[0].clips[lay[0].back().ci].isLive()) return fail("tlSync at the last block's midpoint must make it live");
+    if (A.layers[0].clips[lay[0][0].ci].isLive()) return fail("tlSync must turn off the block that is no longer under the playhead");
     std::printf("roundtrip OK\n"); return 0;
   }
   gAssets = FindAssets(argv[0]);
@@ -846,6 +900,14 @@ int main(int argc, char** argv) {
         if (sc.first < (int)A.layers.size() && sc.second < (int)A.layers[sc.first].clips.size())
           AdvanceClip(A.layers[sc.first].clips[sc.second], (float)dt);
     (void)progAcc;
+    if (A.deckMode == 1) {   // Timeline run mode: advance the shared playhead, then re-derive which clip is live per layer
+      if (A.playing) {
+        A.tlProgress += 10.f * (float)dt;   // 100% every 10s, matching the reference prototype's 1.5%/150ms rate
+        if (A.tlLoopOn) { if (A.tlProgress >= A.tlOut || A.tlProgress < A.tlIn) A.tlProgress = A.tlIn; }
+        else if (A.tlProgress >= 100.f) A.tlProgress = 0.f;
+      }
+      A.tlSync(A.tlProgress);   // also re-applies after a manual scrub even while paused
+    }
     for (auto& l : A.layers) if (l.fadeT < 1.f) l.fadeT = std::min(1.f, l.fadeT + (float)dt / std::max(0.05f, l.blendTime));
     A.sweep = std::fmod(A.sweep + (float)dt * 2.4f, 6.2831853f);
     PerfPush((float)dt * 1000.f);   // G9
@@ -919,7 +981,7 @@ int main(int argc, char** argv) {
     g.dl = ImGui::GetWindowDrawList();
     g.alpha = 1.f;
     // input blocking from overlays that were open at frame start
-    g.blocked = A.pop.open || A.blendDD.open || A.ctx.open || A.layerMenu.open || A.colMenu.open || A.settingsOpen || A.rename.open || A.openDialog || A.helpOpen ||
+    g.blocked = A.pop.open || A.blendDD.open || A.ctx.open || A.layerMenu.open || A.colMenu.open || A.deckMenu.open || A.settingsOpen || A.rename.open || A.openDialog || A.helpOpen ||
                 (A.projectMenu && Raw(ProjectMenuRect()));
     Fill(ImRect(0, 0, disp.x, disp.y), K(pal::g0f));
     ImRect body(0, 40, disp.x, disp.y - 22);

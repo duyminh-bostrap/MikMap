@@ -47,6 +47,15 @@ struct Group {
   int count = 0, activeCol = 0;
   float opacity = 100;   // A13: group master fader, multiplies every member layer's opacity
 };
+// A performance deck: its own layers/groups/columns, switchable via tabs (design ref: deckTabs/deckStore).
+// App::layers/groups/colNames/activeCol always mirror decks[curDeckIdx] — see App::switchDeck().
+struct Deck {
+  std::string name = "Deck A";
+  std::vector<Group> groups;
+  std::vector<Layer> layers;
+  std::vector<std::string> colNames;
+  int activeCol = 0;
+};
 
 // ───────────── mapping model ─────────────
 struct Mask {
@@ -100,6 +109,7 @@ struct FxDef { const char* name; const char* icon; int tone; int nparams; const 
 extern const FxDef FX_LIB[8];
 constexpr int FX_COUNT = 8;
 struct ColMenu { bool open = false; int ci = 0; ImVec2 pos; };
+struct DeckMenu { bool open = false; int idx = 0; ImVec2 pos; };
 struct DragSrc { bool active = false; std::string name, dur, media; int fxKind = -1; };
 struct Prefs { int lang = 0, ui = 0, mono = 0, accent = 0, surface = 0, scale = 100; };
 struct ProjectFile { std::string path, name; long long mtime = 0; };
@@ -138,6 +148,28 @@ struct App {
   LayerMenu layerMenu;
   ColMenu colMenu;
   std::vector<std::string> colNames;
+  // Multi-deck (design ref: deckTabs) — layers/groups/colNames/activeCol above always mirror decks[curDeckIdx];
+  // switchDeck() syncs the live fields into decks[] before loading the target, so the array is the single
+  // source of truth for content that isn't the currently-open deck. Not reset by New Project the same way the
+  // rest of the deck is: switching decks keeps whatever run mode / timeline playhead the app was in.
+  std::vector<Deck> decks;
+  int curDeckIdx = 0;
+  DeckMenu deckMenu;
+  void switchDeck(int idx);
+  void addDeck();
+  void duplicateDeck(int idx);
+  void deleteDeck(int idx);
+  // Timeline run mode (design ref: deckMode/tlLayout/syncTimeline) — an alternate READ of the same layers/clips:
+  // each layer's non-empty clips play back-to-back in column order, sized by their own duration, looping over
+  // one shared 0..100 playhead. No separate clip-block storage; advancing just flips the same Clip::st the grid
+  // uses, so switching back to Grid mode shows exactly what the timeline had playing.
+  int deckMode = 0;  // 0 grid, 1 timeline
+  float tlProgress = 0;
+  bool tlLoopOn = false;
+  float tlIn = 0, tlOut = 100;
+  struct TlLayoutBlock { int ci; float start, end; };  // percent along the shared 0..100 playhead
+  std::vector<std::vector<TlLayoutBlock>> tlLayout() const;   // one vector per layer
+  void tlSync(float pct);   // apply tlLayout()+pct to Clip::st/Layer::live, same transition trigger() makes
   int dragCol = -1, dropCol = -1, fxSel = 0;
   std::map<std::string, bool> browserOpen;   // absent = open
   DragSrc dragSrc, dragSrcCand;

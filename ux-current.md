@@ -112,7 +112,17 @@ Timeline | Properties; **dải dưới** = Deck (lưới layer × cột).
 
 Ô clip hiển thị: tên, chế độ phát (LOOP/BOUN/HOLD/ONCE), thời lượng, thanh tiến
 trình (chỉ ô đang chọn). **Thumbnail là gradient tĩnh** (cố ý, để deck không tụt
-fps). Ô đang chọn viền coral phát sáng; clip đang phát nhưng không chọn màu nâu.
+fps).
+
+**Màu theo 3 trạng thái (2026-09-22, khớp bản thiết kế `MikMap Workspace.dc.html`):**
+| Trạng thái | Bar/Body | Viền chọn |
+|---|---|---|
+| Đã nạp, chưa chọn (Loaded) | Cam ấm (`#2e1a0e`/`#150b05`) | — |
+| Đang cue/preview (Selected) | **Xanh lạnh** (`#0e2430`/`#0b141b`) | Cyan |
+| Đang live (Live/LiveSel) | Cam cháy đậm (`#8a3c14`/`#2a1408`) | Coral |
+
+Trước đây chỉ có 2 kiểu (trống/nâu ấm hoặc cam thuần khi được chọn — kể cả lúc chỉ
+đang *cue* chứ chưa phát), khiến "sắp phát" và "đang phát" trông giống hệt nhau.
 
 ### 2.2 Hàng layer (cột trái 178px)
 - Bấm hàng → chọn layer **và tự chuyển sang tab Layer** ở Properties. ✅
@@ -125,9 +135,35 @@ fps). Ô đang chọn viền coral phát sáng; clip đang phát nhưng không c
 - Ô **blend time**: số giây **cross-dissolve** khi đổi clip trên layer (0 = cắt cứng). ✅
 - Ô **blend time** nhận số gõ trực tiếp (ô nhập thật của ImGui). ✅
 
-### 2.3 Thanh công cụ của Deck (góc phải header)
+### 2.3 Deck tabs + Run mode (mới, 2026-09-22)
+| Hàng | Nội dung |
+|---|---|
+| Tab deck (26px) | Danh sách deck (✅ bấm=chuyển, bấm đúp=đổi tên, chuột phải=Rename/Duplicate/Delete), nút **+ DECK** thêm deck mới (3 layer trống, tên "Deck B"/"C"...). Xoá bị chặn khi chỉ còn 1 deck. |
+| Run mode (34px) | Segmented **GRID**/**TIMELINE** (✅ chuyển đổi kiểu hiển thị vùng diễn). Bên phải: ở Grid hiện `Layer`/`Group`/`Column`/`Sync` (xem dưới); ở Timeline hiện nút `LOOP ON/OFF`. |
+
+Mỗi deck có layer/nhóm/cột **riêng biệt hoàn toàn** — chuyển deck là đổi hẳn sang một
+bộ layer khác, không ảnh hưởng deck kia. Lưu trong dự án (`decks[]`, `curDeckIdx`).
+Undo/redo cũng phủ hành động thêm/xoá/chuyển deck.
+
+Thanh công cụ Grid (góc phải hàng Run mode):
 `Layer` ✅ thêm layer mới (8 ô trống) · `Group` ✅ đưa layer đang chọn vào nhóm mới ·
-`Column` ✅ thêm cột trống ở cuối · `Sync` ✅ **quantize theo nhịp**: khi bật (mặc định tắt), trigger clip/cột chờ tới nhịp kế tiếp của BPM mới phát (yêu cầu mới thay thế yêu cầu cũ trên cùng layer); tắt hoặc đang pause thì phát ngay. Trạng thái lưu trong dự án.
+`Column` ✅ thêm cột trống ở cuối · `Sync` ✅ **quantize theo nhịp**: khi bật (mặc định tắt), trigger clip/cột chờ tới nhịp kế tiếp của BPM mới phát; tắt hoặc đang pause thì phát ngay. Trạng thái lưu trong dự án.
+
+### 2.3b Timeline run mode (mới, 2026-09-22)
+Một cách hiển thị **khác của cùng dữ liệu lưới** — không phải dữ liệu riêng. Mỗi
+layer là 1 lane; các clip không rỗng của layer đó (theo đúng thứ tự cột) xếp nối
+tiếp nhau, độ rộng tỉ lệ theo **thời lượng thật** của từng clip, trải trên một
+thanh playhead chung 0–100%. Bấm ▶ cho playhead tự chạy (100% mỗi 10 giây); tại
+mỗi khung hình, clip nào đang nằm dưới playhead ở mỗi lane sẽ tự chuyển Live —
+tức là *chính* `Clip::st` mà Grid mode dùng, nên chuyển qua lại Grid ⇄ Timeline
+vẫn thấy đúng thứ đang phát. Kéo/bấm trên thanh tick (%) để tua; nút `LOOP ON`
+giới hạn playhead trong một khoảng cho trước (`tlIn`/`tlOut`, chưa có UI kéo
+khoảng — chỉ bật/tắt qua nút). Kéo clip từ Browser thả vào 1 lane để nạp vào ô
+trống đầu tiên của layer đó (hoặc tự thêm cột mới nếu layer đã đầy). Bấm 1 block
+= cue (chọn/preview, không phát — giống bấm bar ở Grid mode). Transport đổi
+thành 7 nút: ⏮ (về 0%) · ◀ (lùi 1 bar, −6.25%) · ▶/⏸ · ■ (dừng + về 0%) · ▶
+(tiến 1 bar, +6.25%) · ⏭ (tới cuối, 99.9%). Playhead/vòng lặp **không lưu vào
+dự án** (chỉ trạng thái runtime, reset khi mở lại).
 
 ### 2.4 Browser (trái, 200px)
 Cây thư mục: **Media** (✅ ảnh thật trong `~/Documents/MikMap/media`, bấm thư mục để quét lại) · Sources · Generators · Effects · Composition — bốn thư mục sau vẫn là **dữ liệu mẫu cố

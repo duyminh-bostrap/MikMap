@@ -126,23 +126,21 @@ Slice ReadSlice(const JsonValue& o) {
   return s;
 }
 
-JsonValue Serialize(const App& a) {
-  JsonValue root = JsonValue::object();
-  root.set("format", kFormat);
-  root.set("app", "MikMap");
-  JsonValue comp = JsonValue::object();
-  comp.set("canvasW", a.canvasW); comp.set("canvasH", a.canvasH); comp.set("bpm", a.bpm); comp.set("quantize", a.quantize); comp.set("autoStartCol", a.autoStartCol);
+// Shared by the flat composition.{groups,layers,colNames} (kept for older-file/tool compatibility, always a
+// mirror of the CURRENT deck) and by each entry of the new "decks" array below.
+static void WriteDeckContent(JsonValue& obj, const std::vector<Group>& groups, const std::vector<Layer>& layers, const std::vector<std::string>& colNames) {
+  int cc = layers.empty() ? 8 : (int)layers[0].clips.size();
   JsonValue cn = JsonValue::array();
-  for (int i = 0; i < a.colCount(); ++i) cn.push(i < (int)a.colNames.size() ? a.colNames[i] : std::string());
-  comp.set("colNames", cn);
+  for (int i = 0; i < cc; ++i) cn.push(i < (int)colNames.size() ? colNames[i] : std::string());
+  obj.set("colNames", cn);
   JsonValue gs = JsonValue::array();
-  for (auto& g : a.groups) {
+  for (auto& g : groups) {
     JsonValue go = JsonValue::object(); go.set("id", g.id); go.set("name", g.name); go.set("role", g.role); go.set("open", g.open); go.set("activeCol", g.activeCol); go.set("opacity", g.opacity);
     gs.push(go);
   }
-  comp.set("groups", gs);
+  obj.set("groups", gs);
   JsonValue ls = JsonValue::array();
-  for (auto& l : a.layers) {
+  for (auto& l : layers) {
     JsonValue lo = JsonValue::object();
     lo.set("name", l.name); lo.set("group", l.group); lo.set("blend", l.blend); lo.set("blendTime", l.blendTime);
     lo.set("opacity", l.opacity); lo.set("audio", l.audio);
@@ -151,8 +149,31 @@ JsonValue Serialize(const App& a) {
     lo.set("clips", cs);
     ls.push(lo);
   }
-  comp.set("layers", ls);
+  obj.set("layers", ls);
+}
+
+JsonValue Serialize(const App& a) {
+  JsonValue root = JsonValue::object();
+  root.set("format", kFormat);
+  root.set("app", "MikMap");
+  JsonValue comp = JsonValue::object();
+  comp.set("canvasW", a.canvasW); comp.set("canvasH", a.canvasH); comp.set("bpm", a.bpm); comp.set("quantize", a.quantize); comp.set("autoStartCol", a.autoStartCol);
+  WriteDeckContent(comp, a.groups, a.layers, a.colNames);   // current deck, flat — kept for backward/tool compatibility
   root.set("composition", comp);
+
+  // Multi-deck (X: deck tabs) — every deck, with the CURRENT one's live state (decks[curDeckIdx] on disk can be
+  // stale between switches). curDeckIdx/deckMode are saved so reopening a project resumes on the same deck/view.
+  JsonValue decks = JsonValue::array();
+  for (int i = 0; i < (int)a.decks.size(); ++i) {
+    const Deck& d = (i == a.curDeckIdx) ? Deck{a.decks[i].name, a.groups, a.layers, a.colNames, a.activeCol} : a.decks[i];
+    JsonValue dj = JsonValue::object();
+    dj.set("name", d.name); dj.set("activeCol", d.activeCol);
+    WriteDeckContent(dj, d.groups, d.layers, d.colNames);
+    decks.push(dj);
+  }
+  root.set("decks", decks);
+  root.set("curDeckIdx", a.curDeckIdx);
+  root.set("deckMode", a.deckMode);
 
   JsonValue scs = JsonValue::array();
   for (auto& s : a.screens) {
@@ -183,6 +204,42 @@ JsonValue Serialize(const App& a) {
   sensor.set("devices", ds);
   root.set("sensor", sensor);
   return root;
+}
+
+// One entry of the "decks" array — same field set/validation as the flat composition.{groups,layers,colNames}
+// parse below, just scoped to its own deck instead of `out` directly (a dangling group ref only looks within
+// the SAME deck's own groups, not the whole file).
+static bool ReadDeckContent(const JsonValue& dj, Deck& d) {
+  if (!dj["layers"].isArray() || dj["layers"].size() == 0) return false;
+  d.name = dj["name"].asString("Deck");
+  d.groups.clear();
+  if (dj["groups"].isArray()) for (auto& go : dj["groups"].arrayItems()) {
+    Group g; g.id = go["id"].asString(); g.name = go["name"].asString(); g.role = std::clamp(go["role"].asInt(2), 0, 2);
+    g.open = go["open"].asBool(true); g.activeCol = go["activeCol"].asInt(0); g.opacity = std::clamp(F(go, "opacity", 100), 0.f, 100.f);
+    d.groups.push_back(g);
+  }
+  d.layers.clear();
+  size_t cols = 1;
+  for (auto& lo : dj["layers"].arrayItems()) {
+    Layer l; l.name = lo["name"].asString("Layer"); l.group = lo["group"].asString(); l.blend = lo["blend"].asString("Normal");
+    if (BlendIndex(l.blend) == 0) l.blend = "Normal";
+    l.blendTime = std::max(0.f, F(lo, "blendTime", 0)); l.opacity = std::clamp(F(lo, "opacity", 100), 0.f, 100.f); l.audio = std::clamp(F(lo, "audio", 0), 0.f, 100.f);
+    l.solo = lo["solo"].asBool(); l.muted = lo["muted"].asBool(); l.bypassed = lo["bypassed"].asBool(); l.collapsed = lo["collapsed"].asBool();
+    if (lo["clips"].isArray()) for (auto& co : lo["clips"].arrayItems()) l.clips.push_back(ReadClip(co));
+    cols = std::max(cols, l.clips.size());
+    d.layers.push_back(std::move(l));
+  }
+  for (auto& l : d.layers) {
+    l.clips.resize(cols);
+    l.live = false; for (auto& c : l.clips) if (c.isLive()) l.live = true;
+    bool found = false; for (auto& g : d.groups) if (g.id == l.group) found = true;
+    if (!l.group.empty() && !found) l.group.clear();
+  }
+  d.colNames.clear();
+  if (dj["colNames"].isArray()) for (auto& n : dj["colNames"].arrayItems()) d.colNames.push_back(n.asString());
+  d.colNames.resize(cols);
+  d.activeCol = std::clamp(dj["activeCol"].asInt(0), 0, (int)cols - 1);
+  return true;
 }
 
 // Reads into a scratch App so a half-broken file can never leave the live app in a half-loaded state.
@@ -219,6 +276,15 @@ bool Deserialize(const JsonValue& root, App& out, std::string& err) {
   if (comp["colNames"].isArray()) for (auto& n : comp["colNames"].arrayItems()) out.colNames.push_back(n.asString());
   out.colNames.resize(cols);
   if (out.autoStartCol < 0 || out.autoStartCol >= (int)cols) out.autoStartCol = -1;
+
+  // Multi-deck: "decks" is authoritative when present (a file saved by this build always has it); a file from
+  // before this feature has none, so synthesize a single deck from the flat composition just parsed above.
+  out.decks.clear();
+  if (root["decks"].isArray()) for (auto& dj : root["decks"].arrayItems()) { Deck d; if (ReadDeckContent(dj, d)) out.decks.push_back(std::move(d)); }
+  if (out.decks.empty()) out.decks.push_back({"Deck A", out.groups, out.layers, out.colNames, out.activeCol});
+  out.curDeckIdx = std::clamp(root["curDeckIdx"].asInt(0), 0, (int)out.decks.size() - 1);
+  { Deck& d = out.decks[out.curDeckIdx]; out.groups = d.groups; out.layers = d.layers; out.colNames = d.colNames; out.activeCol = d.activeCol; }
+  out.deckMode = std::clamp(root["deckMode"].asInt(0), 0, 1);
 
   out.screens.clear();
   if (root["screens"].isArray()) for (auto& so : root["screens"].arrayItems()) {
@@ -342,7 +408,8 @@ bool LoadProject(const std::string& path, std::string& err) {
   A.prefs = keepPrefs; A.outMonitor = keepMon; A.screen = keepScreen; A.blackout = keepBlack;
   // fresh selection/UI state: nothing carried over from the previous show
   A.selectedCells.clear(); A.selMode = 2; A.activeCol = 0; A.selLi = A.selLayer = A.selCi = 0; A.fxSel = 0;
-  A.pop.open = A.layerMenu.open = A.colMenu.open = A.ctx.open = A.blendDD.open = A.rename.open = false;
+  A.pop.open = A.layerMenu.open = A.colMenu.open = A.deckMenu.open = A.ctx.open = A.blendDD.open = A.rename.open = false;
+  A.tlProgress = 0; A.tlLoopOn = false; A.tlIn = 0; A.tlOut = 100;   // timeline playhead/loop are runtime-only, never saved
   A.selSc = A.screens[0].id; A.selSl = A.screens[0].slices.empty() ? "" : A.screens[0].slices[0].id; A.selMk.clear(); A.selKind = -1;
   A.railScreen.clear(); A.mapScrollX = A.mapScrollY = 0;
   A.wizardStep = 0; A.editRoi = false; A.touchPts.clear(); A.pending.clear();
@@ -419,6 +486,7 @@ static bool UndoApply(const std::string& snap) {
     }
   for (auto& l : tmp.layers) { l.live = false; for (auto& c : l.clips) if (c.isLive()) l.live = true; }
   A.canvasW = tmp.canvasW; A.canvasH = tmp.canvasH; A.groups = tmp.groups; A.layers = tmp.layers; A.colNames = tmp.colNames;
+  A.decks = tmp.decks; A.curDeckIdx = std::clamp(tmp.curDeckIdx, 0, (int)A.decks.size() - 1); A.deckMode = tmp.deckMode;   // undo also covers deck add/delete/switch
   A.screens = tmp.screens; A.calib = tmp.calib; for (int i = 0; i < 4; ++i) A.roi[i] = tmp.roi[i];
   A.noise = tmp.noise; A.blobSize = tmp.blobSize; A.routes = tmp.routes; A.devices = tmp.devices;
   int nl = (int)A.layers.size(), nc = A.colCount();
@@ -432,7 +500,7 @@ static bool UndoApply(const std::string& snap) {
   Slice* sl = nullptr; for (auto& s : sc->slices) if (s.id == A.selSl) sl = &s;
   if (!sl) { A.selSl = sc->slices.empty() ? "" : sc->slices[0].id; A.selMk.clear(); A.selKind = -1; }
   else if (!A.selMk.empty()) { bool found = false; for (auto& m : sl->masks) if (m.id == A.selMk) found = true; if (!found) { A.selMk.clear(); A.selKind = -1; } }
-  A.pop.open = A.layerMenu.open = A.colMenu.open = A.ctx.open = A.blendDD.open = A.rename.open = false;
+  A.pop.open = A.layerMenu.open = A.colMenu.open = A.deckMenu.open = A.ctx.open = A.blendDD.open = A.rename.open = false;
   return true;
 }
 

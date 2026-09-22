@@ -131,8 +131,8 @@ ngoài". Định nghĩa ở `engine/core/model/IWarp.h`; mọi `IWarp` mới ph�
 
 ## `src/` — tình trạng THẬT (theo `features.md`, không theo vẻ ngoài)
 
-46 mục `[x]` (hành vi thật) · 19 mục `[~]` (chỉ UI/một phần — đọc "Ghi chú
-kiểm tra" cuối `features.md` để biết chính xác cái gì còn giả) · 70 mục `[ ]`,
+49 mục `[x]` (hành vi thật) · 18 mục `[~]` (chỉ UI/một phần — đọc "Ghi chú
+kiểm tra" cuối `features.md` để biết chính xác cái gì còn giả) · 68 mục `[ ]`,
 trên 135 mục Resolume-parity (đếm lại 2026-09-21 từ các dòng bảng).
 
 **Đã có thật sau đợt bổ sung P0** (đã grep `src/*.cpp`): output ra cửa sổ máy
@@ -152,6 +152,15 @@ popover; **body** (vùng gradient) bấm 1 lần là phát ngay (cue+trigger), k
 kéo/không chuột phải. Header cột (`ColumnHeader`) cũng bỏ double-click: bấm
 đơn là chọn + bắn cả cột luôn (`A6`). **Không còn double-click để phát ở bất
 kỳ đâu trong Deck.**
+
+**Đợt cập nhật UI Deck theo bản thiết kế thật** (`MikMap Workspace.dc.html`,
+2026-09-22, xem "Ghi chú kiểm tra" cuối `features.md`): ô clip nay đúng 3 màu
+trạng thái (đã nạp/đang cue-xanh/đang live-cam cháy, trước đây "đang cue" và
+"đang live" trông giống hệt nhau); thêm **Multi-deck** (tab deck, mỗi deck có
+layer/cột riêng, `A.decks[]`/`A.curDeckIdx`); thêm **Timeline run mode**
+(toggle cạnh tab deck — đọc lại CHÍNH dữ liệu lưới thành lane theo thời gian,
+không phải cấu trúc riêng, `App::tlLayout`/`App::tlSync`). Cả hai đều lưu vào
+dự án (trừ playhead/loop của Timeline, chỉ runtime).
 
 **Vẫn còn giả/thiếu — dễ bị đánh giá cao hơn thực tế:** `B3` generator vẽ bằng CPU, chưa
 phải shader GLSL; `A4` thumbnail là gradient tĩnh (cố ý — thumbnail động làm

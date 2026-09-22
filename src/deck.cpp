@@ -101,6 +101,8 @@ void App::init() {
             {"r4", "touch.velocity", "Audio React \xC2\xB7 Gain", true}};
   calib = {{100, 100, -0.65f, -0.55f}, {1820, 100, 0.65f, -0.55f}, {1820, 980, 0.75f, 0.65f}, {100, 980, -0.75f, 0.65f}};
   roi[0] = {-0.7f, -0.6f}; roi[1] = {0.7f, -0.6f}; roi[2] = {0.85f, 0.7f}; roi[3] = {-0.85f, 0.7f};
+  decks = {{"Deck A", groups, layers, colNames, activeCol}};
+  curDeckIdx = 0;
 }
 
 static std::string BpmStr() { char b[16]; snprintf(b, sizeof b, "%.1f", A.bpm); return b; }
@@ -302,6 +304,7 @@ void App::commitRename(const char* text) {
   if (rename.kind == 0 && rename.idx >= 0 && rename.idx < (int)layers.size()) layers[rename.idx].name = t;
   else if (rename.kind == 1 && rename.idx >= 0 && rename.idx < colCount()) { colNames.resize(colCount()); colNames[rename.idx] = t; }
   else if (rename.kind == 3 && rename.idx >= 0 && rename.idx < (int)groups.size()) groups[rename.idx].name = t;
+  else if (rename.kind == 4 && rename.idx >= 0 && rename.idx < (int)decks.size()) decks[rename.idx].name = t;
   else if (rename.kind == 2) {   // clip: idx = layer * 1000 + column
     int li = rename.idx / 1000, ci = rename.idx % 1000;
     if (li >= 0 && li < (int)layers.size() && ci < (int)layers[li].clips.size() && layers[li].clips[ci].st != Clip::Empty) {
@@ -326,6 +329,102 @@ void App::loadClip(int li, int ci, const std::string& name, const std::string& d
   layers[li].clips[ci] = c;
   selLayer = li; selLi = li; selCi = ci; selectedCells = {{li, ci}}; selMode = 1;
 }
+
+// ───────────────────────── multi-deck ─────────────────────────
+static void CloseDeckPopups(App& A) { A.pop.open = A.layerMenu.open = A.colMenu.open = A.ctx.open = A.blendDD.open = A.rename.open = A.deckMenu.open = false; }
+static void ResetDeckSelection(App& A) { A.selLi = A.selCi = A.selLayer = 0; A.selectedCells.clear(); A.selMode = 2; }
+
+void App::switchDeck(int idx) {
+  if (idx < 0 || idx >= (int)decks.size() || idx == curDeckIdx) return;
+  decks[curDeckIdx] = {decks[curDeckIdx].name, groups, layers, colNames, activeCol};
+  curDeckIdx = idx;
+  Deck& d = decks[curDeckIdx];
+  groups = d.groups; layers = d.layers; colNames = d.colNames; activeCol = d.activeCol;
+  ResetDeckSelection(*this);   // a selection index from the old deck means nothing on one with different layers/columns
+  CloseDeckPopups(*this);
+}
+
+void App::addDeck() {
+  decks[curDeckIdx] = {decks[curDeckIdx].name, groups, layers, colNames, activeCol};
+  static const char* letters = "BCDEFGHIJKLMNOPQRSTUVWXYZ";
+  size_t li = decks.size() - 1;
+  Deck d; d.name = "Deck " + std::string(1, li < 25 ? letters[li] : 'X');
+  for (int i = 0; i < 3; ++i) { Layer l; l.name = "Layer " + std::to_string(i + 1); l.blend = "Normal"; l.opacity = 100; l.clips.assign(8, Clip()); d.layers.push_back(l); }
+  decks.push_back(d);
+  curDeckIdx = (int)decks.size() - 1;
+  groups = d.groups; layers = d.layers; colNames = d.colNames; activeCol = d.activeCol;
+  ResetDeckSelection(*this);
+  CloseDeckPopups(*this);
+}
+
+void App::duplicateDeck(int idx) {
+  if (idx < 0 || idx >= (int)decks.size()) return;
+  if (idx == curDeckIdx) decks[curDeckIdx] = {decks[curDeckIdx].name, groups, layers, colNames, activeCol};
+  Deck copy = decks[idx]; copy.name += " copy";
+  decks.insert(decks.begin() + idx + 1, copy);
+  if (idx + 1 <= curDeckIdx) ++curDeckIdx;   // keep pointing at the same (now-shifted) deck
+}
+
+void App::deleteDeck(int idx) {
+  if (idx < 0 || idx >= (int)decks.size() || decks.size() < 2) return;
+  bool wasCurrent = idx == curDeckIdx;
+  decks.erase(decks.begin() + idx);
+  if (wasCurrent) {
+    curDeckIdx = std::clamp(idx, 0, (int)decks.size() - 1);
+    Deck& d = decks[curDeckIdx];
+    groups = d.groups; layers = d.layers; colNames = d.colNames; activeCol = d.activeCol;
+    ResetDeckSelection(*this);
+  } else if (idx < curDeckIdx) {
+    --curDeckIdx;
+  }
+}
+
+// ───────────────────────── Timeline run mode ─────────────────────────
+// Read-only re-projection of the SAME grid clips: each layer's non-empty clips play back-to-back, in column
+// order, each sized by its own real duration (ClipSeconds), looping over one shared 0..100 playhead. There is
+// no separate "timeline block" — tlSync() below just flips the grid's own Clip::st, so Grid mode shows exactly
+// what Timeline mode had playing if you switch back mid-show.
+std::vector<std::vector<App::TlLayoutBlock>> App::tlLayout() const {
+  std::vector<std::vector<TlLayoutBlock>> out;
+  for (auto& l : layers) {
+    std::vector<TlLayoutBlock> row;
+    std::vector<std::pair<int, float>> durs;
+    float total = 0;
+    for (int ci = 0; ci < (int)l.clips.size(); ++ci) {
+      const Clip& c = l.clips[ci];
+      if (c.st == Clip::Empty || c.st == Clip::Armed) continue;
+      float s = ClipSeconds(c);
+      durs.push_back({ci, s});
+      total += s;
+    }
+    if (total > 0.f) {
+      float acc = 0;
+      for (auto& [ci, s] : durs) { float start = acc / total * 100.f; acc += s; row.push_back({ci, start, acc / total * 100.f}); }
+    }
+    out.push_back(std::move(row));
+  }
+  return out;
+}
+
+void App::tlSync(float pct) {
+  auto lay = tlLayout();
+  for (int li = 0; li < (int)layers.size(); ++li) {
+    Layer& l = layers[li];
+    int hitCi = -1;
+    for (auto& b : lay[li]) if (pct >= b.start && pct < b.end) { hitCi = b.ci; break; }
+    bool changed = false;
+    for (int ci = 0; ci < (int)l.clips.size(); ++ci) {
+      Clip& c = l.clips[ci];
+      if (c.st == Clip::Empty || c.st == Clip::Armed) continue;
+      bool wantLive = ci == hitCi, isLive = c.st == Clip::Live || c.st == Clip::LiveSel;
+      if (wantLive == isLive) continue;
+      changed = true;
+      bool sel = c.st == Clip::Selected || c.st == Clip::LiveSel;
+      c.st = wantLive ? (sel ? Clip::LiveSel : Clip::Live) : (sel ? Clip::Selected : Clip::Loaded);
+    }
+    if (changed) { l.live = false; for (auto& c : l.clips) if (c.isLive()) l.live = true; }
+  }
+}
 // ───────────────────────── clip cell ─────────────────────────
 const uint32_t CLIP_COLORS[6] = {0xff7f50, 0x118ab2, 0x06d6a0, 0xffd166, 0xef4444, 0xb388ff};
 const char* CLIP_COLOR_NAMES[6] = {"Amber", "Cyan", "Mint", "Yellow", "Red", "Violet"};
@@ -345,24 +444,30 @@ static void DashedRect(ImRect r, ImU32 c, float th) {
 
 static CellOut ClipCell(ImRect r, const Clip& cl, bool selectedCell, bool dragged, bool dropT, float progress) {
   bool empty = cl.st == Clip::Empty || cl.st == Clip::Armed;
-  // ClipCell display state: selected cells render "live"; armed renders empty
-  bool live = !empty && selectedCell;  // only the selected cell takes the coral "live" look; playing clips stay brown
+  // Design tokens §3.2 give the clip cell THREE distinct looks, not "selected = coral / else = warm brown":
+  // loaded-idle (warm amber, already at rest), cued-for-preview (cool cyan — about to show, not showing yet),
+  // and live-on-output (hot burnt-orange). LiveSel (cued AND live at once) must read as live above all — an
+  // operator mistaking "what's live" for "what's merely selected" is the one mistake this can't afford.
+  bool live = cl.st == Clip::Live || cl.st == Clip::LiveSel;
+  bool preview = cl.st == Clip::Selected;
+  uint32_t ringHex = live ? pal::coral : pal::cyan;  // outer selection ring: coral only for an actually-live cell
   Hit h = HitR(r);
   uint32_t col = CLIP_COLORS[std::clamp(cl.color, 0, 5)];
   float prevA = g.alpha; if (dragged) g.alpha *= 0.4f;
 
   // wrapper fill + glow
-  if (selectedCell) Glow(r, pal::coral, 0.35f, 12, 3);
+  if (selectedCell) Glow(r, ringHex, 0.35f, 12, 3);
   ImU32 wrapFill = 0;
-  if (empty) { if (selectedCell) wrapFill = K(pal::coral, 0.12f); }
+  if (empty) { if (selectedCell) wrapFill = K(ringHex, 0.12f); }
   else wrapFill = K(col, selectedCell ? 0.18f : 0.07f);
   Fill(r, K(pal::g12), 3);
   if (wrapFill) Fill(r, wrapFill, 3);
 
   ImU32 border = K(pal::g22), bar = K(pal::g1c), barFg = K(pal::te0), body = K(pal::clipLoadedBg), foot = K(pal::t88);
   bool barBold = false;
-  if (live) { border = K(pal::coral); bar = K(pal::coral); barFg = K(0x000000); barBold = true; body = K(pal::coral, 0.15f); foot = K(pal::coral); }
-  else if (!empty) { border = K(pal::clipLoadedBorder); barFg = K(pal::clipLoadedText); foot = K(pal::clipLoadedText, 0.7f); }
+  if (live) { border = K(pal::coral); bar = K(pal::clipBarLive); barFg = K(pal::clipLiveText); barBold = true; body = K(pal::clipBodyLive); foot = K(pal::clipFootLive); }
+  else if (preview) { border = K(pal::cyan); bar = K(pal::clipBarPreview); barFg = K(pal::clipPreviewText); body = K(pal::clipBodyPreview); foot = K(pal::clipFootPreview); }
+  else if (!empty) { border = K(pal::clipLoadedBorder); bar = K(pal::clipBarLoaded); barFg = K(pal::clipLoadedText); body = K(pal::clipBodyLoaded); foot = K(pal::clipFootLoaded); }
   else if (h.hover) border = K(pal::g33);
 
   if (live) Glow(r, pal::coral, 0.40f, 12, 4);
@@ -392,7 +497,7 @@ static CellOut ClipCell(ImRect r, const Clip& cl, bool selectedCell, bool dragge
   Border(r, border, 4);
   // selection outlines from the wrapper
   if (dropT) DashedRect(Inset(r, 1), K(pal::yellow), 2);
-  else if (selectedCell) Border(r, K(pal::coral), 4, 2);
+  else if (selectedCell) Border(r, K(ringHex), 4, 2);
   else if (!empty) Border(r, K(col, 0.35f), 4);
   g.alpha = prevA;
 
@@ -1106,33 +1211,35 @@ static void ColumnHeader(ImRect r, int i, bool active, int layerCount) {
   if (h.hover && h.release && !A.dragging && A.dragCol == -2 - i) A.fireColumn(i);
 }
 
-static void Deck(ImRect r) {
-  Fill(r, K(pal::g12));
-  PanelHeader(Rc(r.Min.x, r.Min.y, r.GetWidth(), 24), "Deck A \xE2\x80\x94 Layers & Clips", pal::t88);
-  // header tools (right aligned)
-  {
-    float cy = r.Min.y + 11.5f, xr = r.Max.x - 6;
-    struct TB { const char* l; Tone t; bool act; const char* ico; } tb[4] = {{"Layer", T_LIVE, false, "plus"}, {"Group", T_LIVE, false, "folder-plus"}, {"Column", T_LIVE, false, "plus"}, {"Sync", T_AUDIO, A.quantize, nullptr}};
-    for (int i = 3; i >= 0; --i) {
-      float w = ButtonW(tb[i].l, 0, tb[i].ico != nullptr);
-      ImRect br(xr - w, cy - 8, xr, cy + 8);
-      bool cl = Button(br, tb[i].l, tb[i].t, tb[i].act, 0, true, tb[i].ico);
-      if (cl && i == 0) {
-        Layer nl; nl.name = "Layer " + std::to_string(A.layers.size() + 1); nl.blend = "Normal"; nl.blendTime = 0; nl.opacity = 100;
-        nl.clips.assign(8, Clip());
-        A.layers.push_back(nl);
-      }
-      if (cl && i == 1 && !A.layers.empty()) {   // Group: put the selected layer into a new group
-        int li = std::clamp(A.selLayer, 0, (int)A.layers.size() - 1);
-        Group ng; ng.id = A.uid("g"); ng.name = "Group " + std::to_string(A.groups.size() + 1); ng.role = 2; ng.open = true;
-        A.groups.push_back(ng);
-        A.layers[li].group = ng.id;
-      }
-      if (cl && i == 2) A.insertCol(A.colCount());
-      if (cl && i == 3) { A.quantize = !A.quantize; A.pending.clear(); A.notify(A.quantize ? "Sync on \xE2\x80\x94 triggers wait for the next beat" : "Sync off \xE2\x80\x94 triggers fire immediately", 2.5); }   // Column: append an empty column
-      xr = br.Min.x - 4;
+// Add-Layer/Group/Column + Sync buttons — the design's RUN MODE row reserves this slot for mode-specific
+// controls (loop switches in Timeline mode, see TimelineView); Grid mode's own controls live here instead,
+// since the reference has no other spot for "add a layer/column" and these were already working features.
+static void DeckGridTools(ImRect r) {
+  float cy = (r.Min.y + r.Max.y) * 0.5f, xr = r.Max.x - 6;
+  struct TB { const char* l; Tone t; bool act; const char* ico; } tb[4] = {{"Layer", T_LIVE, false, "plus"}, {"Group", T_LIVE, false, "folder-plus"}, {"Column", T_LIVE, false, "plus"}, {"Sync", T_AUDIO, A.quantize, nullptr}};
+  for (int i = 3; i >= 0; --i) {
+    float w = ButtonW(tb[i].l, 0, tb[i].ico != nullptr);
+    ImRect br(xr - w, cy - 8, xr, cy + 8);
+    bool cl = Button(br, tb[i].l, tb[i].t, tb[i].act, 0, true, tb[i].ico);
+    if (cl && i == 0) {
+      Layer nl; nl.name = "Layer " + std::to_string(A.layers.size() + 1); nl.blend = "Normal"; nl.blendTime = 0; nl.opacity = 100;
+      nl.clips.assign(8, Clip());
+      A.layers.push_back(nl);
     }
+    if (cl && i == 1 && !A.layers.empty()) {   // Group: put the selected layer into a new group
+      int li = std::clamp(A.selLayer, 0, (int)A.layers.size() - 1);
+      Group ng; ng.id = A.uid("g"); ng.name = "Group " + std::to_string(A.groups.size() + 1); ng.role = 2; ng.open = true;
+      A.groups.push_back(ng);
+      A.layers[li].group = ng.id;
+    }
+    if (cl && i == 2) A.insertCol(A.colCount());
+    if (cl && i == 3) { A.quantize = !A.quantize; A.pending.clear(); A.notify(A.quantize ? "Sync on \xE2\x80\x94 triggers wait for the next beat" : "Sync off \xE2\x80\x94 triggers fire immediately", 2.5); }   // Column: append an empty column
+    xr = br.Min.x - 4;
   }
+}
+
+static void DeckGrid(ImRect r) {
+  Fill(r, K(pal::g12));
   if (A.dragLi >= 0 && !A.dragging && ImGui::IsMouseDown(0)) {
     ImVec2 m = ImGui::GetIO().MousePos;
     if (std::hypot(m.x - A.dragStart.x, m.y - A.dragStart.y) > 5.f) A.dragging = true;
@@ -1144,7 +1251,7 @@ static void Deck(ImRect r) {
   if (A.dragCol >= 0) A.dropCol = -1;
   if (A.dragging || A.dragSrc.active) { A.dropLi = A.dropCi = -1; ImGui::SetMouseCursor(ImGuiMouseCursor_Hand); }
   static ScrollArea sa;
-  ImRect area(r.Min.x, r.Min.y + 24, r.Max.x, r.Max.y);
+  ImRect area(r.Min.x, r.Min.y, r.Max.x, r.Max.y);   // the tabs/run-mode header now lives above `r`, drawn by the Deck() wrapper
   sa.Begin("##deck", area, true);
   float ox = sa.origin.x, oy = sa.origin.y;
   const float P = 4, LW = 178, CW = 128, GAP = 4;
@@ -1269,6 +1376,171 @@ static void Deck(ImRect r) {
   }
 }
 
+static void TimelineView(ImRect r);  // implemented further down — Deck() below picks it or DeckGrid per A.deckMode
+
+// Deck tabs (switch/rename/duplicate/delete, design ref: deckTabs) + Grid/Timeline run-mode toggle, then
+// whichever view is armed. Multiple decks let one show keep several independent layer/column sets (e.g. a
+// "warm-up" deck and a "main set" deck) without them fighting over the same grid.
+static void Deck(ImRect r) {
+  Fill(r, K(pal::g12));
+  ImRect tabsRow(r.Min.x, r.Min.y, r.Max.x, r.Min.y + 26);
+  Fill(tabsRow, K(pal::g18));
+  HLine(tabsRow.Min.x, tabsRow.Max.x, tabsRow.Max.y - 1, K(pal::g2a));
+  {
+    float cy = (tabsRow.Min.y + tabsRow.Max.y - 1) * 0.5f, x = tabsRow.Min.x + 6;
+    for (int i = 0; i < (int)A.decks.size(); ++i) {
+      bool cur = i == A.curDeckIdx;
+      std::string lab = Upper(A.decks[i].name);
+      float w = TextW(UI_B, 10, lab.c_str(), 0.09f) + 16;
+      ImRect tr(x, cy - 10, x + w, cy + 10);
+      Hit h = HitR(tr);
+      if (cur) { Glow(tr, pal::coral, 0.25f, 8, 2); Fill(tr, K(pal::g12), 2); }
+      Box(tr, cur ? K(pal::coral, 0.15f) : K(pal::g1c), cur ? K(pal::coral) : h.hover ? K(pal::g33) : K(pal::g22), 2);
+      TextC((tr.Min.x + tr.Max.x) * 0.5f, cy, UI_B, 10, K(cur ? pal::coral : h.hover ? pal::white : pal::tcc), lab.c_str(), 0.09f);
+      if (h.hover) CursorHand();
+      if (h.click) A.switchDeck(i);
+      if (h.dbl) A.beginRename(4, i, ImVec2(tr.Min.x, tr.Max.y + 4), A.decks[i].name);
+      if (h.rclick) { A.deckMenu.open = true; A.deckMenu.idx = i; A.deckMenu.pos = ImGui::GetIO().MousePos; }
+      x += w + 4;
+    }
+    float aw = ButtonW("Deck", 0, true);
+    ImRect ar(x, cy - 10, x + aw, cy + 10);
+    if (Button(ar, "Deck", T_LIVE, false, 0, true, "plus")) A.addDeck();
+  }
+
+  ImRect runRow(r.Min.x, tabsRow.Max.y, r.Max.x, tabsRow.Max.y + 34);
+  Fill(runRow, K(pal::g18));
+  HLine(runRow.Min.x, runRow.Max.x, runRow.Max.y - 1, K(pal::g2a));
+  {
+    float cy = (runRow.Min.y + runRow.Max.y - 1) * 0.5f;
+    ImRect seg(runRow.Min.x + 6, cy - 12, runRow.Min.x + 6 + 132, cy + 12);
+    Box(seg, K(pal::g050), K(pal::g2a), 4);
+    static const char* names[2] = {"Grid", "Timeline"};
+    static const char* icons[2] = {"grid-3x3", "film"};
+    for (int i = 0; i < 2; ++i) {
+      ImRect mr(seg.Min.x + 2 + i * 64, seg.Min.y + 2, seg.Min.x + 2 + i * 64 + 62, seg.Max.y - 2);
+      bool cur = A.deckMode == i;
+      Hit h = HitR(mr);
+      if (cur) { Fill(mr, K(pal::g12), 3); Box(mr, K(pal::coral, 0.15f), K(pal::coral), 3); }
+      ImU32 fg = K(cur ? pal::coral : h.hover ? pal::white : pal::tcc);
+      Icon(icons[i], ImVec2(mr.Min.x + 12, (mr.Min.y + mr.Max.y) * 0.5f), 10, fg);
+      Text(mr.Min.x + 20, (mr.Min.y + mr.Max.y) * 0.5f, UI_B, 10, fg, Upper(names[i]).c_str(), 0.09f);
+      if (h.hover) CursorHand();
+      if (h.click) A.deckMode = i;
+    }
+    if (A.deckMode == 1) {
+      float xr = runRow.Max.x - 6;
+      const char* lab = A.tlLoopOn ? "LOOP ON" : "LOOP OFF";
+      float w = ButtonW(lab, 0);
+      ImRect br(xr - w, cy - 10, xr, cy + 10);
+      if (Button(br, lab, T_PREVIEW, A.tlLoopOn)) A.tlLoopOn = !A.tlLoopOn;
+    } else {
+      DeckGridTools(runRow);
+    }
+  }
+
+  ImRect body(r.Min.x, runRow.Max.y, r.Max.x, r.Max.y);
+  if (A.deckMode == 0) DeckGrid(body); else TimelineView(body);
+}
+
+// Timeline run mode (design ref: tlLanes/tlTicks/blocks) — one lane per layer, its non-empty clips laid out
+// back-to-back per A::tlLayout(), a shared 0..100 playhead, drag-from-Browser drops into the first empty slot
+// (or a freshly appended column) for that layer. Clicking a block cues it; playback advances the playhead
+// itself (see TlAdvance in main.cpp), which is what actually flips clips live via A::tlSync().
+static void TimelineView(ImRect r) {
+  Fill(r, K(pal::g050));
+  const float sideW = 150, rulerH = 18, laneH = 40;
+  ImRect side(r.Min.x, r.Min.y, r.Min.x + sideW, r.Max.y);
+  ImRect main(r.Min.x + sideW, r.Min.y, r.Max.x, r.Max.y);
+  Fill(side, K(pal::g14));
+
+  ImRect sideHd(side.Min.x, side.Min.y, side.Max.x, side.Min.y + rulerH);
+  Fill(sideHd, K(pal::g1c)); HLine(sideHd.Min.x, sideHd.Max.x, sideHd.Max.y - 1, K(pal::g2a));
+  int bar = (int)(A.tlProgress / 6.25f) + 1;
+  char barb[16]; snprintf(barb, sizeof barb, "BAR %02d", bar);
+  Text(sideHd.Min.x + 8, (sideHd.Min.y + sideHd.Max.y) * 0.5f, MONO_B, 8, K(pal::t66), barb, 0.09f);
+
+  auto lay = A.tlLayout();
+  ImVec2 mouse = ImGui::GetIO().MousePos;
+  float y = sideHd.Max.y;
+  for (int li = 0; li < (int)A.layers.size(); ++li) {
+    Layer& l = A.layers[li];
+    ImRect laneHead(side.Min.x, y, side.Max.x, y + laneH);
+    Hit lh = HitR(laneHead);
+    Fill(laneHead, li == A.selLayer ? K(pal::g18) : K(pal::g14));
+    HLine(laneHead.Min.x, laneHead.Max.x, laneHead.Max.y - 1, K(pal::g22));
+    VLine(laneHead.Max.x, laneHead.Min.y, laneHead.Max.y, K(pal::g2a));
+    float lcy = (laneHead.Min.y + laneHead.Max.y) * 0.5f;
+    TextEll(laneHead.Min.x + 8, lcy - 6, sideW - 26, UI_S, 10, K(l.live ? pal::coral : pal::tcc), l.name.c_str());
+    Text(laneHead.Min.x + 8, lcy + 7, MONO_M, 8, K(pal::t66), Upper(l.blend).c_str(), 0.09f);
+    if (l.live) Dot(ImVec2(laneHead.Max.x - 10, lcy), 5, pal::coral, true);
+    if (lh.hover) CursorHand();
+    if (lh.click) { A.selLayer = li; A.selMode = 0; A.tab = 1; }
+
+    ImRect lane(main.Min.x, y, main.Max.x, y + laneH);
+    Fill(lane, K(pal::g10));
+    HLine(lane.Min.x, lane.Max.x, lane.Max.y - 1, K(pal::g22));
+    g.dl->PushClipRect(lane.Min, lane.Max, true);
+    if (lay[li].empty()) TextEll(lane.Min.x + 8, (lane.Min.y + lane.Max.y) * 0.5f, lane.GetWidth() - 16, MONO_M, 9, K(pal::t66), "K\xC3\xA9o clip t\xE1\xBB\xAB Browser v\xC3\xA0o \xC4\x91\xC3\xA2y");
+    for (auto& b : lay[li]) {
+      Clip& c = l.clips[b.ci];
+      bool sel = false; for (auto& sc : A.selectedCells) if (sc.first == li && sc.second == b.ci) sel = true;
+      bool hot = c.st == Clip::Live || c.st == Clip::LiveSel;
+      float bx0 = lane.Min.x + lane.GetWidth() * b.start / 100.f, bx1 = lane.Min.x + lane.GetWidth() * b.end / 100.f;
+      ImRect br(bx0 + 1, lane.Min.y + 3, bx1 - 1, lane.Max.y - 3);
+      uint32_t col = CLIP_COLORS[std::clamp(c.color, 0, 5)];
+      Hit bh = HitR(br);
+      Fill(br, K(col, hot ? 0.30f : 0.14f), 3);
+      Box(br, 0, sel ? K(pal::cyan) : hot ? K(col) : K(col, 0.4f), 3);
+      if (hot) Glow(br, col, 0.30f, 8, 3);
+      TextEll(br.Min.x + 5, (br.Min.y + br.Max.y) * 0.5f, br.GetWidth() - 10, UI_S, 9, K(hot ? pal::white : pal::tcc), c.name.c_str());
+      if (bh.hover) CursorHand();
+      if (bh.click) A.cue(li, b.ci);
+    }
+    g.dl->PopClipRect();
+    if (A.dragSrc.active && Hover(lane)) {
+      Border(lane, K(pal::coral), 0, 2);
+      if (ImGui::IsMouseReleased(0)) {
+        int emptyCi = -1;
+        for (int ci = 0; ci < (int)l.clips.size(); ++ci) if (l.clips[ci].st == Clip::Empty || l.clips[ci].st == Clip::Armed) { emptyCi = ci; break; }
+        if (emptyCi < 0) { emptyCi = A.colCount(); A.insertCol(emptyCi); }
+        if (A.dragSrc.fxKind >= 0) { A.cue(li, emptyCi); A.addFx(A.dragSrc.fxKind); }
+        else A.loadClip(li, emptyCi, A.dragSrc.name, A.dragSrc.dur, A.dragSrc.media);
+        A.dragSrc = DragSrc();
+      }
+    }
+    y += laneH;
+  }
+
+  ImRect ruler(main.Min.x, r.Min.y, main.Max.x, r.Min.y + rulerH);
+  Fill(ruler, K(pal::g1c)); HLine(ruler.Min.x, ruler.Max.x, ruler.Max.y - 1, K(pal::g2a));
+  for (int i = 0; i <= 10; ++i) {
+    float px = ruler.Min.x + ruler.GetWidth() * i / 10.f;
+    bool major = i % 5 == 0;
+    VLine(px, ruler.Min.y, ruler.Max.y, K(pal::g2a, major ? 1.f : 0.5f));
+    char lb[8]; snprintf(lb, sizeof lb, "%d%%", i * 10);
+    Text(px + 3, (ruler.Min.y + ruler.Max.y) * 0.5f, MONO_M, 8, K(pal::t66), lb, 0.09f);
+  }
+  if (A.tlLoopOn) {
+    ImRect lp(main.Min.x + main.GetWidth() * A.tlIn / 100.f, r.Min.y, main.Min.x + main.GetWidth() * A.tlOut / 100.f, y);
+    Fill(lp, K(pal::cyan, 0.08f));
+    VLine(lp.Min.x, lp.Min.y, lp.Max.y, K(pal::cyan));
+    VLine(lp.Max.x, lp.Min.y, lp.Max.y, K(pal::cyan));
+  }
+  float px = main.Min.x + main.GetWidth() * std::clamp(A.tlProgress, 0.f, 100.f) / 100.f;
+  VLine(px, r.Min.y, y, K(pal::coral));
+  g.dl->AddTriangleFilled(ImVec2(px - 4, r.Min.y), ImVec2(px + 4, r.Min.y), ImVec2(px, r.Min.y + 6), Ca(K(pal::coral)));
+
+  ImRect scrubZone(main.Min.x, r.Min.y, main.Max.x, y);
+  static bool scrubbing = false;
+  Hit sh = HitR(scrubZone);
+  if (sh.click) scrubbing = true;
+  if (scrubbing) {
+    if (ImGui::IsMouseDown(0)) A.tlProgress = std::clamp((mouse.x - main.Min.x) / std::max(1.f, main.GetWidth()) * 100.f, 0.f, 100.f);
+    else scrubbing = false;
+  }
+}
+
 void DrawDeck(ImRect body) {
   float H = ImGui::GetIO().DisplaySize.y;
   float bandH = A.topBandPx > 0 ? A.topBandPx : 0.42f * H;
@@ -1321,11 +1593,19 @@ void DrawDeck(ImRect body) {
       }
       g.dl->AddCircleFilled(ImVec2(track.Min.x + track.GetWidth() * frac, (track.Min.y + track.Max.y) * 0.5f), 4.f, Ca(K(pal::white)), 12);
     }
-    ImRect grp(mid - 74, tl.Min.y + 9, mid + 74, tl.Min.y + 39);
+    // Grid mode: skip-back/play/pause/stop/skip-forward (unchanged). Timeline mode adds "step 1 bar"
+    // chevrons and its buttons drive the shared tlProgress playhead instead of column selection.
+    struct TB { const char* ico; Tone t; bool on; int action; };
+    TB tbGrid[5] = {{"skip-back", T_LIVE, false, 0}, {"play", T_LIVE, A.playing, 1}, {"pause", T_STANDBY, !A.playing, 2}, {"square", T_ALERT, false, 3}, {"skip-forward", T_LIVE, false, 4}};
+    TB tbTl[7] = {{"skip-back", T_LIVE, false, 5}, {"chevron-left", T_LIVE, false, 6}, {"play", T_LIVE, A.playing, 1}, {"pause", T_STANDBY, !A.playing, 2},
+                  {"square", T_ALERT, false, 7}, {"chevron-right", T_LIVE, false, 8}, {"skip-forward", T_LIVE, false, 9}};
+    TB* tb = A.deckMode == 1 ? tbTl : tbGrid;
+    int nb = A.deckMode == 1 ? 7 : 5;
+    float grpW = nb * 29.f + 4.f;
+    ImRect grp(mid - grpW * 0.5f, tl.Min.y + 9, mid + grpW * 0.5f, tl.Min.y + 39);
     Box(grp, K(pal::g050), K(pal::g22), 2);
-    struct TB { const char* ico; Tone t; bool on; } tb[5] = {{"skip-back", T_LIVE, false}, {"play", T_LIVE, A.playing}, {"pause", T_STANDBY, !A.playing}, {"square", T_ALERT, false}, {"skip-forward", T_LIVE, false}};
-    for (int i = 0; i < 5; ++i) {
-      ImRect br(grp.Min.x + 2 + i * 29, grp.Min.y + 1 + 0, grp.Min.x + 2 + i * 29 + 28, grp.Min.y + 1 + 28);
+    for (int i = 0; i < nb; ++i) {
+      ImRect br(grp.Min.x + 2 + i * 29, grp.Min.y + 1, grp.Min.x + 2 + i * 29 + 28, grp.Min.y + 1 + 28);
       Hit h = HitR(br);
       uint32_t hex = ToneHex(tb[i].t);
       if (tb[i].on) { Glow(br, hex, 0.3f, 10, 2); Fill(br, K(pal::g1c), 2); }
@@ -1333,9 +1613,18 @@ void DrawDeck(ImRect body) {
       Icon(tb[i].ico, ImVec2((br.Min.x + br.Max.x) * 0.5f, (br.Min.y + br.Max.y) * 0.5f), 14, K(tb[i].on ? hex : h.hover ? pal::white : pal::t77));
       if (h.hover) CursorHand();
       if (h.click) {
-        if (i == 0) A.stepFireColumn(-1); else if (i == 1) A.playing = true; else if (i == 2) A.playing = false;
-        else if (i == 3) { A.playing = false; A.setTopProgress(0.f); }   // C1 stop: pause and rewind the playhead
-        else A.stepFireColumn(1);
+        switch (tb[i].action) {
+          case 0: A.stepFireColumn(-1); break;
+          case 1: A.playing = true; break;
+          case 2: A.playing = false; break;
+          case 3: A.playing = false; A.setTopProgress(0.f); break;   // C1 stop: pause and rewind the playhead
+          case 4: A.stepFireColumn(1); break;
+          case 5: A.tlProgress = 0.f; break;                         // jump to timeline start
+          case 6: A.tlProgress = std::max(0.f, A.tlProgress - 6.25f); break;   // back 1 bar
+          case 7: A.playing = false; A.tlProgress = 0.f; break;       // stop + rewind
+          case 8: A.tlProgress = std::min(100.f, A.tlProgress + 6.25f); break; // forward 1 bar
+          case 9: A.tlProgress = 99.9f; break;                        // jump to timeline end
+        }
       }
     }
   }
