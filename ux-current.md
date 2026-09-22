@@ -105,7 +105,7 @@ Timeline | Properties; **dải dưới** = Deck (lưới layer × cột).
 | C8 | **Kéo header cột** | Đổi thứ tự cột | ✅ |
 | C9 | **Chuột phải header cột** | Menu *Column*: chèn trước/sau, dịch trái/phải, **Rename** (ô nhập nổi), Clear, **Set/Clear auto-start on open** (⚡), Delete | ✅ |
 | C14 | **Setting: auto-start column** | Đặt qua menu chuột phải header cột. Mặc định **tắt** (không cột nào). Cột được đặt hiện biểu tượng ⚡ trước tên, lưu trong dự án. Khi **mở lại** dự án đó (Ctrl+O / menu Mở dự án), cột này tự bắn ngay (không chờ nhịp dù Sync đang bật) | ✅ |
-| C10 | Hàng nhóm: nút **Cue 1…n** | Chọn cue của nhóm — **và chọn (cue) đúng clip ở cột đó trên MỌI layer thành viên** (đổi màu Selected/LiveSel như bấm bar từng ô, không chỉ đánh dấu nội bộ), Properties tự chuyển sang tab Clip cho layer đầu tiên trong nhóm; bấm tiêu đề nhóm thu gọn/mở | ✅ |
+| C10 | Hàng nhóm: nút **Cue 1…n** | Chọn cue của nhóm — **và chọn (cue) đúng clip ở cột đó trên MỌI layer thành viên** (đổi màu Selected/LiveSel như bấm bar từng ô, không chỉ đánh dấu nội bộ), Properties tự chuyển sang tab Clip cho layer đầu tiên trong nhóm; bấm tiêu đề nhóm thu gọn/mở. **Sửa 2026-09-22:** glow của ô Cue đang active trước đây tràn (blur 12px) đè lên tên/fader của nhóm bên trái và ô Cue kế bên (khoảng cách giữa hai ô chỉ 4px) — giảm blur xuống 3px để glow không vượt quá khoảng cách đó nữa | ✅ |
 | C13 | **Kéo fader trên tiêu đề nhóm** | Độ mờ tổng của nhóm, nhân vào mọi layer thành viên (bấm vào fader không thu gọn nhóm) | ✅ |
 | C12 | **Chuột phải tiêu đề nhóm** | Menu: Rename group · Change color · Ungroup (bỏ nhóm, giữ nguyên các layer) | ✅ |
 | C11 | Bấm ô cuối của cột cuối | **Tự thêm cột mới** khi có clip ở cột cuối | ✅ |
@@ -147,7 +147,7 @@ Trước đây chỉ có 2 kiểu (trống/nâu ấm hoặc cam thuần khi đư
 ### 2.3 Deck tabs + Run mode (mới, 2026-09-22)
 | Hàng | Nội dung |
 |---|---|
-| Tab deck (26px) | Danh sách deck (✅ bấm=chuyển, bấm đúp=đổi tên, chuột phải=Rename/Duplicate/Delete), nút **+ DECK** thêm deck mới (3 layer trống, tên "Deck B"/"C"...). Xoá bị chặn khi chỉ còn 1 deck. |
+| Tab deck (26px) | Danh sách deck (✅ bấm=chuyển, bấm đúp=đổi tên). **Không còn nút + DECK riêng (đổi 2026-09-22)** — chuột phải vào bất kỳ tab nào mở menu *Deck*: **Add deck** (thêm deck mới, 3 layer trống, tên "Deck B"/"C"...) · Rename deck · Duplicate deck · **Move left/right** (đổi thứ tự tab, mờ khi ở đầu/cuối) · Delete deck (chặn khi chỉ còn 1 deck). |
 | Run mode (34px) | Segmented **GRID**/**TIMELINE** (✅ chuyển đổi kiểu hiển thị vùng diễn; độ rộng mỗi nút tự tính theo chữ, không còn tràn chữ "TIMELINE" ra ngoài). Bên phải: ở Grid hiện `Layer`/`Group`/`Column`/`Sync` (xem dưới); ở Timeline hiện nút `LOOP ON/OFF`. |
 
 Mỗi deck có layer/nhóm/cột **riêng biệt hoàn toàn** — chuyển deck là đổi hẳn sang một

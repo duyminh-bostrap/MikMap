@@ -502,13 +502,17 @@ void DrawOverlays(ImVec2 disp) {
   // deck tab menu
   if (A.deckMenu.open) {
     int di = A.deckMenu.idx, n = (int)A.decks.size();
-    std::vector<PItem> items = {{"Rename deck", "pencil", "", 0, false, false}, {"Duplicate deck", "copy", "", 0, false, false},
+    std::vector<PItem> items = {{"Add deck", "plus", "", 0, false, false}, {"Rename deck", "pencil", "", 0, false, false}, {"Duplicate deck", "copy", "", 0, false, false},
+                                {"Move left", "chevron-left", "", 0, di == 0, false}, {"Move right", "chevron-right", "", 0, di >= n - 1, false},
                                 {"Delete deck", "trash-2", "", 2, n < 2, false}};
     ImRect pr; int hit = PopoverList(A.deckMenu.pos, disp, "Deck", items, freshDeckMenu, pr);
     if (hit >= 0) {
-      if (hit == 0) A.beginRename(4, di, A.deckMenu.pos, A.decks[di].name);
-      else if (hit == 1) A.duplicateDeck(di);
-      else if (hit == 2) A.deleteDeck(di);
+      if (hit == 0) A.addDeck();
+      else if (hit == 1) A.beginRename(4, di, A.deckMenu.pos, A.decks[di].name);
+      else if (hit == 2) A.duplicateDeck(di);
+      else if (hit == 3) A.moveDeckTo(di, di - 1);
+      else if (hit == 4) A.moveDeckTo(di, di + 1);
+      else if (hit == 5) A.deleteDeck(di);
       A.deckMenu.open = false;
     } else if (!freshDeckMenu && (io.MouseClicked[0] || io.MouseClicked[1]) && !Raw(pr)) A.deckMenu.open = false;
     g.blocked = true;
@@ -814,6 +818,20 @@ int main(int argc, char** argv) {
     if (A.decks.size() != 1) return fail("fixture: expected exactly 1 deck before the guard check");
     A.deleteDeck(0);
     if (A.decks.size() != 1) return fail("deleteDeck must refuse to remove the last remaining deck");
+    // moveDeckTo (right-click "Move left/right", replacing drag): reorders decks[], remaps curDeckIdx to follow
+    // whichever deck is actually current, and keeps that deck's own live content in groups/layers/colNames.
+    NewProject(); A.addDeck(); A.addDeck();   // Deck A, Deck B, Deck C (curDeckIdx == 2, "Deck C")
+    if (A.decks.size() != 3 || A.decks[2].name != "Deck C" || A.curDeckIdx != 2) return fail("fixture: expected 3 decks, current = Deck C");
+    A.layers[0].name = "OnDeckC";
+    A.moveDeckTo(2, 0);   // Deck C moves to the front: order becomes C, A, B — curDeckIdx must follow it to 0
+    if (A.decks[0].name != "Deck C" || A.decks[1].name != "Deck A" || A.decks[2].name != "Deck B") return fail("moveDeckTo did not reorder decks[]");
+    if (A.curDeckIdx != 0) return fail("moveDeckTo must keep curDeckIdx pointed at the deck that moved");
+    if (A.layers[0].name != "OnDeckC") return fail("moveDeckTo must keep the current deck's own live content, not swap in another deck's");
+    A.moveDeckTo(1, 2);   // Deck A (not current) moves past Deck B: curDeckIdx (still Deck C, now at slot 0) must NOT move
+    if (A.curDeckIdx != 0 || A.decks[A.curDeckIdx].name != "Deck C") return fail("moveDeckTo must not disturb curDeckIdx when a different deck is reordered");
+    if (A.decks[1].name != "Deck B" || A.decks[2].name != "Deck A") return fail("moveDeckTo(1,2) did not swap the two trailing decks");
+    A.moveDeckTo(0, 0);   // no-op: same index
+    if (A.decks[0].name != "Deck C" || A.curDeckIdx != 0) return fail("moveDeckTo(i,i) must be a no-op");
     // Timeline: tlLayout lays clips back-to-back by real duration; tlSync flips exactly the clip under the playhead live.
     NewProject();
     auto lay = A.tlLayout();

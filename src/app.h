@@ -159,6 +159,7 @@ struct App {
   void addDeck();
   void duplicateDeck(int idx);
   void deleteDeck(int idx);
+  void moveDeckTo(int from, int to);
   // Timeline run mode (design ref: deckMode/tlLayout/syncTimeline) — an alternate READ of the same layers/clips:
   // each layer's non-empty clips play back-to-back in column order, sized by their own duration, looping over
   // one shared 0..100 playhead. No separate clip-block storage; advancing just flips the same Clip::st the grid

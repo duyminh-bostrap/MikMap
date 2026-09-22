@@ -397,6 +397,17 @@ void App::deleteDeck(int idx) {
   }
 }
 
+void App::moveDeckTo(int from, int to) {
+  int n = (int)decks.size();
+  if (from == to || from < 0 || from >= n || to < 0 || to >= n) return;
+  decks[curDeckIdx] = {decks[curDeckIdx].name, groups, layers, colNames, activeCol};   // flush live edits before reshuffling the vector
+  Deck d = decks[from]; decks.erase(decks.begin() + from); decks.insert(decks.begin() + to, d);
+  auto remap = [&](int i) { return i == from ? to : (from < to ? (i > from && i <= to ? i - 1 : i) : (i >= to && i < from ? i + 1 : i)); };
+  curDeckIdx = remap(curDeckIdx);
+  Deck& cd = decks[curDeckIdx];   // same content either way, but re-point in case "current" is now at a different index
+  groups = cd.groups; layers = cd.layers; colNames = cd.colNames; activeCol = cd.activeCol;
+}
+
 // ───────────────────────── Timeline run mode ─────────────────────────
 // Read-only re-projection of the SAME grid clips: each layer's non-empty clips play back-to-back, in column
 // order, each sized by its own real duration (ClipSeconds), looping over one shared 0..100 playhead. There is
@@ -1383,7 +1394,10 @@ static void DeckGrid(ImRect r) {
           ImRect cr(colX(ci), oy + re.y, colX(ci) + CW, oy + re.y + 26);
           Hit ch = HitR(cr);
           bool act = gp->activeCol == ci;
-          if (act) { Glow(cr, pal::coral, 0.30f, 12, 2); Fill(cr, K(pal::g12), 2); }
+          // blur kept under the 4px GAP to the group's own identity box on its left (and the next Cue box on its
+          // right) — the default blur=12 used elsewhere for clip cells swallows that gap and visibly overlaps
+          // the group name/chevron/fader next door, which reads as the cue box being drawn "on top of" the group
+          if (act) { Glow(cr, pal::coral, 0.30f, 3, 2); Fill(cr, K(pal::g12), 2); }
           Box(cr, act ? K(pal::coral, 0.2f) : K(pal::g1c), act ? K(pal::coral) : ch.hover ? K(pal::g33) : K(pal::g22), 2);
           char lab[16]; snprintf(lab, sizeof lab, "Cue %d", ci + 1);
           TextC((cr.Min.x + cr.Max.x) * 0.5f, (cr.Min.y + cr.Max.y) * 0.5f, MONO_B, 9, K(act ? pal::coral : ch.hover ? pal::white : pal::t66), lab, 0.09f);
@@ -1460,9 +1474,7 @@ static void Deck(ImRect r) {
       if (h.rclick) { A.deckMenu.open = true; A.deckMenu.idx = i; A.deckMenu.pos = ImGui::GetIO().MousePos; }
       x += w + 4;
     }
-    float aw = ButtonW("Deck", 0, true);
-    ImRect ar(x, cy - 10, x + aw, cy + 10);
-    if (Button(ar, "Deck", T_LIVE, false, 0, true, "plus")) A.addDeck();
+    // no trailing "+ DECK" button anymore — right-click any tab's menu now has "Add deck" + "Move left/right"
   }
 
   ImRect runRow(r.Min.x, tabsRow.Max.y, r.Max.x, tabsRow.Max.y + 34);
