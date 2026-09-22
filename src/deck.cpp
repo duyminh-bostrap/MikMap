@@ -1049,8 +1049,9 @@ static void ColumnHeader(ImRect r, int i, bool active, int layerCount) {
   if (h.click) { A.dragCol = -2 - i; A.dragStart = ImGui::GetIO().MousePos; }
   if (h.hover && A.dragging && A.dragCol >= 0) A.dropCol = i;
   if (h.rclick) { A.colMenu.open = true; A.colMenu.ci = i; A.colMenu.pos = ImGui::GetIO().MousePos; }
-  if (h.dbl) { A.fireColumn(i); A.dragCol = -1; }          // A6: double-click fires the whole column
-  else if (h.hover && h.release && !A.dragging && A.dragCol == -2 - i) A.selectColumn(i);
+  // A6: a plain click (press+release, no drag) fires every non-empty clip in the column across all layers;
+  // fireColumn() also selects the column, so this replaces the old select-only click / double-click-to-fire split.
+  if (h.hover && h.release && !A.dragging && A.dragCol == -2 - i) A.fireColumn(i);
 }
 
 static void Deck(ImRect r) {

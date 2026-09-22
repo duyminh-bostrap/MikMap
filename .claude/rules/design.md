@@ -77,13 +77,15 @@ mới, đừng hard-code tên file font.
 | Kéo **bar** ô clip | Di chuyển clip sang ô khác |
 | Chuột phải **bar** ô clip | Popover (Trigger/Cue/Loop/Rename/Clear/màu) |
 | Bấm **body** ô clip (vùng gradient, phía dưới) | Phát ngay clip đó (cue + trigger) — không cần bấm đúp; không kéo-thả, không chuột phải ở vùng này |
+| Bấm **header cột** | Chọn cột + bắn ngay mọi clip không rỗng trong cột (mỗi layer 1 clip) — không cần bấm đúp |
 | Kéo điểm ở ĐƯỜNG RA | Keystone / mesh warp |
 | Kéo khung ở VÙNG LẤY | Đổi phần canvas mà slice lấy |
 
 > **Đã đổi khỏi bản tham khảo (2026-09-22):** bản gốc dùng bấm-đơn=chọn/bấm-đúp=phát
-> cho toàn bộ ô clip. Theo yêu cầu người dùng, ô clip giờ tách hai vùng bấm độc lập
-> như trên (`ClipCell` trong `src/deck.cpp`, struct `CellOut`) — không còn double-click
-> để phát.
+> cho toàn bộ ô clip, và bấm-đơn=chọn/bấm-đúp=bắn cho header cột. Theo yêu cầu người
+> dùng, cả hai đều bỏ double-click: ô clip tách hai vùng bấm độc lập (`ClipCell`,
+> struct `CellOut`), header cột bấm đơn là bắn luôn (`ColumnHeader`) — tất cả trong
+> `src/deck.cpp`.
 
 Đây là nguyên tắc thiết kế chung kế thừa từ bản tham khảo — **grep
 `src/deck.cpp`/`mapping.cpp` để xác nhận hành vi thật** trước khi khẳng

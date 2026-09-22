@@ -96,8 +96,8 @@ Timeline | Properties; **dải dưới** = Deck (lưới layer × cột).
 | C3 | **Chuột phải bar** | Popover *Clip*: Trigger · Cue to Preview · Loop (đặt chế độ LOOP) · **Rename** · Clear Slot + 6 ô màu clip. **Chuột phải body không có tác dụng.** | ✅ |
 | C4 | **Kéo bar sang ô khác** (>5px) | Di chuyển clip; ô đích viền vàng nét đứt. **Kéo bắt đầu từ body không di chuyển clip** (chỉ phát, xem C1b) | ✅ |
 | C5 | **Kéo từ Browser thả vào ô** | Nạp clip vào ô (`loadClip`); nếu là Effect thì cue ô đó + thêm FX | ✅ |
-| C6 | **Bấm header cột** | Chọn cột | ✅ |
-| C7 | **Bấm đúp header cột** | Bắn cả cột | ✅ |
+| C6 | **Bấm header cột** | *Chọn + bắn cả cột* — mọi clip không rỗng ở cột đó (mỗi layer 1 clip) phát ngay | ✅ |
+| C7 | ~~Bấm đúp để bắn cột~~ | Không còn cần thiết — bấm đơn đã bắn cả cột | — |
 | C8 | **Kéo header cột** | Đổi thứ tự cột | ✅ |
 | C9 | **Chuột phải header cột** | Menu *Column*: chèn trước/sau, dịch trái/phải, **Rename** (ô nhập nổi), Clear, Delete | ✅ |
 | C10 | Hàng nhóm: nút **Cue 1…n** | Chọn cue của nhóm; bấm tiêu đề nhóm thu gọn/mở | ✅ |
