@@ -39,6 +39,32 @@ struct AppSettings {
     /// Cảnh báo khi import file không phải `.mov` (I9).
     bool warnNonHapMedia = true;
 
+    // ── Sensor: bám điểm & khử nhiễu (G11 G12) ─────────────────────────
+    //
+    // ★ Bốn số này PHẢI chỉnh được lúc chạy, không phải hằng số biên dịch.
+    //   Mỗi sensor và mỗi phòng cho ra mức nhiễu khác nhau, và cách chỉnh
+    //   duy nhất đúng là vừa chỉnh vừa nhìn điểm chạy trên màn hình. Bắt
+    //   người vận hành build lại phần mềm để thử một giá trị thì trên
+    //   thực tế là không chỉnh được.
+    //
+    //   Giá trị mặc định = mặc định của OneEuroParams / PointTrackerParams;
+    //   giữ hai nơi khớp nhau để "về mặc định" đúng nghĩa.
+
+    /// Tần số cắt khi điểm đứng yên (Hz). Thấp = mượt hơn nhưng khởi động
+    /// chuyển động chậm hơn.
+    double sensorMinCutoff = 1.0;
+
+    /// Mức nới lỏng bộ lọc theo tốc độ. Cao = bám tay tốt hơn khi vung
+    /// nhanh, nhưng rung hơn lúc đứng yên.
+    double sensorBeta = 0.007;
+
+    /// Khoảng cách tối đa (đơn vị sensor) để coi hai điểm ở hai frame
+    /// liên tiếp là CÙNG một vật.
+    double trackMaxDistance = 120.0;
+
+    /// Thời gian ân hạn khi sensor mất dấu một điểm, giây.
+    double trackGraceSec = 0.15;
+
     // ── Chẩn đoán ──────────────────────────────────────────────────────
     bool   perfLogEnabled = true;
     double perfLogIntervalSec = 5.0;

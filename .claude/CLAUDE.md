@@ -36,8 +36,8 @@ features.md     backlog 135 mục, chấm điểm theo code thật của src/
 ```
 
 `src/` hiện là struct riêng (`src/app.h` và các file phẳng
-`calib.cpp`/`deck.cpp`/`mapping.cpp`/`sensor.cpp`/...), **link `engine/core`+
-`engine/io` vào nhưng CHƯA gọi tới** — xem "Việc còn lại để ghép trọn" ở
+`calib.cpp`/`deck.cpp`/`mapping.cpp`/`sensor.cpp`/`output.cpp`/`clipart.cpp`/`project.cpp`/...), **link `engine/core`+
+`engine/io` vào, nhưng chỉ gọi `core/util/Json` (ở `project.cpp`); phần còn lại CHƯA gọi tới** — xem "Việc còn lại để ghép trọn" ở
 `README.md`. Đừng nhầm đây là cây thư mục layered đầy đủ ở `architecture.md`
 §2 (`app/`,`ui/`,`render/`,`io/`,`core/`) — cây đó mô tả bản cũ trên nhánh
 `legacy-oF-ui` và là đích mà `src/` đang được ghép dần vào.
@@ -77,9 +77,9 @@ tiên khớp thắng) → slice.warp.inverse() → UV cục bộ → ×inputRect
 Mặt nạ bezier **không phải một phép biến đổi** — là hàm che alpha ở
 `contentUV`, nên tự động đi theo `H_w` khi kéo lại keystone.
 
-**Lưu ý về `src/` hiện tại:** homography ở đây (`src/calib.cpp`) mới là
-affine 2 tỉ lệ + dịch, **chưa phải DLT+RANSAC thật** (đó là `engine/core/calib/`
-— đã có, đúng thuật toán, nhưng `src/` chưa gọi tới). Đừng tưởng nhầm `src/`
+**Lưu ý về `src/` hiện tại:** homography ở đây (`src/calib.cpp`) là
+DLT + chuẩn hoá Hartley + RANSAC tự viết (≥6 điểm; bản đủ là
+`engine/core/calib/` — đã có, đúng thuật toán, nhưng `src/` chưa gọi tới). Đừng tưởng nhầm `src/`
 đã có calibration chuẩn chỉ vì `engine/core/calib` tồn tại trong repo.
 
 ## Hợp đồng `IWarp` — bài học đã trả giá (`architecture.md` §4.2)
@@ -131,13 +131,43 @@ ngoài". Định nghĩa ở `engine/core/model/IWarp.h`; mọi `IWarp` mới ph�
 
 ## `src/` — tình trạng THẬT (theo `features.md`, không theo vẻ ngoài)
 
-18 mục `[x]` (hành vi thật) · 34 mục `[~]` (chỉ UI/một phần — đọc "Ghi chú
-kiểm tra" cuối `features.md` để biết chính xác cái gì còn giả) · 83 mục `[ ]`,
-trên 135 mục Resolume-parity. Ví dụ đã bị đánh giá thấp hơn vẻ ngoài: `A7`/`D4`
-blend mode chọn được 8 mode nhưng chỉ Add/Screen thật sự cộng sáng; `G5`
-homography là affine tạm; `B3` generator vẽ bằng CPU, chưa phải shader GLSL;
-`A4` thumbnail là gradient tĩnh (cố ý — thumbnail động làm deck tụt còn
-~16s/khung).
+49 mục `[x]` (hành vi thật) · 18 mục `[~]` (chỉ UI/một phần — đọc "Ghi chú
+kiểm tra" cuối `features.md` để biết chính xác cái gì còn giả) · 68 mục `[ ]`,
+trên 135 mục Resolume-parity (đếm lại 2026-09-21 từ các dòng bảng).
+
+**Đã có thật sau đợt bổ sung P0** (đã grep `src/*.cpp`): output ra cửa sổ máy
+chiếu riêng, không viền (`F2`/`I1`, `output.cpp`); canvas ảo 1920×1080 (`A1`);
+transform clip D1–D6; transport LOOP/BOUN/HOLD/ONCE + REV + tốc độ (`C2/C4/C5`);
+blend mode dùng hàm trộn GL thật, 8 mode (`A7`/`D4`, `clipart.cpp` — riêng
+Overlay tạm dùng Screen); PerfPanel FPS/P99/frame rớt (`G9`, `calib.cpp`).
+
+**Đợt UX 2026-09-21** (`project.cpp`, xem `ux-current.md`): lưu/mở/mới dự án `.mikmap` + cài đặt máy tách riêng,
+undo/redo toàn app theo snapshot, Show Mode (`Tab`), phím tắt Composition, đổi tên layer/cột/clip, scrub Timeline,
+ROI kéo được. Kiểm tự động: `mikmap --roundtrip <file>` (không cần cửa sổ). `Clip::style` cố định hình vẽ khi đổi tên.
+
+**Đợt UX 2026-09-22** (theo yêu cầu người dùng — xem `ux-current.md` §2.1 và
+`.claude/rules/design.md`): ô clip (`ClipCell`, `src/deck.cpp`) tách hai vùng
+bấm độc lập — **bar** (dải tên) chỉ cue/chọn, kéo di chuyển, chuột phải mở
+popover; **body** (vùng gradient) bấm 1 lần là phát ngay (cue+trigger), không
+kéo/không chuột phải. Header cột (`ColumnHeader`) cũng bỏ double-click: bấm
+đơn là chọn + bắn cả cột luôn (`A6`). **Không còn double-click để phát ở bất
+kỳ đâu trong Deck.**
+
+**Đợt cập nhật UI Deck theo bản thiết kế thật** (`MikMap Workspace.dc.html`,
+2026-09-22, xem "Ghi chú kiểm tra" cuối `features.md`): ô clip nay đúng 3 màu
+trạng thái (đã nạp/đang cue-xanh/đang live-cam cháy, trước đây "đang cue" và
+"đang live" trông giống hệt nhau); thêm **Multi-deck** (tab deck, mỗi deck có
+layer/cột riêng, `A.decks[]`/`A.curDeckIdx`); thêm **Timeline run mode**
+(toggle cạnh tab deck — đọc lại CHÍNH dữ liệu lưới thành lane theo thời gian,
+không phải cấu trúc riêng, `App::tlLayout`/`App::tlSync`). Cả hai đều lưu vào
+dự án (trừ playhead/loop của Timeline, chỉ runtime).
+
+**Vẫn còn giả/thiếu — dễ bị đánh giá cao hơn thực tế:** `B3` generator vẽ bằng CPU, chưa
+phải shader GLSL; `A4` thumbnail là gradient tĩnh (cố ý — thumbnail động làm
+deck tụt còn ~16s/khung); chưa có nguồn video/ảnh thật (`B1`), chưa có thread sensor thật (`G1`).
+`I2` (lưu/mở dự án) **đã chạy** qua `src/project.cpp` (định dạng `.mikmap`, schema riêng của
+`src/`) nhưng **vẫn chưa gọi `ProjectIO`/`.hexmap` của `engine/`**; cài đặt máy lưu ở
+thư mục config OS, tách khỏi dự án.
 
 **Việc còn lại để ghép engine thật vào `src/`** (chi tiết ở `README.md`): (1)
 `ProjectIO`, (2) `core/calib/*` thay `calib.cpp` tự viết, (3) `Slice`+

@@ -79,9 +79,5 @@ bin/data/settings.json
 #
 # CLAUDE.local.md va settings.local.json mo ta MAY NAY va NGUOI NAY
 # (duong dan cuc bo, thiet bi sensor test tai cho, override rieng).
-# memory/ la bo nho ca nhan giua cac phien tren may nay - README.md giai
-# thich quy uoc thi giu lai, con noi dung ghi chu thi khong vao git.
 .claude/CLAUDE.local.md
 .claude/settings.local.json
-.claude/memory/*
-!.claude/memory/README.md

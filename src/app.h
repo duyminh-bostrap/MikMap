@@ -20,6 +20,8 @@ struct Clip {
   St st = Empty;
   std::string name, dur;
   int color = 0;       // index into CLIP_COLORS
+  std::string media;   // B2: path of an image file; empty = procedural generator
+  int style = -1;      // generator look; -1 = derive from the name. Pinned on rename so a new name never changes the picture
   float progress = 0;  // 0..100, advances only while the clip is selected
   // transport (C2/C4/C5)
   int playMode = PM_LOOP;
@@ -36,12 +38,23 @@ struct Layer {
   float blendTime = 0, opacity = 100, audio = 0;
   bool live = false, solo = false, muted = false, bypassed = false, collapsed = false;
   std::vector<Clip> clips;
+  Clip fadeFrom; float fadeT = 1.f;   // A10 dissolve: the clip being replaced fades out while fadeT runs 0 -> 1 over blendTime (runtime only, not saved)
 };
 struct Group {
   std::string id, name;
   int role = 2;  // 0 live/coral, 1 audio/mint, 2 preview/cyan
   bool open = true;
   int count = 0, activeCol = 0;
+  float opacity = 100;   // A13: group master fader, multiplies every member layer's opacity
+};
+// A performance deck: its own layers/groups/columns, switchable via tabs (design ref: deckTabs/deckStore).
+// App::layers/groups/colNames/activeCol always mirror decks[curDeckIdx] — see App::switchDeck().
+struct Deck {
+  std::string name = "Deck A";
+  std::vector<Group> groups;
+  std::vector<Layer> layers;
+  std::vector<std::string> colNames;
+  int activeCol = 0;
 };
 
 // ───────────── mapping model ─────────────
@@ -54,6 +67,7 @@ struct Mask {
 struct Slice {
   std::string id, name;
   bool visible = true;
+  bool solo = false;   // F16: while any slice of a screen is solo, only solo slices reach the output
   int warp = 0;  // 0 cornerPin, 1 mesh
   int meshCols = 4, meshRows = 3;
   std::vector<float> meshU, meshV;                 // custom column/row split positions (0..1)
@@ -95,15 +109,27 @@ struct FxDef { const char* name; const char* icon; int tone; int nparams; const 
 extern const FxDef FX_LIB[8];
 constexpr int FX_COUNT = 8;
 struct ColMenu { bool open = false; int ci = 0; ImVec2 pos; };
-struct DragSrc { bool active = false; std::string name, dur; int fxKind = -1; };
-struct Prefs { int lang = 0, ui = 0, mono = 0, accent = 0, surface = 0, scale = 100; };
+struct DeckMenu { bool open = false; int idx = 0; ImVec2 pos; };
+struct DragSrc { bool active = false; std::string name, dur, media; int fxKind = -1; };
+struct Prefs { int lang = 0, ui = 0, mono = 0, accent = 0, surface = 0, scale = 100;
+  int browserW = 200, inspectorW = 236, bandPct = 42, timelineH = 48; };
+struct ProjectFile { std::string path, name; long long mtime = 0; };
+void UndoStep(bool redo);   // defined in project.cpp
 struct Popup { bool open = false; ImVec2 pos; int li = 0, ci = 0; };
+struct RenameBox { bool open = false, fresh = false; int kind = 0, idx = 0; ImVec2 pos; char buf[64] = {}; };
 struct CtxMenu { bool open = false; ImVec2 pos; std::vector<ui::MenuItem> items; };
 
 struct App {
   int screen = 0;  // 0 deck, 1 mapping, 2 sensor
   int canvasW = 1920, canvasH = 1080;  // A1: virtual composition canvas, independent of any projector
   int outMonitor = 0;                  // F2: which physical display the projector window goes to
+  bool quantize = false;                // "Sync": triggers wait for the next beat instead of firing immediately
+  int autoStartCol = -1;                // Setting: fire this column automatically when the project is opened. -1 = off (default).
+  struct PendingTrig { int li, ci; bool column; };
+  std::vector<PendingTrig> pending;    // triggers waiting for the next beat
+  bool flushing = false;
+  void flushPending();
+  float bpm = 128.f;                   // tempo the beat indicator / beat-synced FX follow (tap in the status bar)
   bool beat = false, playing = true, blackout = false, testCard = false, frozen = true;
   float progress = 0;
   double lastBeat = 0;
@@ -123,11 +149,42 @@ struct App {
   LayerMenu layerMenu;
   ColMenu colMenu;
   std::vector<std::string> colNames;
+  // Multi-deck (design ref: deckTabs) — layers/groups/colNames/activeCol above always mirror decks[curDeckIdx];
+  // switchDeck() syncs the live fields into decks[] before loading the target, so the array is the single
+  // source of truth for content that isn't the currently-open deck. Not reset by New Project the same way the
+  // rest of the deck is: switching decks keeps whatever run mode / timeline playhead the app was in.
+  std::vector<Deck> decks;
+  int curDeckIdx = 0;
+  DeckMenu deckMenu;
+  void switchDeck(int idx);
+  void addDeck();
+  void duplicateDeck(int idx);
+  void deleteDeck(int idx);
+  void moveDeckTo(int from, int to);
+  // Timeline run mode (design ref: deckMode/tlLayout/syncTimeline) — an alternate READ of the same layers/clips:
+  // each layer's non-empty clips play back-to-back in column order, sized by their own duration, looping over
+  // one shared 0..100 playhead. No separate clip-block storage; advancing just flips the same Clip::st the grid
+  // uses, so switching back to Grid mode shows exactly what the timeline had playing.
+  int deckMode = 0;  // 0 grid, 1 timeline
+  float tlProgress = 0;
+  bool tlLoopOn = false;
+  float tlIn = 0, tlOut = 100;
+  struct TlLayoutBlock { int ci; float start, end; };  // percent along the shared 0..100 playhead
+  std::vector<std::vector<TlLayoutBlock>> tlLayout() const;   // one vector per layer
+  void tlSync(float pct);   // apply tlLayout()+pct to Clip::st/Layer::live, same transition trigger() makes
   int dragCol = -1, dropCol = -1, fxSel = 0;
   std::map<std::string, bool> browserOpen;   // absent = open
   DragSrc dragSrc, dragSrcCand;
   bool browserPress = false; std::string browserPressName; ImVec2 browserPressPos;
   // Topmost selected clip drives Timeline / Playhead
+  const Clip* topClip() const {   // topmost selected non-empty clip (drives Timeline)
+    int best = -1, bc = 0;
+    for (auto& c : selectedCells) if (c.first >= 0 && c.first < (int)layers.size() && c.second >= 0 && c.second < (int)layers[c.first].clips.size()
+        && layers[c.first].clips[c.second].st != Clip::Empty && (best < 0 || c.first < best)) { best = c.first; bc = c.second; }
+    if (best < 0 && selLi < (int)layers.size() && selCi < (int)layers[selLi].clips.size()) { best = selLi; bc = selCi; }
+    return best >= 0 ? &layers[best].clips[bc] : nullptr;
+  }
+  void setTopProgress(float pct);   // scrub: move the playhead of the topmost selected clip (0..100)
   float topProgress() {
     int best = -1; float p = 0;
     for (auto& c : selectedCells) if (c.first >= 0 && c.first < (int)layers.size() && c.second >= 0 && c.second < (int)layers[c.first].clips.size()
@@ -135,12 +192,13 @@ struct App {
     if (best < 0 && selLi < (int)layers.size() && selCi < (int)layers[selLi].clips.size()) p = layers[selLi].clips[selCi].progress;
     return p;
   }
-  int colCount() { return layers.empty() ? 8 : (int)layers[0].clips.size(); }
+  int colCount() const { return layers.empty() ? 8 : (int)layers[0].clips.size(); }
   std::string colName(int i) { return i < (int)colNames.size() && !colNames[i].empty() ? colNames[i] : "C\xE1\xBB\x99t " + std::to_string(i + 1); }
   void insertCol(int at); void deleteCol(int ci); void moveColTo(int from, int to);
   void addFx(int kind); void removeFx(int i); void dupFx(int i); void moveFx(int i, int d); void resetFx(int i);
   std::vector<Fx>& fxChain() { int li = std::clamp(selLi, 0, (int)layers.size() - 1); return layers[li].clips[std::clamp(selCi, 0, (int)layers[li].clips.size() - 1)].fx; }
-  void loadClip(int li, int ci, const std::string& name, const std::string& dur);
+  void loadClip(int li, int ci, const std::string& name, const std::string& dur, const std::string& media = std::string());
+  std::vector<std::string> mediaList; bool mediaStale = true;   // Browser "Media" folder cache (rescanned on demand, never per frame)
   // deck selection / drag & drop
   int selMode = 2;  // 0 layer, 1 clip, 2 column
   int dragLi = -1, dragCi = -1, dropLi = -1, dropCi = -1;
@@ -153,7 +211,17 @@ struct App {
   Prefs prefs;
   Dropdown blendDD;
   CtxMenu ctx;
+  RenameBox rename;   // inline rename box for layers (kind 0) and columns (kind 1)
+  void beginRename(int kind, int idx, ImVec2 pos, const std::string& cur);
+  void commitRename(const char* text);
   bool projectMenu = false, logoHover = false;
+  // project file (X1): path empty = never saved; savedSnapshot = compact JSON at last save/load, used to detect unsaved edits
+  std::string projectPath, projectName = "MikMap Stage 01", savedSnapshot;
+  bool projectDirty = false;
+  bool openDialog = false; std::vector<ProjectFile> openList; int openSel = -1;
+  std::string toast; double toastUntil = 0, discardUntil = 0;   // discardUntil: a 2nd press before this time confirms dropping unsaved edits
+  bool helpOpen = false, showMode = false;   // showMode: hide all editing UI, show only the live composite
+  void notify(const std::string& s, double secs = 3.0);
 
   // mapping
   std::vector<Screen> screens;
@@ -164,10 +232,11 @@ struct App {
   void setZoom(float z, float cx = -1, float cy = -1) { mapReq.valid = true; mapReq.z = z; mapReq.cx = cx < 0 ? mapCx : cx; mapReq.cy = cy < 0 ? mapCy : cy; }
   bool mapFocus = false;
   char meshArm = 0; bool meshPickOn = false; float meshPickU = 0, meshPickV = 0;
-  std::vector<std::vector<Screen>> undoStack, redoStack;
-  void pushHist() { undoStack.push_back(screens); if (undoStack.size() > 40) undoStack.erase(undoStack.begin()); redoStack.clear(); }
-  void undoMap() { if (undoStack.empty()) return; redoStack.push_back(screens); screens = undoStack.back(); undoStack.pop_back(); }
-  void redoMap() { if (redoStack.empty()) return; undoStack.push_back(screens); screens = redoStack.back(); redoStack.pop_back(); }
+  // Undo/redo is global (project.cpp): snapshots are taken automatically when input goes idle, so pushHist() is a
+  // no-op kept only so the many call sites in mapping.cpp stay valid.
+  void pushHist() {}
+  void undoMap() { UndoStep(false); }
+  void redoMap() { UndoStep(true); }
   int MapKind() { return selKind >= 0 ? selKind : (selMk.empty() ? 1 : 2); }
   int mpage = 1;  // 0 input, 1 output
   bool treeCollapsed = false;
@@ -181,6 +250,7 @@ struct App {
   std::vector<Calib> calib;
   ImVec2 roi[4];
   bool editRoi = false;
+  bool sensorOverlay = false;   // G13: draw live sensor touches on the projector output window (debug aid, off by default)
   int wizardStep = 0;
   float noise = 1.2f, blobSize = 15;
   float sweep = 0;
@@ -198,6 +268,7 @@ struct App {
   void fireColumn(int ci);
   void selectGroupCue(const std::string& gid, int ci);
   void stepSel(int dir);
+  void stepFireColumn(int dir);   // Timeline ⏮/⏭: navigate AND play, unlike stepSel()
   void moveClip(int fl, int fc, int tl, int tc);
   // mapping actions
   void addScreen(); void addSlice(); void addMask(); void deleteMask(); void deleteSlice();
@@ -228,6 +299,26 @@ void DrawSensor(ImRect body);
 void DrawOverlays(ImVec2 display);
 void DrawSettings(ImVec2 display);
 void ApplyPrefs();
+// project / settings persistence (project.cpp)
+std::string ProjectsDir();
+std::string MediaDir();                       // ~/Documents/MikMap/media
+std::vector<std::string> ListMedia();        // image files there, sorted by name
+void PreloadMedia(const std::string& path);   // upload the texture now instead of on first draw
+std::vector<ProjectFile> ListProjects();
+bool SaveProject(const std::string& path, std::string& err);
+bool LoadProject(const std::string& path, std::string& err);
+void NewProject();       // demo show
+void NewBlankProject();  // empty deck + one screen/slice
+void MarkSaved();
+bool ProjectDirty();
+std::string DoSave(bool asCopy);
+bool CanUndo();
+bool CanRedo();
+void UndoTick(bool inputActive, double now);   // call once per frame
+void UndoNote();                                // mark "the user just did something" so the next idle tick snapshots
+bool UndoCommit();                              // force a snapshot now (used by tests)
+void SaveSettings();
+void LoadSettings();
 int ClipStyleOf(const std::string& name);
 void DrawClipContent(ImRect area, const Clip& c, float t, float baseWidth, float alpha, float lod = 1.f);
 void SetAdditive(bool on);
@@ -239,6 +330,7 @@ void SetBlendMode(int mode);
 void InitBlendModes(void* (*getProc)(const char*));
 void AdvanceClip(Clip& c, float dt);
 const char* PlayModeName(int m);
+float ClipSeconds(const Clip& c);   // real length from Clip::dur ("16s"); generators (∞) loop over 10 s
 // composition rendering (A1) — shared by the Live Output monitor and the projector window
 ImRect CanvasRect(ImRect fit);                             // letterbox `fit` to the canvas aspect
 void DrawComposite(ImRect canvas, float t, float alpha);   // all live clips, bottom layer first

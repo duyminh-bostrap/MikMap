@@ -21,9 +21,9 @@ còn ở giai đoạn prototype:
 | | |
 |---|---|
 | Giao diện | 3 màn Composition · Advanced Mapping · Sensor I/O + cửa sổ Cài đặt, bám bản thiết kế `MikMap Workspace.dc.html` |
-| Engine dùng chung (`engine/core`, `engine/io`) | Đã biên dịch & link vào app, **UI chưa gọi tới** |
+| Engine dùng chung (`engine/core`, `engine/io`) | Đã biên dịch & link vào app; `src/` mới chỉ gọi `core/util/Json` (cho lưu/mở dự án), **chưa gọi model/calib/io thật** |
 | Mô hình dữ liệu app hiện tại | Struct riêng trong `src/app.h`, chưa dùng `core/model` thật |
-| Đối chiếu chi tiết | `features.md` — 18 mục `[x]` hành vi thật · 34 mục `[~]` một phần · 83 mục `[ ]`, trên 135 mục Resolume-parity |
+| Đối chiếu chi tiết | `features.md` — 49 mục `[x]` hành vi thật · 18 mục `[~]` một phần · 68 mục `[ ]`, trên 135 mục Resolume-parity |
 | Build đa nền tảng | **Đã kiểm chứng thật** (2026-09-22): macOS (build+chạy trên máy Mac thật) · Linux (build native + chạy dưới Xvfb, chụp màn hình) · Windows (cross-compile MinGW-w64 ra `mikmap.exe` PE32+ thật, đúng lệnh `build.ps1`/F5 dùng, chạy qua Wine, chụp màn hình) — cả 3 cùng render đúng giao diện, cùng tiếng Việt có dấu |
 
 Xem [`features.md`](features.md) để biết chính xác cái gì thật/cái gì chỉ có
@@ -87,7 +87,12 @@ cmake --build src/build
 ```
 
 Đã build+chạy thật kiểm chứng trên Linux (không chỉ compile — chạy dưới Xvfb,
-giao diện render đúng). Tắt engine để dựng riêng phần giao diện:
+giao diện render đúng) và trên macOS (Apple Silicon, Xcode SDK 15.0, GLFW 3.5.1
+qua Homebrew: build sạch, app mở cửa sổ và chạy ổn định, F5 trong VS Code dùng
+`.vscode/launch.json`). Trên macOS app xin OpenGL 3.2 core (+ GLSL 150) vì hệ
+điều hành không cấp context 3.0 thường; sẽ có vài cảnh báo `deprecated` của
+OpenGL khi build — vô hại. Cửa sổ output máy chiếu (F2/I1) cũng đã mở và vẽ đúng trên macOS
+(chụp bằng `--outshot`); chưa thử với nhiều màn hình thật. Tắt engine để dựng riêng phần giao diện:
 `-DMIKMAP_WITH_ENGINE=OFF`.
 
 ---
@@ -97,9 +102,9 @@ giao diện render đúng). Tắt engine để dựng riêng phần giao diện:
 `src/` hiện giữ mô hình dữ liệu riêng (`src/app.h`); bước tiếp theo là
 chuyển sang mô hình thật của `engine/`, làm từng mảng để luôn build được:
 
-1. `core/model/ProjectIO` → lưu/mở `.hexmap` (các mục P0 còn thiếu: I2, F8, G8).
-2. `core/calib/*` → thay phép tính homography và SensorMapper tự viết trong
-   `src/calib.cpp` (G5, G7).
+1. `core/model/ProjectIO` → thay `src/project.cpp` (hiện lưu `.mikmap` bằng schema riêng của `src/`, đã chạy được — I2); còn thiếu preset output/calibration dùng chung giữa dự án (F8, G8).
+2. `core/calib/*` → thay phép tính homography (DLT+RANSAC tự viết) và
+   SensorMapper trong `src/calib.cpp` (G5, G7).
 3. `core/model/Slice` + `WarpCornerPin`/`WarpMesh`/`WarpBezier` → thay phép
    warp trong `src/mapping.cpp`, qua đó có luôn Bezier (F10) và mặt nạ
    bezier (F12).

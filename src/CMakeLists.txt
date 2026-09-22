@@ -12,7 +12,7 @@
 #   cmake -S src -B src/build -G Ninja -DCMAKE_BUILD_TYPE=Release
 #   cmake --build src/build
 #
-# Linux/macOS (secondary — for CI/dev-machine sanity builds; GLFW must be
+# Linux/macOS (built and launched for real on both; GLFW must be
 # installed system-wide, e.g. `apt install libglfw3-dev` or `brew install glfw`;
 # Dear ImGui is fetched at configure time, pinned to the same v1.92.9b the
 # Windows .tools/ bundle uses):
@@ -93,3 +93,7 @@ endif()
 
 add_custom_command(TARGET mikmap POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/assets" "$<TARGET_FILE_DIR:mikmap>/assets")
+
+# Headless self-check of project save/load/undo (needs no window or GPU): `ctest --test-dir src/build`
+enable_testing()
+add_test(NAME project_roundtrip COMMAND mikmap --roundtrip ${CMAKE_CURRENT_BINARY_DIR}/roundtrip.mikmap)

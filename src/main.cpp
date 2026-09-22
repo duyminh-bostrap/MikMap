@@ -20,7 +20,10 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <chrono>
+#include <ctime>
 #include <filesystem>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -54,6 +57,13 @@ static GLuint LoadTexture(const std::string& path) {
   return t;
 }
 
+// Shorten a UTF-8 string to at most n code points, adding an ellipsis; never cuts inside a multi-byte character.
+static std::string Trunc(const std::string& s, size_t n) {
+  size_t cp = 0, i = 0;
+  while (i < s.size()) { if ((s[i] & 0xC0) != 0x80) { if (cp == n) break; ++cp; } ++i; }
+  return i >= s.size() ? s : s.substr(0, i) + "\xE2\x80\xA6";
+}
+
 // ───────────────────────── chrome ─────────────────────────
 static void TitleBar(ImRect r) {
   Fill(r, K(pal::g1c));
@@ -62,7 +72,7 @@ static void TitleBar(ImRect r) {
   float x = 8;
 
   // logo / project menu trigger
-  const char* sub = "MikMap Stage 0\xE2\x80\xA6";
+  std::string subS = Trunc(A.projectName, 16); const char* sub = subS.c_str();
   float titleW = TextW(UI_X, 12, "MIKMAP", 0.09f) + 4 + 9, subW = TextW(MONO_M, 9, sub);
   float colW = std::max(titleW, subW);
   bool hot = A.logoHover || A.projectMenu;
@@ -118,7 +128,7 @@ static void TitleBar(ImRect r) {
     if (gh.click) { A.settingsOpen = true; A.projectMenu = false; }
     xr -= 20 + 6;
   }
-  const char* file = "show_alpha_v3.mikmap";
+  std::string fileS = A.projectName + ".mikmap" + (A.projectDirty ? " *" : "") + (A.projectPath.empty() ? " (unsaved)" : ""); const char* file = fileS.c_str();
   float fw = TextW(MONO_M, 10, file);
   TextR(xr, cy, MONO_M, 10, K(pal::t66), file);
   xr -= fw + 6;
@@ -140,14 +150,37 @@ static void StatusBar(ImRect r) {
   float x = 8;
   Dot(ImVec2(x + 3, cy), 6, pal::mint, true, A.beat ? 1.f : 0.6f);
   x += 6 + 8;
-  const char* items[3] = {"MIDI \xC2\xB7 APC40 mk2", "ART-NET 2 UNIVERSE", "NDI IN \xC2\xB7 1"};
-  for (auto* s : items) { Text(x, cy, MONO_M, 10, K(pal::t66), s); x += TextW(MONO_M, 10, s) + 8; }
+  {
+    int on = 0; for (auto& d : A.devices) if (d.connected) ++on;
+    char dv[64]; snprintf(dv, sizeof dv, "SENSORS %d/%d", on, (int)A.devices.size());
+    Text(x, cy, MONO_M, 10, K(pal::t66), dv); x += TextW(MONO_M, 10, dv) + 8;
+    {   // tempo: click = tap tempo (average of the last taps), wheel = fine adjust, right-click = reset to 128
+      char bp[24]; snprintf(bp, sizeof bp, "%.1f BPM", A.bpm);
+      float bw = TextW(MONO_M, 10, bp) + 8;
+      ImRect br(x - 2, r.Min.y + 2, x + bw, r.Max.y - 2);
+      Hit bh = HitR(br);
+      if (bh.hover) { CursorHand(); Fill(br, K(pal::g18), 2); }
+      static double taps[6]; static int nt = 0;
+      if (bh.click) {
+        double now = g.time;
+        if (nt > 0 && now - taps[nt - 1] > 2.0) nt = 0;                    // a pause starts a new tap sequence
+        if (nt == 6) { for (int i = 1; i < 6; ++i) taps[i - 1] = taps[i]; nt = 5; }
+        taps[nt++] = now;
+        if (nt >= 2) A.bpm = std::clamp((float)(60.0 * (nt - 1) / (taps[nt - 1] - taps[0])), 40.f, 240.f);
+      }
+      if (bh.rclick) A.bpm = 128.f;
+      if (bh.hover && ImGui::GetIO().MouseWheel != 0.f) A.bpm = std::clamp(std::round((A.bpm + ImGui::GetIO().MouseWheel) * 10.f) / 10.f, 40.f, 240.f);
+      Text(x, cy, MONO_M, 10, K(bh.hover ? pal::coral : pal::t66), bp); x += bw + 4;
+    }
+    char out[64]; snprintf(out, sizeof out, "OUTPUT %s", OutputOpen() ? "OPEN" : "CLOSED");
+    Text(x, cy, MONO_M, 10, K(OutputOpen() ? pal::mint : pal::t66), out); x += TextW(MONO_M, 10, out) + 8;
+  }
   // G9: real frame statistics instead of the mock timecode
   char perf[64];
   snprintf(perf, sizeof perf, "%.0f FPS \xC2\xB7 P99 %.1f MS \xC2\xB7 DROP %d", PerfFps(), PerfP99(), PerfDrops(20.f));
   const char* tc = perf;
   TextR(r.Max.x - 8, cy, MONO_M, 10, K(PerfP99() > 20.f ? pal::yellow : pal::t66), tc);
-  const char* hint = A.blackout ? "OUTPUT MUTED \xE2\x80\x94 PRESS BLACKOUT TO RESUME" : "CLICK TO CUE \xC2\xB7 DOUBLE-CLICK TO TRIGGER \xC2\xB7 RIGHT-CLICK FOR ACTIONS";
+  const char* hint = (!A.toast.empty() && g.time < A.toastUntil) ? A.toast.c_str() : A.blackout ? "OUTPUT MUTED \xE2\x80\x94 PRESS BLACKOUT TO RESUME" : "CLICK NAME TO CUE \xC2\xB7 CLICK ART TO PLAY \xC2\xB7 RIGHT-CLICK NAME FOR ACTIONS";
   TextR(r.Max.x - 8 - TextW(MONO_M, 10, tc) - 8, cy, MONO_M, 10, K(pal::t88), hint);
 }
 
@@ -159,20 +192,40 @@ static void Shadow(ImRect r, float rd, float spread, float a) {
 
 struct PMItem { const char* icon; uint32_t tone; const char* label; const char* sub; const char* sc; bool chev, sep; };
 static const PMItem PM[] = {
-    {"file-plus", 1, "D\xE1\xBB\xB1 \xC3\xA1n m\xE1\xBB\x9Bi", "T\xE1\xBA\xA1o b\xE1\xBA\xA3n d\xE1\xBB\xB1ng m\xE1\xBB\x9Bi t\xE1\xBB\xAB \xC4\x91\xE1\xBA\xA7u", "Ctrl+N", false, true},
-    {"folder-open", 2, "M\xE1\xBB\x9F d\xE1\xBB\xB1 \xC3\xA1n...", "Nh\xE1\xBA\xADp t\xE1\xBB\x87p .hexmap ho\xE1\xBA\xB7" "c .json", "Ctrl+O", false, false},
-    {"clock", 3, "M\xE1\xBB\x9F g\xE1\xBA\xA7n \xC4\x91\xC3\xA2y", "4 d\xE1\xBB\xB1 \xC3\xA1n g\xE1\xBA\xA7n nh\xE1\xBA\xA5t", "", true, false},
-    {"save", 4, "L\xC6\xB0u d\xE1\xBB\xB1 \xC3\xA1n", "L\xC6\xB0u nhanh v\xC3\xA0o b\xE1\xBB\x99 nh\xE1\xBB\x9B c\xE1\xBB\xA5" "c b\xE1\xBB\x99", "Ctrl+S", false, false},
-    {"download", 3, "Xu\xE1\xBA\xA5t t\xE1\xBB\x87p .hexmap", "T\xE1\xBA\xA3i t\xE1\xBB\x87p d\xE1\xBB\xB1 \xC3\xA1n \xC4\x91\xE1\xBA\xA7y \xC4\x91\xE1\xBB\xA7 v\xE1\xBB\x81 m\xC3\xA1y", "Ctrl+E", false, false},
-    {"eye", 0, "Ch\xE1\xBA\xBF \xC4\x91\xE1\xBB\x99 xem", "Composition", "", true, true},
-    {"settings", 1, "C\xC3\xA0i \xC4\x91\xE1\xBA\xB7t h\xE1\xBB\x87 th\xE1\xBB\x91ng", "\xC4\x90\xE1\xBB\x99 ph\xC3\xA2n gi\xE1\xBA\xA3i, GPU, OSC/DMX", "", true, true},
-    {"circle-help", 3, "Tr\xE1\xBB\xA3 gi\xC3\xBAp & Ph\xC3\xADm t\xE1\xBA\xAFt", "B\xE1\xBA\xA3ng ph\xC3\xADm t\xE1\xBA\xAFt & H\xC6\xB0\xE1\xBB\x9Bng d\xE1\xBA\xABn", "", true, false},
+    {"file-plus", 1, "D\xE1\xBB\xB1 \xC3\xA1n m\xE1\xBB\x9Bi", "B\xE1\xBA\xAFt \xC4\x91\xE1\xBA\xA7u v\xE1\xBB\x9Bi deck v\xC3\xA0 mapping tr\xE1\xBB\x91ng", "Ctrl+N", false, true},
+    {"folder-open", 2, "M\xE1\xBB\x9F d\xE1\xBB\xB1 \xC3\xA1n...", "Ch\xE1\xBB\x8Dn t\xE1\xBB\x87p .mikmap trong Documents/MikMap", "Ctrl+O", false, false},
+    {"clock", 3, "M\xE1\xBB\x9F g\xE1\xBA\xA7n \xC4\x91\xC3\xA2y", "D\xE1\xBB\xB1 \xC3\xA1n l\xC6\xB0u g\xE1\xBA\xA7n nh\xE1\xBA\xA5t l\xC3\xAAn \xC4\x91\xE1\xBA\xA7u", "", true, false},
+    {"save", 4, "L\xC6\xB0u d\xE1\xBB\xB1 \xC3\xA1n", "Ghi v\xC3\xA0o Documents/MikMap", "Ctrl+S", false, false},
+    {"download", 3, "L\xC6\xB0u b\xE1\xBA\xA3n sao", "Th\xC3\xAAm m\xE1\xBB\x99t b\xE1\xBA\xA3n .mikmap c\xC3\xB3 ng\xC3\xA0y gi\xE1\xBB\x9D", "Ctrl+Shift+S", false, false},
+    {"eye", 0, "Ch\xE1\xBA\xBF \xC4\x91\xE1\xBB\x99 Show", "Ch\xE1\xBB\x89 hi\xE1\xBB\x87n h\xC3\xACnh ra, \xE1\xBA\xA9n giao di\xE1\xBB\x87n ch\xE1\xBB\x89nh s\xE1\xBB\xAD" "a", "Tab", false, true},
+    {"settings", 1, "C\xC3\xA0i \xC4\x91\xE1\xBA\xB7t h\xE1\xBB\x87 th\xE1\xBB\x91ng", "Ng\xC3\xB4n ng\xE1\xBB\xAF, font, m\xC3\xA0u, c\xE1\xBB\xA1 ch\xE1\xBB\xAF", "", true, true},
+    {"circle-help", 3, "Tr\xE1\xBB\xA3 gi\xC3\xBAp & Ph\xC3\xADm t\xE1\xBA\xAFt", "B\xE1\xBA\xA3ng ph\xC3\xADm t\xE1\xBA\xAFt", "", true, false},
     {"info", 2, "Gi\xE1\xBB\x9Bi thi\xE1\xBB\x87u MikMap", "v1.0.0 Enterprise Engine", "", true, false},
-    {"rotate-ccw", 4, "N\xE1\xBA\xA1p l\xE1\xBA\xA1i m\xE1\xBA\xABu Demo", "Kh\xC3\xB4i ph\xE1\xBB\xA5" "c k\xE1\xBB\x8Bch b\xE1\xBA\xA3n m\xE1\xBA\xABu", "", false, true},
+    {"rotate-ccw", 4, "N\xE1\xBA\xA1p l\xE1\xBA\xA1i m\xE1\xBA\xABu Demo", "Thay d\xE1\xBB\xB1 \xC3\xA1n hi\xE1\xBB\x87n t\xE1\xBA\xA1i b\xE1\xBA\xB1ng b\xE1\xBA\xA3n m\xE1\xBA\xABu", "", false, true},
 };
 
 static uint32_t PmHex(uint32_t c) { switch (c) { case 1: return pal::red; case 2: return pal::coral; case 3: return pal::cyan; case 4: return pal::mint; default: return pal::t88; } }
 static ImRect ProjectMenuRect() { return Rc(8, 39, 322, 24 + 8 + 28 + 6 + 10 + 8 + 1 + 4 + 10 * 36 + 4 + 28 + 1); }
+
+static void GuardedDiscard(const char* what, const std::function<void()>& go) {
+  if (A.projectDirty && g.time >= A.discardUntil) { A.discardUntil = g.time + 4; A.notify(std::string("Unsaved changes \xE2\x80\x94 repeat to discard and ") + what, 4); return; }
+  go();
+}
+static void OpenDialogShow() { A.openList = ListProjects(); A.openDialog = true; A.helpOpen = false; }
+static void RunProjectItem(int i) {
+  switch (i) {
+    case 0: GuardedDiscard("start a new project", [] { NewBlankProject(); A.notify("New project"); }); break;
+    case 1: case 2: OpenDialogShow(); break;
+    case 3: A.notify(DoSave(false)); A.projectDirty = ProjectDirty(); break;
+    case 4: A.notify(DoSave(true)); break;
+    case 5: A.showMode = true; A.notify("Show Mode \xE2\x80\x94 press Esc or Tab to leave", 3); break;
+    case 6: A.settingsOpen = true; break;
+    case 7: A.helpOpen = true; A.openDialog = false; break;
+    case 8: A.notify("MikMap v1.0.0 \xE2\x80\x94 projection mapping engine"); break;
+    case 9: GuardedDiscard("reload the demo", [] { NewProject(); A.notify("Demo project reloaded"); }); break;
+    default: A.notify("Not available yet"); break;
+  }
+}
 
 static void ProjectMenu() {
   if (!A.projectMenu) return;
@@ -185,14 +238,20 @@ static void ProjectMenu() {
   float cy = (hd.Min.y + hd.Max.y - 1) * 0.5f;
   Icon("folder", ImVec2(hd.Min.x + 8 + 5, cy), 10, K(pal::coral));
   Text(hd.Min.x + 8 + 10 + 6, cy, UI_B, 9, K(pal::tcc), "D\xE1\xBB\xB0 \xC3\x81N HI\xE1\xBB\x86N T\xE1\xBA\xA0I", 0.14f);
-  Badge(hd.Max.x - 8, cy, "\xC4\x90\xC3\xA3 l\xC6\xB0u", T_AUDIO, true);
+  Badge(hd.Max.x - 8, cy, A.projectDirty ? "Ch\xC6\xB0" "a l\xC6\xB0u" : "\xC4\x90\xC3\xA3 l\xC6\xB0u", A.projectDirty ? T_STANDBY : T_AUDIO, true);
   float y = hd.Max.y + 8;
   ImRect nm(r.Min.x + 9, y, r.Max.x - 9, y + 28);
   Box(nm, K(pal::g050), K(pal::g22), 3);
-  Text(nm.Min.x + 6, (nm.Min.y + nm.Max.y) * 0.5f, UI_B, 13, K(pal::tf3), "MikMap Stage 01");
+  Text(nm.Min.x + 6, (nm.Min.y + nm.Max.y) * 0.5f, UI_B, 13, K(pal::tf3), Trunc(A.projectName, 28).c_str());
   y += 28 + 6;
-  Text(r.Min.x + 9, y + 5, MONO_M, 10, K(pal::t66), "Engine v1.0 \xC2\xB7 1920\xC3\x97" "1080");
-  TextR(r.Max.x - 9, y + 5, MONO_M, 10, K(pal::t66), "11:20");
+  { char eb[48]; snprintf(eb, sizeof eb, "Engine v1.0 \xC2\xB7 %d\xC3\x97%d", A.canvasW, A.canvasH); Text(r.Min.x + 9, y + 5, MONO_M, 10, K(pal::t66), eb); }
+  { char hm[8]; std::time_t tt = std::time(nullptr); std::tm tmv{};
+#ifdef _WIN32
+    localtime_s(&tmv, &tt);
+#else
+    localtime_r(&tt, &tmv);
+#endif
+    std::strftime(hm, sizeof hm, "%H:%M", &tmv); TextR(r.Max.x - 9, y + 5, MONO_M, 10, K(pal::t66), hm); }
   y += 10 + 8;
   HLine(r.Min.x + 1, r.Max.x - 1, y, K(pal::g2a)); y += 1 + 4;
   for (int i = 0; i < 10; ++i) {
@@ -209,7 +268,7 @@ static void ProjectMenu() {
     if (it.chev) { Icon("chevron-right", ImVec2(xr - 5.5f, icy), 11, K(pal::t66)); xr -= 11 + 8; }
     if (*it.sc) TextR(xr, icy, MONO_M, 9, K(pal::t66), it.sc);
     if (h.hover) CursorHand();
-    if (h.click) { A.projectMenu = false; if (i == 6) A.settingsOpen = true; }
+    if (h.click) { A.projectMenu = false; RunProjectItem(i); }
     y += 36;
   }
   y += 4;
@@ -253,10 +312,89 @@ static int PopoverList(ImVec2 pos, ImVec2 disp, const char* title, const std::ve
   return clicked;
 }
 
+// Modal list of projects found in Documents/MikMap, newest first. Click a row to open it; Esc or a click outside closes.
+static void DrawOpenDialog(ImVec2 disp, bool fresh) {
+  if (!A.openDialog) return;
+  ImGuiIO& io = ImGui::GetIO();
+  int n = (int)A.openList.size(), rows = std::max(1, std::min(n, 10));
+  float w = 520, h = 30 + rows * 36 + 30;
+  ImRect r((disp.x - w) * 0.5f, std::max(48.f, (disp.y - h) * 0.4f), (disp.x + w) * 0.5f, std::max(48.f, (disp.y - h) * 0.4f) + h);
+  Fill(ImRect(0, 0, disp.x, disp.y), K(0x000000, 0.55f));
+  Shadow(r, 4, 40, 0.7f);
+  Box(r, K(pal::g12), K(pal::g2a), 4);
+  ImRect hd(r.Min.x + 1, r.Min.y + 1, r.Max.x - 1, r.Min.y + 30);
+  Fill(hd, K(pal::g18)); HLine(hd.Min.x, hd.Max.x, hd.Max.y - 1, K(pal::g2a));
+  Icon("folder-open", ImVec2(hd.Min.x + 14, (hd.Min.y + hd.Max.y) * 0.5f), 11, K(pal::coral));
+  Text(hd.Min.x + 26, (hd.Min.y + hd.Max.y) * 0.5f, UI_B, 10, K(pal::tcc), "OPEN PROJECT", 0.14f);
+  TextEll(hd.Min.x + 150, (hd.Min.y + hd.Max.y) * 0.5f, hd.Max.x - hd.Min.x - 160, MONO_M, 9, K(pal::t66), ProjectsDir().c_str());
+  float y = hd.Max.y;
+  if (n == 0) TextC((r.Min.x + r.Max.x) * 0.5f, y + 18, UI_S, 11, K(pal::t88), "No .mikmap projects yet \xE2\x80\x94 use Save project (Ctrl+S)");
+  for (int i = 0; i < rows && i < n; ++i) {
+    const ProjectFile& pf = A.openList[i];
+    ImRect ir(r.Min.x + 1, y + i * 36, r.Max.x - 1, y + (i + 1) * 36);
+    bool hv = Raw(ir);
+    if (hv) Fill(ir, K(pal::layerHover));
+    if (i) HLine(ir.Min.x, ir.Max.x, ir.Min.y, K(pal::g2a));
+    float cy2 = (ir.Min.y + ir.Max.y) * 0.5f;
+    bool cur = pf.path == A.projectPath;
+    Icon("layers", ImVec2(ir.Min.x + 16, cy2), 13, K(cur ? pal::coral : pal::t88));
+    TextEll(ir.Min.x + 32, cy2 - 6, 330, UI_B, 12, K(cur ? pal::coral : pal::te0), pf.name.c_str());
+    char when[32] = ""; std::time_t tt = (std::time_t)pf.mtime; std::tm tmv{};
+#ifdef _WIN32
+    localtime_s(&tmv, &tt);
+#else
+    localtime_r(&tt, &tmv);
+#endif
+    std::strftime(when, sizeof when, "%Y-%m-%d %H:%M", &tmv);
+    Text(ir.Min.x + 32, cy2 + 8, MONO_M, 9, K(pal::t66), when);
+    if (cur) TextR(ir.Max.x - 12, cy2, MONO_B, 9, K(pal::coral), "OPEN");
+    if (hv) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+    if (hv && io.MouseClicked[0] && !fresh) {
+      std::string path = pf.path, nm = pf.name;
+      GuardedDiscard("open another project", [path, nm] {
+        std::string err;
+        if (LoadProject(path, err)) { A.openDialog = false; A.notify("Opened: " + nm); }
+        else A.notify("Cannot open: " + err, 6);
+      });
+    }
+  }
+  TextR(r.Max.x - 10, r.Max.y - 15, MONO_M, 9, K(pal::t66), "ESC TO CLOSE");
+  if (!fresh && (io.MouseClicked[0] || io.MouseClicked[1]) && !Raw(r)) A.openDialog = false;
+  g.blocked = true;
+}
+
+static void DrawHelpDialog(ImVec2 disp, bool fresh) {
+  if (!A.helpOpen) return;
+  ImGuiIO& io = ImGui::GetIO();
+  static const char* rows[][2] = {{"Ctrl/Cmd + N", "New blank project"}, {"Ctrl/Cmd + O", "Open project"}, {"Ctrl/Cmd + S", "Save project"},
+                                  {"Ctrl/Cmd + Shift + S", "Save a timestamped copy"}, {"Ctrl/Cmd + Z", "Undo"},
+                                  {"Ctrl/Cmd + Shift + Z / Y", "Redo"}, {"F11", "Open / close projector output"}, {"Tab", "Show Mode (hide all editing UI)"},
+                                  {"Space", "Play / pause"}, {"Enter", "Trigger selected clip"}, {"Left / Right", "Previous / next column"}, {"L", "Selected clip: loop mode"}, {"Delete", "Clear selected clip"}, {"Esc", "Close menu, dialog or popover"}, {"Double-click layer", "Rename layer"}, {"Alt + wheel (Mapping)", "Zoom at cursor"}};
+  int n = (int)(sizeof rows / sizeof rows[0]);
+  float w = 460, h = 30 + n * 26 + 30;
+  ImRect r((disp.x - w) * 0.5f, std::max(48.f, (disp.y - h) * 0.4f), (disp.x + w) * 0.5f, std::max(48.f, (disp.y - h) * 0.4f) + h);
+  Fill(ImRect(0, 0, disp.x, disp.y), K(0x000000, 0.55f));
+  Shadow(r, 4, 40, 0.7f);
+  Box(r, K(pal::g12), K(pal::g2a), 4);
+  ImRect hd(r.Min.x + 1, r.Min.y + 1, r.Max.x - 1, r.Min.y + 30);
+  Fill(hd, K(pal::g18)); HLine(hd.Min.x, hd.Max.x, hd.Max.y - 1, K(pal::g2a));
+  Icon("circle-help", ImVec2(hd.Min.x + 14, (hd.Min.y + hd.Max.y) * 0.5f), 11, K(pal::cyan));
+  Text(hd.Min.x + 26, (hd.Min.y + hd.Max.y) * 0.5f, UI_B, 10, K(pal::tcc), "KEYBOARD SHORTCUTS", 0.14f);
+  for (int i = 0; i < n; ++i) {
+    float cy2 = hd.Max.y + 13 + i * 26;
+    Text(r.Min.x + 16, cy2, MONO_B, 10, K(pal::coral), rows[i][0]);
+    Text(r.Min.x + 210, cy2, UI_S, 11, K(pal::te0), rows[i][1]);
+  }
+  TextR(r.Max.x - 10, r.Max.y - 15, MONO_M, 9, K(pal::t66), "ESC TO CLOSE");
+  if (!fresh && (io.MouseClicked[0] || io.MouseClicked[1]) && !Raw(r)) A.helpOpen = false;
+  g.blocked = true;
+}
+
 void DrawOverlays(ImVec2 disp) {
   static bool prevBlend = false, prevPop = false, prevCtx = false, prevLayer = false;
   bool freshBlend = A.blendDD.open && !prevBlend, freshPop = A.pop.open && !prevPop, freshCtx = A.ctx.open && !prevCtx, freshLayer = A.layerMenu.open && !prevLayer;
   static bool prevCol = false; bool freshCol = A.colMenu.open && !prevCol; prevCol = A.colMenu.open;
+  static bool prevDeckMenu = false; bool freshDeckMenu = A.deckMenu.open && !prevDeckMenu; prevDeckMenu = A.deckMenu.open;
   prevBlend = A.blendDD.open; prevPop = A.pop.open; prevCtx = A.ctx.open; prevLayer = A.layerMenu.open;
   g.blocked = false;
   ImGuiIO& io = ImGui::GetIO();
@@ -264,6 +402,9 @@ void DrawOverlays(ImVec2 disp) {
   g.dl = ImGui::GetForegroundDrawList();  // scroll children render after the root window; overlays must sit above them
 
   ProjectMenu();
+  static bool prevOpen = false, prevHelp = false; bool freshOpen = A.openDialog && !prevOpen, freshHelp = A.helpOpen && !prevHelp; prevOpen = A.openDialog; prevHelp = A.helpOpen;
+  DrawOpenDialog(disp, freshOpen);
+  DrawHelpDialog(disp, freshHelp);
 
   // blend dropdown
   if (A.blendDD.open) {
@@ -287,7 +428,8 @@ void DrawOverlays(ImVec2 disp) {
   // clip popover (+ clip colour swatches)
   if (A.pop.open) {
     std::vector<PItem> items = {{"Trigger", "play", "\xE2\x86\xB5", 1, false, false}, {"Cue to Preview", "eye", "C", 0, false, false},
-                                {"Loop", "repeat", "L", 0, false, false}, {"", "", "", 0, false, true}, {"Clear Slot", "trash-2", "", 2, false, false}};
+                                {"Loop", "repeat", "L", 0, false, false}, {"Rename", "pencil", "", 0, A.layers[A.pop.li].clips[A.pop.ci].st == Clip::Empty, false},
+                                {"", "", "", 0, false, true}, {"Clear Slot", "trash-2", "", 2, false, false}};
     ImRect pr; int hit = PopoverList(A.pop.pos, disp, "Clip", items, freshPop, pr);
     ImRect cb(pr.Min.x, pr.Max.y + 4, pr.Min.x + 180, pr.Max.y + 4 + 6 + 9 + 4 + 18 + 6);
     Shadow(cb, 4, 24, 0.7f);
@@ -306,7 +448,7 @@ void DrawOverlays(ImVec2 disp) {
     }
     if (hit >= 0) {
       int li = A.pop.li, ci = A.pop.ci;
-      if (hit == 0) A.trigger(li, ci); else if (hit == 1) A.cue(li, ci); else if (hit == 4) A.layers[li].clips[ci] = Clip();
+      if (hit == 0) A.trigger(li, ci); else if (hit == 1) A.cue(li, ci); else if (hit == 2) A.layers[li].clips[ci].playMode = PM_LOOP; else if (hit == 3) A.beginRename(2, li * 1000 + ci, A.pop.pos, A.layers[li].clips[ci].name); else if (hit == 5) A.layers[li].clips[ci] = Clip();
       A.pop.open = false;
     } else if (!freshPop && !inBox && (io.MouseClicked[0] || io.MouseClicked[1]) && !Raw(pr)) A.pop.open = false;
     g.blocked = true;
@@ -327,7 +469,8 @@ void DrawOverlays(ImVec2 disp) {
         Layer c = A.layers[li]; c.name += " copy"; c.live = false;
         for (auto& k : c.clips) if (k.isLive()) k.st = Clip::Loaded;
         A.layers.insert(A.layers.begin() + li + 1, c); A.selLayer = li + 1;
-      } else if (hit == 4) { for (auto& k : A.layers[li].clips) k = Clip(); A.layers[li].live = false; }
+      } else if (hit == 3) { A.beginRename(0, li, A.layerMenu.pos, A.layers[li].name); }
+      else if (hit == 4) { for (auto& k : A.layers[li].clips) k = Clip(); A.layers[li].live = false; }
       else if (hit == 5 && n > 1) { A.layers.erase(A.layers.begin() + li); A.selLayer = std::clamp(A.selLayer, 0, (int)A.layers.size() - 1); A.selLi = std::clamp(A.selLi, 0, (int)A.layers.size() - 1); }
       A.layerMenu.open = false;
     } else if (!freshLayer && (io.MouseClicked[0] || io.MouseClicked[1]) && !Raw(pr)) A.layerMenu.open = false;
@@ -337,18 +480,41 @@ void DrawOverlays(ImVec2 disp) {
   // column menu
   if (A.colMenu.open) {
     int ci = A.colMenu.ci, n = A.colCount();
+    bool isAutoStart = A.autoStartCol == ci;
     std::vector<PItem> items = {{"Insert column before", "arrow-left-to-line", "", 0, false, false}, {"Insert column after", "arrow-right-to-line", "", 0, false, false},
                                 {"Move left", "chevron-left", "", 0, ci == 0, false}, {"Move right", "chevron-right", "", 0, ci >= n - 1, false},
                                 {"Rename column", "pencil", "", 0, false, false}, {"Clear column", "eraser", "", 0, false, false},
+                                {isAutoStart ? "Clear auto-start on open" : "Set as auto-start on open", "zap", "", isAutoStart ? 1 : 0, false, false},
                                 {"Delete column", "trash-2", "", 2, n < 2, false}};
     ImRect pr; int hit = PopoverList(A.colMenu.pos, disp, "Column", items, freshCol, pr);
     if (hit >= 0) {
       if (hit == 0) A.insertCol(ci); else if (hit == 1) A.insertCol(ci + 1);
       else if (hit == 2) A.moveColTo(ci, ci - 1); else if (hit == 3) A.moveColTo(ci, ci + 1);
+      else if (hit == 4) { A.beginRename(1, ci, A.colMenu.pos, A.colName(ci)); }
       else if (hit == 5) { for (auto& l : A.layers) { l.clips[ci] = Clip(); l.live = false; for (auto& k : l.clips) if (k.isLive()) l.live = true; } }
-      else if (hit == 6) A.deleteCol(ci);
+      else if (hit == 6) { A.autoStartCol = isAutoStart ? -1 : ci; A.notify(isAutoStart ? "Auto-start cleared" : ("Auto-start: column " + std::to_string(ci + 1)), 2.0); }
+      else if (hit == 7) A.deleteCol(ci);
       A.colMenu.open = false;
     } else if (!freshCol && (io.MouseClicked[0] || io.MouseClicked[1]) && !Raw(pr)) A.colMenu.open = false;
+    g.blocked = true;
+  }
+
+  // deck tab menu
+  if (A.deckMenu.open) {
+    int di = A.deckMenu.idx, n = (int)A.decks.size();
+    std::vector<PItem> items = {{"Add deck", "plus", "", 0, false, false}, {"Rename deck", "pencil", "", 0, false, false}, {"Duplicate deck", "copy", "", 0, false, false},
+                                {"Move left", "chevron-left", "", 0, di == 0, false}, {"Move right", "chevron-right", "", 0, di >= n - 1, false},
+                                {"Delete deck", "trash-2", "", 2, n < 2, false}};
+    ImRect pr; int hit = PopoverList(A.deckMenu.pos, disp, "Deck", items, freshDeckMenu, pr);
+    if (hit >= 0) {
+      if (hit == 0) A.addDeck();
+      else if (hit == 1) A.beginRename(4, di, A.deckMenu.pos, A.decks[di].name);
+      else if (hit == 2) A.duplicateDeck(di);
+      else if (hit == 3) A.moveDeckTo(di, di - 1);
+      else if (hit == 4) A.moveDeckTo(di, di + 1);
+      else if (hit == 5) A.deleteDeck(di);
+      A.deckMenu.open = false;
+    } else if (!freshDeckMenu && (io.MouseClicked[0] || io.MouseClicked[1]) && !Raw(pr)) A.deckMenu.open = false;
     g.blocked = true;
   }
 
@@ -395,7 +561,33 @@ void DrawOverlays(ImVec2 disp) {
     (void)acted;
     g.blocked = true;
   }
-  if (ImGui::IsKeyPressed(ImGuiKey_Escape)) { A.pop.open = A.ctx.open = A.blendDD.open = A.projectMenu = false; }
+  if (A.rename.open) {
+    ImGui::SetNextWindowPos(A.rename.pos);
+    ImGui::SetNextWindowSize(ImVec2(220, 0));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 8));
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(6, 4));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.f);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, K(pal::g16));
+    ImGui::PushStyleColor(ImGuiCol_Border, K(pal::coral));
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, K(pal::g050));
+    ImGui::PushStyleColor(ImGuiCol_Text, K(pal::tf3));
+    bool submit = false;
+    ImGui::Begin("##rename", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize);
+    ImGui::PushFont(F(UI_B), 12);
+    ImGui::TextUnformatted(A.rename.kind == 0 ? "RENAME LAYER" : A.rename.kind == 1 ? "RENAME COLUMN" : A.rename.kind == 3 ? "RENAME GROUP" : A.rename.kind == 4 ? "RENAME DECK" : "RENAME CLIP");
+    ImGui::SetNextItemWidth(-1);
+    if (A.rename.fresh) ImGui::SetKeyboardFocusHere();
+    submit = ImGui::InputText("##rn", A.rename.buf, sizeof A.rename.buf, ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll);
+    ImGui::PopFont();
+    bool inside = ImGui::IsWindowHovered(ImGuiHoveredFlags_RootAndChildWindows);
+    ImGui::End();
+    ImGui::PopStyleColor(4); ImGui::PopStyleVar(3);
+    if (submit) { A.commitRename(A.rename.buf); A.rename.open = false; }
+    else if (!A.rename.fresh && !inside && (io.MouseClicked[0] || io.MouseClicked[1])) A.rename.open = false;
+    A.rename.fresh = false;
+    g.blocked = true;
+  }
+  if (ImGui::IsKeyPressed(ImGuiKey_Escape)) { A.pop.open = A.ctx.open = A.blendDD.open = A.projectMenu = A.rename.open = A.openDialog = A.helpOpen = A.deckMenu.open = false; }
   g.dl = rootDl;
 }
 
@@ -418,8 +610,9 @@ struct Script { int kind; float x0, y0, x1, y1; };
 int main(int argc, char** argv) {
   std::vector<Script> script;
   bool openOut = false; std::string outShot;
+  std::string roundtrip; std::vector<int> fxTest;
   std::string shot; int startScreen = 0, frames = 12, W = 1440, H = 900, tab = -1, page = -1;
-  bool sel = false; int selLi = 0, selCi = 0, ctxTest = 0;
+  bool sel = false, scaleGiven = false; int selLi = 0, selCi = 0, ctxTest = 0, cliScale = 100;
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
     if (a == "--shot" && i + 1 < argc) shot = argv[++i];
@@ -428,10 +621,11 @@ int main(int argc, char** argv) {
     else if (a == "--size" && i + 2 < argc) { W = atoi(argv[++i]); H = atoi(argv[++i]); }
     else if (a == "--tab" && i + 1 < argc) tab = atoi(argv[++i]);
     else if (a == "--page" && i + 1 < argc) page = atoi(argv[++i]);
+    else if (a == "--roundtrip" && i + 1 < argc) roundtrip = argv[++i];
     else if (a == "--menu") A.projectMenu = true;
     else if (a == "--out") openOut = true;
     else if (a == "--outshot" && i + 1 < argc) { openOut = true; outShot = argv[++i]; }
-    else if (a == "--scale" && i + 1 < argc) A.prefs.scale = atoi(argv[++i]);
+    else if (a == "--scale" && i + 1 < argc) { A.prefs.scale = atoi(argv[++i]); cliScale = A.prefs.scale; scaleGiven = true; }
     else if (a == "--ctx") ctxTest = 1;
     else if ((a == "--click" || a == "--rclick" || a == "--drag") && i + 1 < argc) {
       // scripted input for headless checks: x,y  (drag: x0,y0,x1,y1)
@@ -439,13 +633,234 @@ int main(int argc, char** argv) {
       sscanf(argv[++i], "%f,%f,%f,%f", &s.x0, &s.y0, &s.x1, &s.y1);
       script.push_back(s);
     }
+    else if (a == "--fx" && i + 1 < argc) fxTest.push_back(atoi(argv[++i]));   // test aid: add FX kind N to the selected clip
     else if (a == "--cell" && i + 2 < argc) { sel = true; selLi = atoi(argv[++i]); selCi = atoi(argv[++i]); }
+  }
+  if (!roundtrip.empty()) {
+    // Headless self-check of project persistence: save -> edit -> load must restore the saved state exactly.
+    auto fail = [](const char* w) { std::fprintf(stderr, "roundtrip FAILED: %s\n", w); return 1; };
+    std::string err;
+    NewProject();
+    if (ProjectDirty()) return fail("fresh project reports dirty");
+    A.layers[0].name = "Edited"; A.layers[0].clips[1].fx.push_back(Fx()); A.colNames.resize(A.colCount()); A.colNames[1] = "Renamed";
+    A.screens[0].slices[0].q[2] = ImVec2(1500, 900); A.calib[0].mx = 0.123f; A.bpm = 97.5f; A.screens[0].slices[1].solo = true; A.layers[0].clips[1].media = "/no/such/file.png";
+    if (!ProjectDirty()) return fail("edit not detected as dirty");
+    if (!SaveProject(roundtrip, err)) return fail(err.c_str());
+    if (ProjectDirty()) return fail("dirty right after save");
+    A.layers[0].name = "Scribble"; A.screens[0].slices[0].q[2] = ImVec2(1, 1); A.colNames[1] = "x";
+    if (!LoadProject(roundtrip, err)) return fail(err.c_str());
+    if (A.layers[0].name != "Edited" || A.colName(1) != "Renamed" || A.screens[0].slices[0].q[2].x != 1500.f || std::fabs(A.calib[0].mx - 0.123f) > 1e-6f) return fail("state not restored");
+    if (A.layers[0].clips[1].fx.empty()) return fail("fx chain lost");
+    if (A.bpm != 97.5f) return fail("bpm not restored");
+    if (A.layers[0].clips[1].media != "/no/such/file.png") return fail("image clip path not restored");
+    if (!A.screens[0].slices[1].solo || A.screens[0].slices[0].solo) return fail("slice solo not restored");
+    if (ProjectDirty()) return fail("dirty right after load");
+    NewBlankProject();
+    if (A.layers.size() != 4 || A.screens.size() != 1) return fail("blank project shape");
+    if (!SaveProject(roundtrip + ".blank", err) || !LoadProject(roundtrip + ".blank", err)) return fail(err.c_str());
+    { std::FILE* f = std::fopen(roundtrip.c_str(), "wb"); if (f) { std::fputs("{ this is not json", f); std::fclose(f); } }
+    if (LoadProject(roundtrip, err)) return fail("corrupt file was accepted");
+    if (A.layers.size() != 4) return fail("corrupt load damaged the live state");
+    { std::FILE* f = std::fopen(roundtrip.c_str(), "wb"); if (f) { std::fputs("{\"format\":1,\"composition\":{\"layers\":[]}}", f); std::fclose(f); } }
+    if (LoadProject(roundtrip, err)) return fail("empty project was accepted");
+    // undo/redo: each committed edit is one step, redo re-applies, and a live clip keeps playing through an undo
+    NewProject();
+    std::string first = A.layers[0].name;
+    A.trigger(0, 2); if (!A.layers[0].clips[2].isLive()) return fail("trigger setup");
+    A.layers[0].name = "A1"; UndoCommit(); A.layers[0].name = "A2"; A.screens[0].slices[0].q[0] = ImVec2(9, 9); UndoCommit();
+    if (!CanUndo() || CanRedo()) return fail("undo flags after edits");
+    UndoStep(false); if (A.layers[0].name != "A1" || A.screens[0].slices[0].q[0].x == 9.f) return fail("undo 1");
+    if (!A.layers[0].clips[2].isLive()) return fail("undo cut a playing clip");
+    UndoStep(false); if (A.layers[0].name != first) return fail("undo 2");
+    if (CanUndo()) return fail("history should be empty");
+    UndoStep(true); if (A.layers[0].name != "A1") return fail("redo");
+    A.layers[0].name = "A3"; UndoCommit(); if (CanRedo()) return fail("new edit should clear redo");
+    // A10: triggering another clip on a layer with blend time > 0 starts a dissolve from the previous live clip
+    NewProject(); A.layers[0].blendTime = 2.f;
+    std::string prevName; for (auto& c : A.layers[0].clips) if (c.isLive()) prevName = c.name;
+    A.trigger(0, 0);
+    if (prevName.empty() || A.layers[0].fadeT != 0.f || A.layers[0].fadeFrom.name != prevName) return fail("dissolve not started");
+    A.layers[0].blendTime = 0.f; A.layers[0].fadeT = 1.f; A.trigger(0, 1);
+    if (A.layers[0].fadeT != 1.f) return fail("dissolve started with blend time 0");
+    // columns: insert/delete/move stay consistent across layers and can be undone
+    NewProject(); int cols0 = A.colCount();
+    A.insertCol(2); UndoCommit(); A.deleteCol(0); UndoCommit();
+    if (A.colCount() != cols0) return fail("col count after insert+delete");
+    for (auto& l : A.layers) if ((int)l.clips.size() != A.colCount()) return fail("layers have different column counts");
+    UndoStep(false); if (A.colCount() != cols0 + 1) return fail("undo delete column");
+    UndoStep(false); if (A.colCount() != cols0) return fail("undo insert column");
+    // groups: opacity persists, a dangling group id is dropped on load instead of crashing the deck
+    NewProject(); Group ng; ng.id = "gx"; ng.name = "Extra"; ng.opacity = 40.f; A.groups.push_back(ng); A.layers[0].group = "gx";
+    if (!SaveProject(roundtrip, err) || !LoadProject(roundtrip, err)) return fail(err.c_str());
+    if (!A.group("gx") || A.group("gx")->opacity != 40.f || A.layers[0].group != "gx") return fail("group not restored");
+    A.groups.erase(std::remove_if(A.groups.begin(), A.groups.end(), [](const Group& g) { return g.id == "gx"; }), A.groups.end());
+    if (!SaveProject(roundtrip, err) || !LoadProject(roundtrip, err)) return fail(err.c_str());
+    if (!A.layers[0].group.empty()) return fail("dangling group reference survived load");
+    // group Cue N: selects (Selected/LiveSel, not just selectedCells bookkeeping) that column's clip on EVERY
+    // layer in the group, leaves other layers alone, and switches Properties to the Clip tab
+    NewProject(); { Group ng; ng.id = "gy"; ng.name = "GY"; A.groups.push_back(ng); A.layers[0].group = "gy"; A.layers[1].group = "gy";
+      A.layers[0].clips[0].st = Clip::Live; A.layers[2].clips[0].st = Clip::Selected;   // layer 2 (outside the group) must not be touched
+      A.tab = 0; A.selectGroupCue("gy", 0);
+      if (A.layers[0].clips[0].st != Clip::LiveSel) return fail("group cue did not select the live clip on a group member");
+      if (A.layers[1].clips[0].st != Clip::Selected) return fail("group cue did not select the loaded clip on a group member");
+      if (A.layers[2].clips[0].st != Clip::Selected) return fail("group cue touched a layer outside the group");
+      if (A.tab != 2) return fail("group cue did not switch Properties to the Clip tab");
+      bool sawL0 = false, sawL1 = false; for (auto& c : A.selectedCells) { if (c.first == 0 && c.second == 0) sawL0 = true; if (c.first == 1 && c.second == 0) sawL1 = true; }
+      if (!sawL0 || !sawL1) return fail("group cue did not select both group members' cells"); }
+    // rename: commit trims, ignores empty text, and pins the clip look so the picture does not change
+    NewProject(); { int st0 = ClipStyleOf(A.layers[0].clips[0].name); A.beginRename(2, 0, ImVec2(0, 0), ""); A.commitRename("  My clip  ");
+      if (A.layers[0].clips[0].name != "My clip" || A.layers[0].clips[0].style != st0) return fail("clip rename / style pin"); }
+    A.beginRename(0, 0, ImVec2(0, 0), ""); A.commitRename("   "); if (A.layers[0].name.empty() || A.layers[0].name == "   ") return fail("empty rename accepted");
+    // Sync (quantize): a trigger waits for the next beat; the latest request per layer wins; off = immediate
+    NewProject(); A.quantize = true; A.playing = true;
+    A.trigger(0, 0); A.trigger(0, 1);
+    if (A.layers[0].clips[0].isLive() || A.layers[0].clips[1].isLive() || A.pending.size() != 1) return fail("sync should queue exactly one trigger");
+    A.flushPending();
+    if (!A.layers[0].clips[1].isLive() || A.layers[0].clips[0].isLive() || !A.pending.empty()) return fail("sync flush");
+    A.quantize = false; A.trigger(0, 0); if (!A.layers[0].clips[0].isLive()) return fail("trigger with sync off must be immediate");
+    if (std::getenv("MIKMAP_BENCH")) {   // cost of one dirty/undo snapshot: it runs ~5x per second while the UI is idle
+      auto t0 = std::chrono::steady_clock::now();
+      for (int i = 0; i < 200; ++i) (void)ProjectDirty();
+      double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count() / 200.0;
+      std::printf("snapshot: %.3f ms each\n", ms);
+    }
+    // Empty column/cell = blackout: firing an empty column must STOP whatever was live elsewhere, not leave it running.
+    NewProject(); A.quantize = false;
+    if (!A.layers[0].clips[2].isLive()) return fail("fixture: expected a live clip at col2 before the test");
+    A.fireColumn(A.colCount() - 1);   // the demo's trailing columns are empty in every layer
+    for (auto& l : A.layers) if (l.live) return fail("firing an all-empty column must stop every layer");
+    NewProject();
+    int liveLi = -1; for (int li = 0; li < (int)A.layers.size(); ++li) if (A.layers[li].live) { liveLi = li; break; }
+    if (liveLi < 0) return fail("fixture: expected some layer live");
+    A.trigger(liveLi, A.colCount() - 1);   // click an empty cell's body on that same layer
+    if (A.layers[liveLi].live) return fail("triggering an empty cell must stop that layer");
+    // Armed cells (Ar(), the demo's "looks empty but isn't Clip::Empty" flavor) must be treated as empty everywhere:
+    // cue() must not select them into Live/Selected, and firing one must not fabricate a nameless playing clip.
+    NewProject();
+    { bool foundArmed = false;
+      for (auto& l : A.layers) for (auto& c : l.clips) if (c.st == Clip::Armed) foundArmed = true;
+      if (!foundArmed) return fail("fixture: expected an Armed cell in the demo project"); }
+    for (int li = 0; li < (int)A.layers.size() && true; ++li)
+      for (int ci = 0; ci < (int)A.layers[li].clips.size(); ++ci)
+        if (A.layers[li].clips[ci].st == Clip::Armed) {
+          A.cue(li, ci); A.trigger(li, ci);
+          if (A.layers[li].clips[ci].st != Clip::Armed) return fail("cue+trigger must not change an Armed cell's state");
+          if (A.layers[li].live) return fail("triggering an Armed cell must not mark the layer live");
+        }
+    // Firing a column shows the topmost layer with real content there in Preview Cue (selLi/selCi).
+    NewProject();
+    A.fireColumn(0);
+    if (A.selLi != 0 || A.layers[0].clips[0].name.empty()) return fail("fireColumn must preview the topmost layer with content");
+    // Stopping via an empty cell must work for EVERY layer on its own (not just the first one) -- each layer is
+    // independent, so clicking layer X's empty cell must never leave layer X still live, regardless of layer Y.
+    NewProject();
+    int stoppedCount = 0;
+    for (int li = 0; li < (int)A.layers.size(); ++li) {
+      Layer& l = A.layers[li];
+      int emptyCi = -1;
+      for (int ci = 0; ci < (int)l.clips.size(); ++ci) if (l.clips[ci].st == Clip::Empty || l.clips[ci].st == Clip::Armed) { emptyCi = ci; break; }
+      if (emptyCi < 0) continue;
+      bool wasLive = l.live;
+      A.trigger(li, emptyCi);
+      if (A.layers[li].live) { std::fprintf(stderr, "layer %d (%s) still live after clicking its own empty cell\n", li, l.name.c_str()); return 1; }
+      if (wasLive) ++stoppedCount;
+    }
+    if (stoppedCount == 0) return fail("fixture: expected at least one layer to start live so the stop could be observed");
+    // Auto-start column: off by default, only fires (and only on LOAD, not on plain NewProject) when set and saved.
+    NewProject();
+    if (A.autoStartCol != -1) return fail("autoStartCol must default to off");
+    for (auto& l : A.layers) for (auto& c : l.clips) if (c.isLive()) c.st = Clip::Loaded;   // clean baseline: stop the demo's own default-live clips
+    for (auto& l : A.layers) l.live = false;
+    A.autoStartCol = 2;   // Cột 3, non-empty in every layer of the demo
+    if (!SaveProject(roundtrip, err)) return fail(err.c_str());
+    NewProject();   // must NOT inherit the setting from the in-memory state -- only a real load applies it
+    if (A.autoStartCol != -1) return fail("NewProject must not carry over autoStartCol");
+    if (!LoadProject(roundtrip, err)) return fail(err.c_str());
+    if (A.autoStartCol != 2) return fail("autoStartCol not restored");
+    int nLive = 0; for (auto& l : A.layers) if (l.live) ++nLive;
+    if (nLive == 0) return fail("opening a project with autoStartCol set must fire that column");
+    if (A.activeCol != 2) return fail("opening must select the auto-start column");
+    // A stale autoStartCol pointing past the real column count (e.g. saved before a column got deleted) must fall
+    // back to off on load, not read out of bounds.
+    { std::FILE* f = std::fopen(roundtrip.c_str(), "wb");
+      if (f) { std::fputs("{\"format\":1,\"composition\":{\"autoStartCol\":999,\"layers\":[{\"name\":\"L\",\"clips\":[{\"name\":\"c\",\"st\":1}]}]},\"screens\":[{\"id\":\"s\",\"slices\":[{\"id\":\"sl\"}]}]}", f); std::fclose(f); } }
+    if (!LoadProject(roundtrip, err)) return fail(err.c_str());
+    if (A.autoStartCol != -1) return fail("out-of-range autoStartCol must clamp to off, not read out of bounds");
+    // Timeline transport next/prev: unlike stepSel() (pure navigation), the button actions actually play the column.
+    NewProject(); A.activeCol = 0;
+    A.stepFireColumn(1);
+    if (A.activeCol != 1) return fail("stepFireColumn(1) must move to column 1");
+    { bool any = false; for (auto& l : A.layers) if (l.live) any = true;
+      if (!any && !A.layers[0].clips[1].name.empty()) return fail("stepFireColumn must actually fire the column, not just select it"); }
+    A.stepFireColumn(-100);   // clamps, does not go negative/out of range
+    if (A.activeCol != 0) return fail("stepFireColumn must clamp to the first column");
+    // Multi-deck: switching mirrors content in/out, addDeck starts blank+independent, delete keeps >=1.
+    NewProject();
+    if (A.decks.size() != 1 || A.decks[0].name != "Deck A") return fail("fixture: expected exactly Deck A");
+    std::string deckAClip0 = A.layers[0].clips[0].name;
+    A.addDeck();
+    if (A.decks.size() != 2 || A.curDeckIdx != 1) return fail("addDeck must create and switch to a new deck");
+    if (A.layers.empty() || !A.layers[0].clips[0].name.empty()) return fail("a new deck must start with empty clips, not a copy of Deck A");
+    A.layers[0].name = "Solo"; A.trigger(0, 0);   // trigger on an empty cell just stops (already covered elsewhere); rename is the real check
+    A.switchDeck(0);
+    if (A.curDeckIdx != 0 || A.layers[0].clips[0].name != deckAClip0) return fail("switching back to Deck A must restore its own content");
+    A.switchDeck(1);
+    if (A.layers[0].name != "Solo") return fail("switching to Deck B must restore the edit made there");
+    if (!SaveProject(roundtrip, err)) return fail(err.c_str());
+    NewProject();
+    if (!LoadProject(roundtrip, err)) return fail(err.c_str());
+    if (A.decks.size() != 2 || A.curDeckIdx != 1 || A.layers[0].name != "Solo") return fail("multi-deck save/load did not round-trip");
+    A.switchDeck(0);
+    if (A.layers[0].clips[0].name != deckAClip0) return fail("Deck A content lost across save/load");
+    A.deleteDeck(0);
+    if (A.decks.size() != 1 || A.layers[0].name != "Solo") return fail("deleting the non-active deck must keep the active one showing");
+    NewProject();
+    if (A.decks.size() != 1) return fail("fixture: expected exactly 1 deck before the guard check");
+    A.deleteDeck(0);
+    if (A.decks.size() != 1) return fail("deleteDeck must refuse to remove the last remaining deck");
+    // moveDeckTo (right-click "Move left/right", replacing drag): reorders decks[], remaps curDeckIdx to follow
+    // whichever deck is actually current, and keeps that deck's own live content in groups/layers/colNames.
+    NewProject(); A.addDeck(); A.addDeck();   // Deck A, Deck B, Deck C (curDeckIdx == 2, "Deck C")
+    if (A.decks.size() != 3 || A.decks[2].name != "Deck C" || A.curDeckIdx != 2) return fail("fixture: expected 3 decks, current = Deck C");
+    A.layers[0].name = "OnDeckC";
+    A.moveDeckTo(2, 0);   // Deck C moves to the front: order becomes C, A, B — curDeckIdx must follow it to 0
+    if (A.decks[0].name != "Deck C" || A.decks[1].name != "Deck A" || A.decks[2].name != "Deck B") return fail("moveDeckTo did not reorder decks[]");
+    if (A.curDeckIdx != 0) return fail("moveDeckTo must keep curDeckIdx pointed at the deck that moved");
+    if (A.layers[0].name != "OnDeckC") return fail("moveDeckTo must keep the current deck's own live content, not swap in another deck's");
+    A.moveDeckTo(1, 2);   // Deck A (not current) moves past Deck B: curDeckIdx (still Deck C, now at slot 0) must NOT move
+    if (A.curDeckIdx != 0 || A.decks[A.curDeckIdx].name != "Deck C") return fail("moveDeckTo must not disturb curDeckIdx when a different deck is reordered");
+    if (A.decks[1].name != "Deck B" || A.decks[2].name != "Deck A") return fail("moveDeckTo(1,2) did not swap the two trailing decks");
+    A.moveDeckTo(0, 0);   // no-op: same index
+    if (A.decks[0].name != "Deck C" || A.curDeckIdx != 0) return fail("moveDeckTo(i,i) must be a no-op");
+    // Timeline: tlLayout lays clips back-to-back by real duration; tlSync flips exactly the clip under the playhead live.
+    NewProject();
+    auto lay = A.tlLayout();
+    if (lay.empty() || lay[0].empty()) return fail("fixture: expected timeline blocks on layer 0");
+    if (lay[0][0].start != 0.f) return fail("first timeline block must start at 0%");
+    for (size_t i = 1; i < lay[0].size(); ++i) if (std::fabs(lay[0][i].start - lay[0][i - 1].end) > 0.01f) return fail("timeline blocks must be back-to-back with no gap");
+    for (auto& l : A.layers) for (auto& c : l.clips) if (c.isLive()) c.st = Clip::Loaded;   // clean baseline
+    for (auto& l : A.layers) l.live = false;
+    A.tlSync(0.f);
+    if (!A.layers[0].clips[lay[0][0].ci].isLive()) return fail("tlSync(0) must make the first block live");
+    float midPct = (lay[0].back().start + lay[0].back().end) * 0.5f;
+    A.tlSync(midPct);
+    if (!A.layers[0].clips[lay[0].back().ci].isLive()) return fail("tlSync at the last block's midpoint must make it live");
+    if (A.layers[0].clips[lay[0][0].ci].isLive()) return fail("tlSync must turn off the block that is no longer under the playhead");
+    std::printf("roundtrip OK\n"); return 0;
   }
   gAssets = FindAssets(argv[0]);
 
   if (!glfwInit()) return 1;
+#ifdef __APPLE__
+  // macOS only hands out GL 2.1 (legacy) or 3.2+ core; a plain "3.0" request fails to create the window.
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
+  glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+  glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
+#else
   glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
   glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
+#endif
   glfwWindowHint(GLFW_SAMPLES, 4);
   if (!shot.empty()) glfwWindowHint(GLFW_VISIBLE, GLFW_TRUE);
   GLFWwindow* win = glfwCreateWindow(W, H, "MikMap Pro \xE2\x80\x94 show_alpha_v3.mikmap", nullptr, nullptr);
@@ -473,34 +888,56 @@ int main(int argc, char** argv) {
   io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
   SetupStyle();
   ImGui_ImplGlfw_InitForOpenGL(win, true);
+  #ifdef __APPLE__
+  ImGui_ImplOpenGL3_Init("#version 150");
+#else
   ImGui_ImplOpenGL3_Init("#version 130");
+#endif
   InitBlendModes([](const char* n) { return (void*)glfwGetProcAddress(n); });
+  if (shot.empty()) LoadSettings();          // scripted screenshot runs must not depend on (or touch) the user's saved settings
+  if (scaleGiven) A.prefs.scale = cliScale;
   LoadAllFonts(io, gAssets);
   ApplyPrefs();
   gLogoTex = LoadTexture(gAssets + "/mikmap-mark.png");
 
-  A.init();
+  NewProject();
   A.screen = startScreen;
   if (tab >= 0) A.tab = tab;
   if (page >= 0) A.mpage = page;
   if (openOut) OpenOutput(win, A.outMonitor);
   if (ctxTest) A.openCtx(ImVec2(500, 300), A.sliceMenu("screen1", "slice1"));
   if (sel) A.cue(selLi, selCi);
+  for (int k : fxTest) if (k >= 0 && k < FX_COUNT) A.addFx(k);
 
   double last = glfwGetTime(); double progAcc = 0; int frame = 0;
   while (!glfwWindowShouldClose(win)) {
     glfwPollEvents();
+    if (glfwWindowShouldClose(win) && shot.empty() && A.projectDirty && glfwGetTime() >= A.discardUntil) {
+      glfwSetWindowShouldClose(win, GLFW_FALSE);    // unsaved edits: first close request only warns
+      A.discardUntil = glfwGetTime() + 4; g.time = glfwGetTime(); A.notify("Unsaved changes \xE2\x80\x94 close again to quit and discard", 4);
+    }
     if (glfwGetWindowAttrib(win, GLFW_ICONIFIED)) { glfwWaitEventsTimeout(0.1); continue; }
     double now = glfwGetTime(), dt = std::min(0.1, now - last); last = now;
     g.time = now;
-    const double beatMs = 60000.0 / 128.0;
-    A.beat = std::fmod(now * 1000.0, beatMs) < beatMs * 0.35;
+    const double beatMs = 60000.0 / std::clamp((double)A.bpm, 40.0, 240.0);
+    bool beatNow = std::fmod(now * 1000.0, beatMs) < beatMs * 0.35;
+    if (beatNow && !A.beat) A.flushPending();   // rising edge = a new beat: release queued triggers (Sync)
+    A.beat = beatNow;
     // C1/C2/C4/C5: the selected clips run their own transport (loop / bounce / hold / once, speed, direction)
     if (A.playing)
       for (auto& sc : A.selectedCells)
         if (sc.first < (int)A.layers.size() && sc.second < (int)A.layers[sc.first].clips.size())
           AdvanceClip(A.layers[sc.first].clips[sc.second], (float)dt);
     (void)progAcc;
+    if (A.deckMode == 1) {   // Timeline run mode: advance the shared playhead, then re-derive which clip is live per layer
+      if (A.playing) {
+        A.tlProgress += 10.f * (float)dt;   // 100% every 10s, matching the reference prototype's 1.5%/150ms rate
+        if (A.tlLoopOn) { if (A.tlProgress >= A.tlOut || A.tlProgress < A.tlIn) A.tlProgress = A.tlIn; }
+        else if (A.tlProgress >= 100.f) A.tlProgress = 0.f;
+      }
+      A.tlSync(A.tlProgress);   // also re-applies after a manual scrub even while paused
+    }
+    for (auto& l : A.layers) if (l.fadeT < 1.f) l.fadeT = std::min(1.f, l.fadeT + (float)dt / std::max(0.05f, l.blendTime));
     A.sweep = std::fmod(A.sweep + (float)dt * 2.4f, 6.2831853f);
     PerfPush((float)dt * 1000.f);   // G9
 
@@ -530,6 +967,38 @@ int main(int argc, char** argv) {
       }
     }
     ImGui::NewFrame();
+    {
+      static Prefs lastPrefs = A.prefs; static int lastMon = A.outMonitor; static std::string lastTitle;
+      if (io.MouseDown[0] || io.MouseDown[1] || io.MouseDown[2] || io.MouseWheel != 0.f || io.MouseWheelH != 0.f || io.InputQueueCharacters.Size > 0 ||
+          ImGui::IsKeyPressed(ImGuiKey_Delete, false) || ImGui::IsKeyPressed(ImGuiKey_Backspace, false) || ImGui::IsKeyPressed(ImGuiKey_L, false)) UndoNote();
+      UndoTick(ImGui::IsMouseDown(0) || ImGui::IsMouseDown(1) || io.WantTextInput || A.rename.open, glfwGetTime());   // also keeps A.projectDirty current
+      if (shot.empty() && (std::memcmp(&lastPrefs, &A.prefs, sizeof(Prefs)) != 0 || lastMon != A.outMonitor)) { lastPrefs = A.prefs; lastMon = A.outMonitor; SaveSettings(); }
+      std::string title = "MikMap Pro \xE2\x80\x94 " + A.projectName + ".mikmap" + (A.projectDirty ? " *" : "");
+      if (title != lastTitle) { lastTitle = title; glfwSetWindowTitle(win, title.c_str()); }
+      bool free = !io.WantTextInput && !A.settingsOpen && !A.openDialog && !A.helpOpen && !A.rename.open && !A.projectMenu &&
+                  !A.pop.open && !A.ctx.open && !A.layerMenu.open && !A.colMenu.open && !A.blendDD.open;
+      if ((free || A.showMode) && ImGui::IsKeyPressed(ImGuiKey_Tab, false)) { A.showMode = !A.showMode; if (A.showMode) A.notify("Show Mode \xE2\x80\x94 press Esc or Tab to leave", 3); }
+      if (A.showMode && ImGui::IsKeyPressed(ImGuiKey_Escape, false)) A.showMode = false;
+      if (!A.showMode && free && !io.KeyCtrl && !io.KeyAlt && A.screen == 0 && !A.layers.empty()) {
+        int li = std::clamp(A.selLi, 0, (int)A.layers.size() - 1), ci = std::clamp(A.selCi, 0, std::max(0, A.colCount() - 1));
+        if (ImGui::IsKeyPressed(ImGuiKey_Space, false)) A.playing = !A.playing;
+        else if (ImGui::IsKeyPressed(ImGuiKey_Enter, false) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false)) A.trigger(li, ci);
+        else if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) A.stepSel(-1);
+        else if (ImGui::IsKeyPressed(ImGuiKey_RightArrow)) A.stepSel(1);
+        else if (ImGui::IsKeyPressed(ImGuiKey_L, false)) A.layers[li].clips[ci].playMode = PM_LOOP;
+        else if (ImGui::IsKeyPressed(ImGuiKey_Delete, false) || ImGui::IsKeyPressed(ImGuiKey_Backspace, false)) {
+          A.layers[li].clips[ci] = Clip();
+          A.layers[li].live = false; for (auto& k : A.layers[li].clips) if (k.isLive()) A.layers[li].live = true;
+        }
+      }
+      if (!io.WantTextInput && io.KeyCtrl) {
+        if (ImGui::IsKeyPressed(ImGuiKey_S, false)) { A.notify(DoSave(io.KeyShift)); A.projectDirty = ProjectDirty(); }
+        else if (ImGui::IsKeyPressed(ImGuiKey_O, false)) OpenDialogShow();
+        else if (ImGui::IsKeyPressed(ImGuiKey_N, false)) RunProjectItem(0);
+        else if (ImGui::IsKeyPressed(ImGuiKey_Z, false)) { if (io.KeyShift) A.redoMap(); else A.undoMap(); }
+        else if (ImGui::IsKeyPressed(ImGuiKey_Y, false)) A.redoMap();
+      }
+    }
     ImVec2 disp = io.DisplaySize;
     ImGui::SetNextWindowPos(ImVec2(0, 0));
     ImGui::SetNextWindowSize(disp);
@@ -541,18 +1010,26 @@ int main(int argc, char** argv) {
     g.dl = ImGui::GetWindowDrawList();
     g.alpha = 1.f;
     // input blocking from overlays that were open at frame start
-    g.blocked = A.pop.open || A.blendDD.open || A.ctx.open || A.layerMenu.open || A.colMenu.open || A.settingsOpen ||
+    g.blocked = A.pop.open || A.blendDD.open || A.ctx.open || A.layerMenu.open || A.colMenu.open || A.deckMenu.open || A.settingsOpen || A.rename.open || A.openDialog || A.helpOpen ||
                 (A.projectMenu && Raw(ProjectMenuRect()));
     Fill(ImRect(0, 0, disp.x, disp.y), K(pal::g0f));
     ImRect body(0, 40, disp.x, disp.y - 22);
-    switch (A.screen) {
-      case 0: DrawDeck(body); break;
-      case 1: DrawMapping(body); break;
-      default: DrawSensor(body); break;
+    if (A.showMode) {
+      // Show Mode: nothing to click, nothing to mis-drag — just the composite the audience sees, letterboxed to the canvas.
+      Fill(ImRect(0, 0, disp.x, disp.y), K(0x000000));
+      ImRect cv = CanvasRect(ImRect(0, 0, disp.x, disp.y));
+      if (!A.blackout) { g.dl->PushClipRect(cv.Min, cv.Max, true); DrawComposite(cv, (float)g.time, 1.f); g.dl->PopClipRect(); }
+      if (g.time < A.toastUntil && !A.toast.empty()) TextC(disp.x * 0.5f, disp.y - 18, MONO_M, 10, K(pal::t66), A.toast.c_str());
+    } else {
+      switch (A.screen) {
+        case 0: DrawDeck(body); break;
+        case 1: DrawMapping(body); break;
+        default: DrawSensor(body); break;
+      }
+      TitleBar(ImRect(0, 0, disp.x, 40));
+      StatusBar(ImRect(0, disp.y - 22, disp.x, disp.y));
+      DrawOverlays(disp);
     }
-    TitleBar(ImRect(0, 0, disp.x, 40));
-    StatusBar(ImRect(0, disp.y - 22, disp.x, disp.y));
-    DrawOverlays(disp);
     if (ImGui::IsKeyPressed(ImGuiKey_F11, false)) ToggleOutput(win, A.outMonitor);
     ImGui::End();
 
@@ -572,7 +1049,7 @@ int main(int argc, char** argv) {
       break;
     }
     glfwSwapBuffers(win);
-    if (!outShot.empty() && frame >= 6) { SetOutputCapture(outShot.c_str()); outShot.clear(); }
+    if (!outShot.empty() && frame >= std::max(6, 3 + 6 * (int)script.size() + 2)) { SetOutputCapture(outShot.c_str()); outShot.clear(); }
     RenderOutput();   // F2: draw the warped slices into the projector window, if it is open
   }
   CloseOutput();

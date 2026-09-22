@@ -10,6 +10,14 @@ Nguồn sự thật cho giao diện là bản thiết kế tham khảo `MikMap W
 của Claude Design (xem `src/CMakeLists.txt` comment) và `MikMap_Web`/`sampleUI/`
 — đối chiếu bằng số đo DOM thật khi có bản web để so, đừng đoán từ mắt.
 
+**Đã đối chiếu trực tiếp với file `MikMap Workspace.dc.html` thật (2026-09-22)**
+cho riêng phần Deck (Composition), gồm cả phần JS state phía sau (`tlLayout`,
+`syncTimeline`, `switchDeck`...), không chỉ nhìn layout HTML. Token màu
+(`colors.css`) và spacing (`spacing.css`) đã khớp sẵn với `pal::`/kích thước
+hiện có trước khi đối chiếu — chỉ 3 chỗ lệch thật: màu 3 trạng thái ô clip
+(đã sửa), Multi-deck (đã thêm), Timeline run mode (đã thêm). Xem "Ghi chú
+kiểm tra" cuối `features.md` để biết chi tiết.
+
 ## Bố cục
 
 Ba trang cố định qua tab trên cùng — **không phải cửa sổ nổi**: trong phòng
@@ -73,10 +81,19 @@ mới, đừng hard-code tên file font.
 
 | Thao tác | Kết quả |
 |---|---|
-| Bấm ô clip | **Chọn** (không phát) — để chỉnh clip sắp dùng mà không làm gián đoạn clip đang chiếu |
-| Bấm đúp ô clip | Phát clip |
+| Bấm **bar** ô clip (dải tên, phía trên) | **Chọn/cue** (không phát) — để chỉnh clip sắp dùng mà không làm gián đoạn clip đang chiếu |
+| Kéo **bar** ô clip | Di chuyển clip sang ô khác |
+| Chuột phải **bar** ô clip | Popover (Trigger/Cue/Loop/Rename/Clear/màu) |
+| Bấm **body** ô clip (vùng gradient, phía dưới) | Phát ngay clip đó (cue + trigger) — không cần bấm đúp; không kéo-thả, không chuột phải ở vùng này |
+| Bấm **header cột** | Chọn cột + bắn ngay mọi clip không rỗng trong cột (mỗi layer 1 clip) — không cần bấm đúp |
 | Kéo điểm ở ĐƯỜNG RA | Keystone / mesh warp |
 | Kéo khung ở VÙNG LẤY | Đổi phần canvas mà slice lấy |
+
+> **Đã đổi khỏi bản tham khảo (2026-09-22):** bản gốc dùng bấm-đơn=chọn/bấm-đúp=phát
+> cho toàn bộ ô clip, và bấm-đơn=chọn/bấm-đúp=bắn cho header cột. Theo yêu cầu người
+> dùng, cả hai đều bỏ double-click: ô clip tách hai vùng bấm độc lập (`ClipCell`,
+> struct `CellOut`), header cột bấm đơn là bắn luôn (`ColumnHeader`) — tất cả trong
+> `src/deck.cpp`.
 
 Đây là nguyên tắc thiết kế chung kế thừa từ bản tham khảo — **grep
 `src/deck.cpp`/`mapping.cpp` để xác nhận hành vi thật** trước khi khẳng

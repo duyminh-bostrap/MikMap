@@ -45,10 +45,18 @@ cmake -S src -B src/build && cmake --build src/build
   `.vcxproj`). Tắt bằng `-DMIKMAP_WITH_ENGINE=OFF` nếu chỉ muốn dựng riêng
   phần giao diện.
 - Đã build+chạy thật kiểm chứng trên Linux (build sạch, chạy dưới Xvfb, giao
-  diện render đúng) — không chỉ suy đoán từ việc compile được. macOS dùng
-  cùng nhánh CMake (`WIN32`/`APPLE`/else trong `src/CMakeLists.txt`) nhưng
-  chưa có máy thật để tự kiểm; nếu build lỗi trên macOS, khả năng cao là do
-  tên framework/link flag chưa đúng, không phải do code app.
+  diện render đúng) — không chỉ suy đoán từ việc compile được. macOS
+  (Apple Silicon, SDK 15.0, `brew install glfw`) cũng đã build sạch và mở
+  được cửa sổ, chạy ổn định. Khác biệt riêng của macOS trong code: `main.cpp`
+  xin context GL 3.2 core + forward-compat và GLSL `#version 150` (context
+  3.0 thường bị từ chối, app thoát mã 2); `clipart.cpp` tự định nghĩa
+  `APIENTRY` rỗng. Output máy chiếu (F2/I1) đã mở và vẽ đúng trên macOS (chụp bằng
+  `--outshot`); chưa thử nhiều màn hình thật. Kiểm tự động lưu/mở/undo:
+  `mikmap --roundtrip <file>` (không cần cửa sổ). Debug bằng F5 trong VS Code
+  (`.vscode/launch.json`, build vào `src/build-debug/`, đã gitignore).
+- Chuỗi hex trong literal (`"\xE1\xBB\x8B"`) mà đứng ngay trước ký tự hex
+  (`0-9a-fA-F`) sẽ bị GCC/Clang coi là một escape dài và báo lỗi (MSVC bỏ
+  qua) — tách bằng `" "` như `"...\x8B" "ch"`.
 - *(Chỉ nhánh `legacy-oF-ui`)* App oF cũ build bằng MSBuild + `HexMapping.vcxproj`,
   file mới phải thêm thủ công vào đó, và phải chạy lại `tools/fix_project.ps1`
   sau mỗi lần chạy oF Project Generator. Không áp dụng cho `new_UI`.

@@ -43,6 +43,10 @@ bool AppSettings::load(const std::string& path, std::string& outWarning) {
     vsync                 = root["vsync"].asBool(true);
     mediaCacheBudget      = root["mediaCacheBudget"].asInt(12);
     warnNonHapMedia       = root["warnNonHapMedia"].asBool(true);
+    sensorMinCutoff       = root["sensorMinCutoff"].asNumber(1.0);
+    sensorBeta            = root["sensorBeta"].asNumber(0.007);
+    trackMaxDistance      = root["trackMaxDistance"].asNumber(120.0);
+    trackGraceSec         = root["trackGraceSec"].asNumber(0.15);
     perfLogEnabled        = root["perfLogEnabled"].asBool(true);
     perfLogIntervalSec    = root["perfLogIntervalSec"].asNumber(5.0);
     autoPlayFirstClip     = root["autoPlayFirstClip"].asBool(true);
@@ -53,6 +57,17 @@ bool AppSettings::load(const std::string& path, std::string& outWarning) {
     if (mediaCacheBudget < 1)   mediaCacheBudget = 1;
     if (mediaCacheBudget > 256) mediaCacheBudget = 256;
     if (perfLogIntervalSec < 0.5) perfLogIntervalSec = 0.5;
+
+    // ★ Kẹp CẢ các tham số sensor. minCutoff = 0 làm bộ lọc đứng hình
+    //   (điểm không bao giờ đuổi kịp), và maxMatchDistance = 0 thì không
+    //   điểm nào khớp được với frame trước — mọi điểm thành ID mới mỗi
+    //   frame, tức là mất sạch tính bền vững của ID mà G12 sinh ra để có.
+    if (sensorMinCutoff  < 0.01) sensorMinCutoff  = 0.01;
+    if (sensorMinCutoff  > 20.0) sensorMinCutoff  = 20.0;
+    if (sensorBeta       < 0.0)  sensorBeta       = 0.0;
+    if (sensorBeta       > 1.0)  sensorBeta       = 1.0;
+    if (trackMaxDistance < 1.0)  trackMaxDistance = 1.0;
+    if (trackGraceSec    < 0.0)  trackGraceSec    = 0.0;
 
     return true;
 }
@@ -66,6 +81,10 @@ bool AppSettings::save(const std::string& path, std::string& outError) const {
     root.set("vsync",                JsonValue(vsync));
     root.set("mediaCacheBudget",     JsonValue(mediaCacheBudget));
     root.set("warnNonHapMedia",      JsonValue(warnNonHapMedia));
+    root.set("sensorMinCutoff",      JsonValue(sensorMinCutoff));
+    root.set("sensorBeta",           JsonValue(sensorBeta));
+    root.set("trackMaxDistance",     JsonValue(trackMaxDistance));
+    root.set("trackGraceSec",        JsonValue(trackGraceSec));
     root.set("perfLogEnabled",       JsonValue(perfLogEnabled));
     root.set("perfLogIntervalSec",   JsonValue(perfLogIntervalSec));
     root.set("autoPlayFirstClip",    JsonValue(autoPlayFirstClip));

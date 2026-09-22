@@ -122,8 +122,10 @@ void RenderOutput() {
     // the screen's 1920x1080 output space stretches to fill the projector
     float sx = fw / 1920.f, sy = fh / 1080.f;
     float t = (float)g.time * 1.2f;
+    bool anySolo = false;
+    for (auto& sl : sc->slices) if (sl.solo && sl.visible) anySolo = true;
     for (auto& sl : sc->slices) {
-      if (!sl.visible) continue;
+      if (!sl.visible || (anySolo && !sl.solo)) continue;
       WarpMap wm;
       wm.slice = &sl;
       wm.ox = 0; wm.oy = 0; wm.sx = sx; wm.sy = sy;
@@ -141,6 +143,18 @@ void RenderOutput() {
       else DrawComposite(bb, t, 1.f);
       g.warp = nullptr;
       dl.PopClipRect();
+    }
+  }
+
+  // G13: sensor touches through H_s, drawn straight in output space (only the first screen: that is what was calibrated)
+  if (A.sensorOverlay && sc && !A.screens.empty() && sc == &A.screens[0] && !A.touchPts.empty()) {
+    float H[9], rms; if (!FitHomography(A.calib, H, &rms)) FitAffine(H, &rms);
+    float sx = fw / 1920.f, sy = fh / 1080.f, ph = std::fmod((float)g.time * 1.4f, 1.f);
+    for (auto& t : A.touchPts) {
+      float ox, oy; ApplyH(H, t.x, t.y, ox, oy);
+      ImVec2 p(ox * sx, oy * sy);
+      dl.AddCircle(p, (12 + 44 * ph) * sx, IM_COL32(60, 255, 190, (int)(180 * (1.f - ph))), 32, 2.f);
+      dl.AddCircleFilled(p, 8 * sx, IM_COL32(60, 255, 190, 255), 20);
     }
   }
 

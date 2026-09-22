@@ -1,8 +1,9 @@
-// G5: homography solver (DLT with Hartley normalisation) + G9: frame-time statistics.
+// G5: homography solver (DLT with Hartley normalisation + RANSAC outlier rejection) + G9: frame-time statistics.
 // Pure math, no GL — the sensor→projector mapping the calibration wizard produces.
 #include "app.h"
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <vector>
 
 // ── Gaussian elimination with partial pivoting, n<=8 ──
@@ -38,11 +39,9 @@ static Norm Normalise(const std::vector<std::pair<double, double>>& p) {
   return n;
 }
 
-// Fits H so that H * measured ≈ target (homogeneous, H[8] normalised to 1).
-// Needs 4+ correspondences; returns false and leaves H as identity when the points are degenerate.
-bool FitHomography(const std::vector<Calib>& pts, float H[9], float* rms) {
+// Plain DLT least-squares fit over exactly the given points (no outlier rejection).
+static bool FitDLT(const std::vector<Calib>& pts, float H[9]) {
   for (int i = 0; i < 9; ++i) H[i] = (i % 4 == 0) ? 1.f : 0.f;
-  if (rms) *rms = 0;
   if (pts.size() < 4) return false;
 
   std::vector<std::pair<double, double>> src, dst;
@@ -82,15 +81,63 @@ bool FitHomography(const std::vector<Calib>& pts, float H[9], float* rms) {
   }
   if (std::fabs(out[8]) > 1e-12) for (int i = 0; i < 9; ++i) out[i] /= out[8];
   for (int i = 0; i < 9; ++i) H[i] = (float)out[i];
+  return true;
+}
 
+static float PointErr(const float H[9], const Calib& p) {
+  float ox, oy;
+  ApplyH(H, p.mx, p.my, ox, oy);
+  return std::hypot(ox - p.tx, oy - p.ty);
+}
+
+// Fits H so that H * measured ≈ target (homogeneous, H[8] normalised to 1).
+// Needs 4+ correspondences; returns false and leaves H as identity when the points are degenerate.
+// With 6+ points a RANSAC pass (fixed seed → deterministic) discards gross outliers such as a
+// mis-clicked calibration point, then refits on the inliers; `rms` is the mean error over the points used.
+bool FitHomography(const std::vector<Calib>& pts, float H[9], float* rms) {
+  for (int i = 0; i < 9; ++i) H[i] = (i % 4 == 0) ? 1.f : 0.f;
+  if (rms) *rms = 0;
+  const int n = (int)pts.size();
+  if (n < 4) return false;
+
+  std::vector<Calib> use = pts;
+  if (n >= 6) {
+    float minx = 1e30f, maxx = -1e30f, miny = 1e30f, maxy = -1e30f;
+    for (auto& p : pts) {
+      minx = std::min(minx, p.tx); maxx = std::max(maxx, p.tx);
+      miny = std::min(miny, p.ty); maxy = std::max(maxy, p.ty);
+    }
+    const float thr = std::max(1.f, 0.005f * std::hypot(maxx - minx, maxy - miny));
+    uint32_t rng = 0x9E3779B9u;
+    auto next = [&] { rng = rng * 1664525u + 1013904223u; return (int)((rng >> 8) % (uint32_t)n); };
+    std::vector<int> best;
+    for (int it = 0; it < 200; ++it) {
+      int idx[4];
+      for (int k = 0; k < 4;) {
+        int c = next(); bool dup = false;
+        for (int j = 0; j < k; ++j) dup |= idx[j] == c;
+        if (!dup) idx[k++] = c;
+      }
+      std::vector<Calib> sample;
+      for (int k : idx) sample.push_back(pts[k]);
+      float h[9];
+      if (!FitDLT(sample, h)) continue;
+      std::vector<int> in;
+      for (int i = 0; i < n; ++i) if (PointErr(h, pts[i]) < thr) in.push_back(i);
+      if (in.size() > best.size()) best = in;
+      if ((int)best.size() == n) break;
+    }
+    if (best.size() >= 4 && (int)best.size() < n) {
+      use.clear();
+      for (int i : best) use.push_back(pts[i]);
+    }
+  }
+
+  if (!FitDLT(use, H)) return false;
   if (rms) {
     double e = 0;
-    for (auto& p : pts) {
-      float ox, oy;
-      ApplyH(H, p.mx, p.my, ox, oy);
-      e += std::hypot(ox - p.tx, oy - p.ty);
-    }
-    *rms = (float)(e / pts.size());
+    for (auto& p : use) e += PointErr(H, p);
+    *rms = (float)(e / use.size());
   }
   return true;
 }

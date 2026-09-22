@@ -1,0 +1,563 @@
+// Project + settings persistence (X1). A project (.mikmap, JSON) describes ONE show: deck, mapping, sensor calibration.
+// Settings describe THIS machine and user (language, fonts, theme, output display) and live in the OS config folder —
+// the two are never mixed, so opening a colleague's project does not change your language or move your output window.
+#include "app.h"
+
+#include "core/util/Json.h"
+
+#include <algorithm>
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
+#include <ctime>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
+
+namespace fs = std::filesystem;
+using hexmap::JsonValue;
+
+namespace {
+
+const int kFormat = 1;
+// While set, Serialize() drops values that change every frame during a show (playhead, live/cued highlight) so that
+// "unsaved changes" only reflects real edits, not the show simply running.
+bool gForDirty = false;
+
+fs::path HomeDir() {
+#ifdef _WIN32
+  if (const char* h = std::getenv("USERPROFILE")) return h;
+#else
+  if (const char* h = std::getenv("HOME")) return h;
+#endif
+  return fs::current_path();
+}
+
+JsonValue V2(const ImVec2& p) { JsonValue a = JsonValue::array(); a.push(p.x); a.push(p.y); return a; }
+ImVec2 ReadV2(const JsonValue& v, ImVec2 def = ImVec2(0, 0)) {
+  if (!v.isArray() || v.size() < 2) return def;
+  return ImVec2((float)v.at(0).asNumber(def.x), (float)v.at(1).asNumber(def.y));
+}
+float F(const JsonValue& v, const char* k, float def) { return (float)v[k].asNumber(def); }
+
+JsonValue FxJ(const Fx& f) {
+  JsonValue o = JsonValue::object();
+  o.set("kind", f.kind); o.set("on", f.on); o.set("beat", f.beat); o.set("react", f.react);
+  o.set("mix", f.mix); o.set("p0", f.p[0]); o.set("p1", f.p[1]); o.set("en", f.en);
+  return o;
+}
+Fx ReadFx(const JsonValue& o) {
+  Fx f;
+  f.kind = std::clamp(o["kind"].asInt(0), 0, FX_COUNT - 1);
+  f.on = o["on"].asBool(true); f.beat = o["beat"].asBool(false); f.react = o["react"].asBool(false);
+  f.mix = F(o, "mix", 100); f.p[0] = F(o, "p0", 0); f.p[1] = F(o, "p1", 0); f.en = o["en"].asInt(0);
+  return f;
+}
+
+JsonValue ClipJ(const Clip& c) {
+  JsonValue o = JsonValue::object();
+  // The cue/live *selection* highlight is UI state, not show content: store Selected as Loaded, LiveSel as Live.
+  int st = c.st == Clip::Selected ? Clip::Loaded : c.st == Clip::LiveSel ? Clip::Live : c.st;
+  if (gForDirty && st == Clip::Live) st = Clip::Loaded;
+  o.set("st", st); o.set("name", c.name); o.set("dur", c.dur); o.set("color", c.color); o.set("style", c.style); o.set("media", c.media); o.set("progress", gForDirty ? 0.f : c.progress);
+  o.set("playMode", c.playMode); o.set("speed", c.speed); o.set("dir", c.dir);
+  o.set("posX", c.posX); o.set("posY", c.posY); o.set("scale", c.scale); o.set("rotation", c.rotation); o.set("opacity", c.opacity);
+  o.set("flipH", c.flipH); o.set("flipV", c.flipV);
+  JsonValue fx = JsonValue::array(); for (auto& f : c.fx) fx.push(FxJ(f));
+  o.set("fx", fx);
+  return o;
+}
+Clip ReadClip(const JsonValue& o) {
+  Clip c;
+  c.st = (Clip::St)std::clamp(o["st"].asInt(0), 0, (int)Clip::Armed);
+  if (c.st == Clip::Selected) c.st = Clip::Loaded; else if (c.st == Clip::LiveSel) c.st = Clip::Live;
+  c.name = o["name"].asString(); c.dur = o["dur"].asString(); c.color = std::clamp(o["color"].asInt(0), 0, 5); c.style = o["style"].asInt(-1); c.media = o["media"].asString();
+  c.progress = F(o, "progress", 0); c.playMode = std::clamp(o["playMode"].asInt(PM_LOOP), 0, (int)PM_ONCE);
+  c.speed = F(o, "speed", 100); c.dir = o["dir"].asInt(1) < 0 ? -1 : 1;
+  c.posX = F(o, "posX", 0); c.posY = F(o, "posY", 0); c.scale = F(o, "scale", 1); c.rotation = F(o, "rotation", 0); c.opacity = F(o, "opacity", 100);
+  c.flipH = o["flipH"].asBool(); c.flipV = o["flipV"].asBool();
+  if (o["fx"].isArray()) for (auto& f : o["fx"].arrayItems()) c.fx.push_back(ReadFx(f));
+  return c;
+}
+
+JsonValue FloatsJ(const std::vector<float>& v) { JsonValue a = JsonValue::array(); for (float x : v) a.push(x); return a; }
+std::vector<float> ReadFloats(const JsonValue& a) { std::vector<float> v; if (a.isArray()) for (auto& x : a.arrayItems()) v.push_back((float)x.asNumber()); return v; }
+
+JsonValue SliceJ(const Slice& s) {
+  JsonValue o = JsonValue::object();
+  o.set("id", s.id); o.set("name", s.name); o.set("visible", s.visible); o.set("solo", s.solo); o.set("warp", s.warp);
+  o.set("meshCols", s.meshCols); o.set("meshRows", s.meshRows);
+  o.set("meshU", FloatsJ(s.meshU)); o.set("meshV", FloatsJ(s.meshV));
+  JsonValue mp = JsonValue::array();
+  for (auto& row : s.meshPts) { JsonValue r = JsonValue::array(); for (auto& p : row) r.push(V2(p)); mp.push(r); }
+  o.set("meshPts", mp);
+  o.set("ix", s.ix); o.set("iy", s.iy); o.set("iw", s.iw); o.set("ih", s.ih);
+  JsonValue q = JsonValue::array(); for (int i = 0; i < 4; ++i) q.push(V2(s.q[i]));
+  o.set("q", q);
+  JsonValue ms = JsonValue::array();
+  for (auto& m : s.masks) {
+    JsonValue mo = JsonValue::object();
+    mo.set("id", m.id); mo.set("name", m.name); mo.set("inverted", m.inverted); mo.set("feather", m.feather);
+    JsonValue pts = JsonValue::array(); for (int i = 0; i < 4; ++i) pts.push(V2(m.pts[i]));
+    mo.set("pts", pts);
+    ms.push(mo);
+  }
+  o.set("masks", ms);
+  return o;
+}
+Slice ReadSlice(const JsonValue& o) {
+  Slice s;
+  s.id = o["id"].asString(); s.name = o["name"].asString(); s.visible = o["visible"].asBool(true); s.solo = o["solo"].asBool(false);
+  s.warp = std::clamp(o["warp"].asInt(0), 0, 1);
+  s.meshCols = std::clamp(o["meshCols"].asInt(4), 2, 64); s.meshRows = std::clamp(o["meshRows"].asInt(3), 2, 64);
+  s.meshU = ReadFloats(o["meshU"]); s.meshV = ReadFloats(o["meshV"]);
+  if (o["meshPts"].isArray()) for (auto& r : o["meshPts"].arrayItems()) {
+    std::vector<ImVec2> row; if (r.isArray()) for (auto& p : r.arrayItems()) row.push_back(ReadV2(p));
+    s.meshPts.push_back(row);
+  }
+  s.ix = o["ix"].asInt(0); s.iy = o["iy"].asInt(0); s.iw = std::max(20, o["iw"].asInt(1920)); s.ih = std::max(20, o["ih"].asInt(1080));
+  ImVec2 def[4] = {{(float)s.ix, (float)s.iy}, {(float)(s.ix + s.iw), (float)s.iy}, {(float)(s.ix + s.iw), (float)(s.iy + s.ih)}, {(float)s.ix, (float)(s.iy + s.ih)}};
+  for (int i = 0; i < 4; ++i) s.q[i] = o["q"].isArray() && o["q"].size() > (size_t)i ? ReadV2(o["q"].at(i), def[i]) : def[i];
+  if (o["masks"].isArray()) for (auto& mo : o["masks"].arrayItems()) {
+    Mask m; m.id = mo["id"].asString(); m.name = mo["name"].asString(); m.inverted = mo["inverted"].asBool(true); m.feather = mo["feather"].asInt(4);
+    for (int i = 0; i < 4; ++i) m.pts[i] = mo["pts"].isArray() && mo["pts"].size() > (size_t)i ? ReadV2(mo["pts"].at(i)) : ImVec2(0, 0);
+    s.masks.push_back(m);
+  }
+  return s;
+}
+
+// Shared by the flat composition.{groups,layers,colNames} (kept for older-file/tool compatibility, always a
+// mirror of the CURRENT deck) and by each entry of the new "decks" array below.
+static void WriteDeckContent(JsonValue& obj, const std::vector<Group>& groups, const std::vector<Layer>& layers, const std::vector<std::string>& colNames) {
+  int cc = layers.empty() ? 8 : (int)layers[0].clips.size();
+  JsonValue cn = JsonValue::array();
+  for (int i = 0; i < cc; ++i) cn.push(i < (int)colNames.size() ? colNames[i] : std::string());
+  obj.set("colNames", cn);
+  JsonValue gs = JsonValue::array();
+  for (auto& g : groups) {
+    JsonValue go = JsonValue::object(); go.set("id", g.id); go.set("name", g.name); go.set("role", g.role); go.set("open", g.open); go.set("activeCol", g.activeCol); go.set("opacity", g.opacity);
+    gs.push(go);
+  }
+  obj.set("groups", gs);
+  JsonValue ls = JsonValue::array();
+  for (auto& l : layers) {
+    JsonValue lo = JsonValue::object();
+    lo.set("name", l.name); lo.set("group", l.group); lo.set("blend", l.blend); lo.set("blendTime", l.blendTime);
+    lo.set("opacity", l.opacity); lo.set("audio", l.audio);
+    lo.set("solo", l.solo); lo.set("muted", l.muted); lo.set("bypassed", l.bypassed); lo.set("collapsed", l.collapsed);
+    JsonValue cs = JsonValue::array(); for (auto& c : l.clips) cs.push(ClipJ(c));
+    lo.set("clips", cs);
+    ls.push(lo);
+  }
+  obj.set("layers", ls);
+}
+
+JsonValue Serialize(const App& a) {
+  JsonValue root = JsonValue::object();
+  root.set("format", kFormat);
+  root.set("app", "MikMap");
+  JsonValue comp = JsonValue::object();
+  comp.set("canvasW", a.canvasW); comp.set("canvasH", a.canvasH); comp.set("bpm", a.bpm); comp.set("quantize", a.quantize); comp.set("autoStartCol", a.autoStartCol);
+  WriteDeckContent(comp, a.groups, a.layers, a.colNames);   // current deck, flat — kept for backward/tool compatibility
+  root.set("composition", comp);
+
+  // Multi-deck (X: deck tabs) — every deck, with the CURRENT one's live state (decks[curDeckIdx] on disk can be
+  // stale between switches). curDeckIdx/deckMode are saved so reopening a project resumes on the same deck/view.
+  JsonValue decks = JsonValue::array();
+  for (int i = 0; i < (int)a.decks.size(); ++i) {
+    const Deck& d = (i == a.curDeckIdx) ? Deck{a.decks[i].name, a.groups, a.layers, a.colNames, a.activeCol} : a.decks[i];
+    JsonValue dj = JsonValue::object();
+    dj.set("name", d.name); dj.set("activeCol", d.activeCol);
+    WriteDeckContent(dj, d.groups, d.layers, d.colNames);
+    decks.push(dj);
+  }
+  root.set("decks", decks);
+  root.set("curDeckIdx", a.curDeckIdx);
+  root.set("deckMode", a.deckMode);
+
+  JsonValue scs = JsonValue::array();
+  for (auto& s : a.screens) {
+    JsonValue so = JsonValue::object();
+    so.set("id", s.id); so.set("name", s.name); so.set("outDev", s.outDev); so.set("w", s.w); so.set("h", s.h); so.set("fps", s.fps);
+    so.set("edgeBlend", s.edgeBlend); so.set("visible", s.visible); so.set("role", s.role);
+    JsonValue sl = JsonValue::array(); for (auto& x : s.slices) sl.push(SliceJ(x));
+    so.set("slices", sl);
+    scs.push(so);
+  }
+  root.set("screens", scs);
+
+  JsonValue sensor = JsonValue::object();
+  JsonValue cal = JsonValue::array();
+  for (auto& c : a.calib) { JsonValue co = JsonValue::object(); co.set("tx", c.tx); co.set("ty", c.ty); co.set("mx", c.mx); co.set("my", c.my); cal.push(co); }
+  sensor.set("calib", cal);
+  JsonValue roi = JsonValue::array(); for (int i = 0; i < 4; ++i) roi.push(V2(a.roi[i]));
+  sensor.set("roi", roi);
+  sensor.set("noise", a.noise); sensor.set("blobSize", a.blobSize);
+  JsonValue rs = JsonValue::array();
+  for (auto& r : a.routes) { JsonValue ro = JsonValue::object(); ro.set("id", r.id); ro.set("source", r.source); ro.set("target", r.target); ro.set("active", r.active); rs.push(ro); }
+  sensor.set("routes", rs);
+  JsonValue ds = JsonValue::array();
+  for (auto& d : a.devices) {
+    JsonValue dob = JsonValue::object(); dob.set("id", d.id); dob.set("name", d.name); dob.set("endpoint", d.endpoint); dob.set("connected", d.connected);
+    dob.set("fps", d.fps); dob.set("latency", d.latency); dob.set("packets", d.packets); ds.push(dob);
+  }
+  sensor.set("devices", ds);
+  root.set("sensor", sensor);
+  return root;
+}
+
+// One entry of the "decks" array — same field set/validation as the flat composition.{groups,layers,colNames}
+// parse below, just scoped to its own deck instead of `out` directly (a dangling group ref only looks within
+// the SAME deck's own groups, not the whole file).
+static bool ReadDeckContent(const JsonValue& dj, Deck& d) {
+  if (!dj["layers"].isArray() || dj["layers"].size() == 0) return false;
+  d.name = dj["name"].asString("Deck");
+  d.groups.clear();
+  if (dj["groups"].isArray()) for (auto& go : dj["groups"].arrayItems()) {
+    Group g; g.id = go["id"].asString(); g.name = go["name"].asString(); g.role = std::clamp(go["role"].asInt(2), 0, 2);
+    g.open = go["open"].asBool(true); g.activeCol = go["activeCol"].asInt(0); g.opacity = std::clamp(F(go, "opacity", 100), 0.f, 100.f);
+    d.groups.push_back(g);
+  }
+  d.layers.clear();
+  size_t cols = 1;
+  for (auto& lo : dj["layers"].arrayItems()) {
+    Layer l; l.name = lo["name"].asString("Layer"); l.group = lo["group"].asString(); l.blend = lo["blend"].asString("Normal");
+    if (BlendIndex(l.blend) == 0) l.blend = "Normal";
+    l.blendTime = std::max(0.f, F(lo, "blendTime", 0)); l.opacity = std::clamp(F(lo, "opacity", 100), 0.f, 100.f); l.audio = std::clamp(F(lo, "audio", 0), 0.f, 100.f);
+    l.solo = lo["solo"].asBool(); l.muted = lo["muted"].asBool(); l.bypassed = lo["bypassed"].asBool(); l.collapsed = lo["collapsed"].asBool();
+    if (lo["clips"].isArray()) for (auto& co : lo["clips"].arrayItems()) l.clips.push_back(ReadClip(co));
+    cols = std::max(cols, l.clips.size());
+    d.layers.push_back(std::move(l));
+  }
+  for (auto& l : d.layers) {
+    l.clips.resize(cols);
+    l.live = false; for (auto& c : l.clips) if (c.isLive()) l.live = true;
+    bool found = false; for (auto& g : d.groups) if (g.id == l.group) found = true;
+    if (!l.group.empty() && !found) l.group.clear();
+  }
+  d.colNames.clear();
+  if (dj["colNames"].isArray()) for (auto& n : dj["colNames"].arrayItems()) d.colNames.push_back(n.asString());
+  d.colNames.resize(cols);
+  d.activeCol = std::clamp(dj["activeCol"].asInt(0), 0, (int)cols - 1);
+  return true;
+}
+
+// Reads into a scratch App so a half-broken file can never leave the live app in a half-loaded state.
+bool Deserialize(const JsonValue& root, App& out, std::string& err) {
+  if (!root.isObject()) { err = "not a JSON object"; return false; }
+  if (root["format"].asInt(0) > kFormat) { err = "file was saved by a newer MikMap"; return false; }
+  const JsonValue& comp = root["composition"];
+  if (!comp["layers"].isArray() || comp["layers"].size() == 0) { err = "no layers in file"; return false; }
+  out.canvasW = std::clamp(comp["canvasW"].asInt(1920), 64, 16384); out.canvasH = std::clamp(comp["canvasH"].asInt(1080), 64, 16384);
+  out.bpm = std::clamp(F(comp, "bpm", 128.f), 40.f, 240.f); out.quantize = comp["quantize"].asBool(false);
+  out.autoStartCol = comp["autoStartCol"].asInt(-1);   // clamped against real column count once `cols` is known below
+  out.groups.clear();
+  if (comp["groups"].isArray()) for (auto& go : comp["groups"].arrayItems()) {
+    Group g; g.id = go["id"].asString(); g.name = go["name"].asString(); g.role = std::clamp(go["role"].asInt(2), 0, 2);
+    g.open = go["open"].asBool(true); g.activeCol = go["activeCol"].asInt(0); g.opacity = std::clamp(F(go, "opacity", 100), 0.f, 100.f); out.groups.push_back(g);
+  }
+  out.layers.clear();
+  size_t cols = 1;
+  for (auto& lo : comp["layers"].arrayItems()) {
+    Layer l; l.name = lo["name"].asString("Layer"); l.group = lo["group"].asString(); l.blend = lo["blend"].asString("Normal");
+    if (BlendIndex(l.blend) == 0) l.blend = "Normal";
+    l.blendTime = std::max(0.f, F(lo, "blendTime", 0)); l.opacity = std::clamp(F(lo, "opacity", 100), 0.f, 100.f); l.audio = std::clamp(F(lo, "audio", 0), 0.f, 100.f);
+    l.solo = lo["solo"].asBool(); l.muted = lo["muted"].asBool(); l.bypassed = lo["bypassed"].asBool(); l.collapsed = lo["collapsed"].asBool();
+    if (lo["clips"].isArray()) for (auto& co : lo["clips"].arrayItems()) l.clips.push_back(ReadClip(co));
+    cols = std::max(cols, l.clips.size());
+    out.layers.push_back(std::move(l));
+  }
+  for (auto& l : out.layers) {                      // every layer must have the same number of columns
+    l.clips.resize(cols);
+    l.live = false; for (auto& c : l.clips) if (c.isLive()) l.live = true;
+    if (!l.group.empty() && !out.group(l.group)) l.group.clear();   // dangling group reference: fall back to ungrouped
+  }
+  out.colNames.clear();
+  if (comp["colNames"].isArray()) for (auto& n : comp["colNames"].arrayItems()) out.colNames.push_back(n.asString());
+  out.colNames.resize(cols);
+  if (out.autoStartCol < 0 || out.autoStartCol >= (int)cols) out.autoStartCol = -1;
+
+  // Multi-deck: "decks" is authoritative when present (a file saved by this build always has it); a file from
+  // before this feature has none, so synthesize a single deck from the flat composition just parsed above.
+  out.decks.clear();
+  if (root["decks"].isArray()) for (auto& dj : root["decks"].arrayItems()) { Deck d; if (ReadDeckContent(dj, d)) out.decks.push_back(std::move(d)); }
+  if (out.decks.empty()) out.decks.push_back({"Deck A", out.groups, out.layers, out.colNames, out.activeCol});
+  out.curDeckIdx = std::clamp(root["curDeckIdx"].asInt(0), 0, (int)out.decks.size() - 1);
+  { Deck& d = out.decks[out.curDeckIdx]; out.groups = d.groups; out.layers = d.layers; out.colNames = d.colNames; out.activeCol = d.activeCol; }
+  out.deckMode = std::clamp(root["deckMode"].asInt(0), 0, 1);
+
+  out.screens.clear();
+  if (root["screens"].isArray()) for (auto& so : root["screens"].arrayItems()) {
+    Screen s; s.id = so["id"].asString(); s.name = so["name"].asString(); s.outDev = so["outDev"].asString();
+    s.w = std::max(16, so["w"].asInt(1920)); s.h = std::max(16, so["h"].asInt(1080)); s.fps = so["fps"].asInt(60);
+    s.edgeBlend = so["edgeBlend"].asBool(); s.visible = so["visible"].asBool(true); s.role = std::clamp(so["role"].asInt(0), 0, 2);
+    if (so["slices"].isArray()) for (auto& x : so["slices"].arrayItems()) s.slices.push_back(ReadSlice(x));
+    out.screens.push_back(std::move(s));
+  }
+  if (out.screens.empty()) { err = "no screens in file"; return false; }
+
+  const JsonValue& sn = root["sensor"];
+  if (sn["calib"].isArray() && sn["calib"].size() == 4) {
+    out.calib.clear();
+    for (auto& co : sn["calib"].arrayItems()) out.calib.push_back({F(co, "tx", 0), F(co, "ty", 0), F(co, "mx", 0), F(co, "my", 0)});
+  }
+  if (sn["roi"].isArray() && sn["roi"].size() == 4) for (int i = 0; i < 4; ++i) out.roi[i] = ReadV2(sn["roi"].at(i));
+  out.noise = F(sn, "noise", out.noise); out.blobSize = F(sn, "blobSize", out.blobSize);
+  if (sn["routes"].isArray()) { out.routes.clear(); for (auto& r : sn["routes"].arrayItems()) out.routes.push_back({r["id"].asString(), r["source"].asString(), r["target"].asString(), r["active"].asBool()}); }
+  if (sn["devices"].isArray()) {
+    out.devices.clear();
+    for (auto& d : sn["devices"].arrayItems()) out.devices.push_back({d["id"].asString(), d["name"].asString(), d["endpoint"].asString(), d["connected"].asBool(), d["fps"].asInt(), d["latency"].asInt(), d["packets"].asString("0")});
+  }
+  return true;
+}
+
+std::string ReadFile(const fs::path& p, bool& ok) {
+  std::ifstream f(p, std::ios::binary); ok = (bool)f;
+  std::stringstream ss; ss << f.rdbuf(); return ss.str();
+}
+// Write to a temp file then rename, so a crash mid-write cannot destroy the previous good file.
+bool WriteAtomic(const fs::path& p, const std::string& data, std::string& err) {
+  std::error_code ec; fs::create_directories(p.parent_path(), ec);
+  fs::path tmp = p; tmp += ".tmp";
+  { std::ofstream f(tmp, std::ios::binary | std::ios::trunc); if (!f) { err = "cannot write " + tmp.string(); return false; } f << data; if (!f) { err = "write failed"; return false; } }
+  fs::rename(tmp, p, ec);
+  if (ec) { err = ec.message(); fs::remove(tmp, ec); return false; }
+  return true;
+}
+
+std::string Stamp() { char b[32]; std::time_t t = std::time(nullptr); std::tm tmv{};
+#ifdef _WIN32
+  localtime_s(&tmv, &t);
+#else
+  localtime_r(&t, &tmv);
+#endif
+  std::strftime(b, sizeof b, "%Y%m%d-%H%M%S", &tmv); return b; }
+
+}  // namespace
+
+// ───────────── locations ─────────────
+std::string ProjectsDir() { return (HomeDir() / "Documents" / "MikMap").string(); }
+static fs::path ConfigDir() {
+#ifdef _WIN32
+  if (const char* a = std::getenv("APPDATA")) return fs::path(a) / "MikMap";
+  return HomeDir() / "AppData" / "Roaming" / "MikMap";
+#elif defined(__APPLE__)
+  return HomeDir() / "Library" / "Application Support" / "MikMap";
+#else
+  if (const char* x = std::getenv("XDG_CONFIG_HOME")) return fs::path(x) / "MikMap";
+  return HomeDir() / ".config" / "MikMap";
+#endif
+}
+
+std::string MediaDir() { return (fs::path(ProjectsDir()) / "media").string(); }
+std::vector<std::string> ListMedia() {
+  std::vector<std::string> out; std::error_code ec;
+  for (auto& e : fs::directory_iterator(MediaDir(), ec)) {
+    if (!e.is_regular_file(ec)) continue;
+    std::string ext = e.path().extension().string();
+    for (auto& ch : ext) ch = (char)std::tolower((unsigned char)ch);
+    if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".bmp" || ext == ".tga") out.push_back(e.path().string());
+  }
+  std::sort(out.begin(), out.end());
+  return out;
+}
+
+std::vector<ProjectFile> ListProjects() {
+  std::vector<ProjectFile> out;
+  std::error_code ec;
+  for (auto& e : fs::directory_iterator(ProjectsDir(), ec)) {
+    if (!e.is_regular_file(ec) || e.path().extension() != ".mikmap") continue;
+    ProjectFile pf; pf.path = e.path().string(); pf.name = e.path().stem().string();
+    auto t = fs::last_write_time(e.path(), ec);
+    // file_clock's epoch differs between standard libraries; rebase onto system_clock so the date is right everywhere
+    auto sys = std::chrono::time_point_cast<std::chrono::system_clock::duration>(t - fs::file_time_type::clock::now() + std::chrono::system_clock::now());
+    pf.mtime = (long long)std::chrono::system_clock::to_time_t(sys);
+    out.push_back(pf);
+  }
+  std::sort(out.begin(), out.end(), [](const ProjectFile& a, const ProjectFile& b) { return a.mtime > b.mtime; });
+  return out;
+}
+
+// ───────────── project ─────────────
+static std::string Snapshot() { gForDirty = true; std::string s = Serialize(A).dump(0); gForDirty = false; return s; }
+static std::vector<std::string> gUndo, gRedo;
+static std::string gLast;               // snapshot the undo history is currently based on
+static double gLastCheck = 0;
+static bool gPending = false;         // set by user input; a snapshot (~5 ms) is only taken after input, never while the UI is idle
+void UndoNote() { gPending = true; }
+static void UndoReset() { gUndo.clear(); gRedo.clear(); gLast = Snapshot(); }
+void MarkSaved() { A.savedSnapshot = Snapshot(); UndoReset(); }
+void App::notify(const std::string& s, double secs) { toast = s; toastUntil = ui::g.time + secs; }
+
+bool SaveProject(const std::string& path, std::string& err) {
+  if (!WriteAtomic(path, Serialize(A).dump(2), err)) return false;
+  A.projectPath = path; A.projectName = fs::path(path).stem().string();
+  A.savedSnapshot = Snapshot();
+  return true;
+}
+
+bool LoadProject(const std::string& path, std::string& err) {
+  bool ok; std::string text = ReadFile(path, ok);
+  if (!ok) { err = "cannot open file"; return false; }
+  JsonValue root; std::string perr;
+  if (!JsonValue::parse(text, root, perr)) { err = "invalid JSON: " + perr; return false; }
+  App tmp = A;                       // start from current app so absent optional sections keep sane values
+  if (!Deserialize(root, tmp, err)) return false;
+  Prefs keepPrefs = A.prefs; int keepMon = A.outMonitor; int keepScreen = A.screen; bool keepBlack = A.blackout;
+  A = tmp;
+  A.prefs = keepPrefs; A.outMonitor = keepMon; A.screen = keepScreen; A.blackout = keepBlack;
+  // fresh selection/UI state: nothing carried over from the previous show
+  A.selectedCells.clear(); A.selMode = 2; A.activeCol = 0; A.selLi = A.selLayer = A.selCi = 0; A.fxSel = 0;
+  A.pop.open = A.layerMenu.open = A.colMenu.open = A.deckMenu.open = A.ctx.open = A.blendDD.open = A.rename.open = false;
+  A.tlProgress = 0; A.tlLoopOn = false; A.tlIn = 0; A.tlOut = 100;   // timeline playhead/loop are runtime-only, never saved
+  A.selSc = A.screens[0].id; A.selSl = A.screens[0].slices.empty() ? "" : A.screens[0].slices[0].id; A.selMk.clear(); A.selKind = -1;
+  A.railScreen.clear(); A.mapScrollX = A.mapScrollY = 0;
+  A.wizardStep = 0; A.editRoi = false; A.touchPts.clear(); A.pending.clear();
+  A.idCounter = 1000;
+  for (auto& l : A.layers) for (auto& c : l.clips) if (!c.media.empty()) PreloadMedia(c.media);
+  A.cue(0, 0);
+  if (A.autoStartCol >= 0 && A.autoStartCol < A.colCount()) {
+    bool wasFlushing = A.flushing; A.flushing = true;   // fire immediately on open, never queued behind Sync/quantize
+    A.fireColumn(A.autoStartCol);
+    A.flushing = wasFlushing;
+  }
+  A.projectPath = path; A.projectName = fs::path(path).stem().string();
+  MarkSaved();
+  return true;
+}
+
+void NewProject() {
+  Prefs keepPrefs = A.prefs; int keepMon = A.outMonitor; int keepScreen = A.screen;
+  A = App(); A.init();
+  A.prefs = keepPrefs; A.outMonitor = keepMon; A.screen = keepScreen;
+  A.projectPath.clear(); A.projectName = "MikMap Stage 01";
+  MarkSaved();
+}
+
+void NewBlankProject() {
+  Prefs keepPrefs = A.prefs; int keepMon = A.outMonitor; int keepScreen = A.screen;
+  A = App(); A.init();
+  A.prefs = keepPrefs; A.outMonitor = keepMon; A.screen = keepScreen;
+  A.groups.clear(); A.layers.clear(); A.colNames.clear();
+  for (int i = 0; i < 4; ++i) {
+    Layer l; l.name = "Layer " + std::to_string(i + 1); l.blend = "Normal"; l.opacity = 100; l.clips.assign(8, Clip());
+    A.layers.push_back(l);
+  }
+  Screen s; s.id = "screen1"; s.name = "Screen 1"; s.outDev = "Display 1"; s.w = 1920; s.h = 1080; s.role = 0;
+  Slice sl; sl.id = "slice1"; sl.name = "Slice 1"; sl.ix = 0; sl.iy = 0; sl.iw = 1920; sl.ih = 1080;
+  sl.q[0] = ImVec2(0, 0); sl.q[1] = ImVec2(1920, 0); sl.q[2] = ImVec2(1920, 1080); sl.q[3] = ImVec2(0, 1080);
+  s.slices.push_back(sl); A.screens.assign(1, s);
+  A.selSc = "screen1"; A.selSl = "slice1"; A.selMk.clear(); A.selKind = -1;
+  A.selectedCells.clear(); A.selLi = A.selLayer = A.selCi = 0; A.activeCol = 0; A.selMode = 2;
+  A.projectPath.clear(); A.projectName = "MikMap Stage 01";
+  MarkSaved();
+}
+
+bool CanUndo() { return !gUndo.empty(); }
+bool CanRedo() { return !gRedo.empty(); }
+bool UndoCommit() {
+  std::string cur = Snapshot();
+  if (cur == gLast) return false;
+  gUndo.push_back(gLast);
+  if (gUndo.size() > 60) gUndo.erase(gUndo.begin());
+  gRedo.clear(); gLast = cur;
+  return true;
+}
+// Called every frame. While a button is held or text is being typed, edits are still "in progress" (a slider drag or a
+// corner drag is ONE undo step), so only snapshot once input is idle, at most 5 times a second.
+void UndoTick(bool inputActive, double now) {
+  if (!gPending || inputActive || now - gLastCheck < 0.2) return;
+  gLastCheck = now; gPending = false;
+  UndoCommit();
+  A.projectDirty = gLast != A.savedSnapshot;
+}
+
+// Applies a snapshot to the *content* of the project only: selection, zoom, menus, prefs and the live/cued state of clips
+// that still exist are kept, so undoing an edit during a show does not cut a playing clip.
+static bool UndoApply(const std::string& snap) {
+  JsonValue root; std::string perr;
+  if (!JsonValue::parse(snap, root, perr)) return false;
+  App tmp = A; std::string err;
+  if (!Deserialize(root, tmp, err)) return false;
+  for (size_t li = 0; li < tmp.layers.size() && li < A.layers.size(); ++li)
+    for (size_t ci = 0; ci < tmp.layers[li].clips.size() && ci < A.layers[li].clips.size(); ++ci) {
+      Clip& n = tmp.layers[li].clips[ci]; const Clip& o = A.layers[li].clips[ci];
+      if (n.st != Clip::Empty && n.name == o.name) { n.st = o.st; n.progress = o.progress; }
+    }
+  for (auto& l : tmp.layers) { l.live = false; for (auto& c : l.clips) if (c.isLive()) l.live = true; }
+  A.canvasW = tmp.canvasW; A.canvasH = tmp.canvasH; A.groups = tmp.groups; A.layers = tmp.layers; A.colNames = tmp.colNames;
+  A.decks = tmp.decks; A.curDeckIdx = std::clamp(tmp.curDeckIdx, 0, (int)A.decks.size() - 1); A.deckMode = tmp.deckMode;   // undo also covers deck add/delete/switch
+  A.screens = tmp.screens; A.calib = tmp.calib; for (int i = 0; i < 4; ++i) A.roi[i] = tmp.roi[i];
+  A.noise = tmp.noise; A.blobSize = tmp.blobSize; A.routes = tmp.routes; A.devices = tmp.devices;
+  int nl = (int)A.layers.size(), nc = A.colCount();
+  A.selLi = std::clamp(A.selLi, 0, nl - 1); A.selLayer = std::clamp(A.selLayer, 0, nl - 1); A.selCi = std::clamp(A.selCi, 0, nc - 1);
+  A.activeCol = std::clamp(A.activeCol, 0, nc - 1);
+  std::vector<std::pair<int, int>> keep;
+  for (auto& c : A.selectedCells) if (c.first >= 0 && c.first < nl && c.second >= 0 && c.second < nc) keep.push_back(c);
+  A.selectedCells = keep;
+  Screen* sc = nullptr; for (auto& s : A.screens) if (s.id == A.selSc) sc = &s;
+  if (!sc) { sc = &A.screens[0]; A.selSc = sc->id; A.selKind = -1; }
+  Slice* sl = nullptr; for (auto& s : sc->slices) if (s.id == A.selSl) sl = &s;
+  if (!sl) { A.selSl = sc->slices.empty() ? "" : sc->slices[0].id; A.selMk.clear(); A.selKind = -1; }
+  else if (!A.selMk.empty()) { bool found = false; for (auto& m : sl->masks) if (m.id == A.selMk) found = true; if (!found) { A.selMk.clear(); A.selKind = -1; } }
+  A.pop.open = A.layerMenu.open = A.colMenu.open = A.deckMenu.open = A.ctx.open = A.blendDD.open = A.rename.open = false;
+  return true;
+}
+
+void UndoStep(bool redo) {
+  UndoCommit();                                   // fold any edit still pending into the history first
+  auto& from = redo ? gRedo : gUndo; auto& to = redo ? gUndo : gRedo;
+  if (from.empty()) { A.notify(redo ? "Nothing to redo" : "Nothing to undo", 1.5); return; }
+  std::string target = from.back(); from.pop_back();
+  std::string before = gLast;
+  if (!UndoApply(target)) { from.push_back(target); A.notify("Undo failed"); return; }
+  to.push_back(before);
+  gLast = Snapshot();
+  A.projectDirty = gLast != A.savedSnapshot;
+  A.notify(redo ? "Redo" : "Undo", 1.2);
+}
+
+bool ProjectDirty() { return A.savedSnapshot != Snapshot(); }
+
+// Convenience used by the menu/shortcuts. Returns a short message for the toast.
+std::string DoSave(bool asCopy) {
+  std::string err, path = A.projectPath;
+  if (asCopy || path.empty()) {
+    std::string base = A.projectName.empty() ? "MikMap Stage 01" : A.projectName;
+    path = (fs::path(ProjectsDir()) / (base + (asCopy ? "-" + Stamp() : std::string()) + ".mikmap")).string();
+  }
+  if (asCopy) {   // a copy must not re-point the open project at the copy
+    std::string oldPath = A.projectPath, oldName = A.projectName, oldSnap = A.savedSnapshot;
+    bool ok = SaveProject(path, err);
+    A.projectPath = oldPath; A.projectName = oldName; A.savedSnapshot = oldSnap;
+    return ok ? "Saved copy: " + fs::path(path).filename().string() : "Save failed: " + err;
+  }
+  return SaveProject(path, err) ? "Saved: " + fs::path(path).filename().string() : "Save failed: " + err;
+}
+
+// ───────────── machine settings ─────────────
+void SaveSettings() {
+  JsonValue o = JsonValue::object();
+  o.set("lang", A.prefs.lang); o.set("ui", A.prefs.ui); o.set("mono", A.prefs.mono); o.set("accent", A.prefs.accent);
+  o.set("surface", A.prefs.surface); o.set("scale", A.prefs.scale); o.set("outMonitor", A.outMonitor);
+  o.set("browserW", A.prefs.browserW); o.set("inspectorW", A.prefs.inspectorW);
+  o.set("bandPct", A.prefs.bandPct); o.set("timelineH", A.prefs.timelineH);
+  std::string err; WriteAtomic(ConfigDir() / "settings.json", o.dump(2), err);
+}
+
+void LoadSettings() {
+  bool ok; std::string text = ReadFile(ConfigDir() / "settings.json", ok);
+  if (!ok) return;
+  JsonValue o; std::string err;
+  if (!JsonValue::parse(text, o, err) || !o.isObject()) return;   // a broken settings file just means defaults
+  Prefs p;
+  // Ranges match the option lists in settings.cpp; an out-of-range index from a hand-edited file would index past the tables.
+  p.lang = std::clamp(o["lang"].asInt(p.lang), 0, 4); p.ui = std::clamp(o["ui"].asInt(p.ui), 0, 3); p.mono = std::clamp(o["mono"].asInt(p.mono), 0, 2);
+  p.accent = std::clamp(o["accent"].asInt(p.accent), 0, 3); p.surface = std::clamp(o["surface"].asInt(p.surface), 0, 2);
+  int sc = o["scale"].asInt(p.scale); p.scale = (sc == 90 || sc == 100 || sc == 110 || sc == 125 || sc == 150) ? sc : p.scale;
+  p.browserW = std::clamp(o["browserW"].asInt(p.browserW), 140, 320);
+  p.inspectorW = std::clamp(o["inspectorW"].asInt(p.inspectorW), 180, 360);
+  p.bandPct = std::clamp(o["bandPct"].asInt(p.bandPct), 25, 70);
+  p.timelineH = std::clamp(o["timelineH"].asInt(p.timelineH), 0, 96);
+  A.prefs = p; A.outMonitor = std::max(0, o["outMonitor"].asInt(0));
+}

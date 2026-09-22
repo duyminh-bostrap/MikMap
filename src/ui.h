@@ -19,8 +19,13 @@ constexpr uint32_t white = 0xffffff, tf3 = 0xf3f3f3, te0 = 0xe0e0e0, tcc = 0xccc
 // Accents (coral/cyan/mint follow the selected "Signal colors")
 inline uint32_t coral = 0xff7f50, cyan = 0x118ab2, mint = 0x06d6a0;
 constexpr uint32_t yellow = 0xffd166, red = 0xef4444, violet = 0xb388ff;
-// Clip bands
+// Clip cell bands (design tokens §3.2) — three states, not just "loaded vs coral": loaded (idle, warm),
+// preview (cued, cool cyan-tinted — distinct from live so you can tell "about to show" from "showing"),
+// live (hot burnt-orange, NOT the flat accent coral — a darker, richer tone that survives sitting lit for hours).
 constexpr uint32_t clipLoadedBg = 0x1a0e07, clipLoadedBorder = 0x4a2411, clipLoadedText = 0xe8c4a2;
+constexpr uint32_t clipBarLoaded = 0x2e1a0e, clipBodyLoaded = 0x150b05, clipFootLoaded = 0x8a6244;
+constexpr uint32_t clipBarPreview = 0x0e2430, clipBodyPreview = 0x0b141b, clipPreviewText = 0xcfe9f5, clipFootPreview = 0x5d8ba3;
+constexpr uint32_t clipBarLive = 0x8a3c14, clipBodyLive = 0x2a1408, clipLiveText = 0xffcbaa, clipFootLive = 0xffcbaa;
 constexpr uint32_t meterTrack = 0x161616;
 }  // namespace pal
 

@@ -181,6 +181,8 @@ std::vector<MenuItem> App::sliceMenu(const std::string& scId, const std::string&
     auto sel = [this, scId, slId] { selSc = scId; selSl = slId; selMk.clear(); selKind = -1; };
     m.push_back(mk(vis ? "Hide from output" : "Show on output", vis ? "eye-off" : "eye", false, false, [this, scId, slId] {
       for (auto& s : screens) if (s.id == scId) for (auto& l : s.slices) if (l.id == slId) l.visible = !l.visible; }));
+    m.push_back(mk(sc.slices[i].solo ? "Unsolo" : "Solo", "target", false, false, [this, scId, slId] {
+      for (auto& s : screens) if (s.id == scId) for (auto& l : s.slices) if (l.id == slId) l.solo = !l.solo; }));
     m.push_back(mk("Move up", "arrow-up", i <= 0, false, [this, scId, slId] { moveSlice(scId, slId, -1); }));
     m.push_back(mk("Move down", "arrow-down", i >= n - 1, false, [this, scId, slId] { moveSlice(scId, slId, 1); }));
     m.push_back(mk("Duplicate slice", "copy", false, false, [this, scId, slId] { dupSlice(scId, slId); }));
@@ -286,7 +288,7 @@ static std::vector<Node> BuildTree(bool onlyScreen, const std::string& only) {
       if (!open) continue;
     }
     for (auto& sl : sc.slices) {
-      Node s; s.kind = Node::SliceN; s.sc = sc.id; s.sl = sl.id; s.name = sl.name; s.h = onlyScreen ? 24 : 26; s.pad = onlyScreen ? 6 : 16; s.vis = sl.visible; out.push_back(s);
+      Node s; s.kind = Node::SliceN; s.sc = sc.id; s.sl = sl.id; s.name = sl.name; s.meta = sl.solo ? "SOLO" : ""; s.h = onlyScreen ? 24 : 26; s.pad = onlyScreen ? 6 : 16; s.vis = sl.visible; out.push_back(s);
       for (auto& m : sl.masks) {
         Node k; k.kind = Node::MaskN; k.sc = sc.id; k.sl = sl.id; k.mk = m.id; k.name = m.name; k.h = 24; k.pad = onlyScreen ? 20 : 28; k.canHide = false; out.push_back(k);
       }
@@ -499,7 +501,7 @@ static void Stage(ImRect r) {
     float hx = hg.Min.x + 3;
     for (int i = 0; i < 2; ++i) {
       ImRect br(hx, cy - 10, hx + 20, cy + 10);
-      bool can = i == 0 ? !A.undoStack.empty() : !A.redoStack.empty();
+      bool can = i == 0 ? CanUndo() : CanRedo();
       Hit h = HitR(br);
       if (h.hover && can) Fill(br, K(pal::g1c), 2);
       float prev = g.alpha; if (!can) g.alpha *= 0.4f;
@@ -731,6 +733,23 @@ static void Stage(ImRect r) {
       Icon("scan-search", ImVec2((zb.Min.x + zb.Max.x) * 0.5f, c.y), 10, K(pal::coral));
       if (inArea && zb.Contains(m)) CursorHand();
     }
+    // G13: sensor touches projected through the calibration homography H_s into output space (first screen only —
+    // the calibration targets are in that screen's 1920x1080 pixels). Sensor coordinates stay raw until here (principle #5).
+    if (!A.touchPts.empty() && sc == &A.screens[0]) {
+      float H[9], rms; bool ok = FitHomography(A.calib, H, &rms);
+      if (!ok) FitAffine(H, &rms);
+      for (auto& t : A.touchPts) {
+        float ox, oy; ApplyH(H, t.x, t.y, ox, oy);
+        ImVec2 p = toPx(ImVec2(ox, oy));
+        float ph = std::fmod((float)g.time * 1.4f, 1.f);
+        g.dl->AddCircle(p, (10 + 40 * ph) * s, Ca(K(pal::mint, 0.7f * (1.f - ph))), 32, 2.f);
+        g.dl->AddCircleFilled(p, 6 * s + 2, Ca(K(pal::mint)), 20);
+        g.dl->AddLine(ImVec2(p.x - 14 * s - 6, p.y), ImVec2(p.x + 14 * s + 6, p.y), Ca(K(pal::mint)), 1.f);
+        g.dl->AddLine(ImVec2(p.x, p.y - 14 * s - 6), ImVec2(p.x, p.y + 14 * s + 6), Ca(K(pal::mint)), 1.f);
+        char lb[48]; snprintf(lb, sizeof lb, "ID:%d  %d,%d px", t.id, (int)std::round(ox), (int)std::round(oy));
+        Text(p.x - TextW(MONO_B, 10, lb) * 0.5f, p.y + 14 * s + 18, MONO_B, 10, K(pal::mint), lb);
+      }
+    }
     if (mk) for (int i = 0; i < 4; ++i) {
       ImVec2 p = toPx(mk->pts[i]);
       g.dl->AddCircleFilled(p, 13 * s, Ca(K(pal::yellow)), 24); g.dl->AddCircle(p, 13 * s, Ca(K(pal::white)), 24, 2.f);
@@ -845,8 +864,12 @@ static void PropsPanel(ImRect r) {
         ImRect cr(x, oy + y, x + w, oy + y + 24);
         Box(cr, K(pal::g18), K(pal::g2a), 3);
         Text(cr.Min.x + 8, cr.Min.y + 12, MONO_B, 10, K(pal::coral), ck[i]);
-        char v[64]; snprintf(v, sizeof v, "X: %d  |  Y: %d", (int)sl->q[i].x, (int)sl->q[i].y);
-        TextR(cr.Max.x - 8, cr.Min.y + 12, MONO_M, 10, K(pal::tcc), v);
+        // F15: type exact coordinates (output-space px); dragging on the stage still works and stays in sync
+        float fw = (cr.GetWidth() - 34 - 6) / 2.f;
+        int vx = (int)std::round(sl->q[i].x), vy = (int)std::round(sl->q[i].y);
+        char idx[24], idy[24]; snprintf(idx, sizeof idx, "##cpx%d", i); snprintf(idy, sizeof idy, "##cpy%d", i);
+        if (IntField(idx, Rc(cr.Min.x + 30, cr.Min.y, fw, 24), vx)) sl->q[i].x = (float)std::clamp(vx, -4000, 8000);
+        if (IntField(idy, Rc(cr.Min.x + 30 + fw + 6, cr.Min.y, fw, 24), vy)) sl->q[i].y = (float)std::clamp(vy, -4000, 8000);
         y += 24 + 4;
       }
       y += 4;
