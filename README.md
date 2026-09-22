@@ -66,34 +66,41 @@ ctest --test-dir build --output-on-failure
 Không cần GPU, không cần GLFW/ImGui. Toàn bộ toán học mapping và calibration
 nằm ở `engine/core`, test trong vài giây.
 
-### `src/` — app GLFW + ImGui, cả Windows/Linux/macOS
-
-```powershell
-# Windows — bộ công cụ (MinGW GCC, CMake, Ninja, Dear ImGui, GLFW) nằm trong
-# src/.tools/, không vào git. Xem src/build.ps1 để build nhanh.
-cmake -S src -B src/build -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build src/build
-.\src\build\mikmap.exe
-```
+### `src/` — app GLFW + ImGui, **một lệnh giống nhau cho Windows/Linux/macOS**
 
 ```bash
-# Linux/macOS — cần GLFW cài qua package manager hệ thống
-# (Linux: apt install libglfw3-dev libgl-dev · macOS: brew install glfw).
-# Dear ImGui (v1.92.9b, khớp bản Windows) được CMake tự tải lúc configure,
-# không vendor vào repo.
 cmake -S src -B src/build -DCMAKE_BUILD_TYPE=Release
-cmake --build src/build
-./src/build/mikmap
+cmake --build src/build --config Release
+./src/build/mikmap          # Windows: .\src\build\mikmap.exe
 ```
 
-Đã build+chạy thật kiểm chứng trên Linux (không chỉ compile — chạy dưới Xvfb,
-giao diện render đúng) và trên macOS (Apple Silicon, Xcode SDK 15.0, GLFW 3.5.1
-qua Homebrew: build sạch, app mở cửa sổ và chạy ổn định, F5 trong VS Code dùng
-`.vscode/launch.json`). Trên macOS app xin OpenGL 3.2 core (+ GLSL 150) vì hệ
-điều hành không cấp context 3.0 thường; sẽ có vài cảnh báo `deprecated` của
-OpenGL khi build — vô hại. Cửa sổ output máy chiếu (F2/I1) cũng đã mở và vẽ đúng trên macOS
-(chụp bằng `--outshot`); chưa thử với nhiều màn hình thật. Tắt engine để dựng riêng phần giao diện:
-`-DMIKMAP_WITH_ENGINE=OFF`.
+Chỉ cần **CMake + một trình biên dịch C++20**, không cần dựng sẵn thư mục
+`.tools/` nào:
+
+| OS | Cần cài |
+|---|---|
+| Windows | CMake (`winget install Kitware.CMake`) + MinGW-w64 (MSYS2: `pacman -S mingw-w64-x86_64-gcc mingw-w64-x86_64-gdb`, hoặc w64devkit). MSVC cũng build được nhưng chưa ai kiểm chứng. |
+| macOS | `xcode-select --install` + `brew install cmake` (GLFW qua `brew install glfw` nếu muốn, không bắt buộc) |
+| Linux | `apt install cmake g++ libgl-dev` (GLFW qua `apt install libglfw3-dev` nếu muốn, không bắt buộc) |
+
+**Dear ImGui** (v1.92.9b) luôn được CMake tải lúc configure. **GLFW** dùng bản
+hệ thống nếu có (brew/apt/vcpkg), không có thì CMake tự tải và dựng GLFW 3.5.1
+từ nguồn — nên máy trắng vẫn build được, chỉ tốn thêm ~1 phút lần đầu.
+
+**VS Code:** bấm `F5` là xong (`.vscode/tasks.json` configure+build vào
+`src/build-debug`, `.vscode/launch.json` chạy debugger). Một cấu hình dùng
+chung cho cả 3 OS, chỉ đè vài trường khác nhau thật sự (macOS `lldb`,
+Windows/Linux `gdb`, đuôi `.exe`).
+
+Đã kiểm chứng thật: **Linux** (build native + chạy dưới Xvfb) · **macOS**
+(Apple Silicon, Xcode SDK 15.0, GLFW qua Homebrew — build sạch, app chạy ổn
+định, F5 hoạt động; app xin OpenGL 3.2 core + GLSL 150 vì macOS không cấp
+context 3.0 thường, có vài cảnh báo `deprecated` vô hại; cửa sổ output máy
+chiếu F2/I1 mở và vẽ đúng, chụp bằng `--outshot`, chưa thử đa màn hình thật) ·
+**Windows** (cross-compile MinGW-w64 từ máy trắng không có `.tools/`: CMake tự
+dựng GLFW từ nguồn, ra `mikmap.exe` PE32+ chạy đúng qua Wine).
+
+Tắt engine để dựng riêng phần giao diện: `-DMIKMAP_WITH_ENGINE=OFF`.
 
 ---
 

@@ -1,4 +1,11 @@
 {
+    // One config for all three platforms. Only the bits that genuinely differ
+    // per OS are overridden below: macOS ships lldb, Windows/Linux use gdb, and
+    // the Windows binary carries a .exe suffix. Everything else is shared.
+    //
+    // Windows needs MinGW-w64 gdb on PATH (MSYS2: `pacman -S mingw-w64-x86_64-gdb`,
+    // or w64devkit). If you build with MSVC instead of MinGW, gdb cannot read its
+    // debug info — add a separate config with "type": "cppvsdbg" in that case.
     "version": "0.2.0",
     "configurations": [
         {
@@ -11,13 +18,13 @@
             "stopAtEntry": false,
             "environment": [],
             "externalConsole": false,
-            "MIMode": "lldb",
+            "MIMode": "gdb",
             "preLaunchTask": "mikmap: build (Debug)",
+            "osx": {
+                "MIMode": "lldb"
+            },
             "windows": {
-                "program": "${workspaceFolder}\\src\\build-debug\\mikmap.exe",
-                "cwd": "${workspaceFolder}\\src\\build-debug",
-                "MIMode": "gdb",
-                "miDebuggerPath": "${workspaceFolder}\\src\\.tools\\mingw64\\bin\\gdb.exe"
+                "program": "${workspaceFolder}/src/build-debug/mikmap.exe"
             }
         }
     ]

@@ -1,4 +1,8 @@
 {
+    // Needs only CMake + a C++20 compiler on PATH. On Windows that means either
+    // Visual Studio / VS Build Tools (MSVC) or MinGW-w64; CMake picks whichever
+    // it finds. GLFW and Dear ImGui are fetched/built by src/CMakeLists.txt, so
+    // nothing has to be pre-installed for them.
     "version": "2.0.0",
     "tasks": [
         {
@@ -6,28 +10,17 @@
             "type": "shell",
             "command": "cmake",
             "args": ["-S", "src", "-B", "src/build-debug", "-DCMAKE_BUILD_TYPE=Debug"],
-            "options": {
-                "cwd": "${workspaceFolder}",
-                "windows": {
-                    "env": { "PATH": "${workspaceFolder}\\src\\.tools\\mingw64\\bin;${workspaceFolder}\\src\\.tools\\ninja;${env:PATH}" }
-                }
-            },
-            "windows": {
-                "args": ["-S", "src", "-B", "src/build-debug", "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Debug"]
-            },
+            "options": { "cwd": "${workspaceFolder}" },
             "problemMatcher": []
         },
         {
             "label": "mikmap: build (Debug)",
             "type": "shell",
             "command": "cmake",
-            "args": ["--build", "src/build-debug", "-j"],
-            "options": {
-                "cwd": "${workspaceFolder}",
-                "windows": {
-                    "env": { "PATH": "${workspaceFolder}\\src\\.tools\\mingw64\\bin;${workspaceFolder}\\src\\.tools\\ninja;${env:PATH}" }
-                }
-            },
+            // --config Debug is required by multi-config generators (Visual
+            // Studio, Xcode) and ignored by single-config ones (Ninja, Makefiles).
+            "args": ["--build", "src/build-debug", "--config", "Debug", "-j"],
+            "options": { "cwd": "${workspaceFolder}" },
             "dependsOn": "mikmap: configure (Debug)",
             "problemMatcher": ["$gcc"],
             "group": { "kind": "build", "isDefault": true }

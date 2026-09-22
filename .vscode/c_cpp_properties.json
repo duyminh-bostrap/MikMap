@@ -1,0 +1,15 @@
+{
+    // IntelliSense reads the compile database CMake writes (see
+    // CMAKE_EXPORT_COMPILE_COMMANDS in src/CMakeLists.txt), so include paths and
+    // the compiler are picked up from the real build — nothing hardcoded per OS.
+    // Run the "mikmap: configure (Debug)" task once to generate it.
+    "version": 4,
+    "configurations": [
+        {
+            "name": "MikMap",
+            "compileCommands": "${workspaceFolder}/src/build-debug/compile_commands.json",
+            "cStandard": "c17",
+            "cppStandard": "c++20"
+        }
+    ]
+}
