@@ -119,7 +119,11 @@ void App::cue(int li, int ci) {
   }
   Clip& cell = layers[li].clips[ci];
   selLi = li; selCi = ci; selLayer = li; selectedCells = {{li, ci}};
-  if (cell.st == Clip::Empty) return;
+  // Armed is a decorative "looks empty" state (Ar() in the demo fixture) — ClipCell/trigger()/fireColumn() all
+  // treat it as empty, so cue() must too. Missing this let a body-click cue an Armed cell into Selected, and the
+  // immediately-following trigger() then saw a non-empty/non-Armed state and played the (nameless, content-less)
+  // clip for real — "clicking an empty-looking cell creates a new clip".
+  if (cell.st == Clip::Empty || cell.st == Clip::Armed) return;
   cell.st = cell.st == Clip::Live ? Clip::LiveSel : Clip::Selected;
 }
 static void StartDissolve(Layer& l, int toCi) {
@@ -185,6 +189,13 @@ void App::fireColumn(int ci) {
   activeCol = ci;
   selectedCells.clear();
   for (int li = 0; li < (int)layers.size(); ++li) selectedCells.push_back({li, ci});
+  // Preview Cue (Monitor reads selLi/selCi directly) follows the topmost layer that actually has a clip here,
+  // same "layer 0 draws on top" convention as DrawComposite. Firing an all-empty column leaves it unchanged.
+  for (int li = 0; li < (int)layers.size(); ++li)
+    if (ci < (int)layers[li].clips.size() && layers[li].clips[ci].st != Clip::Empty && layers[li].clips[ci].st != Clip::Armed) {
+      selLi = li; selCi = ci; selLayer = li;
+      break;
+    }
 }
 
 void App::selectColumn(int ci) {

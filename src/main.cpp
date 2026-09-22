@@ -700,6 +700,23 @@ int main(int argc, char** argv) {
     if (liveLi < 0) return fail("fixture: expected some layer live");
     A.trigger(liveLi, A.colCount() - 1);   // click an empty cell's body on that same layer
     if (A.layers[liveLi].live) return fail("triggering an empty cell must stop that layer");
+    // Armed cells (Ar(), the demo's "looks empty but isn't Clip::Empty" flavor) must be treated as empty everywhere:
+    // cue() must not select them into Live/Selected, and firing one must not fabricate a nameless playing clip.
+    NewProject();
+    { bool foundArmed = false;
+      for (auto& l : A.layers) for (auto& c : l.clips) if (c.st == Clip::Armed) foundArmed = true;
+      if (!foundArmed) return fail("fixture: expected an Armed cell in the demo project"); }
+    for (int li = 0; li < (int)A.layers.size() && true; ++li)
+      for (int ci = 0; ci < (int)A.layers[li].clips.size(); ++ci)
+        if (A.layers[li].clips[ci].st == Clip::Armed) {
+          A.cue(li, ci); A.trigger(li, ci);
+          if (A.layers[li].clips[ci].st != Clip::Armed) return fail("cue+trigger must not change an Armed cell's state");
+          if (A.layers[li].live) return fail("triggering an Armed cell must not mark the layer live");
+        }
+    // Firing a column shows the topmost layer with real content there in Preview Cue (selLi/selCi).
+    NewProject();
+    A.fireColumn(0);
+    if (A.selLi != 0 || A.layers[0].clips[0].name.empty()) return fail("fireColumn must preview the topmost layer with content");
     std::printf("roundtrip OK\n"); return 0;
   }
   gAssets = FindAssets(argv[0]);
