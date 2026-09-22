@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstring>
 #include <algorithm>
+#include <ctime>
 #include <filesystem>
 
 using namespace ui;
@@ -1636,7 +1637,7 @@ static void TimelineView(ImRect r) {
 
 void DrawDeck(ImRect body) {
   float H = ImGui::GetIO().DisplaySize.y;
-  float bandH = A.topBandPx > 0 ? A.topBandPx : 0.42f * H;
+  float bandH = A.topBandPx > 0 ? A.topBandPx : A.prefs.bandPct / 100.f * H;
   bandH = std::max(bandH, 180.f);
   float x0 = body.Min.x, x1 = body.Max.x, y0 = body.Min.y;
   ImRect band(x0, y0, x1, y0 + bandH);
@@ -1648,44 +1649,38 @@ void DrawDeck(ImRect body) {
     if (std::hypot(m.x - A.browserPressPos.x, m.y - A.browserPressPos.y) > 5.f) { A.dragSrc = A.dragSrcCand; A.dragSrc.active = true; }
   }
   if (!ImGui::IsMouseDown(0)) A.browserPress = false;
-  Browser(ImRect(x0, y0, x0 + 200, y0 + bandH));
-  Inspector(ImRect(x1 - 236, y0, x1, y0 + bandH));
+  Browser(ImRect(x0, y0, x0 + A.prefs.browserW, y0 + bandH));
+  Inspector(ImRect(x1 - A.prefs.inspectorW, y0, x1, y0 + bandH));
 
   // monitors + timeline
-  float mx0 = x0 + 200 + 4, mx1 = x1 - 236 - 4;
-  float timelineH = 48;
+  float mx0 = x0 + A.prefs.browserW + 4, mx1 = x1 - A.prefs.inspectorW - 4;
+  float timelineH = (float)A.prefs.timelineH;
   float monH = bandH - 8 - 4 - timelineH;
   float mw = (mx1 - mx0 - 4) / 2.f;
   Monitor(Rc(mx0, y0 + 4, mw, monH), false);
   Monitor(Rc(mx0 + mw + 4, y0 + 4, mw, monH), true);
-  {
+  if (timelineH > 0.5f) {
     ImRect tl(mx0, y0 + 4 + monH + 4, mx1, y0 + bandH - 4);
     Box(tl, K(pal::g18), K(pal::g2a), 3);
-    float mid = (tl.Min.x + tl.Max.x) * 0.5f;
-    Text(tl.Min.x + 8, tl.Min.y + 15, UI_B, 9, K(pal::t88), "TIMELINE", 0.14f);
+    Text(tl.Min.x + 8, tl.Min.y + 15, UI_B, 9, K(pal::t88), "SYSTEM TIME", 0.14f);
+    char sysTm[16] = "--:--:--";
+    { std::time_t tt = std::time(nullptr); std::tm tmv{};
+#if defined(_WIN32)
+      localtime_s(&tmv, &tt);
+#else
+      localtime_r(&tt, &tmv);
+#endif
+      std::strftime(sysTm, sizeof sysTm, "%H:%M:%S", &tmv); }
+    Text(tl.Min.x + 8, tl.Min.y + 33, MONO_B, 13, K(pal::tf3), sysTm, 0.04f);
     const Clip* tc0 = A.topClip();
     float total = tc0 ? ClipSeconds(*tc0) : 10.f, t = A.topProgress() / 100.f * total;
     char tc[32]; snprintf(tc, sizeof tc, "00:%02d:%02d:%02d", (int)(t / 60), (int)fmodf(t, 60.f), (int)(fmodf(t, 1.f) * 25));
-    Text(tl.Min.x + 8, tl.Min.y + 33, MONO_B, 13, K(pal::coral), tc, 0.04f);
-    float tw = TextW(MONO_B, 13, tc, 0.04f);
     char tot[32]; snprintf(tot, sizeof tot, "/ 00:%02d:%02d:00", (int)(total / 60), (int)fmodf(total, 60.f));
-    Text(tl.Min.x + 8 + tw + 6, tl.Min.y + 35, MONO_B, 9, K(pal::t66), tot, 0.09f);
-    {   // X6: scrub bar — click or drag to move the playhead of the topmost selected clip
-      ImRect track(tl.Min.x + 8, tl.Max.y - 9, tl.Max.x - 8, tl.Max.y - 5);
-      Fill(track, K(pal::g22), 2);
-      float frac = std::clamp(A.topProgress() / 100.f, 0.f, 1.f);
-      Fill(ImRect(track.Min.x, track.Min.y, track.Min.x + track.GetWidth() * frac, track.Max.y), K(pal::coral), 2);
-      ImRect hit(track.Min.x, track.Min.y - 5, track.Max.x, track.Max.y + 4);
-      static bool scrubbing = false;
-      Hit sh = HitR(hit);
-      if (sh.hover) CursorHand();
-      if (sh.click) scrubbing = true;
-      if (scrubbing) {
-        if (ImGui::IsMouseDown(0)) A.setTopProgress((ImGui::GetIO().MousePos.x - track.Min.x) / std::max(1.f, track.GetWidth()) * 100.f);
-        else scrubbing = false;
-      }
-      g.dl->AddCircleFilled(ImVec2(track.Min.x + track.GetWidth() * frac, (track.Min.y + track.Max.y) * 0.5f), 4.f, Ca(K(pal::white)), 12);
-    }
+    float rx = tl.Max.x - 8;
+    TextR(rx, tl.Min.y + 15, UI_B, 9, K(pal::t88), "TIMELINE", 0.14f);
+    float totW = TextW(MONO_B, 9, tot, 0.09f);
+    TextR(rx, tl.Min.y + 35, MONO_B, 9, K(pal::t66), tot, 0.09f);
+    TextR(rx - totW - 6, tl.Min.y + 33, MONO_B, 13, K(pal::coral), tc, 0.04f);
     // Grid mode: skip-back/play/pause/stop/skip-forward (unchanged). Timeline mode adds "step 1 bar"
     // chevrons and its buttons drive the shared tlProgress playhead instead of column selection.
     struct TB { const char* ico; Tone t; bool on; int action; };
@@ -1695,6 +1690,7 @@ void DrawDeck(ImRect body) {
     TB* tb = A.deckMode == 1 ? tbTl : tbGrid;
     int nb = A.deckMode == 1 ? 7 : 5;
     float grpW = nb * 29.f + 4.f;
+    float mid = (tl.Min.x + tl.Max.x) * 0.5f;
     ImRect grp(mid - grpW * 0.5f, tl.Min.y + 9, mid + grpW * 0.5f, tl.Min.y + 39);
     Box(grp, K(pal::g050), K(pal::g22), 2);
     for (int i = 0; i < nb; ++i) {
@@ -1738,6 +1734,7 @@ void DrawDeck(ImRect body) {
       if (ImGui::IsMouseDown(0)) {
         float mxv = std::max(180.f, H - (40 + 20 + 6) - 220.f);
         A.topBandPx = std::clamp(ImGui::GetIO().MousePos.y - 40.f, 180.f, mxv);
+        A.prefs.bandPct = std::clamp((int)std::round(A.topBandPx / H * 100.f), 25, 70);
         ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
       } else A.resizingDeck = false;
     }

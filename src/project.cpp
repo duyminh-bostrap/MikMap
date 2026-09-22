@@ -540,6 +540,8 @@ void SaveSettings() {
   JsonValue o = JsonValue::object();
   o.set("lang", A.prefs.lang); o.set("ui", A.prefs.ui); o.set("mono", A.prefs.mono); o.set("accent", A.prefs.accent);
   o.set("surface", A.prefs.surface); o.set("scale", A.prefs.scale); o.set("outMonitor", A.outMonitor);
+  o.set("browserW", A.prefs.browserW); o.set("inspectorW", A.prefs.inspectorW);
+  o.set("bandPct", A.prefs.bandPct); o.set("timelineH", A.prefs.timelineH);
   std::string err; WriteAtomic(ConfigDir() / "settings.json", o.dump(2), err);
 }
 
@@ -552,6 +554,10 @@ void LoadSettings() {
   // Ranges match the option lists in settings.cpp; an out-of-range index from a hand-edited file would index past the tables.
   p.lang = std::clamp(o["lang"].asInt(p.lang), 0, 4); p.ui = std::clamp(o["ui"].asInt(p.ui), 0, 3); p.mono = std::clamp(o["mono"].asInt(p.mono), 0, 2);
   p.accent = std::clamp(o["accent"].asInt(p.accent), 0, 3); p.surface = std::clamp(o["surface"].asInt(p.surface), 0, 2);
-  int sc = o["scale"].asInt(p.scale); p.scale = (sc == 90 || sc == 100 || sc == 110 || sc == 125) ? sc : p.scale;
+  int sc = o["scale"].asInt(p.scale); p.scale = (sc == 90 || sc == 100 || sc == 110 || sc == 125 || sc == 150) ? sc : p.scale;
+  p.browserW = std::clamp(o["browserW"].asInt(p.browserW), 140, 320);
+  p.inspectorW = std::clamp(o["inspectorW"].asInt(p.inspectorW), 180, 360);
+  p.bandPct = std::clamp(o["bandPct"].asInt(p.bandPct), 25, 70);
+  p.timelineH = std::clamp(o["timelineH"].asInt(p.timelineH), 0, 96);
   A.prefs = p; A.outMonitor = std::max(0, o["outMonitor"].asInt(0));
 }

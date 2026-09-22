@@ -111,7 +111,8 @@ constexpr int FX_COUNT = 8;
 struct ColMenu { bool open = false; int ci = 0; ImVec2 pos; };
 struct DeckMenu { bool open = false; int idx = 0; ImVec2 pos; };
 struct DragSrc { bool active = false; std::string name, dur, media; int fxKind = -1; };
-struct Prefs { int lang = 0, ui = 0, mono = 0, accent = 0, surface = 0, scale = 100; };
+struct Prefs { int lang = 0, ui = 0, mono = 0, accent = 0, surface = 0, scale = 100;
+  int browserW = 200, inspectorW = 236, bandPct = 42, timelineH = 48; };
 struct ProjectFile { std::string path, name; long long mtime = 0; };
 void UndoStep(bool redo);   // defined in project.cpp
 struct Popup { bool open = false; ImVec2 pos; int li = 0, ci = 0; };

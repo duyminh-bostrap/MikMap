@@ -180,7 +180,7 @@ thành 7 nút: ⏮ (về 0%) · ◀ (lùi 1 bar, −6.25%) · ▶/⏸ · ■ (d�
 (tiến 1 bar, +6.25%) · ⏭ (tới cuối, 99.9%). Playhead/vòng lặp **không lưu vào
 dự án** (chỉ trạng thái runtime, reset khi mở lại).
 
-### 2.4 Browser (trái, 200px)
+### 2.4 Browser (trái, mặc định 200px — chỉnh được, xem §5 tab Layout)
 Cây thư mục: **Media** (✅ ảnh thật trong `~/Documents/MikMap/media`, bấm thư mục để quét lại) · Sources · Generators · Effects · Composition — bốn thư mục sau vẫn là **dữ liệu mẫu cố
 định**. Kéo ảnh vào ô để tạo clip ảnh (căn vừa canvas, có alpha, đi qua warp).
 - Bấm thư mục: mở/đóng. Bấm mục: chọn. ✅
@@ -191,11 +191,19 @@ Cây thư mục: **Media** (✅ ảnh thật trong `~/Documents/MikMap/media`, b
 ### 2.5 Hai monitor + Timeline (giữa)
 - **Preview Cue** (cyan) và **Live Output** (coral, có nhãn COMPOSITE): xem hình
   clip đã cue / toàn bộ composite. Live có TestCard khi bật.
-- **Timeline**: hiển thị timecode theo clip trên cùng đang chọn (tổng = thời lượng thật của clip, vd `16s`; generator `∞` lặp mỗi 10s) và
-  có **thanh kéo (scrub)** ở đáy — bấm/kéo để đổi playhead. ✅
-- 5 nút transport: **▶ Play** (tiếp tục chạy playhead của mọi clip đang chọn/live ✅) · **⏸ Pause** (dừng toàn bộ playhead, không đổi trạng thái Live ✅) · **■ Stop** (dừng chạy + tua playhead về 0 ✅) · **⏮/⏭** (nhảy sang cột trước/sau **và bắn luôn cột đó** — như bấm header cột, có dừng layer nào trống ở cột mới, có theo Sync/quantize nếu bật ✅; khác phím `←`/`→` chỉ di chuyển lựa chọn, không phát).
+- **Đổi 2026-09-22:** thanh dưới hai monitor không còn là "Timeline" (nhãn +
+  timecode) ở góc trái nữa — góc trái nay là **SYSTEM TIME** (giờ hệ thống
+  thật, `HH:MM:SS`, cập nhật mỗi khung hình qua `localtime_r`/`localtime_s`).
+  Nhãn **TIMELINE** + timecode (vd `00:00:03:12 / 00:00:16:00`, theo clip trên
+  cùng đang chọn) dời sang **góc phải**, cỡ chữ nhỏ hơn — chỉ còn là thông tin
+  tham khảo. **Bỏ hẳn thanh kéo (scrub bar)** ở đáy — không còn bấm/kéo để đổi
+  playhead trực tiếp trên thanh này (X6 cũ coi như quay lại trạng thái chưa
+  scrub được, xem mục 7). Cao của cả thanh này chỉnh được trong Cài đặt → tab
+  **Layout** (`Cao thanh timeline`, 0–96px) — **kéo về 0 sẽ ẩn hẳn** cả thanh
+  này lẫn 5 nút transport bên dưới, nhường chỗ cho hai monitor to hơn. ✅
+- 5 nút transport (ẩn cùng thanh nếu Cao thanh timeline = 0): **▶ Play** (tiếp tục chạy playhead của mọi clip đang chọn/live ✅) · **⏸ Pause** (dừng toàn bộ playhead, không đổi trạng thái Live ✅) · **■ Stop** (dừng chạy + tua playhead về 0 ✅) · **⏮/⏭** (nhảy sang cột trước/sau **và bắn luôn cột đó** — như bấm header cột, có dừng layer nào trống ở cột mới, có theo Sync/quantize nếu bật ✅; khác phím `←`/`→` chỉ di chuyển lựa chọn, không phát).
 
-### 2.6 Properties (phải, 236px) — 3 tab **Comp / Layer / Clip**
+### 2.6 Properties (phải, mặc định 236px — chỉnh được, xem §5 tab Layout) — 3 tab **Comp / Layer / Clip**
 - **Comp**: bảng chỉ đọc (canvas, số layer/nhóm/cột, BPM, FPS, độ trễ, output).
 - **Layer**: slider opacity/audio, 8 chip **blend mode** (cùng danh sách với dropdown hàng layer), công tắc Solo/Mute/Bypass,
   bảng thông tin.
@@ -271,8 +279,24 @@ Ba cột: **Devices + Calibration** | **Radar view** | **Parameter routing**.
 ## 5. Cửa sổ Cài đặt — `settings.cpp`
 
 Modal ở giữa màn hình, đóng bằng **Done**, nút ✕, `Esc`, hoặc bấm ra ngoài.
-4 tab bên trái: **Ngôn ngữ · Font · Màu · Cỡ chữ**. Thay đổi **áp dụng ngay** (có
-khung xem trước "LIVE OUTPUT"). Nút **Reset** đưa về mặc định.
+**5 tab** bên trái (thêm tab thứ 5, 2026-09-22): **Ngôn ngữ · Font · Màu · Cỡ
+chữ · Layout**. Thay đổi **áp dụng ngay** (có khung xem trước "LIVE OUTPUT" ở
+tab Cỡ chữ). Nút **Reset** đưa về mặc định (kể cả `topBandPx`, để không kẹt ở
+chiều cao band đã kéo tay trước đó). Cỡ chữ nay có **5 mức** (thêm "X-Large" /
+150%, trước chỉ có 4 mức tới 125%).
+
+**Tab Layout (mới):** 4 slider, đọc/ghi `App::Prefs` — kéo áp dụng ngay,
+lưu vào `settings.json` (mô tả *máy này*, không phải dự án, đúng nguyên tắc
+tách máy/buổi diễn):
+| Slider | Field | Khoảng | Ghi chú |
+|---|---|---|---|
+| Browser width | `prefs.browserW` | 140–320px | Bề rộng cây Browser bên trái (§2.4) |
+| Properties width | `prefs.inspectorW` | 180–360px | Bề rộng panel Properties bên phải (§2.6) |
+| Top band height | `prefs.bandPct` | 25–70% | % chiều cao cửa sổ dành cho dải trên (Browser/Monitor/Properties) — kéo tay bằng resize handle (đáy dải) cũng cập nhật lại giá trị % này, hai cách chỉnh đồng bộ hai chiều |
+| Timeline height | `prefs.timelineH` | 0–96px | Cao thanh SYSTEM TIME/TIMELINE + nút transport (§2.5) — **0 = ẩn hẳn thanh này** |
+
+Cả 4 field lưu trong `settings.json` (`SaveSettings`/`LoadSettings`,
+`project.cpp`), clamp lại khi nạp để file chỉnh tay hỏng không kéo méo layout.
 
 ---
 
@@ -308,7 +332,7 @@ Trạng thái sau đợt sửa 2026-09-21 (✅ đã sửa · ⛔ còn tồn tạ
 | X3 | Rename layer/cột, Loop trong popover không làm gì | ✅ Đã sửa |
 | X4 | Chip blend mode có tên khác dropdown, chọn Alpha/Additive rơi về Normal | ✅ Đã sửa (đã xác nhận đúng là lỗi thật) |
 | X5 | Không phím tắt thật; không undo cho Composition | ✅ Đã có phím tắt (mục 6) và undo/redo toàn app |
-| X6 | Timeline không scrub được | ✅ Đã sửa; tổng thời lượng và tốc độ playhead nay theo thời lượng thật của clip |
+| X6 | Timeline không scrub được | ✅ Đã sửa (2026-09-21: tổng thời lượng/tốc độ playhead theo thời lượng thật của clip) — **2026-09-22: bỏ hẳn thanh kéo (scrub bar)** theo yêu cầu thiết kế mới (xem §2.5); không còn cách kéo tay đổi playhead từ thanh này nữa, chỉ còn đọc timecode + 5 nút transport |
 | X7 | Edit ROI không kéo được; radar chỉ giả lập 1 điểm chạm | ✅ ROI kéo được — ⛔ radar vẫn chỉ giả lập |
 | X8 | Thanh trạng thái hiện MIDI/Art-Net/NDI giả | ✅ Đã thay bằng số thiết bị và trạng thái output thật |
 | X9 | Tên dự án không cập nhật tiêu đề | ✅ Đã sửa |
