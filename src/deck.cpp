@@ -1082,7 +1082,12 @@ static void ColumnHeader(ImRect r, int i, bool active, int layerCount) {
     Text(br.Min.x + 5, cy, MONO_B, 8, K(h.hover ? pal::tcc : pal::t66), "TRIG", 0.09f);
     right = br.Min.x - 6;
   }
-  TextEll(r.Min.x + 8 + 9 + 6, cy, right - (r.Min.x + 23), UI_B, 11, fg, lab);
+  float labX = r.Min.x + 8 + 9 + 6;
+  if (A.autoStartCol == i) {   // Setting: this column fires automatically when the project is opened
+    Icon("zap", ImVec2(labX + 5, cy), 10, K(pal::yellow));
+    labX += 14;
+  }
+  TextEll(labX, cy, right - labX, UI_B, 11, fg, lab);
   g.alpha = prevA;
   if (isDropCol) DashedRect(Rc(r.Min.x - 1, r.Min.y - 1, r.GetWidth() + 2, r.GetHeight() + 2), K(pal::yellow), 2);
   if (h.hover) CursorHand();

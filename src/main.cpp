@@ -479,9 +479,11 @@ void DrawOverlays(ImVec2 disp) {
   // column menu
   if (A.colMenu.open) {
     int ci = A.colMenu.ci, n = A.colCount();
+    bool isAutoStart = A.autoStartCol == ci;
     std::vector<PItem> items = {{"Insert column before", "arrow-left-to-line", "", 0, false, false}, {"Insert column after", "arrow-right-to-line", "", 0, false, false},
                                 {"Move left", "chevron-left", "", 0, ci == 0, false}, {"Move right", "chevron-right", "", 0, ci >= n - 1, false},
                                 {"Rename column", "pencil", "", 0, false, false}, {"Clear column", "eraser", "", 0, false, false},
+                                {isAutoStart ? "Clear auto-start on open" : "Set as auto-start on open", "zap", "", isAutoStart ? 1 : 0, false, false},
                                 {"Delete column", "trash-2", "", 2, n < 2, false}};
     ImRect pr; int hit = PopoverList(A.colMenu.pos, disp, "Column", items, freshCol, pr);
     if (hit >= 0) {
@@ -489,7 +491,8 @@ void DrawOverlays(ImVec2 disp) {
       else if (hit == 2) A.moveColTo(ci, ci - 1); else if (hit == 3) A.moveColTo(ci, ci + 1);
       else if (hit == 4) { A.beginRename(1, ci, A.colMenu.pos, A.colName(ci)); }
       else if (hit == 5) { for (auto& l : A.layers) { l.clips[ci] = Clip(); l.live = false; for (auto& k : l.clips) if (k.isLive()) l.live = true; } }
-      else if (hit == 6) A.deleteCol(ci);
+      else if (hit == 6) { A.autoStartCol = isAutoStart ? -1 : ci; A.notify(isAutoStart ? "Auto-start cleared" : ("Auto-start: column " + std::to_string(ci + 1)), 2.0); }
+      else if (hit == 7) A.deleteCol(ci);
       A.colMenu.open = false;
     } else if (!freshCol && (io.MouseClicked[0] || io.MouseClicked[1]) && !Raw(pr)) A.colMenu.open = false;
     g.blocked = true;
@@ -732,6 +735,26 @@ int main(int argc, char** argv) {
       if (wasLive) ++stoppedCount;
     }
     if (stoppedCount == 0) return fail("fixture: expected at least one layer to start live so the stop could be observed");
+    // Auto-start column: off by default, only fires (and only on LOAD, not on plain NewProject) when set and saved.
+    NewProject();
+    if (A.autoStartCol != -1) return fail("autoStartCol must default to off");
+    for (auto& l : A.layers) for (auto& c : l.clips) if (c.isLive()) c.st = Clip::Loaded;   // clean baseline: stop the demo's own default-live clips
+    for (auto& l : A.layers) l.live = false;
+    A.autoStartCol = 2;   // Cột 3, non-empty in every layer of the demo
+    if (!SaveProject(roundtrip, err)) return fail(err.c_str());
+    NewProject();   // must NOT inherit the setting from the in-memory state -- only a real load applies it
+    if (A.autoStartCol != -1) return fail("NewProject must not carry over autoStartCol");
+    if (!LoadProject(roundtrip, err)) return fail(err.c_str());
+    if (A.autoStartCol != 2) return fail("autoStartCol not restored");
+    int nLive = 0; for (auto& l : A.layers) if (l.live) ++nLive;
+    if (nLive == 0) return fail("opening a project with autoStartCol set must fire that column");
+    if (A.activeCol != 2) return fail("opening must select the auto-start column");
+    // A stale autoStartCol pointing past the real column count (e.g. saved before a column got deleted) must fall
+    // back to off on load, not read out of bounds.
+    { std::FILE* f = std::fopen(roundtrip.c_str(), "wb");
+      if (f) { std::fputs("{\"format\":1,\"composition\":{\"autoStartCol\":999,\"layers\":[{\"name\":\"L\",\"clips\":[{\"name\":\"c\",\"st\":1}]}]},\"screens\":[{\"id\":\"s\",\"slices\":[{\"id\":\"sl\"}]}]}", f); std::fclose(f); } }
+    if (!LoadProject(roundtrip, err)) return fail(err.c_str());
+    if (A.autoStartCol != -1) return fail("out-of-range autoStartCol must clamp to off, not read out of bounds");
     std::printf("roundtrip OK\n"); return 0;
   }
   gAssets = FindAssets(argv[0]);

@@ -131,7 +131,7 @@ JsonValue Serialize(const App& a) {
   root.set("format", kFormat);
   root.set("app", "MikMap");
   JsonValue comp = JsonValue::object();
-  comp.set("canvasW", a.canvasW); comp.set("canvasH", a.canvasH); comp.set("bpm", a.bpm); comp.set("quantize", a.quantize);
+  comp.set("canvasW", a.canvasW); comp.set("canvasH", a.canvasH); comp.set("bpm", a.bpm); comp.set("quantize", a.quantize); comp.set("autoStartCol", a.autoStartCol);
   JsonValue cn = JsonValue::array();
   for (int i = 0; i < a.colCount(); ++i) cn.push(i < (int)a.colNames.size() ? a.colNames[i] : std::string());
   comp.set("colNames", cn);
@@ -193,6 +193,7 @@ bool Deserialize(const JsonValue& root, App& out, std::string& err) {
   if (!comp["layers"].isArray() || comp["layers"].size() == 0) { err = "no layers in file"; return false; }
   out.canvasW = std::clamp(comp["canvasW"].asInt(1920), 64, 16384); out.canvasH = std::clamp(comp["canvasH"].asInt(1080), 64, 16384);
   out.bpm = std::clamp(F(comp, "bpm", 128.f), 40.f, 240.f); out.quantize = comp["quantize"].asBool(false);
+  out.autoStartCol = comp["autoStartCol"].asInt(-1);   // clamped against real column count once `cols` is known below
   out.groups.clear();
   if (comp["groups"].isArray()) for (auto& go : comp["groups"].arrayItems()) {
     Group g; g.id = go["id"].asString(); g.name = go["name"].asString(); g.role = std::clamp(go["role"].asInt(2), 0, 2);
@@ -217,6 +218,7 @@ bool Deserialize(const JsonValue& root, App& out, std::string& err) {
   out.colNames.clear();
   if (comp["colNames"].isArray()) for (auto& n : comp["colNames"].arrayItems()) out.colNames.push_back(n.asString());
   out.colNames.resize(cols);
+  if (out.autoStartCol < 0 || out.autoStartCol >= (int)cols) out.autoStartCol = -1;
 
   out.screens.clear();
   if (root["screens"].isArray()) for (auto& so : root["screens"].arrayItems()) {
@@ -347,6 +349,11 @@ bool LoadProject(const std::string& path, std::string& err) {
   A.idCounter = 1000;
   for (auto& l : A.layers) for (auto& c : l.clips) if (!c.media.empty()) PreloadMedia(c.media);
   A.cue(0, 0);
+  if (A.autoStartCol >= 0 && A.autoStartCol < A.colCount()) {
+    bool wasFlushing = A.flushing; A.flushing = true;   // fire immediately on open, never queued behind Sync/quantize
+    A.fireColumn(A.autoStartCol);
+    A.flushing = wasFlushing;
+  }
   A.projectPath = path; A.projectName = fs::path(path).stem().string();
   MarkSaved();
   return true;

@@ -103,7 +103,8 @@ Timeline | Properties; **dải dưới** = Deck (lưới layer × cột).
 | C6b | Header cột **đang chọn nhưng không có gì live** (vd `activeCol` mặc định trên dự án mới/trống) | Chỉ viền coral nhạt + badge `TRIG` — **không** glow/chấm nhấp nháy/badge `nL` giả (trước đây hiện y hệt cột đang live dù trống) | ✅ |
 | C7 | ~~Bấm đúp để bắn cột~~ | Không còn cần thiết — bấm đơn đã bắn cả cột | — |
 | C8 | **Kéo header cột** | Đổi thứ tự cột | ✅ |
-| C9 | **Chuột phải header cột** | Menu *Column*: chèn trước/sau, dịch trái/phải, **Rename** (ô nhập nổi), Clear, Delete | ✅ |
+| C9 | **Chuột phải header cột** | Menu *Column*: chèn trước/sau, dịch trái/phải, **Rename** (ô nhập nổi), Clear, **Set/Clear auto-start on open** (⚡), Delete | ✅ |
+| C14 | **Setting: auto-start column** | Đặt qua menu chuột phải header cột. Mặc định **tắt** (không cột nào). Cột được đặt hiện biểu tượng ⚡ trước tên, lưu trong dự án. Khi **mở lại** dự án đó (Ctrl+O / menu Mở dự án), cột này tự bắn ngay (không chờ nhịp dù Sync đang bật) | ✅ |
 | C10 | Hàng nhóm: nút **Cue 1…n** | Chọn cue của nhóm; bấm tiêu đề nhóm thu gọn/mở | ✅ |
 | C13 | **Kéo fader trên tiêu đề nhóm** | Độ mờ tổng của nhóm, nhân vào mọi layer thành viên (bấm vào fader không thu gọn nhóm) | ✅ |
 | C12 | **Chuột phải tiêu đề nhóm** | Menu: Rename group · Change color · Ungroup (bỏ nhóm, giữ nguyên các layer) | ✅ |

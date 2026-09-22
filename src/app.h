@@ -112,7 +112,8 @@ struct App {
   int screen = 0;  // 0 deck, 1 mapping, 2 sensor
   int canvasW = 1920, canvasH = 1080;  // A1: virtual composition canvas, independent of any projector
   int outMonitor = 0;                  // F2: which physical display the projector window goes to
-  bool quantize = false;               // "Sync": triggers wait for the next beat instead of firing immediately
+  bool quantize = false;                // "Sync": triggers wait for the next beat instead of firing immediately
+  int autoStartCol = -1;                // Setting: fire this column automatically when the project is opened. -1 = off (default).
   struct PendingTrig { int li, ci; bool column; };
   std::vector<PendingTrig> pending;    // triggers waiting for the next beat
   bool flushing = false;
