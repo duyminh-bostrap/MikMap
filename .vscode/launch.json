@@ -12,7 +12,13 @@
             "environment": [],
             "externalConsole": false,
             "MIMode": "lldb",
-            "preLaunchTask": "mikmap: build (Debug)"
+            "preLaunchTask": "mikmap: build (Debug)",
+            "windows": {
+                "program": "${workspaceFolder}\\src\\build-debug\\mikmap.exe",
+                "cwd": "${workspaceFolder}\\src\\build-debug",
+                "MIMode": "gdb",
+                "miDebuggerPath": "${workspaceFolder}\\src\\.tools\\mingw64\\bin\\gdb.exe"
+            }
         }
     ]
 }

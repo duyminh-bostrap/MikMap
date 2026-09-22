@@ -6,7 +6,15 @@
             "type": "shell",
             "command": "cmake",
             "args": ["-S", "src", "-B", "src/build-debug", "-DCMAKE_BUILD_TYPE=Debug"],
-            "options": { "cwd": "${workspaceFolder}" },
+            "options": {
+                "cwd": "${workspaceFolder}",
+                "windows": {
+                    "env": { "PATH": "${workspaceFolder}\\src\\.tools\\mingw64\\bin;${workspaceFolder}\\src\\.tools\\ninja;${env:PATH}" }
+                }
+            },
+            "windows": {
+                "args": ["-S", "src", "-B", "src/build-debug", "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Debug"]
+            },
             "problemMatcher": []
         },
         {
@@ -14,7 +22,12 @@
             "type": "shell",
             "command": "cmake",
             "args": ["--build", "src/build-debug", "-j"],
-            "options": { "cwd": "${workspaceFolder}" },
+            "options": {
+                "cwd": "${workspaceFolder}",
+                "windows": {
+                    "env": { "PATH": "${workspaceFolder}\\src\\.tools\\mingw64\\bin;${workspaceFolder}\\src\\.tools\\ninja;${env:PATH}" }
+                }
+            },
             "dependsOn": "mikmap: configure (Debug)",
             "problemMatcher": ["$gcc"],
             "group": { "kind": "build", "isDefault": true }
