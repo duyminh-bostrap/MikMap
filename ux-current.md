@@ -105,7 +105,7 @@ Timeline | Properties; **dải dưới** = Deck (lưới layer × cột).
 | C8 | **Kéo header cột** | Đổi thứ tự cột | ✅ |
 | C9 | **Chuột phải header cột** | Menu *Column*: chèn trước/sau, dịch trái/phải, **Rename** (ô nhập nổi), Clear, **Set/Clear auto-start on open** (⚡), Delete | ✅ |
 | C14 | **Setting: auto-start column** | Đặt qua menu chuột phải header cột. Mặc định **tắt** (không cột nào). Cột được đặt hiện biểu tượng ⚡ trước tên, lưu trong dự án. Khi **mở lại** dự án đó (Ctrl+O / menu Mở dự án), cột này tự bắn ngay (không chờ nhịp dù Sync đang bật) | ✅ |
-| C10 | Hàng nhóm: nút **Cue 1…n** | Chọn cue của nhóm — **và chọn (cue) đúng clip ở cột đó trên MỌI layer thành viên** (đổi màu Selected/LiveSel như bấm bar từng ô, không chỉ đánh dấu nội bộ), Properties tự chuyển sang tab Clip cho layer đầu tiên trong nhóm; bấm tiêu đề nhóm thu gọn/mở. **Sửa 2026-09-22:** glow của ô Cue đang active trước đây tràn (blur 12px) đè lên tên/fader của nhóm bên trái và ô Cue kế bên (khoảng cách giữa hai ô chỉ 4px) — giảm blur xuống 3px để glow không vượt quá khoảng cách đó nữa | ✅ |
+| C10 | Hàng nhóm: nút **Cue 1…n** | Chọn cue của nhóm — **và chọn (cue) đúng clip ở cột đó trên MỌI layer thành viên** (đổi màu Selected/LiveSel như bấm bar từng ô, không chỉ đánh dấu nội bộ), Properties tự chuyển sang tab Clip cho layer đầu tiên trong nhóm; bấm tiêu đề nhóm thu gọn/mở. **Sửa 2026-09-22:** glow của ô Cue đang active trước đây tràn (blur 12px) đè lên tên/fader của nhóm bên trái và ô Cue kế bên (khoảng cách giữa hai ô chỉ 4px) — giảm blur xuống 3px; và ô Cue nay vẽ ở lượt cuộn (trước dải ghim, xem §2.2) nên không còn vẽ đè lên ô danh tính của nhóm khi cuộn nửa cột | ✅ |
 | C13 | **Kéo fader trên tiêu đề nhóm** | Độ mờ tổng của nhóm, nhân vào mọi layer thành viên (bấm vào fader không thu gọn nhóm) | ✅ |
 | C12 | **Chuột phải tiêu đề nhóm** | Menu: Rename group · Change color · Ungroup (bỏ nhóm, giữ nguyên các layer) | ✅ |
 | C11 | Bấm ô cuối của cột cuối | **Tự thêm cột mới** khi có clip ở cột cuối | ✅ |
@@ -136,13 +136,19 @@ Trước đây chỉ có 2 kiểu (trống/nâu ấm hoặc cam thuần khi đư
 - Ô **blend time** nhận số gõ trực tiếp (ô nhập thật của ImGui). ✅
 - **Ghim ngang (mới, 2026-09-22):** khi lưới có nhiều cột hơn chiều rộng khung
   (thanh cuộn ngang xuất hiện), cột layer 178px này **luôn đứng yên ở mép
-  trái**, không cuộn theo — kể cả hàng tiêu đề nhóm (Cue N của cột đã cuộn qua
-  bị ẩn hẳn, không vẽ đè lên tên/fader nhóm) và hàng tiêu đề cột (nhãn
-  **LAYERS** cũng ghim, không bị chữ "Cột N" của cột cuộn tới vẽ đè lên). Ô
-  clip/tiêu đề cột nào bị ghim che hoàn toàn cũng **không nhận click** nữa
-  (tránh bấm trúng vùng ghim mà lại kích hoạt nhầm ô đang ẩn phía sau) —
-  verify bằng `--shot` thêm cột tới khi tràn khung, kéo thanh cuộn, chụp ảnh
-  đối chiếu. ✅
+  trái**, không cuộn theo — kể cả hàng tiêu đề nhóm và hàng tiêu đề cột (nhãn
+  **LAYERS** cũng ghim). Quy tắc vẽ: **mọi thứ cuộn ngang (ô clip + ô Cue N
+  của nhóm + tiêu đề cột) vẽ TRƯỚC và bị cắt cứng bằng clip-rect tại mép phải
+  dải ghim; dải ghim vẽ SAU CÙNG.** Trước đây ô Cue N vẽ trong lượt ghim, ngay
+  sau ô danh tính của nhóm, nên một cột cuộn **nửa chừng** (chưa bị ẩn hẳn)
+  vẽ nguyên ô "Cue N" đè lên tên/fader nhóm — và glow của ô clip cột đầu
+  (blur 12px) lem sang thẻ layer ngay cả khi chưa cuộn. Ô clip/Cue/tiêu đề cột
+  nào nằm dưới dải ghim cũng **không nhận click** (`mouseUnderPin`), nên bấm
+  vào S/M/B hay fader trên dải ghim không kích hoạt nhầm clip đang ẩn phía
+  sau. Khi đang cuộn có thêm **viền tối mềm** ở mép dải để thấy rõ nội dung
+  chui xuống dưới dải chứ không phải dính vào thẻ layer — verify bằng `--shot`
+  (cuộn nửa cột: tên nhóm còn nguyên, ô Cue bị cắt gọn; bấm lên dải ghim chỉ
+  trúng điều khiển của layer). ✅
 
 ### 2.3 Deck tabs + Run mode (mới, 2026-09-22)
 | Hàng | Nội dung |

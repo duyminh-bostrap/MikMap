@@ -1190,8 +1190,8 @@ static void Browser(ImRect r) {
 }
 
 // ───────────────────────── deck ─────────────────────────
-static void ColumnHeader(ImRect r, int i, bool active, int layerCount) {
-  Hit h = HitR(r);
+static void ColumnHeader(ImRect r, int i, bool active, int layerCount, bool inert = false) {
+  Hit h = inert ? Hit() : HitR(r);   // inert: this header is half-hidden under the pinned Layers strip, so the strip owns the click
   bool isDragCol = A.dragCol == i, isDropCol = A.dragCol >= 0 && A.dropCol == i && A.dragCol != i;
   float prevA = g.alpha; if (isDragCol && A.dragging) g.alpha *= 0.45f;
   // `active` only means "this is the current column" (last click / arrow keys) — it can be true for an empty
@@ -1286,11 +1286,15 @@ static void DeckGrid(ImRect r) {
   const float P = 4, LW = 178, CW = 128, GAP = 4;
   auto colX = [&](int i) { return ox + P + LW + GAP + i * (CW + GAP); };
   const int NC = A.colCount();
-  // How far right the pinned Layers strip currently reaches on screen — used both to draw it and to skip
-  // hit-testing any column cell/header that has scrolled entirely underneath it (otherwise a click on the
-  // pinned strip could fall through to whatever hidden column happens to occupy that same screen position).
+  // The pinned Layers strip occupies [pinX - P, pinRight] on screen. Everything that scrolls horizontally is
+  // drawn BEFORE the strip and clipped to `pinRight`, so a half-scrolled column is cut cleanly at the strip's
+  // edge instead of painting over the layer/group boxes; `hiddenByPin` skips the ones entirely behind it, and
+  // `mouseUnderPin` stops a click on the strip from also reaching whatever scrolled underneath that spot.
   const float pinX = std::max(ox + P, area.Min.x + P);
-  auto hiddenByPin = [&](int i) { return colX(i) + CW <= pinX + LW; };
+  const float pinRight = pinX + LW + P;
+  const bool pinned = pinX > ox + P + 0.5f;   // actually scrolled: content is passing under the strip
+  const bool mouseUnderPin = pinned && ImGui::GetIO().MousePos.x < pinRight;
+  auto hiddenByPin = [&](int i) { return colX(i) + CW <= pinRight; };
 
   // Layout pass: just the Y position/height of every row (group header or layer), no drawing. Clip cells use
   // it directly below (they never move horizontally); the pinned Layers strip replays it further down at a
@@ -1316,12 +1320,34 @@ static void DeckGrid(ImRect r) {
   }
   float y = rowsLayout.empty() ? (P + 30 + GAP) : (rowsLayout.back().y + rowsLayout.back().h);
 
-  // Clip cells only, at their normal (horizontally scrolling) position — unaffected by pinning.
+  // Scrolling pass: clip cells AND the per-column group cue boxes, at their normal (horizontally scrolling)
+  // position, clipped to the right of the pinned strip. The cue boxes used to be drawn down in the pinned pass
+  // right after the group's own identity box, so a column caught half-under the strip painted its "Cue N" box
+  // straight over the group's name and fader.
+  g.dl->PushClipRect(ImVec2(pinRight, area.Min.y), ImVec2(area.Max.x, area.Max.y), true);
   for (auto& re : rowsLayout) {
-    if (re.isGroup) continue;
+    if (re.isGroup) {
+      Group* gp = A.group(re.groupId);
+      if (!gp) continue;
+      for (int ci = 0; ci < NC; ++ci) {
+        if (hiddenByPin(ci)) continue;   // fully behind the pinned strip — the strip covers it, and skipping keeps it from eating the click too
+        ImRect cr(colX(ci), oy + re.y, colX(ci) + CW, oy + re.y + 26);
+        Hit ch = mouseUnderPin ? Hit() : HitR(cr);
+        bool act = gp->activeCol == ci;
+        // blur kept under the 4px GAP to the next Cue box — the default blur=12 used for clip cells swallows
+        // that gap and bleeds over its neighbours
+        if (act) { Glow(cr, pal::coral, 0.30f, 3, 2); Fill(cr, K(pal::g12), 2); }
+        Box(cr, act ? K(pal::coral, 0.2f) : K(pal::g1c), act ? K(pal::coral) : ch.hover ? K(pal::g33) : K(pal::g22), 2);
+        char lab[16]; snprintf(lab, sizeof lab, "Cue %d", ci + 1);
+        TextC((cr.Min.x + cr.Max.x) * 0.5f, (cr.Min.y + cr.Max.y) * 0.5f, MONO_B, 9, K(act ? pal::coral : ch.hover ? pal::white : pal::t66), lab, 0.09f);
+        if (ch.hover) CursorHand();
+        if (ch.click) A.selectGroupCue(gp->id, ci);
+      }
+      continue;
+    }
     int li = re.li; Layer& l = A.layers[li];
     for (int ci = 0; ci < NC; ++ci) {
-      if (hiddenByPin(ci)) continue;   // fully behind the pinned Layers strip (or scrolled off-screen left) — the strip covers it, and skipping here keeps it from also eating the click
+      if (hiddenByPin(ci)) continue;
       ImRect cr(colX(ci), oy + re.y, colX(ci) + CW, oy + re.y + re.h);
       bool selc = false;
       for (auto& sc : A.selectedCells) if (sc.first == li && sc.second == ci) selc = true;
@@ -1329,7 +1355,7 @@ static void DeckGrid(ImRect r) {
       bool isDrag = A.dragging && A.dragLi == li && A.dragCi == ci;
       bool isDrop = (A.dragging || A.dragSrc.active) && A.dropLi == li && A.dropCi == ci;
       CellOut o = ClipCell(cr, c, selc, isDrag, isDrop, c.progress);
-      if (o.hover) {
+      if (o.hover && !mouseUnderPin) {
         // bar: press arms a possible move-drag and, on plain release, only cues (selects/previews, never plays).
         if (o.barPress) { A.pressLi = li; A.pressCi = ci; A.dragStart = ImGui::GetIO().MousePos; if (c.st != Clip::Empty && c.st != Clip::Armed) { A.dragLi = li; A.dragCi = ci; } }
         if (A.dragging || A.dragSrc.active) { A.dropLi = li; A.dropCi = ci; }
@@ -1339,6 +1365,7 @@ static void DeckGrid(ImRect r) {
       }
     }
   }
+  g.dl->PopClipRect();
 
   float contentW = P + LW + GAP + NC * (CW + GAP) + P - GAP, contentH = y + P;
 
@@ -1389,26 +1416,17 @@ static void DeckGrid(ImRect r) {
           mi.push_back(c);
           A.openCtx(mp, mi);
         }
-        for (int ci = 0; ci < NC; ++ci) {   // per-column group cue boxes stay part of the scrollable grid, not pinned
-          if (hiddenByPin(ci)) continue;   // would otherwise be drawn on top of the group's own pinned identity box above
-          ImRect cr(colX(ci), oy + re.y, colX(ci) + CW, oy + re.y + 26);
-          Hit ch = HitR(cr);
-          bool act = gp->activeCol == ci;
-          // blur kept under the 4px GAP to the group's own identity box on its left (and the next Cue box on its
-          // right) — the default blur=12 used elsewhere for clip cells swallows that gap and visibly overlaps
-          // the group name/chevron/fader next door, which reads as the cue box being drawn "on top of" the group
-          if (act) { Glow(cr, pal::coral, 0.30f, 3, 2); Fill(cr, K(pal::g12), 2); }
-          Box(cr, act ? K(pal::coral, 0.2f) : K(pal::g1c), act ? K(pal::coral) : ch.hover ? K(pal::g33) : K(pal::g22), 2);
-          char lab[16]; snprintf(lab, sizeof lab, "Cue %d", ci + 1);
-          TextC((cr.Min.x + cr.Max.x) * 0.5f, (cr.Min.y + cr.Max.y) * 0.5f, MONO_B, 9, K(act ? pal::coral : ch.hover ? pal::white : pal::t66), lab, 0.09f);
-          if (ch.hover) CursorHand();
-          if (ch.click) A.selectGroupCue(gp->id, ci);
-        }
       } else {
         ImRect lr(pinX, oy + re.y, pinX + LW, oy + re.y + re.h);
         LayerRow(lr, re.li, sa);
       }
     }
+    // soft edge while scrolled, so the cut-off column reads as passing UNDER the strip rather than being
+    // glued to the layer box next to it
+    if (pinned)
+      for (int k = 0; k < 6; ++k)
+        g.dl->AddRectFilled(ImVec2(pinRight + k, area.Min.y), ImVec2(pinRight + k + 1, area.Max.y),
+                            Ca(K(0x000000, 0.22f * (1.f - k / 6.f))));
   }
 
   // sticky column header row (pinned on Y the same way the Layers strip above is pinned on X)
@@ -1416,12 +1434,14 @@ static void DeckGrid(ImRect r) {
     float sy = std::max(oy + P, area.Min.y + 0.f);
     ImRect strip(area.Min.x, sy, area.Max.x + 9999, sy + 30 + GAP);
     Fill(ImRect(ox, sy - P, ox + contentW, sy + 30 + GAP), K(pal::g12));
+    g.dl->PushClipRect(ImVec2(pinRight, area.Min.y), ImVec2(area.Max.x, area.Max.y), true);   // cut at the strip, same as the cells below
     for (int i = 0; i < NC; ++i) {
       if (hiddenByPin(i)) continue;   // scrolled under the pinned "LAYERS" label — skip so it can't also eat this click
       bool act = A.activeCol == i;
       int nLive = 0; for (auto& lyr : A.layers) if (i < (int)lyr.clips.size() && lyr.clips[i].isLive()) ++nLive;
-      ColumnHeader(ImRect(colX(i), sy, colX(i) + CW, sy + 30), i, act, nLive);
+      ColumnHeader(ImRect(colX(i), sy, colX(i) + CW, sy + 30), i, act, nLive, mouseUnderPin);
     }
+    g.dl->PopClipRect();
     // pinned "LAYERS" label drawn LAST so it stays on top of any column header that has
     // scrolled underneath it (same draw-order trick as the pinned Layers strip below)
     Fill(ImRect(pinX - P, sy - P, pinX + LW + P, sy + 30 + GAP), K(pal::g12));   // re-cover where it crosses the pinned Layers strip
