@@ -92,8 +92,8 @@ Timeline | Properties; **dải dưới** = Deck (lưới layer × cột).
 
 | Mã | Thao tác | Kết quả | |
 |---|---|---|---|
-| C1 | **Bấm bar** (nhả chuột, không kéo) | *Cue* — chọn ô, đưa lên Preview; **không phát**, không đổi clip đang chạy của layer | ✅ |
-| C1b | **Bấm body** (ô có clip) hoặc **bấm bất kỳ đâu** (ô trống) | *Cue + Trigger* — phát ngay ở cả Preview lẫn Live Output, ô đó trở thành clip đang chạy của layer. **Nếu ô đang trống: dừng CHÍNH layer đó** (các layer khác không đụng tới — mỗi layer độc lập, xác nhận với người dùng); cắt cứng, chưa có dissolve khi tắt | ✅ |
+| C1 | **Bấm bar** (nhả chuột, không kéo) | *Cue* — chọn ô, đưa lên Preview; **không phát**, không đổi clip đang chạy của layer. Properties tự chuyển sang tab **Clip** để hiện đúng clip vừa chọn | ✅ |
+| C1b | **Bấm body** (ô có clip) hoặc **bấm bất kỳ đâu** (ô trống) | *Cue + Trigger* — phát ngay ở cả Preview lẫn Live Output, ô đó trở thành clip đang chạy của layer. Properties tự chuyển sang tab **Clip**. **Nếu ô đang trống: dừng CHÍNH layer đó** (các layer khác không đụng tới — mỗi layer độc lập, xác nhận với người dùng); cắt cứng, chưa có dissolve khi tắt | ✅ |
 | C1c | Preview Cue khi bấm **cột** | Hiện clip của **layer cao nhất** (trên cùng) có nội dung trong cột đó; cột trống thì giữ nguyên Preview cũ | ✅ |
 | C2 | ~~Bấm đúp để phát~~ | Không còn cần thiết — bấm đơn vào body đã phát ngay | — |
 | C3 | **Chuột phải bar** | Popover *Clip*: Trigger · Cue to Preview · Loop (đặt chế độ LOOP) · **Rename** · Clear Slot + 6 ô màu clip. **Chuột phải body không có tác dụng.** | ✅ |
@@ -139,7 +139,7 @@ Trước đây chỉ có 2 kiểu (trống/nâu ấm hoặc cam thuần khi đư
 | Hàng | Nội dung |
 |---|---|
 | Tab deck (26px) | Danh sách deck (✅ bấm=chuyển, bấm đúp=đổi tên, chuột phải=Rename/Duplicate/Delete), nút **+ DECK** thêm deck mới (3 layer trống, tên "Deck B"/"C"...). Xoá bị chặn khi chỉ còn 1 deck. |
-| Run mode (34px) | Segmented **GRID**/**TIMELINE** (✅ chuyển đổi kiểu hiển thị vùng diễn). Bên phải: ở Grid hiện `Layer`/`Group`/`Column`/`Sync` (xem dưới); ở Timeline hiện nút `LOOP ON/OFF`. |
+| Run mode (34px) | Segmented **GRID**/**TIMELINE** (✅ chuyển đổi kiểu hiển thị vùng diễn; độ rộng mỗi nút tự tính theo chữ, không còn tràn chữ "TIMELINE" ra ngoài). Bên phải: ở Grid hiện `Layer`/`Group`/`Column`/`Sync` (xem dưới); ở Timeline hiện nút `LOOP ON/OFF`. |
 
 Mỗi deck có layer/nhóm/cột **riêng biệt hoàn toàn** — chuyển deck là đổi hẳn sang một
 bộ layer khác, không ảnh hưởng deck kia. Lưu trong dự án (`decks[]`, `curDeckIdx`).

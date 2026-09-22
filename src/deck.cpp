@@ -1336,8 +1336,8 @@ static void DeckGrid(ImRect r) {
         if (o.barPress) { A.pressLi = li; A.pressCi = ci; A.dragStart = ImGui::GetIO().MousePos; if (c.st != Clip::Empty && c.st != Clip::Armed) { A.dragLi = li; A.dragCi = ci; } }
         if (A.dragging || A.dragSrc.active) { A.dropLi = li; A.dropCi = ci; }
         if (o.barRclick) { A.pop.open = true; A.pop.pos = ImGui::GetIO().MousePos; A.pop.li = li; A.pop.ci = ci; }
-        else if (o.bodyClick) { A.cue(li, ci); A.trigger(li, ci); A.pressLi = -1; }   // body: plays immediately, no drag/right-click
-        else if (o.barRelease && !A.dragging && A.pressLi == li && A.pressCi == ci) { A.cue(li, ci); A.pressLi = -1; }
+        else if (o.bodyClick) { A.cue(li, ci); A.trigger(li, ci); A.pressLi = -1; A.tab = 2; }   // body: plays immediately, no drag/right-click
+        else if (o.barRelease && !A.dragging && A.pressLi == li && A.pressCi == ci) { A.cue(li, ci); A.pressLi = -1; A.tab = 2; }   // selecting a clip shows ITS properties, not whatever tab was open
       }
     }
     y += rowH + GAP;
@@ -1413,12 +1413,15 @@ static void Deck(ImRect r) {
   HLine(runRow.Min.x, runRow.Max.x, runRow.Max.y - 1, K(pal::g2a));
   {
     float cy = (runRow.Min.y + runRow.Max.y - 1) * 0.5f;
-    ImRect seg(runRow.Min.x + 6, cy - 12, runRow.Min.x + 6 + 132, cy + 12);
-    Box(seg, K(pal::g050), K(pal::g2a), 4);
     static const char* names[2] = {"Grid", "Timeline"};
     static const char* icons[2] = {"grid-3x3", "film"};
+    float segW[2], segTotal = 4;   // each segment sized to fit its own label — "Timeline" is almost 2x "Grid"
+    for (int i = 0; i < 2; ++i) { segW[i] = 12 + 8 + TextW(UI_B, 10, Upper(names[i]).c_str(), 0.09f) + 10; segTotal += segW[i]; }
+    ImRect seg(runRow.Min.x + 6, cy - 12, runRow.Min.x + 6 + segTotal, cy + 12);
+    Box(seg, K(pal::g050), K(pal::g2a), 4);
+    float segX = seg.Min.x + 2;
     for (int i = 0; i < 2; ++i) {
-      ImRect mr(seg.Min.x + 2 + i * 64, seg.Min.y + 2, seg.Min.x + 2 + i * 64 + 62, seg.Max.y - 2);
+      ImRect mr(segX, seg.Min.y + 2, segX + segW[i], seg.Max.y - 2);
       bool cur = A.deckMode == i;
       Hit h = HitR(mr);
       if (cur) { Fill(mr, K(pal::g12), 3); Box(mr, K(pal::coral, 0.15f), K(pal::coral), 3); }
@@ -1427,6 +1430,7 @@ static void Deck(ImRect r) {
       Text(mr.Min.x + 20, (mr.Min.y + mr.Max.y) * 0.5f, UI_B, 10, fg, Upper(names[i]).c_str(), 0.09f);
       if (h.hover) CursorHand();
       if (h.click) A.deckMode = i;
+      segX += segW[i];
     }
     if (A.deckMode == 1) {
       float xr = runRow.Max.x - 6;
@@ -1495,7 +1499,7 @@ static void TimelineView(ImRect r) {
       if (hot) Glow(br, col, 0.30f, 8, 3);
       TextEll(br.Min.x + 5, (br.Min.y + br.Max.y) * 0.5f, br.GetWidth() - 10, UI_S, 9, K(hot ? pal::white : pal::tcc), c.name.c_str());
       if (bh.hover) CursorHand();
-      if (bh.click) A.cue(li, b.ci);
+      if (bh.click) { A.cue(li, b.ci); A.tab = 2; }   // selecting a block shows ITS clip's properties
     }
     g.dl->PopClipRect();
     if (A.dragSrc.active && Hover(lane)) {
