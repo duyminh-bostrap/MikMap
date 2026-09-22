@@ -1018,14 +1018,19 @@ static void ColumnHeader(ImRect r, int i, bool active, int layerCount) {
   Hit h = HitR(r);
   bool isDragCol = A.dragCol == i, isDropCol = A.dragCol >= 0 && A.dropCol == i && A.dragCol != i;
   float prevA = g.alpha; if (isDragCol && A.dragging) g.alpha *= 0.45f;
-  if (active) { Glow(r, pal::coral, 0.30f, 12, 4); Fill(r, K(pal::g12), 4); }
-  Box(r, active ? K(pal::coral, 0.15f) : K(pal::g1c), active ? K(pal::coral) : h.hover ? K(pal::g33) : K(pal::g22), 4);
+  // `active` only means "this is the current column" (last click / arrow keys) — it can be true for an empty
+  // column (e.g. activeCol's default on a brand new project). The glow, filled badge and pulsing dot must be
+  // reserved for a column that is actually LIVE (>=1 layer playing there); otherwise an empty "current" column
+  // renders identically to one that is really live, which reads as "something is playing" when nothing is.
+  bool live = active && layerCount > 0;
+  if (live) { Glow(r, pal::coral, 0.30f, 12, 4); Fill(r, K(pal::g12), 4); }
+  Box(r, live ? K(pal::coral, 0.15f) : K(pal::g1c), live ? K(pal::coral) : active ? K(pal::coral, 0.5f) : h.hover ? K(pal::g33) : K(pal::g22), 4);
   ImU32 fg = K(active ? pal::coral : h.hover ? pal::white : pal::tcc);
   float cy = (r.Min.y + r.Max.y) * 0.5f;
   Icon("play", ImVec2(r.Min.x + 8 + 4.5f, cy), 9, fg);
   std::string labS = A.colName(i); const char* lab = labS.c_str();
   float right = r.Max.x - 8;
-  if (active) {
+  if (live) {
     float pulse = 0.7f + 0.3f * cosf((float)g.time * 2.f * 3.14159f / (A.beat ? 0.5f : 1.4f));
     Dot(ImVec2(right - 3.5f, cy), 7, pal::mint, true, pulse);
     right -= 7 + 4;
