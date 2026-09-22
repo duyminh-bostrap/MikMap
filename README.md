@@ -24,6 +24,7 @@ còn ở giai đoạn prototype:
 | Engine dùng chung (`engine/core`, `engine/io`) | Đã biên dịch & link vào app, **UI chưa gọi tới** |
 | Mô hình dữ liệu app hiện tại | Struct riêng trong `src/app.h`, chưa dùng `core/model` thật |
 | Đối chiếu chi tiết | `features.md` — 18 mục `[x]` hành vi thật · 34 mục `[~]` một phần · 83 mục `[ ]`, trên 135 mục Resolume-parity |
+| Build đa nền tảng | **Đã kiểm chứng thật** (2026-09-22): macOS (build+chạy trên máy Mac thật) · Linux (build native + chạy dưới Xvfb, chụp màn hình) · Windows (cross-compile MinGW-w64 ra `mikmap.exe` PE32+ thật, đúng lệnh `build.ps1`/F5 dùng, chạy qua Wine, chụp màn hình) — cả 3 cùng render đúng giao diện, cùng tiếng Việt có dấu |
 
 Xem [`features.md`](features.md) để biết chính xác cái gì thật/cái gì chỉ có
 UI, và [`architecture.md`](architecture.md) để biết đích đến kiến trúc (chuỗi
