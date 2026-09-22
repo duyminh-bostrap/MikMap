@@ -134,6 +134,15 @@ Trước đây chỉ có 2 kiểu (trống/nâu ấm hoặc cam thuần khi đư
 - Ô blend: bấm mở danh sách 8 chế độ. ✅
 - Ô **blend time**: số giây **cross-dissolve** khi đổi clip trên layer (0 = cắt cứng). ✅
 - Ô **blend time** nhận số gõ trực tiếp (ô nhập thật của ImGui). ✅
+- **Ghim ngang (mới, 2026-09-22):** khi lưới có nhiều cột hơn chiều rộng khung
+  (thanh cuộn ngang xuất hiện), cột layer 178px này **luôn đứng yên ở mép
+  trái**, không cuộn theo — kể cả hàng tiêu đề nhóm (Cue N của cột đã cuộn qua
+  bị ẩn hẳn, không vẽ đè lên tên/fader nhóm) và hàng tiêu đề cột (nhãn
+  **LAYERS** cũng ghim, không bị chữ "Cột N" của cột cuộn tới vẽ đè lên). Ô
+  clip/tiêu đề cột nào bị ghim che hoàn toàn cũng **không nhận click** nữa
+  (tránh bấm trúng vùng ghim mà lại kích hoạt nhầm ô đang ẩn phía sau) —
+  verify bằng `--shot` thêm cột tới khi tràn khung, kéo thanh cuộn, chụp ảnh
+  đối chiếu. ✅
 
 ### 2.3 Deck tabs + Run mode (mới, 2026-09-22)
 | Hàng | Nội dung |
