@@ -214,6 +214,13 @@ void App::stepSel(int dir) {
   selectedCells.clear();
   for (int li = 0; li < (int)layers.size(); ++li) selectedCells.push_back({li, activeCol});
 }
+// Timeline transport ⏮/⏭: unlike stepSel() (pure navigation, used by the ←/→ shortcuts to browse without
+// interrupting playback), these buttons are media-transport controls — moving to a column also plays it,
+// same as clicking that column's header (respects Sync/quantize via fireColumn, stops layers empty there).
+void App::stepFireColumn(int dir) {
+  int cols = colCount();
+  fireColumn(std::clamp(activeCol + dir, 0, cols - 1));
+}
 void App::moveClip(int fl, int fc, int tl, int tc) {
   if (fl < 0 || (fl == tl && fc == tc)) return;
   Clip src = layers[fl].clips[fc], dst = layers[tl].clips[tc];
@@ -1326,9 +1333,9 @@ void DrawDeck(ImRect body) {
       Icon(tb[i].ico, ImVec2((br.Min.x + br.Max.x) * 0.5f, (br.Min.y + br.Max.y) * 0.5f), 14, K(tb[i].on ? hex : h.hover ? pal::white : pal::t77));
       if (h.hover) CursorHand();
       if (h.click) {
-        if (i == 0) A.stepSel(-1); else if (i == 1) A.playing = true; else if (i == 2) A.playing = false;
+        if (i == 0) A.stepFireColumn(-1); else if (i == 1) A.playing = true; else if (i == 2) A.playing = false;
         else if (i == 3) { A.playing = false; A.setTopProgress(0.f); }   // C1 stop: pause and rewind the playhead
-        else A.stepSel(1);
+        else A.stepFireColumn(1);
       }
     }
   }

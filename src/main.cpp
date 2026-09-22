@@ -755,6 +755,14 @@ int main(int argc, char** argv) {
       if (f) { std::fputs("{\"format\":1,\"composition\":{\"autoStartCol\":999,\"layers\":[{\"name\":\"L\",\"clips\":[{\"name\":\"c\",\"st\":1}]}]},\"screens\":[{\"id\":\"s\",\"slices\":[{\"id\":\"sl\"}]}]}", f); std::fclose(f); } }
     if (!LoadProject(roundtrip, err)) return fail(err.c_str());
     if (A.autoStartCol != -1) return fail("out-of-range autoStartCol must clamp to off, not read out of bounds");
+    // Timeline transport next/prev: unlike stepSel() (pure navigation), the button actions actually play the column.
+    NewProject(); A.activeCol = 0;
+    A.stepFireColumn(1);
+    if (A.activeCol != 1) return fail("stepFireColumn(1) must move to column 1");
+    { bool any = false; for (auto& l : A.layers) if (l.live) any = true;
+      if (!any && !A.layers[0].clips[1].name.empty()) return fail("stepFireColumn must actually fire the column, not just select it"); }
+    A.stepFireColumn(-100);   // clamps, does not go negative/out of range
+    if (A.activeCol != 0) return fail("stepFireColumn must clamp to the first column");
     std::printf("roundtrip OK\n"); return 0;
   }
   gAssets = FindAssets(argv[0]);

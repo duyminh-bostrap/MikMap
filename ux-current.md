@@ -142,7 +142,7 @@ Cây thư mục: **Media** (✅ ảnh thật trong `~/Documents/MikMap/media`, b
   clip đã cue / toàn bộ composite. Live có TestCard khi bật.
 - **Timeline**: hiển thị timecode theo clip trên cùng đang chọn (tổng = thời lượng thật của clip, vd `16s`; generator `∞` lặp mỗi 10s) và
   có **thanh kéo (scrub)** ở đáy — bấm/kéo để đổi playhead. ✅
-- 5 nút transport: ⏮ ⏭ (nhảy sang clip chọn trước/sau ✅), ▶ ⏸ (bật/tắt chạy ✅), ■ **Stop** (dừng và tua playhead về 0 ✅).
+- 5 nút transport: **▶ Play** (tiếp tục chạy playhead của mọi clip đang chọn/live ✅) · **⏸ Pause** (dừng toàn bộ playhead, không đổi trạng thái Live ✅) · **■ Stop** (dừng chạy + tua playhead về 0 ✅) · **⏮/⏭** (nhảy sang cột trước/sau **và bắn luôn cột đó** — như bấm header cột, có dừng layer nào trống ở cột mới, có theo Sync/quantize nếu bật ✅; khác phím `←`/`→` chỉ di chuyển lựa chọn, không phát).
 
 ### 2.6 Properties (phải, 236px) — 3 tab **Comp / Layer / Clip**
 - **Comp**: bảng chỉ đọc (canvas, số layer/nhóm/cột, BPM, FPS, độ trễ, output).

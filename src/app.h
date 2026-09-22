@@ -234,6 +234,7 @@ struct App {
   void fireColumn(int ci);
   void selectGroupCue(const std::string& gid, int ci);
   void stepSel(int dir);
+  void stepFireColumn(int dir);   // Timeline ⏮/⏭: navigate AND play, unlike stepSel()
   void moveClip(int fl, int fc, int tl, int tc);
   // mapping actions
   void addScreen(); void addSlice(); void addMask(); void deleteMask(); void deleteSlice();
