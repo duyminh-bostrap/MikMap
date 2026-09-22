@@ -233,9 +233,27 @@ void App::moveClip(int fl, int fc, int tl, int tc) {
   selLi = tl; selCi = tc; selectedCells = {{tl, tc}}; selMode = 1;
 }
 void App::selectGroupCue(const std::string& gid, int ci) {
+  // Mirrors cue()'s per-clip state flip (Loaded<->Selected, Live<->LiveSel), just applied to every layer in the
+  // group at once — a plain cue(li,ci) call per layer would work too, but it also resets selectedCells on each
+  // call, so the last layer would be the only one left selected once the loop finished.
   if (Group* g = group(gid)) g->activeCol = ci;
   selectedCells.clear();
-  for (int li = 0; li < (int)layers.size(); ++li) if (layers[li].group == gid) selectedCells.push_back({li, ci});
+  int firstLi = -1;
+  for (int li = 0; li < (int)layers.size(); ++li) {
+    if (layers[li].group != gid) continue;
+    Layer& l = layers[li];
+    for (auto& c : l.clips) {
+      if (c.st == Clip::Selected) c.st = Clip::Loaded;
+      else if (c.st == Clip::LiveSel) c.st = Clip::Live;
+    }
+    if (ci >= 0 && ci < (int)l.clips.size()) {
+      Clip& cell = l.clips[ci];
+      if (cell.st != Clip::Empty && cell.st != Clip::Armed) cell.st = cell.st == Clip::Live ? Clip::LiveSel : Clip::Selected;
+    }
+    selectedCells.push_back({li, ci});
+    if (firstLi < 0) firstLi = li;
+  }
+  if (firstLi >= 0) { selLi = firstLi; selCi = ci; selLayer = firstLi; tab = 2; }   // Properties shows the group's own clips, same as cueing a single one
 }
 
 // ───────────────────────── FX library / column / browser helpers ─────────────────────────

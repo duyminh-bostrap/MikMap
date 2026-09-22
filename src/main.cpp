@@ -692,6 +692,17 @@ int main(int argc, char** argv) {
     A.groups.erase(std::remove_if(A.groups.begin(), A.groups.end(), [](const Group& g) { return g.id == "gx"; }), A.groups.end());
     if (!SaveProject(roundtrip, err) || !LoadProject(roundtrip, err)) return fail(err.c_str());
     if (!A.layers[0].group.empty()) return fail("dangling group reference survived load");
+    // group Cue N: selects (Selected/LiveSel, not just selectedCells bookkeeping) that column's clip on EVERY
+    // layer in the group, leaves other layers alone, and switches Properties to the Clip tab
+    NewProject(); { Group ng; ng.id = "gy"; ng.name = "GY"; A.groups.push_back(ng); A.layers[0].group = "gy"; A.layers[1].group = "gy";
+      A.layers[0].clips[0].st = Clip::Live; A.layers[2].clips[0].st = Clip::Selected;   // layer 2 (outside the group) must not be touched
+      A.tab = 0; A.selectGroupCue("gy", 0);
+      if (A.layers[0].clips[0].st != Clip::LiveSel) return fail("group cue did not select the live clip on a group member");
+      if (A.layers[1].clips[0].st != Clip::Selected) return fail("group cue did not select the loaded clip on a group member");
+      if (A.layers[2].clips[0].st != Clip::Selected) return fail("group cue touched a layer outside the group");
+      if (A.tab != 2) return fail("group cue did not switch Properties to the Clip tab");
+      bool sawL0 = false, sawL1 = false; for (auto& c : A.selectedCells) { if (c.first == 0 && c.second == 0) sawL0 = true; if (c.first == 1 && c.second == 0) sawL1 = true; }
+      if (!sawL0 || !sawL1) return fail("group cue did not select both group members' cells"); }
     // rename: commit trims, ignores empty text, and pins the clip look so the picture does not change
     NewProject(); { int st0 = ClipStyleOf(A.layers[0].clips[0].name); A.beginRename(2, 0, ImVec2(0, 0), ""); A.commitRename("  My clip  ");
       if (A.layers[0].clips[0].name != "My clip" || A.layers[0].clips[0].style != st0) return fail("clip rename / style pin"); }

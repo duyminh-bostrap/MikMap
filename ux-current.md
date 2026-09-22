@@ -105,7 +105,7 @@ Timeline | Properties; **dải dưới** = Deck (lưới layer × cột).
 | C8 | **Kéo header cột** | Đổi thứ tự cột | ✅ |
 | C9 | **Chuột phải header cột** | Menu *Column*: chèn trước/sau, dịch trái/phải, **Rename** (ô nhập nổi), Clear, **Set/Clear auto-start on open** (⚡), Delete | ✅ |
 | C14 | **Setting: auto-start column** | Đặt qua menu chuột phải header cột. Mặc định **tắt** (không cột nào). Cột được đặt hiện biểu tượng ⚡ trước tên, lưu trong dự án. Khi **mở lại** dự án đó (Ctrl+O / menu Mở dự án), cột này tự bắn ngay (không chờ nhịp dù Sync đang bật) | ✅ |
-| C10 | Hàng nhóm: nút **Cue 1…n** | Chọn cue của nhóm; bấm tiêu đề nhóm thu gọn/mở | ✅ |
+| C10 | Hàng nhóm: nút **Cue 1…n** | Chọn cue của nhóm — **và chọn (cue) đúng clip ở cột đó trên MỌI layer thành viên** (đổi màu Selected/LiveSel như bấm bar từng ô, không chỉ đánh dấu nội bộ), Properties tự chuyển sang tab Clip cho layer đầu tiên trong nhóm; bấm tiêu đề nhóm thu gọn/mở | ✅ |
 | C13 | **Kéo fader trên tiêu đề nhóm** | Độ mờ tổng của nhóm, nhân vào mọi layer thành viên (bấm vào fader không thu gọn nhóm) | ✅ |
 | C12 | **Chuột phải tiêu đề nhóm** | Menu: Rename group · Change color · Ungroup (bỏ nhóm, giữ nguyên các layer) | ✅ |
 | C11 | Bấm ô cuối của cột cuối | **Tự thêm cột mới** khi có clip ở cột cuối | ✅ |
