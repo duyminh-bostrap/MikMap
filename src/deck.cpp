@@ -297,7 +297,9 @@ void App::loadClip(int li, int ci, const std::string& name, const std::string& d
 const uint32_t CLIP_COLORS[6] = {0xff7f50, 0x118ab2, 0x06d6a0, 0xffd166, 0xef4444, 0xb388ff};
 const char* CLIP_COLOR_NAMES[6] = {"Amber", "Cyan", "Mint", "Yellow", "Red", "Violet"};
 
-struct CellOut { bool press = false, release = false, dbl = false, rclick = false, hover = false; };
+// The cell has two independently clickable zones: `bar` (name strip, top) only selects/cues and arms a
+// possible move-drag; `body` (gradient area, bottom) triggers the clip immediately and never starts a drag.
+struct CellOut { bool hover = false, barPress = false, barRelease = false, barRclick = false, bodyClick = false; };
 
 static uint32_t Dark45(uint32_t c) {  // color-mix(in srgb, c 45%, #000)
   return (((c >> 16) & 255) * 45 / 100) << 16 | (((c >> 8) & 255) * 45 / 100) << 8 | ((c & 255) * 45 / 100);
@@ -334,8 +336,9 @@ static CellOut ClipCell(ImRect r, const Clip& cl, bool selectedCell, bool dragge
   Fill(r, empty ? K(pal::g10) : body, 4);
   ImRect in = Inset(r, 1);
   float cx0 = in.Min.x, cx1 = in.Max.x;
+  // Same 22px split used whether or not the cell has a clip, so the two hit-zones below stay predictable.
+  ImRect barR(in.Min.x, in.Min.y, cx1, in.Min.y + 22), bodyR(cx0, in.Min.y + 22, cx1, in.Max.y);
   if (!empty) {
-    ImRect bodyR(cx0, in.Min.y + 22, cx1, in.Max.y);
     g.dl->AddRectFilled(bodyR.Min, bodyR.Max, Ca(body), 3, ImDrawFlags_RoundCornersBottom);
     g.dl->PushClipRect(bodyR.Min, bodyR.Max, true);
     GradDiag(bodyR, col, Dark45(col), live ? 0.45f : 0.22f);
@@ -343,7 +346,7 @@ static CellOut ClipCell(ImRect r, const Clip& cl, bool selectedCell, bool dragge
     // ~16 s/frame (S_STARS worst), so the deck grid keeps the cheap gradient; the Clip tab and the
     // monitors show the real generated image instead.
     g.dl->PopClipRect();
-    g.dl->AddRectFilled(in.Min, ImVec2(cx1, in.Min.y + 22), Ca(bar), 3, ImDrawFlags_RoundCornersTop);
+    g.dl->AddRectFilled(barR.Min, ImVec2(cx1, in.Min.y + 22), Ca(bar), 3, ImDrawFlags_RoundCornersTop);
     TextEll(cx0 + 10, in.Min.y + 11, (cx1 - cx0) - 20, barBold ? UI_B : UI_S, 10, barFg, cl.name.c_str());
     float fy = in.Max.y - 16;
     if (selectedCell && progress > 0)
@@ -362,7 +365,12 @@ static CellOut ClipCell(ImRect r, const Clip& cl, bool selectedCell, bool dragge
 
   CellOut o;
   o.hover = h.hover;
-  if (h.hover) { o.press = h.click; o.dbl = h.dbl; o.rclick = h.rclick; o.release = h.release; if (!A.dragging) CursorHand(); }
+  if (h.hover) {
+    Hit bh = HitR(barR), bo = HitR(bodyR);
+    if (bh.hover) { o.barPress = bh.click; o.barRelease = bh.release; o.barRclick = bh.rclick; }
+    else if (bo.hover) o.bodyClick = bo.click;
+    if (!A.dragging) CursorHand();
+  }
   return o;
 }
 
@@ -1164,11 +1172,12 @@ static void Deck(ImRect r) {
       bool isDrop = (A.dragging || A.dragSrc.active) && A.dropLi == li && A.dropCi == ci;
       CellOut o = ClipCell(cr, c, selc, isDrag, isDrop, c.progress);
       if (o.hover) {
-        if (o.press) { A.pressLi = li; A.pressCi = ci; A.dragStart = ImGui::GetIO().MousePos; if (c.st != Clip::Empty && c.st != Clip::Armed) { A.dragLi = li; A.dragCi = ci; } }
+        // bar: press arms a possible move-drag and, on plain release, only cues (selects/previews, never plays).
+        if (o.barPress) { A.pressLi = li; A.pressCi = ci; A.dragStart = ImGui::GetIO().MousePos; if (c.st != Clip::Empty && c.st != Clip::Armed) { A.dragLi = li; A.dragCi = ci; } }
         if (A.dragging || A.dragSrc.active) { A.dropLi = li; A.dropCi = ci; }
-        if (o.rclick) { A.pop.open = true; A.pop.pos = ImGui::GetIO().MousePos; A.pop.li = li; A.pop.ci = ci; }
-        else if (o.dbl) { A.cue(li, ci); A.trigger(li, ci); A.pressLi = -1; }
-        else if (o.release && !A.dragging && A.pressLi == li && A.pressCi == ci) { A.cue(li, ci); A.pressLi = -1; }
+        if (o.barRclick) { A.pop.open = true; A.pop.pos = ImGui::GetIO().MousePos; A.pop.li = li; A.pop.ci = ci; }
+        else if (o.bodyClick) { A.cue(li, ci); A.trigger(li, ci); A.pressLi = -1; }   // body: plays immediately, no drag/right-click
+        else if (o.barRelease && !A.dragging && A.pressLi == li && A.pressCi == ci) { A.cue(li, ci); A.pressLi = -1; }
       }
     }
     y += rowH + GAP;

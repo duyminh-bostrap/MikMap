@@ -73,10 +73,17 @@ mới, đừng hard-code tên file font.
 
 | Thao tác | Kết quả |
 |---|---|
-| Bấm ô clip | **Chọn** (không phát) — để chỉnh clip sắp dùng mà không làm gián đoạn clip đang chiếu |
-| Bấm đúp ô clip | Phát clip |
+| Bấm **bar** ô clip (dải tên, phía trên) | **Chọn/cue** (không phát) — để chỉnh clip sắp dùng mà không làm gián đoạn clip đang chiếu |
+| Kéo **bar** ô clip | Di chuyển clip sang ô khác |
+| Chuột phải **bar** ô clip | Popover (Trigger/Cue/Loop/Rename/Clear/màu) |
+| Bấm **body** ô clip (vùng gradient, phía dưới) | Phát ngay clip đó (cue + trigger) — không cần bấm đúp; không kéo-thả, không chuột phải ở vùng này |
 | Kéo điểm ở ĐƯỜNG RA | Keystone / mesh warp |
 | Kéo khung ở VÙNG LẤY | Đổi phần canvas mà slice lấy |
+
+> **Đã đổi khỏi bản tham khảo (2026-09-22):** bản gốc dùng bấm-đơn=chọn/bấm-đúp=phát
+> cho toàn bộ ô clip. Theo yêu cầu người dùng, ô clip giờ tách hai vùng bấm độc lập
+> như trên (`ClipCell` trong `src/deck.cpp`, struct `CellOut`) — không còn double-click
+> để phát.
 
 Đây là nguyên tắc thiết kế chung kế thừa từ bản tham khảo — **grep
 `src/deck.cpp`/`mapping.cpp` để xác nhận hành vi thật** trước khi khẳng

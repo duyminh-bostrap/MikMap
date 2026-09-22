@@ -1,5 +1,7 @@
 # UX hiện tại của MikMap (`src/`, nhánh `new_UI`)
 
+> **Cập nhật 2026-09-22:** ô clip tách bar/body theo yêu cầu người dùng — xem mục 2.1.
+>
 > **Cập nhật 2026-09-21 (lần 2):** đã sửa các mục X1–X4, X6–X8, X10 (xem mục 7) — nội dung dưới đã khớp code hiện tại.
 >
 > **Nguồn:** đọc code `src/*.cpp` ngày 2026-09-21 — mô tả **những gì code làm**,
@@ -52,8 +54,9 @@
 - Khi có thông báo (lưu, mở, cảnh báo chưa lưu…), dòng gợi ý bên phải hiện thông báo
   đó trong vài giây.
 - Phải: `FPS · P99 ms · DROP` ✅ **số đo thật** (vàng khi P99 > 20ms).
-- Giữa-phải: dòng gợi ý thao tác `CLICK TO CUE · DOUBLE-CLICK TO TRIGGER ·
-  RIGHT-CLICK FOR ACTIONS` (đổi thành cảnh báo khi Blackout).
+- Giữa-phải: dòng gợi ý thao tác `CLICK NAME TO CUE · CLICK ART TO PLAY ·
+  RIGHT-CLICK NAME FOR ACTIONS` (đổi thành cảnh báo khi Blackout, hoặc hiện
+  thông báo gần nhất trong vài giây).
 
 ### 1.3 Menu Project (bấm logo) — `ProjectMenu`
 | Mục | Hành vi |
@@ -79,12 +82,19 @@ Bố cục: **dải trên** (cao ~42% màn hình, kéo đổi được) = Browse
 Timeline | Properties; **dải dưới** = Deck (lưới layer × cột).
 
 ### 2.1 Deck — lưới clip
+
+> **Đổi 2026-09-22:** mỗi ô clip tách thành hai vùng bấm độc lập —
+> **bar** (dải tên phía trên, cao 22px) và **body** (vùng gradient phía dưới).
+> Không còn khái niệm bấm-đơn/bấm-đúp trên toàn ô; ô trống (chưa có clip) vẫn
+> dùng chung hình học này dù không có phần thân vẽ khác biệt.
+
 | Mã | Thao tác | Kết quả | |
 |---|---|---|---|
-| C1 | **Bấm ô clip** (nhả chuột, không kéo) | *Cue* — chọn ô, đưa lên Preview; **không phát** | ✅ |
-| C2 | **Bấm đúp ô clip** | Cue + **Trigger** (phát) | ✅ |
-| C3 | **Chuột phải ô clip** | Popover *Clip*: Trigger · Cue to Preview · Loop (đặt chế độ LOOP) · **Rename** · Clear Slot + 6 ô màu clip | ✅ |
-| C4 | **Kéo clip sang ô khác** (>5px) | Di chuyển clip; ô đích viền vàng nét đứt | ✅ |
+| C1 | **Bấm bar** (nhả chuột, không kéo) | *Cue* — chọn ô, đưa lên Preview; **không phát**, không đổi clip đang chạy của layer | ✅ |
+| C1b | **Bấm body** | *Cue + Trigger* — phát ngay ở cả Preview lẫn Live Output, ô đó trở thành clip đang chạy của layer | ✅ |
+| C2 | ~~Bấm đúp để phát~~ | Không còn cần thiết — bấm đơn vào body đã phát ngay | — |
+| C3 | **Chuột phải bar** | Popover *Clip*: Trigger · Cue to Preview · Loop (đặt chế độ LOOP) · **Rename** · Clear Slot + 6 ô màu clip. **Chuột phải body không có tác dụng.** | ✅ |
+| C4 | **Kéo bar sang ô khác** (>5px) | Di chuyển clip; ô đích viền vàng nét đứt. **Kéo bắt đầu từ body không di chuyển clip** (chỉ phát, xem C1b) | ✅ |
 | C5 | **Kéo từ Browser thả vào ô** | Nạp clip vào ô (`loadClip`); nếu là Effect thì cue ô đó + thêm FX | ✅ |
 | C6 | **Bấm header cột** | Chọn cột | ✅ |
 | C7 | **Bấm đúp header cột** | Bắn cả cột | ✅ |

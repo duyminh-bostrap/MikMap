@@ -180,7 +180,7 @@ static void StatusBar(ImRect r) {
   snprintf(perf, sizeof perf, "%.0f FPS \xC2\xB7 P99 %.1f MS \xC2\xB7 DROP %d", PerfFps(), PerfP99(), PerfDrops(20.f));
   const char* tc = perf;
   TextR(r.Max.x - 8, cy, MONO_M, 10, K(PerfP99() > 20.f ? pal::yellow : pal::t66), tc);
-  const char* hint = (!A.toast.empty() && g.time < A.toastUntil) ? A.toast.c_str() : A.blackout ? "OUTPUT MUTED \xE2\x80\x94 PRESS BLACKOUT TO RESUME" : "CLICK TO CUE \xC2\xB7 DOUBLE-CLICK TO TRIGGER \xC2\xB7 RIGHT-CLICK FOR ACTIONS";
+  const char* hint = (!A.toast.empty() && g.time < A.toastUntil) ? A.toast.c_str() : A.blackout ? "OUTPUT MUTED \xE2\x80\x94 PRESS BLACKOUT TO RESUME" : "CLICK NAME TO CUE \xC2\xB7 CLICK ART TO PLAY \xC2\xB7 RIGHT-CLICK NAME FOR ACTIONS";
   TextR(r.Max.x - 8 - TextW(MONO_M, 10, tc) - 8, cy, MONO_M, 10, K(pal::t88), hint);
 }
 
