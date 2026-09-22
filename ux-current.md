@@ -83,15 +83,17 @@ Timeline | Properties; **dải dưới** = Deck (lưới layer × cột).
 
 ### 2.1 Deck — lưới clip
 
-> **Đổi 2026-09-22:** mỗi ô clip tách thành hai vùng bấm độc lập —
+> **Đổi 2026-09-22:** mỗi ô clip **có clip** tách thành hai vùng bấm độc lập —
 > **bar** (dải tên phía trên, cao 22px) và **body** (vùng gradient phía dưới).
-> Không còn khái niệm bấm-đơn/bấm-đúp trên toàn ô; ô trống (chưa có clip) vẫn
-> dùng chung hình học này dù không có phần thân vẽ khác biệt.
+> Không còn khái niệm bấm-đơn/bấm-đúp. **Ô trống thì KHÔNG tách vùng** (không
+> có gì vẽ khác biệt để người dùng biết ranh giới) — toàn bộ ô trống là một
+> vùng "body" duy nhất, bấm ở bất kỳ đâu trong ô cũng dừng layer đó; chuột
+> phải ở bất kỳ đâu vẫn mở popover.
 
 | Mã | Thao tác | Kết quả | |
 |---|---|---|---|
 | C1 | **Bấm bar** (nhả chuột, không kéo) | *Cue* — chọn ô, đưa lên Preview; **không phát**, không đổi clip đang chạy của layer | ✅ |
-| C1b | **Bấm body** | *Cue + Trigger* — phát ngay ở cả Preview lẫn Live Output, ô đó trở thành clip đang chạy của layer. **Nếu ô đang trống: dừng layer đó** (cắt cứng, chưa có dissolve khi tắt) | ✅ |
+| C1b | **Bấm body** (ô có clip) hoặc **bấm bất kỳ đâu** (ô trống) | *Cue + Trigger* — phát ngay ở cả Preview lẫn Live Output, ô đó trở thành clip đang chạy của layer. **Nếu ô đang trống: dừng CHÍNH layer đó** (các layer khác không đụng tới — mỗi layer độc lập, xác nhận với người dùng); cắt cứng, chưa có dissolve khi tắt | ✅ |
 | C1c | Preview Cue khi bấm **cột** | Hiện clip của **layer cao nhất** (trên cùng) có nội dung trong cột đó; cột trống thì giữ nguyên Preview cũ | ✅ |
 | C2 | ~~Bấm đúp để phát~~ | Không còn cần thiết — bấm đơn vào body đã phát ngay | — |
 | C3 | **Chuột phải bar** | Popover *Clip*: Trigger · Cue to Preview · Loop (đặt chế độ LOOP) · **Rename** · Clear Slot + 6 ô màu clip. **Chuột phải body không có tác dụng.** | ✅ |

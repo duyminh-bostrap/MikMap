@@ -717,6 +717,21 @@ int main(int argc, char** argv) {
     NewProject();
     A.fireColumn(0);
     if (A.selLi != 0 || A.layers[0].clips[0].name.empty()) return fail("fireColumn must preview the topmost layer with content");
+    // Stopping via an empty cell must work for EVERY layer on its own (not just the first one) -- each layer is
+    // independent, so clicking layer X's empty cell must never leave layer X still live, regardless of layer Y.
+    NewProject();
+    int stoppedCount = 0;
+    for (int li = 0; li < (int)A.layers.size(); ++li) {
+      Layer& l = A.layers[li];
+      int emptyCi = -1;
+      for (int ci = 0; ci < (int)l.clips.size(); ++ci) if (l.clips[ci].st == Clip::Empty || l.clips[ci].st == Clip::Armed) { emptyCi = ci; break; }
+      if (emptyCi < 0) continue;
+      bool wasLive = l.live;
+      A.trigger(li, emptyCi);
+      if (A.layers[li].live) { std::fprintf(stderr, "layer %d (%s) still live after clicking its own empty cell\n", li, l.name.c_str()); return 1; }
+      if (wasLive) ++stoppedCount;
+    }
+    if (stoppedCount == 0) return fail("fixture: expected at least one layer to start live so the stop could be observed");
     std::printf("roundtrip OK\n"); return 0;
   }
   gAssets = FindAssets(argv[0]);

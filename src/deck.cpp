@@ -392,9 +392,18 @@ static CellOut ClipCell(ImRect r, const Clip& cl, bool selectedCell, bool dragge
   CellOut o;
   o.hover = h.hover;
   if (h.hover) {
-    Hit bh = HitR(barR), bo = HitR(bodyR);
-    if (bh.hover) { o.barPress = bh.click; o.barRelease = bh.release; o.barRclick = bh.rclick; }
-    else if (bo.hover) o.bodyClick = bo.click;
+    if (empty) {
+      // An empty cell draws no name strip, so there is nothing on screen telling the user where "bar" ends and
+      // "body" begins — the bar/body split above only exists once a clip is loaded. Until then, treat the whole
+      // cell as body: any click here stops/clears the layer, from wherever inside the cell it lands. Right-click
+      // still opens the popover (its items are already disabled/no-ops for an empty slot where irrelevant).
+      o.bodyClick = h.click;
+      o.barRclick = h.rclick;
+    } else {
+      Hit bh = HitR(barR), bo = HitR(bodyR);
+      if (bh.hover) { o.barPress = bh.click; o.barRelease = bh.release; o.barRclick = bh.rclick; }
+      else if (bo.hover) o.bodyClick = bo.click;
+    }
     if (!A.dragging) CursorHand();
   }
   return o;
