@@ -139,12 +139,19 @@ trên 135 mục Resolume-parity (đếm lại 2026-09-21 từ các dòng bảng)
 chiếu riêng, không viền (`F2`/`I1`, `output.cpp`); canvas ảo 1920×1080 (`A1`);
 transform clip D1–D6; transport LOOP/BOUN/HOLD/ONCE + REV + tốc độ (`C2/C4/C5`);
 blend mode dùng hàm trộn GL thật, 8 mode (`A7`/`D4`, `clipart.cpp` — riêng
-Overlay tạm dùng Screen); bấm đúp header cột = bắn cả cột (`A6`); PerfPanel
-FPS/P99/frame rớt (`G9`, `calib.cpp`).
+Overlay tạm dùng Screen); PerfPanel FPS/P99/frame rớt (`G9`, `calib.cpp`).
 
 **Đợt UX 2026-09-21** (`project.cpp`, xem `ux-current.md`): lưu/mở/mới dự án `.mikmap` + cài đặt máy tách riêng,
 undo/redo toàn app theo snapshot, Show Mode (`Tab`), phím tắt Composition, đổi tên layer/cột/clip, scrub Timeline,
 ROI kéo được. Kiểm tự động: `mikmap --roundtrip <file>` (không cần cửa sổ). `Clip::style` cố định hình vẽ khi đổi tên.
+
+**Đợt UX 2026-09-22** (theo yêu cầu người dùng — xem `ux-current.md` §2.1 và
+`.claude/rules/design.md`): ô clip (`ClipCell`, `src/deck.cpp`) tách hai vùng
+bấm độc lập — **bar** (dải tên) chỉ cue/chọn, kéo di chuyển, chuột phải mở
+popover; **body** (vùng gradient) bấm 1 lần là phát ngay (cue+trigger), không
+kéo/không chuột phải. Header cột (`ColumnHeader`) cũng bỏ double-click: bấm
+đơn là chọn + bắn cả cột luôn (`A6`). **Không còn double-click để phát ở bất
+kỳ đâu trong Deck.**
 
 **Vẫn còn giả/thiếu — dễ bị đánh giá cao hơn thực tế:** `B3` generator vẽ bằng CPU, chưa
 phải shader GLSL; `A4` thumbnail là gradient tĩnh (cố ý — thumbnail động làm
