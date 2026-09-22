@@ -690,6 +690,16 @@ int main(int argc, char** argv) {
       double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count() / 200.0;
       std::printf("snapshot: %.3f ms each\n", ms);
     }
+    // Empty column/cell = blackout: firing an empty column must STOP whatever was live elsewhere, not leave it running.
+    NewProject(); A.quantize = false;
+    if (!A.layers[0].clips[2].isLive()) return fail("fixture: expected a live clip at col2 before the test");
+    A.fireColumn(A.colCount() - 1);   // the demo's trailing columns are empty in every layer
+    for (auto& l : A.layers) if (l.live) return fail("firing an all-empty column must stop every layer");
+    NewProject();
+    int liveLi = -1; for (int li = 0; li < (int)A.layers.size(); ++li) if (A.layers[li].live) { liveLi = li; break; }
+    if (liveLi < 0) return fail("fixture: expected some layer live");
+    A.trigger(liveLi, A.colCount() - 1);   // click an empty cell's body on that same layer
+    if (A.layers[liveLi].live) return fail("triggering an empty cell must stop that layer");
     std::printf("roundtrip OK\n"); return 0;
   }
   gAssets = FindAssets(argv[0]);

@@ -91,12 +91,12 @@ Timeline | Properties; **dải dưới** = Deck (lưới layer × cột).
 | Mã | Thao tác | Kết quả | |
 |---|---|---|---|
 | C1 | **Bấm bar** (nhả chuột, không kéo) | *Cue* — chọn ô, đưa lên Preview; **không phát**, không đổi clip đang chạy của layer | ✅ |
-| C1b | **Bấm body** | *Cue + Trigger* — phát ngay ở cả Preview lẫn Live Output, ô đó trở thành clip đang chạy của layer | ✅ |
+| C1b | **Bấm body** | *Cue + Trigger* — phát ngay ở cả Preview lẫn Live Output, ô đó trở thành clip đang chạy của layer. **Nếu ô đang trống: dừng layer đó** (cắt cứng, chưa có dissolve khi tắt) | ✅ |
 | C2 | ~~Bấm đúp để phát~~ | Không còn cần thiết — bấm đơn vào body đã phát ngay | — |
 | C3 | **Chuột phải bar** | Popover *Clip*: Trigger · Cue to Preview · Loop (đặt chế độ LOOP) · **Rename** · Clear Slot + 6 ô màu clip. **Chuột phải body không có tác dụng.** | ✅ |
 | C4 | **Kéo bar sang ô khác** (>5px) | Di chuyển clip; ô đích viền vàng nét đứt. **Kéo bắt đầu từ body không di chuyển clip** (chỉ phát, xem C1b) | ✅ |
 | C5 | **Kéo từ Browser thả vào ô** | Nạp clip vào ô (`loadClip`); nếu là Effect thì cue ô đó + thêm FX | ✅ |
-| C6 | **Bấm header cột** | *Chọn + bắn cả cột* — mọi clip không rỗng ở cột đó (mỗi layer 1 clip) phát ngay | ✅ |
+| C6 | **Bấm header cột** | *Chọn + bắn cả cột* — mọi clip không rỗng ở cột đó (mỗi layer 1 clip) phát ngay; **layer nào có ô trống ở cột này bị dừng luôn** (không giữ nguyên clip cũ) — bấm vào cột trống toàn bộ sẽ tắt hết Live Output | ✅ |
 | C6b | Header cột **đang chọn nhưng không có gì live** (vd `activeCol` mặc định trên dự án mới/trống) | Chỉ viền coral nhạt + badge `TRIG` — **không** glow/chấm nhấp nháy/badge `nL` giả (trước đây hiện y hệt cột đang live dù trống) | ✅ |
 | C7 | ~~Bấm đúp để bắn cột~~ | Không còn cần thiết — bấm đơn đã bắn cả cột | — |
 | C8 | **Kéo header cột** | Đổi thứ tự cột | ✅ |

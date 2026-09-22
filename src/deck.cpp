@@ -139,10 +139,20 @@ void App::flushPending() {
 }
 void App::trigger(int li, int ci) {
   Layer& l = layers[li];
-  if (l.clips[ci].st == Clip::Empty) return;
-  if (quantize && playing && !flushing) {   // Sync: queue it; the main loop fires it on the next beat (a repeat just replaces the earlier one)
+  if (ci < 0 || ci >= (int)l.clips.size()) return;
+  if (quantize && playing && !flushing) {   // Sync: queue it (play or stop); the main loop fires it on the next beat (a repeat just replaces the earlier one)
     for (auto& q : pending) if (!q.column && q.li == li) { q.ci = ci; return; }
     pending.push_back({li, ci, false});
+    return;
+  }
+  // An empty (or armed) slot means "nothing here": stop whatever this layer was playing instead of silently leaving
+  // it running. Clicking an empty cell is how a layer gets blacked out, same as a lighting console cue with a dark
+  // channel. (No cross-dissolve here — DrawComposite skips a layer with nothing live, so a "fade to nothing" would
+  // need its own code path; this is a hard cut for now.)
+  if (l.clips[ci].st == Clip::Empty || l.clips[ci].st == Clip::Armed) {
+    for (auto& c : l.clips) if (c.isLive()) c.st = Clip::Loaded;
+    l.live = false;
+    activeCol = ci;
     return;
   }
   StartDissolve(l, ci);
@@ -151,7 +161,8 @@ void App::trigger(int li, int ci) {
   l.live = true;
   selLi = li; selCi = ci; selLayer = li; activeCol = ci; selectedCells = {{li, ci}};
 }
-// A6: fire every non-empty clip in a column at once
+// A6: fire column ci — plays every non-empty clip there and, symmetrically, STOPS any layer whose slot in this
+// column is empty/armed (a column recall reflects exactly what is in it, not a mix of new content and old leftovers).
 void App::fireColumn(int ci) {
   if (quantize && playing && !flushing) {
     for (auto& q : pending) if (q.column) { q.ci = ci; return; }
@@ -160,7 +171,11 @@ void App::fireColumn(int ci) {
   }
   for (int li = 0; li < (int)layers.size(); ++li) {
     Layer& l = layers[li];
-    if (ci >= (int)l.clips.size() || l.clips[ci].st == Clip::Empty || l.clips[ci].st == Clip::Armed) continue;
+    if (ci >= (int)l.clips.size() || l.clips[ci].st == Clip::Empty || l.clips[ci].st == Clip::Armed) {
+      for (auto& c : l.clips) if (c.isLive()) c.st = Clip::Loaded;
+      l.live = false;
+      continue;
+    }
     StartDissolve(l, ci);
     for (auto& c : l.clips) if (c.isLive()) c.st = Clip::Loaded;
     l.clips[ci].st = Clip::Live;
