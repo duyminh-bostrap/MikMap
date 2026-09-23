@@ -19,7 +19,7 @@
 | [x] | **A1** | Composition canvas (độ phân giải ảo, độc lập máy chiếu) | S | 🔴 P0 |
 | [x] | **A2** | Layer (row) — z-order, mỗi layer phát 1 clip | M | 🔴 P0 |
 | [x] | **A3** | Column (cột) | S | 🔴 P0 |
-| [~] | **A4** | Clip cell — lưới clip có thumbnail | M | 🔴 P0 |
+| [x] | **A4** | Clip cell — lưới clip có thumbnail | M | 🔴 P0 |
 | [x] | **A5** | Trigger clip bằng click | S | 🔴 P0 |
 | [x] | **A6** | Trigger cả column bằng click | S | 🔴 P0 |
 | [x] | **A7** | Layer opacity + blend mode | S | 🔴 P0 |
@@ -124,7 +124,7 @@
 | [x] | **F5** | **Corner pin / keystone** (kéo 4 góc) | M | 🔴 P0 |
 | [x] | **F6** | Kéo thả handle bằng chuột trên UI | M | 🔴 P0 |
 | [x] | **F7** | Nhiều slice trên 1 screen | S | 🔴 P0 |
-| [~] | **F8** | Lưu / nạp preset output | M | 🔴 P0 |
+| [x] | **F8** | Lưu / nạp preset output | M | 🔴 P0 |
 | [x] | **F9** | **Mesh / linear warping** (lưới N×M) | L | 🟠 P1 |
 | [ ] | **F10** | **Bezier warping** (bề mặt cong, tượng) | L | 🟠 P1 |
 | [x] | **F11** | Điều chỉnh mật độ lưới warp (subdivision) | S | 🟠 P1 |
@@ -156,7 +156,7 @@
 | [x] | **G5** | **Homography solver (DLT + RANSAC)** | M | 🔴 P0 |
 | [x] | **G6** | **Calibration wizard — chạm 4+ điểm** | M | 🔴 P0 |
 | [ ] | **G7** | **SensorMapper: sensor → slice → clip pixel** | M | 🔴 P0 |
-| [~] | **G8** | Lưu / nạp calibration profile | S | 🔴 P0 |
+| [x] | **G8** | Lưu / nạp calibration profile | S | 🔴 P0 |
 | [x] | **G9** | PerfPanel — đo độ trễ p99, FPS, frame drop | S | 🔴 P0 |
 | [x] | **G10** | Hiển thị sai số tái chiếu (reprojection error) | S | 🟠 P1 |
 | [ ] | **G11** | OneEuroFilter khử nhiễu | S | 🟠 P1 |
@@ -302,3 +302,15 @@
   - **Việc phiên này (Claude Code) đã làm khi kiểm tra:** phát hiện `leftW` (biến đo bề rộng chữ giờ hệ thống) được tính nhưng không dùng ở đâu — gây cảnh báo `-Wunused-variable`, phá quy tắc "0 cảnh báo". Đã xoá dòng thừa, build lại sạch cả `-fsyntax-only -Wall -Wextra -Wpedantic` lẫn CMake Debug/Release, chạy `--roundtrip` qua. **Chưa tự sửa gì khác** — xem "Điểm cần xác nhận lại với người dùng" ngay dưới.
   - **Điểm cần xác nhận lại với người dùng:** yêu cầu gốc có "chuyển timeline sang trái" nhưng code đã áp dụng lại đặt nhãn TIMELINE+timecode ở **góc phải** (đối xứng với SYSTEM TIME ở trái), không phải bên trái — có thể là chủ ý (nhường vị trí nổi bật bên trái cho giờ hệ thống, đẩy timecode xuống vai trò phụ) nhưng chưa xác nhận lại; nhóm nút transport vẫn giữ nguyên vị trí giữa (`mid` không đổi).
   - **C8 — Playhead scrub:** vẫn `[x]` vì scrub bằng kéo/bấm **vẫn còn** — nhưng chỉ còn ở màn Timeline run mode (`TimelineView`, `scrubZone`/`A.tlProgress`), không còn ở Grid mode nữa (thanh kéo dưới 2 monitor đã bị bỏ, xem trên). Ghi chú lại để lần sau đừng tưởng nhầm scrub Grid-mode vẫn còn.
+- **F8/G8 — Preset output & calibration profile trở thành file riêng, tách khỏi project (2026-09-23):** trước đó cả hai chỉ lưu **cùng** `.mikmap`, không có cách nạp lẫn giữa các dự án (xem ghi chú 2026-09-21 ở trên). Nay:
+  - **F8 `[x]`:** `SaveOutputPreset`/`LoadOutputPreset` (`src/project.cpp`) ghi một `Screen` (device/resolution/slices/masks) ra file `.mikmap-preset` riêng, thư mục `~/Documents/MikMap/Presets` (`PresetsDir()`) — tách khỏi `ProjectsDir()` gốc nên không lẫn với danh sách "Mở dự án". Nút **Save preset / Load preset** ở Properties → Screen (`src/mapping.cpp`, ngay dưới khối PROJECTOR OUTPUT): Save ghi đè file theo tên màn hình (giống cách Lưu dự án ghi đè); Load mở menu chuột phải liệt kê `ListPresets()`, chọn 1 preset sẽ nạp vào **đúng screen đang xem** (giữ nguyên `id` gốc để không vỡ tham chiếu `selSc`/`selSl`), không tạo screen mới.
+  - **G8 `[x]`:** `SaveCalibProfile`/`LoadCalibProfile` lưu 4 điểm calibration + ROI + noise/blobSize ra file `.mikmap-calib`, thư mục `~/Documents/MikMap/Calibration` (`CalibDir()`) — **không** lưu ma trận `H_s` đã fit, vì `src/calib.cpp` vốn tính lại homography từ điểm gốc mỗi lần dùng (không cache ở đâu cả, xem `.claude/CLAUDE.md`), nên profile giữ đúng điểm gốc để nhất quán với cách `src/` đang xử lý calibration ở mọi chỗ khác. Nút **Save profile / Load profile** ở khung "MATRIX H_s" trong màn Sensor I/O (`src/sensor.cpp`); Load reset `A.wizardStep = 0` để không kẹt giữa chừng một lần chạm wizard cũ.
+  - Cả hai dùng chung `WriteAtomic` (ghi file tạm rồi rename) như lưu project, và có `"format"` riêng (không dùng chung `kFormat` của `.mikmap` — đây là 2 định dạng file độc lập).
+  - Kiểm tự động (`--roundtrip`, `src/main.cpp`): lưu rồi nạp lại preset/profile phải khớp đúng từng field (kể cả slices/masks của Screen, cả 4 điểm + ROI + noise/blobSize của calib), và một file sai định dạng (thiếu `"screen"`, hoặc `"calib"` không đúng 4 điểm) phải bị từ chối, không được nạp im lặng. Build sạch MSVC Debug/Release, không thêm cảnh báo mới ngoài các `fopen`/`sscanf` deprecation đã có sẵn kiểu cũ trong `main.cpp`.
+  - **Giới hạn còn lại:** chưa có hộp thoại nhập tên khi lưu (Save preset dùng luôn tên màn hình hiện tại, Save profile luôn stamp giờ) — nếu cần đặt tên tuỳ ý hoặc xác nhận ghi đè, đó là việc UI thêm, chưa làm ở đợt này.
+- **A4 — Thumbnail ô clip là hình thật, không còn gradient tĩnh (2026-09-23):** trước đó cố ý giữ gradient phẳng vì vẽ hình sinh (generator art) trực tiếp vào cả ~40 ô mỗi khung hình làm deck tụt xuống ~16 giây/khung (xem ghi chú "Không làm được trong đợt này" ở trên). Nay mỗi `Clip` có texture thumbnail riêng (`Clip::thumbTex`, `src/app.h`), dựng qua FBO (`RenderClipThumbnail`, `src/clipart.cpp`) và **giới hạn tối đa 3 ô vẽ lại thumbnail mỗi khung hình** (`ResetThumbBudget(3)` gọi ở đầu `DrawDeck`, `src/deck.cpp`) bất kể deck có bao nhiêu ô — nên chi phí không phụ thuộc kích thước deck. Một ô chỉ vẽ lại khi texture còn trống hoặc đã cũ hơn 1 giây; các ô khác dùng lại texture cache của khung trước.
+  - Cách dựng: vì `DrawClipContent` vẽ qua `ImDrawList` (không phải OpenGL trực tiếp), thumbnail dùng đúng kỹ thuật chính thức của Dear ImGui để render một `ImDrawList` độc lập ra ngoài khung hình chính — tạo `ImDrawList` riêng qua `ImGui::GetDrawListSharedData()`, gọi `_ResetForNewFrame()`, vẽ vào đó thay vì `g.dl` (tráo tạm con trỏ `g.dl`/`g.warp`/`g.alpha`), rồi tự dựng một `ImDrawData` một-list-duy-nhất và gọi thẳng `ImGui_ImplOpenGL3_RenderDrawData()` trong lúc FBO của thumbnail đang được bind — không đụng gì tới việc vẽ khung hình chính đang dở. Texture 128×72, `lod=0.35` (thấp hơn cả ô Inspector Clip-tab hiện có, `lod=0.4`).
+  - Các hàm FBO (`glGenFramebuffers`/`glBindFramebuffer`/`glFramebufferTexture2D`/`glCheckFramebufferStatus`) không có trong header `<GL/gl.h>` 1.1 đời cũ trên Windows, nên nạp lúc chạy qua `glfwGetProcAddress` giống hệt cách `glBlendEquation` đã làm cho blend mode (D4) — cùng một hàm `InitBlendModes()`, không thêm entry-point khởi tạo mới.
+  - `Clip::thumbTex`/`thumbAt` là state runtime thuần, **không** vào `ClipJ`/`ReadClip` (không lưu vào `.mikmap`, không tính vào so sánh undo/dirty) — giống nguyên tắc `Layer::fadeFrom`/`fadeT` đã có từ trước. Copy một `Clip` (undo snapshot, `App tmp = A`) sẽ copy luôn giá trị `thumbTex` — vô hại (bản sao trỏ chung 1 texture GL còn sống), không phải double-free, vì không chỗ nào gọi `glDeleteTextures` (giống hạn chế "texture chưa được giải phóng" đã ghi ở B2).
+  - **Đã xác nhận bằng ảnh chụp thật** (`--shot --page 0 --frames 200`, máy Windows thật, không phải suy đoán): các ô hiện đúng hình sinh riêng của từng clip (Cyber Hex Grid = lưới lục giác, Particle Vortex = chấm rải rác, Mesh Pulse = vòng tròn...), không bị lật ngược, khớp đúng hình ở Preview Cue/Live Output. PerfPanel ổn định **P99 ~17.7ms** sau 200 khung — đúng mục tiêu `tech-defaults.md` (p99 < ~17ms), không tái diễn regression ~16s/khung.
+  - **Giới hạn còn lại:** `Strobe Tunnel` có thể thumbnail tối/đen nếu bắt đúng lúc FX Strobe đang ở pha "tắt" — đây là hành vi đúng theo FX thật (khác gradient tĩnh trước đây không phản ánh FX gì cả), không phải lỗi. Texture không bao giờ được giải phóng (leak nhẹ theo phong cách hiện có của `src/`, xem B2); nếu cần dọn khi xoá/đổi clip thì phải thêm `glDeleteTextures` — chưa làm ở đợt này.

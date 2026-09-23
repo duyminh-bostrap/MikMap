@@ -136,6 +136,37 @@ static void Devices(ImRect r) {
     TextC(gr.Min.x + 6 + (i % 3) * (cw + 4) + cw * 0.5f, gr.Min.y + 6 + (i / 3) * 17 + 6.5f, MONO_R, 10, K(pal::tcc), b);
   }
   y += mr.GetHeight() + 8;
+  // G8: save/load the 4 calibration points + ROI/noise as their own file, independent of the project.
+  {
+    float gap = 6, bw = (w - gap) * 0.5f;
+    ImRect sb(x, oy + y, x + bw, oy + y + 26), lb(x + bw + gap, oy + y, x + w, oy + y + 26);
+    Hit sh = HitR(sb), lh = HitR(lb);
+    Box(sb, K(pal::g1c), K(pal::g22), 3);
+    Icon("save", ImVec2(sb.Min.x + 12, (sb.Min.y + sb.Max.y) * 0.5f), 12, K(pal::t88));
+    Text(sb.Min.x + 24, (sb.Min.y + sb.Max.y) * 0.5f, UI_S, 10, K(pal::t88), "Save profile");
+    if (sh.hover) CursorHand();
+    if (sh.click) A.notify(DoSaveCalibProfile());
+    Box(lb, K(pal::g1c), K(pal::g22), 3);
+    Icon("folder-open", ImVec2(lb.Min.x + 12, (lb.Min.y + lb.Max.y) * 0.5f), 12, K(pal::t88));
+    Text(lb.Min.x + 24, (lb.Min.y + lb.Max.y) * 0.5f, UI_S, 10, K(pal::t88), "Load profile");
+    if (lh.hover) CursorHand();
+    if (lh.click) {
+      std::vector<MenuItem> mi;
+      auto profiles = ListCalibProfiles();
+      if (profiles.empty()) { MenuItem it; it.label = "No saved profiles"; it.disabled = true; mi.push_back(it); }
+      for (auto& pf : profiles) {
+        MenuItem it; it.label = pf.name; it.icon = "folder-open";
+        it.run = [path = pf.path, name = pf.name] {
+          std::string err;
+          if (LoadCalibProfile(path, A.calib, A.roi, A.noise, A.blobSize, err)) { A.wizardStep = 0; A.notify("Loaded profile: " + name); }
+          else A.notify("Load failed: " + err);
+        };
+        mi.push_back(it);
+      }
+      A.openCtx(ImVec2(lb.Min.x, lb.Max.y + 4), mi);
+    }
+    y += 26 + 8;
+  }
   sa.End(W, y);
 }
 

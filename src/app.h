@@ -32,6 +32,12 @@ struct Clip {
   bool flipH = false, flipV = false;
   std::vector<Fx> fx;  // effects belong to the clip
   bool isLive() const { return st == Live || st == LiveSel; }
+  // A4: cached deck-cell thumbnail (clipart.cpp:RenderClipThumbnail) — runtime GL state only, never
+  // serialized (no ClipJ/ReadClip field) and never compared for undo/dirty-checking. A copy of a Clip (undo
+  // snapshots, App copies) gets the same texture id by value; that's a harmless alias, not a double-free —
+  // nothing here ever calls glDeleteTextures. thumbTex == 0 means "not rendered yet", not "empty texture".
+  unsigned thumbTex = 0;
+  double thumbAt = -1;
 };
 struct Layer {
   std::string name, group, blend;
@@ -309,6 +315,20 @@ bool SaveProject(const std::string& path, std::string& err);
 bool LoadProject(const std::string& path, std::string& err);
 void NewProject();       // demo show
 void NewBlankProject();  // empty deck + one screen/slice
+// F8: output preset — one Screen (device/slices/masks), portable across projects. Own folder + extension so it
+// never shows up in ListProjects()/the Open-project dialog.
+std::string PresetsDir();                     // ~/Documents/MikMap/Presets
+std::vector<ProjectFile> ListPresets();
+bool SaveOutputPreset(const std::string& path, const Screen& s, std::string& err);
+bool LoadOutputPreset(const std::string& path, Screen& out, std::string& err);
+std::string DoSaveOutputPreset(const Screen& s);   // toast-message convenience, mirrors DoSave()
+// G8: calibration profile — the sensor correspondence points + ROI/noise, portable across projects. `src/`
+// recomputes H_s from these points at point of use (src/calib.cpp), so the profile is the points, not a matrix.
+std::string CalibDir();                       // ~/Documents/MikMap/Calibration
+std::vector<ProjectFile> ListCalibProfiles();
+bool SaveCalibProfile(const std::string& path, const std::vector<Calib>& calib, const ImVec2 roi[4], float noise, float blobSize, std::string& err);
+bool LoadCalibProfile(const std::string& path, std::vector<Calib>& calib, ImVec2 roi[4], float& noise, float& blobSize, std::string& err);
+std::string DoSaveCalibProfile();                  // toast-message convenience, mirrors DoSave()
 void MarkSaved();
 bool ProjectDirty();
 std::string DoSave(bool asCopy);
@@ -321,6 +341,12 @@ void SaveSettings();
 void LoadSettings();
 int ClipStyleOf(const std::string& name);
 void DrawClipContent(ImRect area, const Clip& c, float t, float baseWidth, float alpha, float lod = 1.f);
+// A4: deck-cell thumbnail cache (clipart.cpp). ResetThumbBudget(n) is called once per frame (DrawDeck); each
+// RenderClipThumbnail() call spends 1 of it, so at most n clips redraw their thumbnail per frame regardless of
+// deck size — see the comment above RenderClipThumbnail's definition for why that budget exists.
+void ResetThumbBudget(int n);
+bool ThumbBudgetLeft();
+void RenderClipThumbnail(Clip& c);
 void SetAdditive(bool on);
 // blend modes (D4) — index order matches BLEND_NAMES
 constexpr int BLEND_COUNT = 8;

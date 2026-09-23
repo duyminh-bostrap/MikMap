@@ -472,7 +472,7 @@ static void DashedRect(ImRect r, ImU32 c, float th) {
   DashedPoly(p, 4, c, th, 5, 3);
 }
 
-static CellOut ClipCell(ImRect r, const Clip& cl, bool selectedCell, bool dragged, bool dropT, float progress) {
+static CellOut ClipCell(ImRect r, Clip& cl, bool selectedCell, bool dragged, bool dropT, float progress) {
   bool empty = cl.st == Clip::Empty || cl.st == Clip::Armed;
   // Design tokens §3.2 give the clip cell THREE distinct looks, not "selected = coral / else = warm brown":
   // loaded-idle (warm amber, already at rest), cued-for-preview (cool cyan — about to show, not showing yet),
@@ -509,10 +509,14 @@ static CellOut ClipCell(ImRect r, const Clip& cl, bool selectedCell, bool dragge
   if (!empty) {
     g.dl->AddRectFilled(bodyR.Min, bodyR.Max, Ca(body), 3, ImDrawFlags_RoundCornersBottom);
     g.dl->PushClipRect(bodyR.Min, bodyR.Max, true);
-    GradDiag(bodyR, col, Dark45(col), live ? 0.45f : 0.22f);
-    // A4: thumbnails stay as the flat gradient. Drawing the generated art in all ~40 cells cost
-    // ~16 s/frame (S_STARS worst), so the deck grid keeps the cheap gradient; the Clip tab and the
-    // monitors show the real generated image instead.
+    // A4: cached thumbnail. Drawing the generated art into every one of ~40 cells every frame cost
+    // ~16 s/frame (S_STARS worst) — so each Clip gets its own small texture, redrawn into an FBO at most a
+    // few times a second, budgeted to a handful of clips per frame (ResetThumbBudget in DrawDeck). Falls
+    // back to the flat gradient until the first render lands, or if the FBO functions never loaded.
+    bool stale = cl.thumbTex == 0 || g.time - cl.thumbAt > 1.0;
+    if (stale && ThumbBudgetLeft()) RenderClipThumbnail(cl);
+    if (cl.thumbTex != 0) g.dl->AddImage((ImTextureID)(intptr_t)cl.thumbTex, bodyR.Min, bodyR.Max, ImVec2(0, 1), ImVec2(1, 0), Ca(IM_COL32_WHITE));
+    else GradDiag(bodyR, col, Dark45(col), live ? 0.45f : 0.22f);
     g.dl->PopClipRect();
     g.dl->AddRectFilled(barR.Min, ImVec2(cx1, in.Min.y + 22), Ca(bar), 3, ImDrawFlags_RoundCornersTop);
     TextEll(cx0 + 10, in.Min.y + 11, (cx1 - cx0) - 20, barBold ? UI_B : UI_S, 10, barFg, cl.name.c_str());
@@ -1636,6 +1640,7 @@ static void TimelineView(ImRect r) {
 }
 
 void DrawDeck(ImRect body) {
+  ResetThumbBudget(3);   // A4: at most 3 deck-cell thumbnails redraw (FBO round-trip) per frame — see ClipCell
   float H = ImGui::GetIO().DisplaySize.y;
   float bandH = A.topBandPx > 0 ? A.topBandPx : A.prefs.bandPct / 100.f * H;
   bandH = std::max(bandH, 180.f);

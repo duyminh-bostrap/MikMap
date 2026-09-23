@@ -846,6 +846,35 @@ int main(int argc, char** argv) {
     A.tlSync(midPct);
     if (!A.layers[0].clips[lay[0].back().ci].isLive()) return fail("tlSync at the last block's midpoint must make it live");
     if (A.layers[0].clips[lay[0][0].ci].isLive()) return fail("tlSync must turn off the block that is no longer under the playhead");
+    // F8/G8: output preset / calibration profile are their own files (explicit path here, not PresetsDir()/
+    // CalibDir(), so the self-test never touches the real ~/Documents/MikMap folders) — save/load must round-trip
+    // every field and reject a file that isn't actually one of these.
+    {
+      NewProject();
+      Screen& s0 = A.screens[0];
+      s0.name = "TestScreen"; s0.w = 1280; s0.h = 720;
+      std::string perr, presetPath = roundtrip + ".preset";
+      if (!SaveOutputPreset(presetPath, s0, perr)) return fail(perr.c_str());
+      Screen loaded;
+      if (!LoadOutputPreset(presetPath, loaded, perr)) return fail(perr.c_str());
+      if (loaded.name != "TestScreen" || loaded.w != 1280 || loaded.h != 720) return fail("output preset did not round-trip Screen fields");
+      if (loaded.slices.size() != s0.slices.size()) return fail("output preset did not round-trip slices");
+      { std::FILE* f = std::fopen(presetPath.c_str(), "wb"); if (f) { std::fputs("{\"format\":1,\"app\":\"MikMap\"}", f); std::fclose(f); } }
+      if (LoadOutputPreset(presetPath, loaded, perr)) return fail("a file with no \"screen\" object was accepted as an output preset");
+
+      A.calib = {{0, 0, 10, 10}, {100, 0, 110, 10}, {100, 100, 110, 110}, {0, 100, 10, 110}};
+      for (int i = 0; i < 4; ++i) A.roi[i] = ImVec2(1.f * i, 2.f * i);
+      A.noise = 3.5f; A.blobSize = 7.25f;
+      std::string calibPath = roundtrip + ".calib";
+      if (!SaveCalibProfile(calibPath, A.calib, A.roi, A.noise, A.blobSize, perr)) return fail(perr.c_str());
+      std::vector<Calib> loadedCalib; ImVec2 loadedRoi[4]; float loadedNoise = 0, loadedBlob = 0;
+      if (!LoadCalibProfile(calibPath, loadedCalib, loadedRoi, loadedNoise, loadedBlob, perr)) return fail(perr.c_str());
+      if (loadedCalib.size() != 4 || loadedCalib[2].mx != 110) return fail("calibration profile did not round-trip points");
+      if (loadedRoi[3].x != 3.f || loadedRoi[3].y != 6.f) return fail("calibration profile did not round-trip ROI");
+      if (loadedNoise != 3.5f || loadedBlob != 7.25f) return fail("calibration profile did not round-trip noise/blobSize");
+      { std::FILE* f = std::fopen(calibPath.c_str(), "wb"); if (f) { std::fputs("{\"format\":1,\"calib\":[1,2,3]}", f); std::fclose(f); } }
+      if (LoadCalibProfile(calibPath, loadedCalib, loadedRoi, loadedNoise, loadedBlob, perr)) return fail("a calibration file without exactly 4 points was accepted");
+    }
     std::printf("roundtrip OK\n"); return 0;
   }
   gAssets = FindAssets(argv[0]);

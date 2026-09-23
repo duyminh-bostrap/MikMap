@@ -131,9 +131,20 @@ ngoài". Định nghĩa ở `engine/core/model/IWarp.h`; mọi `IWarp` mới ph�
 
 ## `src/` — tình trạng THẬT (theo `features.md`, không theo vẻ ngoài)
 
-49 mục `[x]` (hành vi thật) · 18 mục `[~]` (chỉ UI/một phần — đọc "Ghi chú
+52 mục `[x]` (hành vi thật) · 15 mục `[~]` (chỉ UI/một phần — đọc "Ghi chú
 kiểm tra" cuối `features.md` để biết chính xác cái gì còn giả) · 68 mục `[ ]`,
-trên 135 mục Resolume-parity (đếm lại 2026-09-21 từ các dòng bảng).
+trên 135 mục Resolume-parity (đếm lại 2026-09-23 từ các dòng bảng).
+
+**Đợt 2026-09-23:** F8/G8/A4 chuyển `[~]` → `[x]`. F8/G8: preset output
+(`Screen`) và calibration profile (điểm + ROI/noise) giờ lưu/nạp được thành
+file riêng (`.mikmap-preset`/`.mikmap-calib`, `PresetsDir()`/`CalibDir()`),
+tách khỏi project, thay vì chỉ nằm chung `.mikmap` như trước. A4: ô clip
+trong Deck giờ hiện thumbnail thật (không còn gradient tĩnh) — mỗi `Clip` có
+texture riêng dựng qua FBO (`RenderClipThumbnail`, `clipart.cpp`), giới hạn
+tối đa 3 ô vẽ lại/khung hình (`ResetThumbBudget`, `deck.cpp`) nên không tái
+diễn regression ~16s/khung của lần thử trước; đã xác nhận bằng `--shot` thật
+trên máy Windows, PerfPanel ổn định P99 ~17.7ms. Xem "Ghi chú kiểm tra" cuối
+`features.md` để biết chi tiết + giới hạn còn lại.
 
 **Đã có thật sau đợt bổ sung P0** (đã grep `src/*.cpp`): output ra cửa sổ máy
 chiếu riêng, không viền (`F2`/`I1`, `output.cpp`); canvas ảo 1920×1080 (`A1`);

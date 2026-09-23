@@ -9,6 +9,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <ctime>
 #include <filesystem>
 #include <fstream>
@@ -83,6 +84,10 @@ Clip ReadClip(const JsonValue& o) {
 JsonValue FloatsJ(const std::vector<float>& v) { JsonValue a = JsonValue::array(); for (float x : v) a.push(x); return a; }
 std::vector<float> ReadFloats(const JsonValue& a) { std::vector<float> v; if (a.isArray()) for (auto& x : a.arrayItems()) v.push_back((float)x.asNumber()); return v; }
 
+// Shared by the project serializer and the G8 calibration-profile file.
+JsonValue CalibJ(const Calib& c) { JsonValue co = JsonValue::object(); co.set("tx", c.tx); co.set("ty", c.ty); co.set("mx", c.mx); co.set("my", c.my); return co; }
+Calib ReadCalibPoint(const JsonValue& co) { return {F(co, "tx", 0), F(co, "ty", 0), F(co, "mx", 0), F(co, "my", 0)}; }
+
 JsonValue SliceJ(const Slice& s) {
   JsonValue o = JsonValue::object();
   o.set("id", s.id); o.set("name", s.name); o.set("visible", s.visible); o.set("solo", s.solo); o.set("warp", s.warp);
@@ -123,6 +128,23 @@ Slice ReadSlice(const JsonValue& o) {
     for (int i = 0; i < 4; ++i) m.pts[i] = mo["pts"].isArray() && mo["pts"].size() > (size_t)i ? ReadV2(mo["pts"].at(i)) : ImVec2(0, 0);
     s.masks.push_back(m);
   }
+  return s;
+}
+
+// Shared by the project serializer and the F8 output-preset file — one Screen, never duplicated field-by-field.
+JsonValue ScreenJ(const Screen& s) {
+  JsonValue so = JsonValue::object();
+  so.set("id", s.id); so.set("name", s.name); so.set("outDev", s.outDev); so.set("w", s.w); so.set("h", s.h); so.set("fps", s.fps);
+  so.set("edgeBlend", s.edgeBlend); so.set("visible", s.visible); so.set("role", s.role);
+  JsonValue sl = JsonValue::array(); for (auto& x : s.slices) sl.push(SliceJ(x));
+  so.set("slices", sl);
+  return so;
+}
+Screen ReadScreen(const JsonValue& so) {
+  Screen s; s.id = so["id"].asString(); s.name = so["name"].asString(); s.outDev = so["outDev"].asString();
+  s.w = std::max(16, so["w"].asInt(1920)); s.h = std::max(16, so["h"].asInt(1080)); s.fps = so["fps"].asInt(60);
+  s.edgeBlend = so["edgeBlend"].asBool(); s.visible = so["visible"].asBool(true); s.role = std::clamp(so["role"].asInt(0), 0, 2);
+  if (so["slices"].isArray()) for (auto& x : so["slices"].arrayItems()) s.slices.push_back(ReadSlice(x));
   return s;
 }
 
@@ -176,19 +198,12 @@ JsonValue Serialize(const App& a) {
   root.set("deckMode", a.deckMode);
 
   JsonValue scs = JsonValue::array();
-  for (auto& s : a.screens) {
-    JsonValue so = JsonValue::object();
-    so.set("id", s.id); so.set("name", s.name); so.set("outDev", s.outDev); so.set("w", s.w); so.set("h", s.h); so.set("fps", s.fps);
-    so.set("edgeBlend", s.edgeBlend); so.set("visible", s.visible); so.set("role", s.role);
-    JsonValue sl = JsonValue::array(); for (auto& x : s.slices) sl.push(SliceJ(x));
-    so.set("slices", sl);
-    scs.push(so);
-  }
+  for (auto& s : a.screens) scs.push(ScreenJ(s));
   root.set("screens", scs);
 
   JsonValue sensor = JsonValue::object();
   JsonValue cal = JsonValue::array();
-  for (auto& c : a.calib) { JsonValue co = JsonValue::object(); co.set("tx", c.tx); co.set("ty", c.ty); co.set("mx", c.mx); co.set("my", c.my); cal.push(co); }
+  for (auto& c : a.calib) cal.push(CalibJ(c));
   sensor.set("calib", cal);
   JsonValue roi = JsonValue::array(); for (int i = 0; i < 4; ++i) roi.push(V2(a.roi[i]));
   sensor.set("roi", roi);
@@ -287,19 +302,13 @@ bool Deserialize(const JsonValue& root, App& out, std::string& err) {
   out.deckMode = std::clamp(root["deckMode"].asInt(0), 0, 1);
 
   out.screens.clear();
-  if (root["screens"].isArray()) for (auto& so : root["screens"].arrayItems()) {
-    Screen s; s.id = so["id"].asString(); s.name = so["name"].asString(); s.outDev = so["outDev"].asString();
-    s.w = std::max(16, so["w"].asInt(1920)); s.h = std::max(16, so["h"].asInt(1080)); s.fps = so["fps"].asInt(60);
-    s.edgeBlend = so["edgeBlend"].asBool(); s.visible = so["visible"].asBool(true); s.role = std::clamp(so["role"].asInt(0), 0, 2);
-    if (so["slices"].isArray()) for (auto& x : so["slices"].arrayItems()) s.slices.push_back(ReadSlice(x));
-    out.screens.push_back(std::move(s));
-  }
+  if (root["screens"].isArray()) for (auto& so : root["screens"].arrayItems()) out.screens.push_back(ReadScreen(so));
   if (out.screens.empty()) { err = "no screens in file"; return false; }
 
   const JsonValue& sn = root["sensor"];
   if (sn["calib"].isArray() && sn["calib"].size() == 4) {
     out.calib.clear();
-    for (auto& co : sn["calib"].arrayItems()) out.calib.push_back({F(co, "tx", 0), F(co, "ty", 0), F(co, "mx", 0), F(co, "my", 0)});
+    for (auto& co : sn["calib"].arrayItems()) out.calib.push_back(ReadCalibPoint(co));
   }
   if (sn["roi"].isArray() && sn["roi"].size() == 4) for (int i = 0; i < 4; ++i) out.roi[i] = ReadV2(sn["roi"].at(i));
   out.noise = F(sn, "noise", out.noise); out.blobSize = F(sn, "blobSize", out.blobSize);
@@ -362,11 +371,13 @@ std::vector<std::string> ListMedia() {
   return out;
 }
 
-std::vector<ProjectFile> ListProjects() {
+// Shared by ListProjects/ListPresets/ListCalibProfiles — same "newest first" file listing, only the folder and
+// extension change. Extension must include the leading dot (e.g. ".mikmap").
+std::vector<ProjectFile> ListDirByExt(const std::string& dir, const std::string& ext) {
   std::vector<ProjectFile> out;
   std::error_code ec;
-  for (auto& e : fs::directory_iterator(ProjectsDir(), ec)) {
-    if (!e.is_regular_file(ec) || e.path().extension() != ".mikmap") continue;
+  for (auto& e : fs::directory_iterator(dir, ec)) {
+    if (!e.is_regular_file(ec) || e.path().extension() != ext) continue;
     ProjectFile pf; pf.path = e.path().string(); pf.name = e.path().stem().string();
     auto t = fs::last_write_time(e.path(), ec);
     // file_clock's epoch differs between standard libraries; rebase onto system_clock so the date is right everywhere
@@ -377,6 +388,16 @@ std::vector<ProjectFile> ListProjects() {
   std::sort(out.begin(), out.end(), [](const ProjectFile& a, const ProjectFile& b) { return a.mtime > b.mtime; });
   return out;
 }
+
+std::vector<ProjectFile> ListProjects() { return ListDirByExt(ProjectsDir(), ".mikmap"); }
+
+// F8/G8: presets and calibration profiles are portable show config, not project content and not machine settings
+// — so they get their own subfolders under ProjectsDir() (not ConfigDir(), which is machine-specific) and their
+// own extensions, distinct from ".mikmap" so ListProjects()/the Open-project dialog never picks them up.
+std::string PresetsDir() { return (fs::path(ProjectsDir()) / "Presets").string(); }
+std::vector<ProjectFile> ListPresets() { return ListDirByExt(PresetsDir(), ".mikmap-preset"); }
+std::string CalibDir() { return (fs::path(ProjectsDir()) / "Calibration").string(); }
+std::vector<ProjectFile> ListCalibProfiles() { return ListDirByExt(CalibDir(), ".mikmap-calib"); }
 
 // ───────────── project ─────────────
 static std::string Snapshot() { gForDirty = true; std::string s = Serialize(A).dump(0); gForDirty = false; return s; }
@@ -423,6 +444,50 @@ bool LoadProject(const std::string& path, std::string& err) {
   }
   A.projectPath = path; A.projectName = fs::path(path).stem().string();
   MarkSaved();
+  return true;
+}
+
+// F8: one Screen (device/resolution/slices/masks) as its own file, independent of any project — load it into a
+// screen in a different show later. Own "format" version: this is a different file format from .mikmap, not a
+// slice of it, so it must not be assumed to move in lockstep with kFormat.
+bool SaveOutputPreset(const std::string& path, const Screen& s, std::string& err) {
+  JsonValue root = JsonValue::object();
+  root.set("format", 1); root.set("app", "MikMap-preset");
+  root.set("screen", ScreenJ(s));
+  return WriteAtomic(path, root.dump(2), err);
+}
+bool LoadOutputPreset(const std::string& path, Screen& out, std::string& err) {
+  bool ok; std::string text = ReadFile(path, ok);
+  if (!ok) { err = "cannot open file"; return false; }
+  JsonValue root; std::string perr;
+  if (!JsonValue::parse(text, root, perr)) { err = "invalid JSON: " + perr; return false; }
+  if (!root["screen"].isObject()) { err = "not a MikMap output preset"; return false; }
+  out = ReadScreen(root["screen"]);
+  return true;
+}
+
+// G8: the 4 calibration correspondence points + ROI/noise, as their own file. src/calib.cpp refits H_s from these
+// points at point of use (never caches a matrix), so a "calibration profile" is the points themselves, matching
+// how src/ already treats calibration everywhere else — see .claude/CLAUDE.md's note on this being intentional.
+bool SaveCalibProfile(const std::string& path, const std::vector<Calib>& calib, const ImVec2 roi[4], float noise, float blobSize, std::string& err) {
+  JsonValue root = JsonValue::object();
+  root.set("format", 1); root.set("app", "MikMap-calib");
+  JsonValue cal = JsonValue::array(); for (auto& c : calib) cal.push(CalibJ(c));
+  root.set("calib", cal);
+  JsonValue roiJ = JsonValue::array(); for (int i = 0; i < 4; ++i) roiJ.push(V2(roi[i]));
+  root.set("roi", roiJ);
+  root.set("noise", noise); root.set("blobSize", blobSize);
+  return WriteAtomic(path, root.dump(2), err);
+}
+bool LoadCalibProfile(const std::string& path, std::vector<Calib>& calib, ImVec2 roi[4], float& noise, float& blobSize, std::string& err) {
+  bool ok; std::string text = ReadFile(path, ok);
+  if (!ok) { err = "cannot open file"; return false; }
+  JsonValue root; std::string perr;
+  if (!JsonValue::parse(text, root, perr)) { err = "invalid JSON: " + perr; return false; }
+  if (!root["calib"].isArray() || root["calib"].size() != 4) { err = "not a MikMap calibration profile"; return false; }
+  calib.clear(); for (auto& co : root["calib"].arrayItems()) calib.push_back(ReadCalibPoint(co));
+  if (root["roi"].isArray() && root["roi"].size() == 4) for (int i = 0; i < 4; ++i) roi[i] = ReadV2(root["roi"].at(i));
+  noise = F(root, "noise", noise); blobSize = F(root, "blobSize", blobSize);
   return true;
 }
 
@@ -533,6 +598,22 @@ std::string DoSave(bool asCopy) {
     return ok ? "Saved copy: " + fs::path(path).filename().string() : "Save failed: " + err;
   }
   return SaveProject(path, err) ? "Saved: " + fs::path(path).filename().string() : "Save failed: " + err;
+}
+
+// F8: convenience for the "Save preset"/"Load preset" buttons on a Screen's properties panel — same
+// toast-message convention as DoSave above. Always overwrites the file for this screen's current name (one
+// preset per name, like re-saving a project), rather than stamping a new file on every save.
+std::string DoSaveOutputPreset(const Screen& s) {
+  std::string base; for (char ch : (s.name.empty() ? std::string("Preset") : s.name)) base += std::strchr("<>:\"/\\|?*", ch) ? '_' : ch;
+  std::string err, path = (fs::path(PresetsDir()) / (base + ".mikmap-preset")).string();
+  return SaveOutputPreset(path, s, err) ? "Saved preset: " + fs::path(path).filename().string() : "Save failed: " + err;
+}
+
+// G8: convenience for "Save profile" on the Sensor screen — calibration has no natural name to key a file on
+// (unlike a Screen), so every save stamps a new file; old profiles stay around to load from.
+std::string DoSaveCalibProfile() {
+  std::string err, path = (fs::path(CalibDir()) / ("Calibration-" + Stamp() + ".mikmap-calib")).string();
+  return SaveCalibProfile(path, A.calib, A.roi, A.noise, A.blobSize, err) ? "Saved profile: " + fs::path(path).filename().string() : "Save failed: " + err;
 }
 
 // ───────────── machine settings ─────────────

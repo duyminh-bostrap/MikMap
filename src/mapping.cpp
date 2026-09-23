@@ -993,6 +993,45 @@ static void PropsPanel(ImRect r) {
       if (oh.click) ToggleOutput(glfwWin(), A.outMonitor);
       y += 30 + 8;
     }
+    // F8: save/load this screen (device/resolution/slices/masks) as its own file, independent of the project.
+    HLine(ox, ox + W, oy + y, K(pal::g2a)); y += 1 + 8;
+    Text(x, oy + y + 5, MONO_R, 9, K(pal::t88), "OUTPUT PRESET", 0.09f);
+    y += 9 + 4;
+    {
+      float gap = 6, bw = (w - gap) * 0.5f;
+      ImRect sb(x, oy + y, x + bw, oy + y + 26), lb(x + bw + gap, oy + y, x + w, oy + y + 26);
+      Hit sh = HitR(sb), lh = HitR(lb);
+      Box(sb, K(pal::g1c), K(pal::g22), 3);
+      Icon("save", ImVec2(sb.Min.x + 12, (sb.Min.y + sb.Max.y) * 0.5f), 12, K(pal::t88));
+      Text(sb.Min.x + 24, (sb.Min.y + sb.Max.y) * 0.5f, UI_S, 10, K(pal::t88), "Save preset");
+      if (sh.hover) CursorHand();
+      if (sh.click) A.notify(DoSaveOutputPreset(*sc));
+      Box(lb, K(pal::g1c), K(pal::g22), 3);
+      Icon("folder-open", ImVec2(lb.Min.x + 12, (lb.Min.y + lb.Max.y) * 0.5f), 12, K(pal::t88));
+      Text(lb.Min.x + 24, (lb.Min.y + lb.Max.y) * 0.5f, UI_S, 10, K(pal::t88), "Load preset");
+      if (lh.hover) CursorHand();
+      if (lh.click) {
+        std::vector<MenuItem> mi;
+        auto presets = ListPresets();
+        if (presets.empty()) { MenuItem it; it.label = "No saved presets"; it.disabled = true; mi.push_back(it); }
+        for (auto& pf : presets) {
+          MenuItem it; it.label = pf.name; it.icon = "folder-open";
+          it.run = [path = pf.path, name = pf.name, scId = sc->id] {
+            Screen loaded; std::string err;
+            if (!LoadOutputPreset(path, loaded, err)) { A.notify("Load failed: " + err); return; }
+            for (auto& s : A.screens) if (s.id == scId) {
+              loaded.id = s.id;   // keep this screen's identity — selSc/selSl and any refs to it must stay valid
+              s = loaded;
+              A.selSl = s.slices.empty() ? "" : s.slices[0].id; A.selMk.clear(); A.selKind = -1;
+            }
+            A.notify("Loaded preset: " + name);
+          };
+          mi.push_back(it);
+        }
+        A.openCtx(ImVec2(lb.Min.x, lb.Max.y + 4), mi);
+      }
+      y += 26 + 8;
+    }
   }
   sa.End(W, y + 8);
 }

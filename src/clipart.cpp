@@ -21,6 +21,7 @@
 #endif
 
 #include "stb_image.h"   // declarations only; the implementation lives in main.cpp
+#include "imgui_impl_opengl3.h"   // A4: ImGui_ImplOpenGL3_RenderDrawData, to render a thumbnail into an FBO
 #include <map>
 #include <string>
 
@@ -70,8 +71,29 @@ static PFN_glBlendEquation p_glBlendEquation = nullptr;
 #define GL_FUNC_REVERSE_SUBTRACT 0x800B
 #endif
 
+// ── A4: FBO functions for cached thumbnails. Also GL 1.4+/framebuffer-object, not in the Win32 gl.h 1.1 header —
+// loaded the same way and at the same call site as glBlendEquation above.
+typedef void(APIENTRY* PFN_glGenFramebuffers)(GLsizei, GLuint*);
+typedef void(APIENTRY* PFN_glBindFramebuffer)(GLenum, GLuint);
+typedef void(APIENTRY* PFN_glFramebufferTexture2D)(GLenum, GLenum, GLenum, GLuint, GLint);
+typedef GLenum(APIENTRY* PFN_glCheckFramebufferStatus)(GLenum);
+static PFN_glGenFramebuffers p_glGenFramebuffers = nullptr;
+static PFN_glBindFramebuffer p_glBindFramebuffer = nullptr;
+static PFN_glFramebufferTexture2D p_glFramebufferTexture2D = nullptr;
+static PFN_glCheckFramebufferStatus p_glCheckFramebufferStatus = nullptr;
+#ifndef GL_FRAMEBUFFER
+#define GL_FRAMEBUFFER 0x8D40
+#define GL_COLOR_ATTACHMENT0 0x8CE0
+#define GL_FRAMEBUFFER_COMPLETE 0x8CD5
+#define GL_FRAMEBUFFER_BINDING 0x8CA6
+#endif
+
 void InitBlendModes(void* (*getProc)(const char*)) {
   p_glBlendEquation = (PFN_glBlendEquation)getProc("glBlendEquation");
+  p_glGenFramebuffers = (PFN_glGenFramebuffers)getProc("glGenFramebuffers");
+  p_glBindFramebuffer = (PFN_glBindFramebuffer)getProc("glBindFramebuffer");
+  p_glFramebufferTexture2D = (PFN_glFramebufferTexture2D)getProc("glFramebufferTexture2D");
+  p_glCheckFramebufferStatus = (PFN_glCheckFramebufferStatus)getProc("glCheckFramebufferStatus");
 }
 
 int BlendIndex(const std::string& name) {
@@ -189,6 +211,65 @@ static const MediaTex* GetMedia(const std::string& path) {
   return &gMedia[path];
 }
 void PreloadMedia(const std::string& path) { GetMedia(path); }   // do the disk read + upload at load time, not mid-frame
+
+// ── A4: cached clip thumbnails ──
+// Rendering the real generator art into every deck cell every frame cost ~16s/frame (S_STARS worst case, ~40
+// cells) — so each Clip gets its own small texture, redrawn into an FBO at most a few times a second and budgeted
+// across frames (ThumbBudget below, spent by the deck grid loop in deck.cpp), never all at once.
+static const int kThumbW = 128, kThumbH = 72;
+static int gThumbBudget = 0;
+void ResetThumbBudget(int n) { gThumbBudget = n; }
+bool ThumbBudgetLeft() { return gThumbBudget > 0; }
+
+void RenderClipThumbnail(Clip& c) {
+  if (!p_glGenFramebuffers || !p_glBindFramebuffer || !p_glFramebufferTexture2D) return;   // FBO funcs failed to load
+  --gThumbBudget;
+  if (c.thumbTex == 0) {
+    glGenTextures(1, &c.thumbTex);
+    glBindTexture(GL_TEXTURE_2D, c.thumbTex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR); glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE); glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, kThumbW, kThumbH, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+  }
+  static GLuint sFbo = 0;
+  if (sFbo == 0) p_glGenFramebuffers(1, &sFbo);   // one scratch FBO reused for every clip, never deleted (app lifetime)
+
+  GLint prevFbo = 0, prevViewport[4];
+  glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevFbo);
+  glGetIntegerv(GL_VIEWPORT, prevViewport);
+  p_glBindFramebuffer(GL_FRAMEBUFFER, sFbo);
+  p_glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, c.thumbTex, 0);
+  bool ok = !p_glCheckFramebufferStatus || p_glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+  if (ok) {
+    glViewport(0, 0, kThumbW, kThumbH);
+    glClearColor(0, 0, 0, 0);
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    // Build a standalone ImDrawList (see ImGui::GetDrawListSharedData() docs) instead of the real window's g.dl,
+    // so this offscreen pass cannot leak vertices into — or pick up clip rects/state from — the frame being built.
+    ImDrawList dl(ImGui::GetDrawListSharedData());
+    dl._ResetForNewFrame();
+    dl.PushTexture(ImGui::GetIO().Fonts->TexRef);
+    dl.PushClipRectFullScreen();
+    ImDrawList* prevDl = g.dl; const WarpMap* prevWarp = g.warp; float prevAlpha = g.alpha;
+    g.dl = &dl; g.warp = nullptr; g.alpha = 1.f;
+    DrawClipContent(ImRect(0, 0, (float)kThumbW, (float)kThumbH), c, (float)g.time * 1.2f, 300.f, 1.f, 0.35f);
+    g.dl = prevDl; g.warp = prevWarp; g.alpha = prevAlpha;
+    dl.PopClipRect();
+    dl.PopTexture();
+
+    if (dl.VtxBuffer.Size > 0) {
+      ImDrawData dd; dd.Clear();
+      dd.DisplayPos = ImVec2(0, 0); dd.DisplaySize = ImVec2((float)kThumbW, (float)kThumbH); dd.FramebufferScale = ImVec2(1, 1);
+      dd.AddDrawList(&dl);
+      dd.Valid = true;
+      ImGui_ImplOpenGL3_RenderDrawData(&dd);
+    }
+  }
+  p_glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)prevFbo);
+  glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
+  c.thumbAt = g.time;
+}
 
 // ── clip FX that can be done on vector art (E5 hue shift · E8 mirror · E10 strobe) ──
 // Every place that shows a clip (Preview, Live Output, projector window) goes through DrawClipContent, so an effect
