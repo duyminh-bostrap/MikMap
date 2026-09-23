@@ -28,43 +28,152 @@ static void QuadOf(Slice& s, float x, float y, float w, float h) {
   s.q[0] = {x, y}; s.q[1] = {x + w, y}; s.q[2] = {x + w, y + h}; s.q[3] = {x, y + h};
 }
 
+// ── keystone: unit square → the 4 corner pins ──
+// A true perspective map (closed-form square-to-quad homography, Heckbert), same model as engine WarpCornerPin and
+// Resolume's perspective corners: straight lines stay straight and spacing foreshortens the way a tilted projector's
+// does. Cheap enough to evaluate per vertex. A concave or bow-tie quad has no sane projective map (content would fold
+// through infinity), so it falls back to bilinear — dragging a corner through a bad shape degrades instead of exploding.
+namespace {
+ImVec2 Vadd(ImVec2 p, ImVec2 q) { return ImVec2(p.x + q.x, p.y + q.y); }
+ImVec2 Vsub(ImVec2 p, ImVec2 q) { return ImVec2(p.x - q.x, p.y - q.y); }
+ImVec2 Vmul(ImVec2 p, float k) { return ImVec2(p.x * k, p.y * k); }
+ImVec2 Bilerp(ImVec2 p00, ImVec2 p10, ImVec2 p11, ImVec2 p01, float u, float v) {
+  return ImVec2((1 - u) * (1 - v) * p00.x + u * (1 - v) * p10.x + u * v * p11.x + (1 - u) * v * p01.x,
+                (1 - u) * (1 - v) * p00.y + u * (1 - v) * p10.y + u * v * p11.y + (1 - u) * v * p01.y);
+}
+
+struct Keystone {
+  const ImVec2* q;
+  bool proj = false;
+  float a = 0, b = 0, c = 0, d = 0, e = 0, f = 0, g = 0, h = 0;   // x = (a u + b v + c) / (g u + h v + 1), y likewise
+  explicit Keystone(const ImVec2 quad[4]) : q(quad) {
+    int pos = 0, neg = 0;
+    for (int i = 0; i < 4; ++i) {
+      ImVec2 e0 = Vsub(q[(i + 1) % 4], q[i]), e1 = Vsub(q[(i + 2) % 4], q[(i + 1) % 4]);
+      float cr = e0.x * e1.y - e0.y * e1.x;
+      if (cr > 1e-3f) ++pos; else if (cr < -1e-3f) ++neg;
+    }
+    if (pos != 4 && neg != 4) return;
+    float sx = q[0].x - q[1].x + q[2].x - q[3].x, sy = q[0].y - q[1].y + q[2].y - q[3].y;
+    if (std::fabs(sx) < 1e-4f && std::fabs(sy) < 1e-4f) {   // parallelogram: plain affine
+      a = q[1].x - q[0].x; b = q[2].x - q[1].x; c = q[0].x; d = q[1].y - q[0].y; e = q[2].y - q[1].y; f = q[0].y;
+    } else {
+      float dx1 = q[1].x - q[2].x, dx2 = q[3].x - q[2].x, dy1 = q[1].y - q[2].y, dy2 = q[3].y - q[2].y;
+      float den = dx1 * dy2 - dx2 * dy1;
+      if (std::fabs(den) < 1e-6f) return;
+      g = (sx * dy2 - dx2 * sy) / den; h = (dx1 * sy - sx * dy1) / den;
+      a = q[1].x - q[0].x + g * q[1].x; b = q[3].x - q[0].x + h * q[3].x; c = q[0].x;
+      d = q[1].y - q[0].y + g * q[1].y; e = q[3].y - q[0].y + h * q[3].y; f = q[0].y;
+    }
+    proj = true;
+  }
+  ImVec2 Fwd(ImVec2 l) const {
+    if (proj) { float w = g * l.x + h * l.y + 1; return ImVec2((a * l.x + b * l.y + c) / w, (d * l.x + e * l.y + f) / w); }
+    return Bilerp(q[0], q[1], q[2], q[3], l.x, l.y);
+  }
+  // output point → keystone-local point; works outside the unit square too (mesh points may sit beyond the quad)
+  bool Inv(ImVec2 p, ImVec2& l) const {
+    if (proj) {
+      float A = e - f * h, B = c * h - b, C = b * f - c * e, D = f * g - d, E = a - c * g, F = c * d - a * f;
+      float G = d * h - e * g, H = b * g - a * h, I = a * e - b * d;
+      float w = G * p.x + H * p.y + I;
+      if (std::fabs(w) < 1e-9f) return false;
+      l = ImVec2((A * p.x + B * p.y + C) / w, (D * p.x + E * p.y + F) / w);
+      return g * l.x + h * l.y + 1 > 1e-4f;   // beyond the horizon line: no point in front maps there
+    }
+    ImVec2 t(0.5f, 0.5f);   // bilinear fallback: Newton on P(u,v) = p
+    for (int it = 0; it < 24; ++it) {
+      ImVec2 r = Vsub(Fwd(t), p);
+      if (r.x * r.x + r.y * r.y < 1e-6f) { l = t; return true; }
+      ImVec2 du = Vadd(Vmul(Vsub(q[1], q[0]), 1 - t.y), Vmul(Vsub(q[2], q[3]), t.y));
+      ImVec2 dv = Vadd(Vmul(Vsub(q[3], q[0]), 1 - t.x), Vmul(Vsub(q[2], q[1]), t.x));
+      float det = du.x * dv.y - du.y * dv.x;
+      if (std::fabs(det) < 1e-9f) return false;
+      t.x -= (r.x * dv.y - r.y * dv.x) / det; t.y -= (du.x * r.y - du.y * r.x) / det;
+    }
+    return false;
+  }
+};
+}  // namespace
+
 static std::vector<float> Uni(int n) { std::vector<float> v; for (int i = 1; i < std::max(2, n); ++i) v.push_back((float)i / n); return v; }
 static void MeshUV(const Slice& s, std::vector<float>& us, std::vector<float>& vs) {
   us = s.meshU.empty() ? Uni(s.meshCols) : s.meshU; vs = s.meshV.empty() ? Uni(s.meshRows) : s.meshV;
   std::sort(us.begin(), us.end()); std::sort(vs.begin(), vs.end());
 }
-static std::vector<std::vector<ImVec2>> MeshGrid(const Slice& s) {
+// grid line positions including both borders: {0, splits..., 1}
+static void MeshLines(const Slice& s, std::vector<float>& us, std::vector<float>& vs) {
   std::vector<float> uu, vv; MeshUV(s, uu, vv);
-  std::vector<float> us = {0}, vs = {0};
-  us.insert(us.end(), uu.begin(), uu.end()); us.push_back(1); vs.insert(vs.end(), vv.begin(), vv.end()); vs.push_back(1);
-  if (s.meshPts.size() == vs.size() && !s.meshPts.empty() && s.meshPts[0].size() == us.size()) return s.meshPts;
+  us = {0}; us.insert(us.end(), uu.begin(), uu.end()); us.push_back(1);
+  vs = {0}; vs.insert(vs.end(), vv.begin(), vv.end()); vs.push_back(1);
+}
+static bool LocalSized(const Slice& s, size_t rows, size_t cols) { return s.meshLocal.size() == rows && !s.meshLocal.empty() && s.meshLocal[0].size() == cols; }
+// mesh vertices in keystone-local space (the stored grid, or the undeformed one if none matches the current splits)
+static std::vector<std::vector<ImVec2>> LocalGrid(const Slice& s) {
+  std::vector<float> us, vs; MeshLines(s, us, vs);
+  if (LocalSized(s, vs.size(), us.size())) return s.meshLocal;
   std::vector<std::vector<ImVec2>> g;
-  for (float v : vs) { std::vector<ImVec2> row; for (float u : us) row.push_back(ImVec2(
-      (1 - u) * (1 - v) * s.q[0].x + u * (1 - v) * s.q[1].x + u * v * s.q[2].x + (1 - u) * v * s.q[3].x,
-      (1 - u) * (1 - v) * s.q[0].y + u * (1 - v) * s.q[1].y + u * v * s.q[2].y + (1 - u) * v * s.q[3].y)); g.push_back(row); }
+  for (float v : vs) { std::vector<ImVec2> row; for (float u : us) row.push_back(ImVec2(u, v)); g.push_back(row); }
   return g;
 }
+// the same vertices in output pixels — what the stage draws and hit-tests
+static std::vector<std::vector<ImVec2>> MeshGrid(const Slice& s) {
+  Keystone k(s.q);
+  auto g = LocalGrid(s);
+  for (auto& row : g) for (auto& p : row) p = k.Fwd(p);
+  return g;
+}
+// output-space outline of the slice as the audience sees it (quad, or the mesh border once warped)
+static std::vector<ImVec2> SliceOutline(const Slice& s) {
+  if (s.warp == 0) return {s.q[0], s.q[1], s.q[2], s.q[3]};
+  auto g = MeshGrid(s);
+  int R = (int)g.size(), C = (int)g[0].size();
+  std::vector<ImVec2> o;
+  for (int c = 0; c < C; ++c) o.push_back(g[0][c]);
+  for (int r = 1; r < R; ++r) o.push_back(g[r][C - 1]);
+  for (int c = C - 2; c >= 0; --c) o.push_back(g[R - 1][c]);
+  for (int r = R - 2; r > 0; --r) o.push_back(g[r][0]);
+  return o;
+}
 
-// unit square (u,v) → a point in the screen's 1920x1080 output space, honouring corner pin or mesh warp
+// unit square (u,v) → a point in the screen's 1920x1080 output space: mesh warp (if any) in keystone space, then keystone
 ImVec2 SliceMapUV(const Slice& s, float u, float v) {
-  if (s.warp != 0) {
-    auto gr = MeshGrid(s);
-    std::vector<float> uu, vv;
-    MeshUV(s, uu, vv);
-    std::vector<float> us = {0}, vs = {0};
-    us.insert(us.end(), uu.begin(), uu.end()); us.push_back(1);
-    vs.insert(vs.end(), vv.begin(), vv.end()); vs.push_back(1);
-    int ci = 0, ri = 0;
-    while (ci + 2 < (int)us.size() && u >= us[ci + 1]) ++ci;
-    while (ri + 2 < (int)vs.size() && v >= vs[ri + 1]) ++ri;
-    float lu = (u - us[ci]) / std::max(1e-6f, us[ci + 1] - us[ci]);
-    float lv = (v - vs[ri]) / std::max(1e-6f, vs[ri + 1] - vs[ri]);
-    const ImVec2& a = gr[ri][ci], & b = gr[ri][ci + 1], & c2 = gr[ri + 1][ci + 1], & d = gr[ri + 1][ci];
-    return ImVec2((1 - lu) * (1 - lv) * a.x + lu * (1 - lv) * b.x + lu * lv * c2.x + (1 - lu) * lv * d.x,
-                  (1 - lu) * (1 - lv) * a.y + lu * (1 - lv) * b.y + lu * lv * c2.y + (1 - lu) * lv * d.y);
+  Keystone k(s.q);
+  if (s.warp == 0) return k.Fwd(ImVec2(u, v));
+  std::vector<float> us, vs; MeshLines(s, us, vs);
+  bool stored = LocalSized(s, vs.size(), us.size());
+  auto at = [&](int r, int c) { return stored ? s.meshLocal[r][c] : ImVec2(us[c], vs[r]); };
+  int ci = 0, ri = 0;
+  while (ci + 2 < (int)us.size() && u >= us[ci + 1]) ++ci;
+  while (ri + 2 < (int)vs.size() && v >= vs[ri + 1]) ++ri;
+  float lu = (u - us[ci]) / std::max(1e-6f, us[ci + 1] - us[ci]);
+  float lv = (v - vs[ri]) / std::max(1e-6f, vs[ri + 1] - vs[ri]);
+  return k.Fwd(Bilerp(at(ri, ci), at(ri, ci + 1), at(ri + 1, ci + 1), at(ri + 1, ci), lu, lv));
+}
+
+void SliceOutputBounds(const Slice& s, ImVec2& mn, ImVec2& mx) {
+  mn = ImVec2(1e9f, 1e9f); mx = ImVec2(-1e9f, -1e9f);
+  auto add = [&](ImVec2 p) { mn.x = std::min(mn.x, p.x); mn.y = std::min(mn.y, p.y); mx.x = std::max(mx.x, p.x); mx.y = std::max(mx.y, p.y); };
+  for (int i = 0; i < 4; ++i) add(s.q[i]);
+  if (s.warp != 0) for (auto& row : MeshGrid(s)) for (auto& p : row) add(p);   // interior points may bulge past the quad
+}
+
+void MigrateAbsoluteMesh(Slice& s, const std::vector<std::vector<ImVec2>>& abs) {
+  s.meshLocal.clear();
+  std::vector<float> us, vs; MeshLines(s, us, vs);
+  if (abs.size() != vs.size() || abs.empty() || abs[0].size() != us.size()) return;   // old code ignored mismatched grids too
+  size_t R = abs.size(), C = abs[0].size();
+  // In mesh mode the old renderer drew the grid and ignored q, so its corners ARE what the audience saw: adopt them as
+  // the keystone, then express every other vertex relative to it. In corner-pin mode q was what showed; keep it.
+  if (s.warp != 0) { s.q[0] = abs[0][0]; s.q[1] = abs[0][C - 1]; s.q[2] = abs[R - 1][C - 1]; s.q[3] = abs[R - 1][0]; }
+  Keystone k(s.q);
+  std::vector<std::vector<ImVec2>> loc(R, std::vector<ImVec2>(C));
+  for (size_t r = 0; r < R; ++r) for (size_t c = 0; c < C; ++c) {
+    bool corner = (r == 0 || r == R - 1) && (c == 0 || c == C - 1);
+    if (corner) loc[r][c] = ImVec2(us[c], vs[r]);
+    else if (!k.Inv(abs[r][c], loc[r][c])) return;   // unreachable point: fall back to an undeformed grid
   }
-  return ImVec2((1 - u) * (1 - v) * s.q[0].x + u * (1 - v) * s.q[1].x + u * v * s.q[2].x + (1 - u) * v * s.q[3].x,
-                (1 - u) * (1 - v) * s.q[0].y + u * (1 - v) * s.q[1].y + u * v * s.q[2].y + (1 - u) * v * s.q[3].y);
+  s.meshLocal = loc;
 }
 
 ImVec2 WarpMap::Map(float canvasX, float canvasY) const {
@@ -89,7 +198,9 @@ void App::addScreen() {
 void App::addSlice() { pushHist();
   Screen* sc = curScreen(); if (!sc) return;
   Slice sl; sl.id = uid("slice"); sl.name = "Slice " + std::to_string(sc->slices.size() + 1);
-  sl.ix = 200; sl.iy = 100; sl.iw = 800; sl.ih = 600; QuadOf(sl, 200, 100, 800, 600);
+  // input rect defaults to the whole canvas (matches Slice's own struct defaults) — a new slice should show
+  // everything until the operator deliberately crops it, not an arbitrary pre-cropped corner
+  QuadOf(sl, 200, 100, 800, 600);
   selSl = sl.id; selMk.clear(); selKind = -1;
   sc->slices.push_back(sl);
 }
@@ -113,7 +224,27 @@ void App::deleteSlice() { pushHist();
   sc->slices.erase(std::remove_if(sc->slices.begin(), sc->slices.end(), [&](const Slice& s) { return s.id == id; }), sc->slices.end());
   selSl = sc->slices[0].id; selMk.clear(); selKind = -1;
 }
-void App::resetWarp() { pushHist(); if (Slice* s = curSlice()) QuadOf(*s, (float)s->ix, (float)s->iy, (float)s->iw, (float)s->ih); }
+void App::resetWarp() { pushHist(); if (Slice* s = curSlice()) QuadOf(*s, 0, 0, 1920, 1080); }
+void App::resetMeshWarp() { pushHist(); if (Slice* s = curSlice()) s->meshLocal.clear(); }
+void App::resetAllWarping() {
+  pushHist(); if (Slice* s = curSlice()) {
+    QuadOf(*s, 0, 0, 1920, 1080);
+    s->meshLocal.clear(); s->meshU.clear(); s->meshV.clear();
+    s->meshCols = 4; s->meshRows = 3;
+  }
+}
+// Resolume-style explicit match (the old resetWarp behaviour): output quad takes the input rect's shape/position.
+// Kept as its own action so "reset" always means "back to fullscreen default", never "copy the crop".
+void App::matchOutputToInput() { pushHist(); if (Slice* s = curSlice()) QuadOf(*s, (float)s->ix, (float)s->iy, (float)s->iw, (float)s->ih); }
+// Resolume calls this "Whole area": the input rect snaps back to covering the entire composition canvas —
+// matches a brand-new slice's own default (Slice struct defaults / NewBlankProject), so an operator who cropped
+// by mistake gets back to exactly what they started with, not some other arbitrary rectangle.
+void App::resetInputRect() {
+  pushHist(); if (Slice* s = curSlice()) {
+    int cw = canvasW > 0 ? canvasW : 1920, ch = canvasH > 0 ? canvasH : 1080;
+    s->ix = 0; s->iy = 0; s->iw = cw; s->ih = ch;
+  }
+}
 void App::deleteScreen(const std::string& id) { pushHist();
   if (screens.size() <= 1) return;
   screens.erase(std::remove_if(screens.begin(), screens.end(), [&](const Screen& s) { return s.id == id; }), screens.end());
@@ -186,7 +317,11 @@ std::vector<MenuItem> App::sliceMenu(const std::string& scId, const std::string&
     m.push_back(mk("Move up", "arrow-up", i <= 0, false, [this, scId, slId] { moveSlice(scId, slId, -1); }));
     m.push_back(mk("Move down", "arrow-down", i >= n - 1, false, [this, scId, slId] { moveSlice(scId, slId, 1); }));
     m.push_back(mk("Duplicate slice", "copy", false, false, [this, scId, slId] { dupSlice(scId, slId); }));
+    m.push_back(mk("Whole area (input)", "maximize", false, false, [this, sel] { sel(); resetInputRect(); }));
+    m.push_back(mk("Match output to input", "frame", false, false, [this, sel] { sel(); matchOutputToInput(); }));
     m.push_back(mk("Reset warp", "rotate-ccw", false, false, [this, sel] { sel(); resetWarp(); }));
+    m.push_back(mk("Reset mesh warp", "grid-3x3", false, false, [this, sel] { sel(); resetMeshWarp(); }));
+    m.push_back(mk("Reset all warping", "rotate-ccw", false, false, [this, sel] { sel(); resetAllWarping(); }));
     m.push_back(mk("Add mask", "scissors", false, false, [this, sel] { sel(); addMask(); }));
     m.push_back(mk("Delete slice", "trash-2", n <= 1, true, [this, scId, slId] { removeSlice(scId, slId); }));
   }
@@ -410,7 +545,42 @@ static void RailPopover(ImRect rail) {
 }
 
 // ───────────────────────── stage ─────────────────────────
-static int dragKind = 0, dragIdx = 0;  // 1 corner, 2 input, 3 mask point
+static int dragKind = 0, dragIdx = 0;  // 1 corner, 2 input, 3 mask point, 4 mesh point (row*100+col)
+static ImVec2 dragOff;                  // grabbed point minus cursor (output px), so grabbing off-centre doesn't jump
+
+// ── stage view ──
+// Corner pins and mesh points can sit far outside the 1920x1080 output (-4000..8000), so the stage is a free pan/zoom
+// over output space — zoom below 100% to reach them — rather than a scroll clamped to the canvas box.
+constexpr float kMinZoom = 0.2f, kMaxZoom = 6.f;
+static ImRect StageArea(ImRect r) { return ImRect(r.Min.x, r.Min.y + 44, r.Max.x, r.Max.y); }
+static float StageBaseW(ImRect area) {   // canvas width in px at 100%
+  float innerW = area.GetWidth() - 20, innerH = area.GetHeight() - 20;
+  return std::min(A.mapFocus ? innerW : std::min(innerW, 960.f), innerH * 16.f / 9.f);
+}
+static void Grow(ImVec2& mn, ImVec2& mx, ImVec2 p) { mn.x = std::min(mn.x, p.x); mn.y = std::min(mn.y, p.y); mx.x = std::max(mx.x, p.x); mx.y = std::max(mx.y, p.y); }
+// the output box plus every visible slice/mask point on this screen, however far outside the box it sits
+static void StageContentBox(const Screen& sc, ImVec2& mn, ImVec2& mx) {
+  mn = ImVec2(0, 0); mx = ImVec2(1920, 1080);
+  for (auto& s : sc.slices) {
+    if (!s.visible) continue;
+    ImVec2 a, b; SliceOutputBounds(s, a, b); Grow(mn, mx, a); Grow(mn, mx, b);
+    for (auto& m : s.masks) for (auto& p : m.pts) Grow(mn, mx, p);
+  }
+}
+// zoom + centre so the output-space box [mn,mx] fills `fill` of the stage
+static void FrameBox(ImRect area, ImVec2 mn, ImVec2 mx, float fill, float zHi) {
+  float bw = StageBaseW(area);
+  if (bw <= 0) return;
+  float z = std::min((area.GetWidth() - 40) * fill / (std::max(1.f, mx.x - mn.x) * bw / 1920.f),
+                     (area.GetHeight() - 40) * fill / (std::max(1.f, mx.y - mn.y) * bw / 1920.f));
+  A.setZoom(std::clamp(z, kMinZoom, zHi), (mn.x + mx.x) * 0.5f / 1920.f, (mn.y + mx.y) * 0.5f / 1080.f);
+}
+static void FitAll(ImRect area, const Screen& sc) {
+  ImVec2 mn, mx; StageContentBox(sc, mn, mx);
+  if (mn.x >= 0 && mn.y >= 0 && mx.x <= 1920 && mx.y <= 1080) A.setZoom(1, 0.5f, 0.5f);   // all inside: plain 100%
+  else FrameBox(area, mn, mx, 1.f, 1.f);
+}
+static void ZoomToSlice(ImRect area, const Slice& s) { ImVec2 mn, mx; SliceOutputBounds(s, mn, mx); FrameBox(area, mn, mx, 0.85f, kMaxZoom); }
 
 static bool PointInPoly(ImVec2 p, const ImVec2* v, int n) {
   bool in = false;
@@ -483,12 +653,8 @@ static void Stage(ImRect r) {
       if (h.hover) CursorHand();
       if (h.click) {
         if (i == 0) A.setZoom(A.mapZ * 1.4f); else if (i == 1) A.setZoom(A.mapZ / 1.4f);
-        else if (i == 2 && sl) {
-          float mnx = 1e9f, mxx = -1e9f, mny = 1e9f, mxy = -1e9f;
-          for (int k = 0; k < 4; ++k) { mnx = std::min(mnx, sl->q[k].x); mxx = std::max(mxx, sl->q[k].x); mny = std::min(mny, sl->q[k].y); mxy = std::max(mxy, sl->q[k].y); }
-          float w = (mxx - mnx) / 1920.f, hh = (mxy - mny) / 1080.f;
-          A.setZoom(std::clamp(0.85f / std::max(w, hh), 2.f, 6.f), (mnx + mxx) * 0.5f / 1920.f, (mny + mxy) * 0.5f / 1080.f);
-        } else if (i == 3) A.setZoom(1, 0.5f, 0.5f);
+        else if (i == 2 && sl) ZoomToSlice(StageArea(r), *sl);
+        else if (i == 3 && sc) FitAll(StageArea(r), *sc);   // frames points dragged outside the output too
         else if (i == 4) A.mapFocus = !A.mapFocus;
       }
       zx += 20;
@@ -520,10 +686,17 @@ static void Stage(ImRect r) {
     if (rh.click) {
       std::vector<MenuItem> mi;
       auto mk = [](const char* l, const char* ic, bool dis, std::function<void()> f) { MenuItem x; x.label = l; x.icon = ic; x.disabled = dis; x.run = f; return x; };
-      mi.push_back(mk("Reset 4 corner pins", "frame", false, [] { A.pushHist(); A.resetWarp(); }));
-      bool noMesh = !A.curSlice() || A.curSlice()->warp == 0;
-      mi.push_back(mk("Reset mesh warp", "grid-3x3", noMesh, [] { if (Slice* s = A.curSlice()) { A.pushHist(); s->meshPts.clear(); s->meshU.clear(); s->meshV.clear(); } }));
-      mi.push_back(mk("Reset all warping", "rotate-ccw", false, [] { A.pushHist(); A.resetWarp(); if (Slice* s = A.curSlice()) { s->meshPts.clear(); s->meshU.clear(); s->meshV.clear(); } }));
+      if (A.mpage == 0) {
+        // Input Selection has nothing to do with corner pins/mesh (that's the OUTPUT warp) — offer the one reset
+        // that actually applies here instead of showing output actions out of context.
+        mi.push_back(mk("Whole area", "maximize", false, [] { A.resetInputRect(); }));
+      } else {
+        mi.push_back(mk("Reset 4 corner pins", "frame", false, [] { A.resetWarp(); }));
+        bool noMesh = !A.curSlice() || A.curSlice()->warp == 0;
+        mi.push_back(mk("Match output to input", "frame", false, [] { A.matchOutputToInput(); }));
+        mi.push_back(mk("Reset mesh warp", "grid-3x3", noMesh, [] { A.resetMeshWarp(); }));
+        mi.push_back(mk("Reset all warping", "rotate-ccw", false, [] { A.resetAllWarping(); }));
+      }
       A.openCtx(ImVec2(rb.Min.x - 60, rb.Max.y + 4), mi);
     }
     xr = hg.Min.x - 6;
@@ -532,74 +705,81 @@ static void Stage(ImRect r) {
     float rw = std::min(TextW(MONO_R, 10, ro.c_str()), std::max(0.f, xr - lim));
     TextEll(xr - rw, cy, rw, MONO_R, 10, K(pal::t88), ro.c_str());
   }  // canvas viewport
-  ImRect area(r.Min.x, r.Min.y + 44, r.Max.x, r.Max.y);
-  float innerW = area.GetWidth() - 20, innerH = area.GetHeight() - 20;
-  if (innerW < 60 || !sc) return;
-  // apply pending zoom request (centres the requested point, like the prototype)
-  auto canvasW = [&](float z) {
-    if (z > 1.001f) return z * innerW;
-    float w = A.mapFocus ? innerW : std::min(innerW, 960.f);
-    return std::min(w, innerH * 16.f / 9.f);
-  };
-  if (A.mapReq.valid) {
-    A.mapZ = std::clamp(A.mapReq.z, 1.f, 6.f);
-    A.mapCx = A.mapReq.cx; A.mapCy = A.mapReq.cy;
-    float cwn = canvasW(A.mapZ), chn = cwn * 9.f / 16.f;
-    A.mapScrollX = cwn * A.mapCx - area.GetWidth() * 0.5f + 10;
-    A.mapScrollY = chn * A.mapCy - area.GetHeight() * 0.5f + 10;
+  ImRect area = StageArea(r);
+  if (area.GetWidth() - 20 < 60 || !sc) return;
+  // View: the canvas centre sits at the stage centre, shifted by a free pan (mapScrollX/Y, px). Nothing clamps the view
+  // to the canvas box — points outside it must stay visible and grabbable — only the view centre is kept inside the
+  // -4000..8000 range the points themselves are limited to, so you can't pan off into nothing.
+  float baseW = StageBaseW(area);
+  ImVec2 ac((area.Min.x + area.Max.x) * 0.5f, (area.Min.y + area.Max.y) * 0.5f);
+  if (A.mapReq.valid) {   // centre the requested output point
+    A.mapZ = std::clamp(A.mapReq.z, kMinZoom, kMaxZoom);
+    float sn = baseW * A.mapZ / 1920.f;
+    A.mapScrollX = (A.mapReq.cx * 1920.f - 960.f) * sn; A.mapScrollY = (A.mapReq.cy * 1080.f - 540.f) * sn;
     A.mapReq.valid = false;
   }
-  float cw = canvasW(A.mapZ), ch = cw * 9.f / 16.f;
-  float contentW = cw + 20, contentH = ch + 20;
-  float maxSX = std::max(0.f, contentW - area.GetWidth()), maxSY = std::max(0.f, contentH - area.GetHeight());
   bool inArea = area.Contains(m) && !g.blocked;
   ImGuiIO& io = ImGui::GetIO();
-  if (inArea && !ImGui::GetIO().KeyAlt && io.MouseWheel != 0.f) A.mapScrollY -= io.MouseWheel * 48.f;
-  if (inArea && !ImGui::GetIO().KeyAlt && io.MouseWheelH != 0.f) A.mapScrollX -= io.MouseWheelH * 48.f;
-  A.mapScrollX = std::clamp(A.mapScrollX, 0.f, maxSX); A.mapScrollY = std::clamp(A.mapScrollY, 0.f, maxSY);
-  ImRect cv;
-  cv.Min.x = maxSX > 0 ? area.Min.x + 10 - A.mapScrollX : (area.Min.x + area.Max.x) * 0.5f - cw * 0.5f;
-  cv.Min.y = maxSY > 0 ? area.Min.y + 10 - A.mapScrollY : (area.Min.y + area.Max.y) * 0.5f - ch * 0.5f;
-  cv.Max = ImVec2(cv.Min.x + cw, cv.Min.y + ch);
-  float s = cw / 1920.f;
-  // alt+wheel zoom about the cursor, right-drag pan
-  if (inArea && io.KeyAlt && io.MouseWheel != 0.f) {
-    float cxn = std::clamp((m.x - cv.Min.x) / cw, 0.f, 1.f), cyn = std::clamp((m.y - cv.Min.y) / ch, 0.f, 1.f);
-    A.setZoom(A.mapZ * (io.MouseWheel > 0 ? 1.15f : 1.f / 1.15f), cxn, cyn);
+  float s = baseW * A.mapZ / 1920.f;   // px per output px
+  if (inArea && !io.KeyAlt && io.MouseWheel != 0.f) A.mapScrollY -= io.MouseWheel * 48.f;
+  if (inArea && !io.KeyAlt && io.MouseWheelH != 0.f) A.mapScrollX -= io.MouseWheelH * 48.f;
+  if (inArea && io.KeyAlt && io.MouseWheel != 0.f) {   // alt+wheel: zoom about the cursor (the point under it stays put)
+    ImVec2 p((m.x - ac.x + A.mapScrollX) / s + 960.f, (m.y - ac.y + A.mapScrollY) / s + 540.f);
+    A.mapZ = std::clamp(A.mapZ * (io.MouseWheel > 0 ? 1.15f : 1.f / 1.15f), kMinZoom, kMaxZoom);
+    s = baseW * A.mapZ / 1920.f;
+    A.mapScrollX = (p.x - 960.f) * s + (ac.x - m.x); A.mapScrollY = (p.y - 540.f) * s + (ac.y - m.y);
   }
-  static bool panning = false; static ImVec2 panM; static float panX, panY;
+  static bool panning = false; static ImVec2 panM; static float panX, panY;   // right-drag pan
+  bool rClick = false;   // right button released without dragging = context menu, not a pan
   if (inArea && ImGui::IsMouseClicked(1) && !panning) { panning = true; panM = m; panX = A.mapScrollX; panY = A.mapScrollY; }
   if (panning) {
-    if (ImGui::IsMouseDown(1)) { A.mapScrollX = std::clamp(panX - (m.x - panM.x), 0.f, maxSX); A.mapScrollY = std::clamp(panY - (m.y - panM.y), 0.f, maxSY); }
-    else panning = false;
+    if (ImGui::IsMouseDown(1)) { A.mapScrollX = panX - (m.x - panM.x); A.mapScrollY = panY - (m.y - panM.y); }
+    else { rClick = std::hypot(m.x - panM.x, m.y - panM.y) < 4.f; panning = false; }
   }
+  // dragging a point to (or past) the stage edge scrolls the view, so the point never slides under the side panels
+  if ((dragKind == 1 || dragKind == 3 || dragKind == 4) && ImGui::IsMouseDown(0)) {
+    const float edge = 28.f;
+    auto push = [&](float v, float lo, float hi) {
+      if (v < lo + edge) return -std::min(24.f, (lo + edge - v) * 0.35f);
+      if (v > hi - edge) return std::min(24.f, (v - (hi - edge)) * 0.35f);
+      return 0.f;
+    };
+    A.mapScrollX += push(m.x, area.Min.x, area.Max.x); A.mapScrollY += push(m.y, area.Min.y, area.Max.y);
+  }
+  A.mapScrollX = std::clamp(A.mapScrollX, (-4000.f - 960.f) * s, (8000.f - 960.f) * s);
+  A.mapScrollY = std::clamp(A.mapScrollY, (-4000.f - 540.f) * s, (8000.f - 540.f) * s);
+  A.mapCx = (960.f + A.mapScrollX / s) / 1920.f; A.mapCy = (540.f + A.mapScrollY / s) / 1080.f;
+  float cw = 1920.f * s, ch = 1080.f * s;
+  ImRect cv(ac.x - cw * 0.5f - A.mapScrollX, ac.y - ch * 0.5f - A.mapScrollY, ac.x + cw * 0.5f - A.mapScrollX, ac.y + ch * 0.5f - A.mapScrollY);
   auto toPx = [&](ImVec2 p) { return ImVec2(cv.Min.x + p.x * s, cv.Min.y + p.y * s); };
-  ImVec2 mu(std::clamp(std::round((m.x - cv.Min.x) / cw * 1920.f), 0.f, 1920.f), std::clamp(std::round((m.y - cv.Min.y) / ch * 1080.f), 0.f, 1080.f));
-  // F5/F9: corner-pin and mesh points are OUTPUT-space and must be draggable well outside the nominal
-  // 1920x1080 box — e.g. correcting extreme projector keystone, or a mesh vertex bulging past the rectangle
-  // for a curved surface. The numeric corner-pin fields a few hundred lines down already allow -4000..8000
-  // (IntField calls below); muOut matches that range so a mouse drag can reach exactly as far as typing a
-  // number could. `mu` (canvas-bound) stays as-is for the input-rect drag (dragKind==2, A.mpage==0), which
-  // selects a sub-region of canvas CONTENT and must stay within it — a different coordinate space, not an
-  // oversight to widen too.
-  ImVec2 muOut(std::clamp(std::round((m.x - cv.Min.x) / cw * 1920.f), -4000.f, 8000.f), std::clamp(std::round((m.y - cv.Min.y) / ch * 1080.f), -4000.f, 8000.f));
+  ImVec2 mo((m.x - cv.Min.x) / s, (m.y - cv.Min.y) / s);   // cursor in output px, unclamped
+  // The input rect (page 0) and masks pick from canvas CONTENT and stay inside it; corner pins and mesh points are output
+  // geometry and reach as far as the numeric corner-pin fields allow (-4000..8000).
+  auto inCanvas = [](ImVec2 p) { return ImVec2(std::clamp(std::round(p.x), 0.f, 1920.f), std::clamp(std::round(p.y), 0.f, 1080.f)); };
+  auto inOutput = [](ImVec2 p) { return ImVec2(std::clamp(std::round(p.x), -4000.f, 8000.f), std::clamp(std::round(p.y), -4000.f, 8000.f)); };
+  ImVec2 mu = inCanvas(mo);
 
   g.dl->PushClipRect(area.Min, area.Max, true);
   Box(cv, K(0x0d0d0d), 0, 3);
   g.dl->PushClipRect(cv.Min, cv.Max, true);
   for (float x = cv.Min.x + 39; x < cv.Max.x; x += 40) VLine(std::floor(x), cv.Min.y, cv.Max.y, K(0xffffff, 0.045f));
   for (float y = cv.Min.y + 39; y < cv.Max.y; y += 40) HLine(cv.Min.x, cv.Max.x, std::floor(y), K(0xffffff, 0.045f));
+  g.dl->PopClipRect();   // everything below draws across the whole stage: a point outside the output box stays visible
 
   // ---- drag processing ----
   if (dragKind && !ImGui::IsMouseDown(0)) dragKind = 0;
   if (dragKind && sl) {
-    if (dragKind == 4) {
-      auto gr = MeshGrid(*sl); sl->meshPts = gr;
+    ImVec2 to = Vadd(mo, dragOff);
+    if (dragKind == 4) {   // the mesh lives in keystone space: store where the cursor lands in it
       int rr = dragIdx / 100, cc = dragIdx % 100;
-      if (rr < (int)sl->meshPts.size() && cc < (int)sl->meshPts[rr].size()) sl->meshPts[rr][cc] = muOut;
+      ImVec2 loc;
+      if (Keystone(sl->q).Inv(inOutput(to), loc)) {
+        auto lg = LocalGrid(*sl);
+        if (rr < (int)lg.size() && cc < (int)lg[rr].size()) { lg[rr][cc] = loc; sl->meshLocal = lg; }
+      }
     }
-    else if (dragKind == 1) sl->q[dragIdx] = muOut;
-    else if (dragKind == 3 && mk) mk->pts[dragIdx] = mu;
+    else if (dragKind == 1) sl->q[dragIdx] = inOutput(to);   // the mesh follows on its own — it is keystone-relative
+    else if (dragKind == 3 && mk) mk->pts[dragIdx] = inCanvas(to);
     else if (dragKind == 2) {
       int x = (int)mu.x, y = (int)mu.y, ix = sl->ix, iy = sl->iy, iw = sl->iw, ih = sl->ih, nx = ix, ny = iy, nw = iw, nh = ih;
       if (dragIdx == 0) { nx = x; ny = y; nw = ix + iw - x; nh = iy + ih - y; }
@@ -611,12 +791,19 @@ static void Stage(ImRect r) {
   }
 
   bool scVis = sc->visible;
-  bool overCanvas = inArea && cv.Contains(m) && ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
-  bool clickPending = ImGui::IsMouseClicked(0) && overCanvas && !dragKind;
+  // anywhere on the stage, not just inside the output box — a handle dragged outside must be grabbable again
+  bool overStage = inArea && ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
+  bool clickPending = ImGui::IsMouseClicked(0) && overStage && !dragKind;
 
   if (A.mpage == 0) {
     if (sl && sl->visible && scVis) {
       ImRect ir(cv.Min.x + sl->ix * s, cv.Min.y + sl->iy * s, cv.Min.x + (sl->ix + sl->iw) * s, cv.Min.y + (sl->iy + sl->ih) * s);
+      // Resolume-style quick reset: right-click the input rect for "Whole area" instead of dragging all 4 corners by hand
+      if (rClick && ir.Contains(m)) {
+        bool full = sl->ix == 0 && sl->iy == 0 && sl->iw == 1920 && sl->ih == 1080;
+        MenuItem it; it.label = "Whole area"; it.icon = "maximize"; it.disabled = full; it.run = [] { A.resetInputRect(); };
+        A.openCtx(m, {it});
+      }
       Fill(ir, K(pal::cyan, 0.15f));
       Border(ir, K(pal::cyan), 0, 2);
       char dm[48]; snprintf(dm, sizeof dm, "%d \xC3\x97 %d", sl->iw, sl->ih);
@@ -635,51 +822,45 @@ static void Stage(ImRect r) {
   } else if (scVis) {
     bool consumed = false;
     auto polyPx = [&](const ImVec2* q, int n, ImVec2* out) { for (int i = 0; i < n; ++i) out[i] = toPx(q[i]); };
+    auto outlinePx = [&](const Slice& S) { std::vector<ImVec2> o = SliceOutline(S); for (auto& p : o) p = toPx(p); return o; };
+    // handles keep a fixed on-screen size at any zoom (they used to scale with it and vanish when zoomed out)
+    const float kCornerR = 8.f, kMaskR = 7.f, kMeshR = 5.5f, kGrabPad = 4.f;
+    auto nearPt = [&](ImVec2 outPt, float rad) { ImVec2 p = toPx(outPt); return std::hypot(m.x - p.x, m.y - p.y) <= rad; };
+    auto grab = [&](int kind, int idx, ImVec2 at) { A.pushHist(); dragKind = kind; dragIdx = idx; dragOff = Vsub(at, mo); consumed = true; };
     // zoom-to-zone chip next to the selected slice label
-    ImRect zoomBtn; bool haveZoom = false;
+    ImRect zoomBtn; bool haveZoom = false; ImVec2 labelAt; float labelW = 0;
     if (sl && sl->visible) {
-      float cxq = 0, cyq = 0; for (int i = 0; i < 4; ++i) { cxq += sl->q[i].x; cyq += sl->q[i].y; }
-      cxq /= 4; cyq /= 4;
-      float xp = cxq / 1920.f, maxW = std::min(xp, 1 - xp) * 2 * cw - 12;
-      ImVec2 c = toPx(ImVec2(cxq, cyq));
-      float nw = std::min(TextW(MONO_B, 11, sl->name.c_str()), std::max(0.f, maxW - 20));
-      float total = nw + 4 + 16;
-      zoomBtn = ImRect(c.x - total * 0.5f + nw + 4, c.y - 8, c.x - total * 0.5f + nw + 20, c.y + 8);
+      ImVec2 bmn, bmx; SliceOutputBounds(*sl, bmn, bmx);
+      ImVec2 c = toPx(ImVec2((sl->q[0].x + sl->q[1].x + sl->q[2].x + sl->q[3].x) * 0.25f, (sl->q[0].y + sl->q[1].y + sl->q[2].y + sl->q[3].y) * 0.25f));
+      labelW = std::min(TextW(MONO_B, 11, sl->name.c_str()), std::max(0.f, (bmx.x - bmn.x) * s - 32));   // stay inside the slice
+      labelAt = ImVec2(c.x - (labelW + 20) * 0.5f, c.y);
+      zoomBtn = ImRect(labelAt.x + labelW + 4, c.y - 8, labelAt.x + labelW + 20, c.y + 8);
       haveZoom = true;
     }
-    if (clickPending && haveZoom && zoomBtn.Contains(m)) {
-      float mnx = 1e9f, mxx = -1e9f, mny = 1e9f, mxy = -1e9f;
-      for (int k = 0; k < 4; ++k) { mnx = std::min(mnx, sl->q[k].x); mxx = std::max(mxx, sl->q[k].x); mny = std::min(mny, sl->q[k].y); mxy = std::max(mxy, sl->q[k].y); }
-      float w = (mxx - mnx) / 1920.f, hh = (mxy - mny) / 1080.f;
-      A.setZoom(std::clamp(0.85f / std::max(w, hh), 2.f, 6.f), (mnx + mxx) * 0.5f / 1920.f, (mny + mxy) * 0.5f / 1080.f);
-      consumed = true;
-    }
-    if (sl && sl->visible && clickPending && !consumed) {
-      for (int i = 0; i < 4 && !consumed; ++i) if (std::hypot(m.x - toPx(sl->q[i]).x, m.y - toPx(sl->q[i]).y) <= 16 * s + 2) { A.pushHist(); dragKind = 1; dragIdx = i; consumed = true; }
-      if (mk) for (int i = 0; i < 4 && !consumed; ++i) if (std::hypot(m.x - toPx(mk->pts[i]).x, m.y - toPx(mk->pts[i]).y) <= 13 * s + 2) { A.pushHist(); dragKind = 3; dragIdx = i; consumed = true; }
-    } else if (mk && clickPending && !consumed) {
-      for (int i = 0; i < 4 && !consumed; ++i) if (std::hypot(m.x - toPx(mk->pts[i]).x, m.y - toPx(mk->pts[i]).y) <= 13 * s + 2) { A.pushHist(); dragKind = 3; dragIdx = i; consumed = true; }
-    }
+    if (clickPending && haveZoom && zoomBtn.Contains(m)) { ZoomToSlice(area, *sl); consumed = true; }
+    if (sl && sl->visible && clickPending && !consumed)
+      for (int i = 0; i < 4 && !consumed; ++i) if (nearPt(sl->q[i], kCornerR + kGrabPad)) grab(1, i, sl->q[i]);
+    if (mk && clickPending && !consumed)
+      for (int i = 0; i < 4 && !consumed; ++i) if (nearPt(mk->pts[i], kMaskR + kGrabPad)) grab(3, i, mk->pts[i]);
     if (clickPending && !consumed && sl && sl->visible && sl->warp != 0) {
       auto gr = MeshGrid(*sl);
-      for (int rr = 0; rr < (int)gr.size() && !consumed; ++rr) for (int cc = 0; cc < (int)gr[rr].size() && !consumed; ++cc) {
-        bool corner = (rr == 0 || rr == (int)gr.size() - 1) && (cc == 0 || cc == (int)gr[rr].size() - 1);
-        if (corner) continue;
-        bool edge = rr == 0 || rr == (int)gr.size() - 1 || cc == 0 || cc == (int)gr[rr].size() - 1;
-        ImVec2 p = toPx(gr[rr][cc]);
-        if (std::hypot(m.x - p.x, m.y - p.y) <= (edge ? 7 : 8) * s + 2) { A.pushHist(); dragKind = 4; dragIdx = rr * 100 + cc; consumed = true; }
+      int R = (int)gr.size(), C = (int)gr[0].size();
+      for (int rr = 0; rr < R && !consumed; ++rr) for (int cc = 0; cc < C && !consumed; ++cc) {
+        bool corner = (rr == 0 || rr == R - 1) && (cc == 0 || cc == C - 1);   // the mesh's corners ARE the keystone corners
+        if (!corner && nearPt(gr[rr][cc], kMeshR + kGrabPad)) grab(4, rr * 100 + cc, gr[rr][cc]);
       }
     }
     if (clickPending && !consumed) {
       ImVec2 pp[4];
       for (auto& S : sc->slices) if (S.visible) for (auto& M : S.masks) { polyPx(M.pts, 4, pp); if (!consumed && PointInPoly(m, pp, 4)) { A.selSc = sc->id; A.selSl = S.id; A.selMk = M.id; A.selKind = 2; consumed = true; } }
-      for (auto it = sc->slices.rbegin(); it != sc->slices.rend() && !consumed; ++it) if (it->visible) { polyPx(it->q, 4, pp); if (PointInPoly(m, pp, 4)) {
+      for (auto it = sc->slices.rbegin(); it != sc->slices.rend() && !consumed; ++it) if (it->visible) {
+        auto ol = outlinePx(*it);
+        if (!PointInPoly(m, ol.data(), (int)ol.size())) continue;
         bool wasOn = sl && it->id == sl->id;
         A.selSc = sc->id; A.selSl = it->id; A.selMk.clear(); A.selKind = 1; consumed = true;
-        if (wasOn && it->warp != 0) {
-          float mnx = 1e9f, mxx = -1e9f, mny = 1e9f, mxy = -1e9f;
-          for (int k = 0; k < 4; ++k) { mnx = std::min(mnx, it->q[k].x); mxx = std::max(mxx, it->q[k].x); mny = std::min(mny, it->q[k].y); mxy = std::max(mxy, it->q[k].y); }
-          float u = std::clamp((mu.x - mnx) / std::max(1.f, mxx - mnx), 0.02f, 0.98f), v = std::clamp((mu.y - mny) / std::max(1.f, mxy - mny), 0.02f, 0.98f);
+        ImVec2 l;   // where the click lands in keystone space = the split position for "+ add col / + add row"
+        if (wasOn && it->warp != 0 && Keystone(it->q).Inv(mo, l)) {
+          float u = std::clamp(l.x, 0.02f, 0.98f), v = std::clamp(l.y, 0.02f, 0.98f);
           if (A.meshArm) {
             std::vector<float> us, vs; MeshUV(*it, us, vs);
             std::vector<float>& lst = A.meshArm == 'u' ? us : vs; float p = A.meshArm == 'u' ? u : v;
@@ -689,34 +870,46 @@ static void Stage(ImRect r) {
           }
           A.meshPickOn = true; A.meshPickU = u; A.meshPickV = v;
         }
-      } }
+      }
     }
     sl = A.curSlice(); mk = A.curMask();
     for (auto& S : sc->slices) {
       if (!S.visible) continue;
       bool on = sl && S.id == sl->id;
-      ImVec2 pp[4]; polyPx(S.q, 4, pp);
-      FillPoly(pp, 4, on ? K(pal::coral, 0.22f) : K(0xffffff, 0.05f));
-      if (on) g.dl->AddPolyline(pp, 4, Ca(K(pal::coral)), ImDrawFlags_Closed, 3.f * std::max(0.6f, s * 2));
-      else DashedPoly(pp, 4, K(0x444444), 1.5f, 10 * s * 2, 6 * s * 2);
+      ImU32 fill = on ? K(pal::coral, 0.22f) : K(0xffffff, 0.05f);
+      if (S.warp == 0) { ImVec2 pp[4]; polyPx(S.q, 4, pp); FillPoly(pp, 4, fill); }
+      else {   // a warped mesh may be concave overall — fill it cell by cell
+        auto gr = MeshGrid(S);
+        for (size_t rr = 0; rr + 1 < gr.size(); ++rr) for (size_t cc = 0; cc + 1 < gr[rr].size(); ++cc) {
+          ImVec2 cell[4] = {toPx(gr[rr][cc]), toPx(gr[rr][cc + 1]), toPx(gr[rr + 1][cc + 1]), toPx(gr[rr + 1][cc])};
+          FillPoly(cell, 4, fill);
+        }
+      }
+      auto ol = outlinePx(S);
+      if (on) g.dl->AddPolyline(ol.data(), (int)ol.size(), Ca(K(pal::coral)), ImDrawFlags_Closed, 2.5f);
+      else DashedPoly(ol.data(), (int)ol.size(), K(0x444444), 1.5f, 9, 6);
+      if (on && S.warp != 0) { ImVec2 pp[4]; polyPx(S.q, 4, pp); DashedPoly(pp, 4, K(pal::coral, 0.45f), 1.f, 5, 5); }   // the keystone frame the warp sits in
     }
     if (sl && sl->visible && sl->warp != 0) {
       auto gr = MeshGrid(*sl);
-      for (int rr = 1; rr + 1 < (int)gr.size(); ++rr) { std::vector<ImVec2> pts; for (auto& p : gr[rr]) pts.push_back(toPx(p)); for (size_t k = 0; k + 1 < pts.size(); ++k) DashedPoly(std::vector<ImVec2>{pts[k], pts[k + 1]}.data(), 2, K(pal::coral, 0.55f), 1.5f, 8 * s * 2, 6 * s * 2); }
-      for (int cc = 1; cc + 1 < (int)gr[0].size(); ++cc) { std::vector<ImVec2> pts; for (auto& row : gr) pts.push_back(toPx(row[cc])); for (size_t k = 0; k + 1 < pts.size(); ++k) DashedPoly(std::vector<ImVec2>{pts[k], pts[k + 1]}.data(), 2, K(pal::coral, 0.55f), 1.5f, 8 * s * 2, 6 * s * 2); }
-      for (int rr = 0; rr < (int)gr.size(); ++rr) for (int cc = 0; cc < (int)gr[rr].size(); ++cc) {
-        bool corner = (rr == 0 || rr == (int)gr.size() - 1) && (cc == 0 || cc == (int)gr[rr].size() - 1);
+      int R = (int)gr.size(), C = (int)gr[0].size();
+      auto seg = [&](ImVec2 a, ImVec2 b) { ImVec2 p2[2] = {toPx(a), toPx(b)}; DashedPoly(p2, 2, K(pal::coral, 0.55f), 1.5f, 8, 6); };
+      for (int rr = 1; rr + 1 < R; ++rr) for (int cc = 0; cc + 1 < C; ++cc) seg(gr[rr][cc], gr[rr][cc + 1]);
+      for (int cc = 1; cc + 1 < C; ++cc) for (int rr = 0; rr + 1 < R; ++rr) seg(gr[rr][cc], gr[rr + 1][cc]);
+      for (int rr = 0; rr < R; ++rr) for (int cc = 0; cc < C; ++cc) {
+        bool corner = (rr == 0 || rr == R - 1) && (cc == 0 || cc == C - 1);
         if (corner) continue;
-        bool edge = rr == 0 || rr == (int)gr.size() - 1 || cc == 0 || cc == (int)gr[rr].size() - 1;
+        bool edge = rr == 0 || rr == R - 1 || cc == 0 || cc == C - 1;
         ImVec2 p = toPx(gr[rr][cc]);
-        g.dl->AddCircleFilled(p, (edge ? 7 : 8) * s, Ca(K(edge ? pal::yellow : pal::coral)), 20); g.dl->AddCircle(p, (edge ? 7 : 8) * s, Ca(K(0x050505)), 20, 2.f);
-        if (std::hypot(m.x - p.x, m.y - p.y) <= (edge ? 7 : 8) * s + 2 && overCanvas) CursorHand();
+        bool hot = (dragKind == 4 && dragIdx == rr * 100 + cc) || (!dragKind && overStage && nearPt(gr[rr][cc], kMeshR + kGrabPad));
+        float rad = kMeshR - (edge ? 0.5f : 0.f) + (hot ? 1.5f : 0.f);
+        g.dl->AddCircleFilled(p, rad, Ca(K(edge ? pal::yellow : pal::coral)), 20);
+        g.dl->AddCircle(p, rad, Ca(K(hot ? pal::white : 0x050505)), 20, hot ? 1.5f : 2.f);
+        if (hot) CursorHand();
       }
       if (A.meshPickOn) {
-        float u = A.meshPickU, v = A.meshPickV;
-        ImVec2 mp = toPx(ImVec2((1 - u) * (1 - v) * sl->q[0].x + u * (1 - v) * sl->q[1].x + u * v * sl->q[2].x + (1 - u) * v * sl->q[3].x,
-                                (1 - u) * (1 - v) * sl->q[0].y + u * (1 - v) * sl->q[1].y + u * v * sl->q[2].y + (1 - u) * v * sl->q[3].y));
-        g.dl->AddCircleFilled(mp, 9 * s, Ca(K(pal::yellow)), 20); g.dl->AddCircle(mp, 9 * s, Ca(K(0x050505)), 20, 2.f);
+        ImVec2 mp = toPx(Keystone(sl->q).Fwd(ImVec2(A.meshPickU, A.meshPickV)));
+        g.dl->AddCircleFilled(mp, 6.f, Ca(K(pal::yellow)), 20); g.dl->AddCircle(mp, 6.f, Ca(K(0x050505)), 20, 2.f);
       }
     }
     for (auto& S : sc->slices) {
@@ -725,21 +918,14 @@ static void Stage(ImRect r) {
         bool on = mk && mk->id == M.id;
         ImVec2 pp[4]; polyPx(M.pts, 4, pp);
         FillPoly(pp, 4, on ? K(pal::yellow, 0.30f) : K(pal::red, 0.20f));
-        DashedPoly(pp, 4, on ? K(pal::yellow) : K(pal::red), 2.f, 10 * s * 2, 8 * s * 2);
+        DashedPoly(pp, 4, on ? K(pal::yellow) : K(pal::red), 2.f, 9, 7);
       }
     }
     if (sl && sl->visible && haveZoom) {
-      float cxq = 0, cyq = 0; for (int i = 0; i < 4; ++i) { cxq += sl->q[i].x; cyq += sl->q[i].y; }
-      cxq /= 4; cyq /= 4;
-      float xp = cxq / 1920.f, maxW = std::min(xp, 1 - xp) * 2 * cw - 12;
-      ImVec2 c = toPx(ImVec2(cxq, cyq));
-      float nw = std::min(TextW(MONO_B, 11, sl->name.c_str()), std::max(0.f, maxW - 20));
-      float total = nw + 4 + 16;
-      TextEll(c.x - total * 0.5f, c.y, nw, MONO_B, 11, K(pal::coral), sl->name.c_str());
-      ImRect zb = ImRect(c.x - total * 0.5f + nw + 4, c.y - 8, c.x - total * 0.5f + nw + 20, c.y + 8);
-      Box(zb, K(pal::g1c, 0.8f), K(pal::g22), 2);
-      Icon("scan-search", ImVec2((zb.Min.x + zb.Max.x) * 0.5f, c.y), 10, K(pal::coral));
-      if (inArea && zb.Contains(m)) CursorHand();
+      TextEll(labelAt.x, labelAt.y, labelW, MONO_B, 11, K(pal::coral), sl->name.c_str());
+      Box(zoomBtn, K(pal::g1c, 0.8f), K(pal::g22), 2);
+      Icon("scan-search", ImVec2((zoomBtn.Min.x + zoomBtn.Max.x) * 0.5f, labelAt.y), 10, K(pal::coral));
+      if (inArea && zoomBtn.Contains(m)) CursorHand();
     }
     // G13: sensor touches projected through the calibration homography H_s into output space (first screen only —
     // the calibration targets are in that screen's 1920x1080 pixels). Sensor coordinates stay raw until here (principle #5).
@@ -760,27 +946,42 @@ static void Stage(ImRect r) {
     }
     if (mk) for (int i = 0; i < 4; ++i) {
       ImVec2 p = toPx(mk->pts[i]);
-      g.dl->AddCircleFilled(p, 13 * s, Ca(K(pal::yellow)), 24); g.dl->AddCircle(p, 13 * s, Ca(K(pal::white)), 24, 2.f);
-      if (std::hypot(m.x - p.x, m.y - p.y) <= 13 * s + 2 && overCanvas) CursorHand();
+      bool hot = (dragKind == 3 && dragIdx == i) || (!dragKind && overStage && nearPt(mk->pts[i], kMaskR + kGrabPad));
+      g.dl->AddCircleFilled(p, kMaskR + (hot ? 1.5f : 0.f), Ca(K(pal::yellow)), 24); g.dl->AddCircle(p, kMaskR + (hot ? 1.5f : 0.f), Ca(K(pal::white)), 24, 2.f);
+      if (hot) CursorHand();
     }
     if (sl && sl->visible) for (int i = 0; i < 4; ++i) {
       ImVec2 p = toPx(sl->q[i]);
-      g.dl->AddCircleFilled(p, 16 * s, Ca(K(pal::coral)), 24); g.dl->AddCircle(p, 16 * s, Ca(K(pal::white)), 24, 3.f);
-      if (std::hypot(m.x - p.x, m.y - p.y) <= 16 * s + 2 && overCanvas) CursorHand();
+      bool hot = (dragKind == 1 && dragIdx == i) || (!dragKind && overStage && nearPt(sl->q[i], kCornerR + kGrabPad));
+      g.dl->AddCircleFilled(p, kCornerR + (hot ? 2.f : 0.f), Ca(K(pal::coral)), 24); g.dl->AddCircle(p, kCornerR + (hot ? 2.f : 0.f), Ca(K(pal::white)), 24, 2.5f);
+      if (hot) CursorHand();
+    }
+    // live readout of the point being dragged — most useful exactly when it is outside the output box
+    if (dragKind == 1 || dragKind == 3 || dragKind == 4) {
+      ImVec2 at = dragKind == 1 ? sl->q[dragIdx] : dragKind == 3 && mk ? mk->pts[dragIdx] : ImVec2(0, 0);
+      if (dragKind == 4) { auto gr = MeshGrid(*sl); int rr = dragIdx / 100, cc = dragIdx % 100; if (rr < (int)gr.size() && cc < (int)gr[rr].size()) at = gr[rr][cc]; }
+      char rd[40]; snprintf(rd, sizeof rd, "%d, %d", (int)std::round(at.x), (int)std::round(at.y));
+      float tw = TextW(MONO_B, 10, rd);
+      ImRect tb2(m.x + 14, m.y + 12, m.x + 14 + tw + 12, m.y + 12 + 18);
+      Box(tb2, K(0x000000, 0.8f), K(pal::coral, 0.6f), 3);
+      Text(tb2.Min.x + 6, (tb2.Min.y + tb2.Max.y) * 0.5f, MONO_B, 10, K(pal::white), rd);
     }
   }
-  g.dl->PopClipRect();
   Border(cv, K(pal::g2a), 3);
-  // scrollbars (indicators)
-  if (maxSX > 0) {
-    float tw = area.GetWidth() - 8, th = std::max(24.f, tw * area.GetWidth() / contentW);
-    float tx = area.Min.x + (tw - th) * (A.mapScrollX / maxSX);
-    g.dl->AddRectFilled(ImVec2(tx, area.Max.y - 9), ImVec2(tx + th, area.Max.y - 1), Ca(K(pal::g33)), 8);
-  }
-  if (maxSY > 0) {
-    float tw = area.GetHeight() - 8, th = std::max(24.f, tw * area.GetHeight() / contentH);
-    float ty = area.Min.y + (tw - th) * (A.mapScrollY / maxSY);
-    g.dl->AddRectFilled(ImVec2(area.Max.x - 9, ty), ImVec2(area.Max.x - 1, ty + th), Ca(K(pal::g33)), 8);
+  // position indicators: a thumb per axis whenever part of the content (output box or any point) is outside the view
+  {
+    ImVec2 cmn(0, 0), cmx(1920, 1080);
+    if (A.mpage != 0) StageContentBox(*sc, cmn, cmx);
+    ImVec2 v0((area.Min.x - cv.Min.x) / s, (area.Min.y - cv.Min.y) / s), v1((area.Max.x - cv.Min.x) / s, (area.Max.y - cv.Min.y) / s);
+    auto thumb = [&](float c0, float c1, float a0, float a1, bool horiz) {
+      if (a0 <= c0 && a1 >= c1) return;
+      float t0 = std::min(c0, a0), t1 = std::max(c1, a1), len = (horiz ? area.GetWidth() : area.GetHeight()) - 8;
+      float p0 = (a0 - t0) / (t1 - t0) * len, p1 = std::max(p0 + 24.f, (a1 - t0) / (t1 - t0) * len);
+      if (horiz) g.dl->AddRectFilled(ImVec2(area.Min.x + 4 + p0, area.Max.y - 9), ImVec2(area.Min.x + 4 + p1, area.Max.y - 1), Ca(K(pal::g33)), 8);
+      else g.dl->AddRectFilled(ImVec2(area.Max.x - 9, area.Min.y + 4 + p0), ImVec2(area.Max.x - 1, area.Min.y + 4 + p1), Ca(K(pal::g33)), 8);
+    };
+    thumb(cmn.x, cmx.x, v0.x, v1.x, true);
+    thumb(cmn.y, cmx.y, v0.y, v1.y, false);
   }
   g.dl->PopClipRect();
 }
@@ -806,6 +1007,32 @@ static void PropsPanel(ImRect r) {
     Label(x, oy + y, "Slice name"); y += 9 + 4;
     TextField("##slicename", Rc(x, oy + y, w, 28), sl->name);
     y += 28 + 8;
+    // F22: what this slice shows — the whole composition, or a single layer / group routed to it
+    {
+      Label(x, oy + y, "Input source"); y += 9 + 4;
+      bool ok = SliceSourceValid(*sl);
+      std::string cur = ok ? SliceSourceName(*sl) : std::string("Missing \xC2\xB7 showing Composition");
+      ImRect sr(x, oy + y, x + w, oy + y + 28);
+      Hit h = HitR(sr);
+      Box(sr, h.hover ? K(pal::ctrlHover) : K(pal::g1c), ok ? K(pal::g22) : K(pal::red, 0.7f), 3);
+      Icon(sl->srcKind == Slice::SrcLayer ? "layers" : sl->srcKind == Slice::SrcGroup ? "folder" : "monitor", ImVec2(sr.Min.x + 14, (sr.Min.y + sr.Max.y) * 0.5f), 11, K(ok ? pal::cyan : pal::red));
+      TextEll(sr.Min.x + 28, (sr.Min.y + sr.Max.y) * 0.5f, w - 50, UI_S, 10, K(ok ? pal::tf3 : pal::red), cur.c_str());
+      Icon("chevron-down", ImVec2(sr.Max.x - 12, (sr.Min.y + sr.Max.y) * 0.5f), 10, K(pal::t66));
+      if (h.hover) CursorHand();
+      if (h.click) {
+        std::string slId = sl->id, scId = sc ? sc->id : std::string();
+        auto set = [scId, slId](int kind, std::string ref) {
+          for (auto& S : A.screens) if (S.id == scId) for (auto& L : S.slices) if (L.id == slId) { A.pushHist(); L.srcKind = kind; L.srcRef = std::move(ref); }
+        };
+        auto item = [](std::string label, const char* icon, bool on, std::function<void()> f) { MenuItem m; m.label = std::move(label); m.icon = icon; m.toneHex = on ? pal::cyan : 0; m.run = std::move(f); return m; };
+        std::vector<MenuItem> mi;
+        mi.push_back(item("Composition", "monitor", sl->srcKind == Slice::SrcComp, [set] { set(Slice::SrcComp, ""); }));
+        for (auto& L : A.layers) mi.push_back(item("Layer \xC2\xB7 " + L.name, "layers", sl->srcKind == Slice::SrcLayer && sl->srcRef == L.id, [set, id = L.id] { set(Slice::SrcLayer, id); }));
+        for (auto& G : A.groups) mi.push_back(item("Group \xC2\xB7 " + G.name, "folder", sl->srcKind == Slice::SrcGroup && sl->srcRef == G.id, [set, id = G.id] { set(Slice::SrcGroup, id); }));
+        A.openCtx(ImVec2(sr.Min.x, sr.Max.y + 4), mi);
+      }
+      y += 28 + 8;
+    }
     if (sl->warp != 0) {
       HLine(ox + 8, ox + 8 + w, oy + y, K(pal::g2a)); y += 1 + 6;
       std::vector<float> uu, vv; MeshUV(*sl, uu, vv);
@@ -831,7 +1058,7 @@ static void PropsPanel(ImRect r) {
         TextC((vb.Min.x + vb.Max.x) * 0.5f, (vb.Min.y + vb.Max.y) * 0.5f, MONO_B, 11, K(pal::tf3), nb);
         if (hm.hover || hp.hover) CursorHand();
         if (hm.click) { nv = n - 1; chg = true; } if (hp.click) { nv = n + 1; chg = true; }
-        if (chg) { A.pushHist(); nv = std::clamp(nv, 2, 16); if (i) { sl->meshRows = nv; sl->meshV.clear(); } else { sl->meshCols = nv; sl->meshU.clear(); } sl->meshPts.clear(); }
+        if (chg) { A.pushHist(); nv = std::clamp(nv, 2, 16); if (i) { sl->meshRows = nv; sl->meshV.clear(); } else { sl->meshCols = nv; sl->meshU.clear(); } sl->meshLocal.clear(); }
       }
       y += 11 + 26 + 6;
       {
@@ -845,8 +1072,8 @@ static void PropsPanel(ImRect r) {
         Box(fb, K(pal::g1c), hf.hover ? K(pal::coral) : K(pal::g22), 3); TextC((fb.Min.x + fb.Max.x) * 0.5f, oy + y + 10, MONO_B, 9, K(hf.hover ? pal::coral : pal::t88), "FLATTEN", 0.09f);
         Box(ub, K(pal::g1c), hu.hover ? K(pal::yellow) : K(pal::g22), 3); TextC((ub.Min.x + ub.Max.x) * 0.5f, oy + y + 10, MONO_B, 9, K(hu.hover ? pal::yellow : pal::t88), "UNIFORM", 0.09f);
         if (hf.hover || hu.hover) CursorHand();
-        if (hf.click) { A.pushHist(); sl->meshPts.clear(); }
-        if (hu.click) { A.pushHist(); sl->meshU.clear(); sl->meshV.clear(); sl->meshPts.clear(); }
+        if (hf.click) { A.pushHist(); sl->meshLocal.clear(); }
+        if (hu.click) { A.pushHist(); sl->meshU.clear(); sl->meshV.clear(); sl->meshLocal.clear(); }
         y += 20 + 6;
       }
       {

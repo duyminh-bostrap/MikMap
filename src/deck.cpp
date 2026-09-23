@@ -48,6 +48,19 @@ static Layer L(const char* name, const char* group, const char* blend, float bt,
   return l;
 }
 
+void EnsureLayerIds(std::vector<Layer>& layers) {
+  // first holder of an id keeps it (so slice routing survives); later duplicates and blanks get a fresh one
+  auto takenBefore = [&](const std::string& id, size_t i) { for (size_t k = 0; k < i; ++k) if (layers[k].id == id) return true; return false; };
+  auto takenAnywhere = [&](const std::string& id) { for (auto& l : layers) if (l.id == id) return true; return false; };
+  int n = 1;
+  for (size_t i = 0; i < layers.size(); ++i) {
+    if (!layers[i].id.empty() && !takenBefore(layers[i].id, i)) continue;
+    std::string id;
+    do id = "layer-" + std::to_string(n++); while (takenAnywhere(id));
+    layers[i].id = id;
+  }
+}
+
 static Fx MkFx(int kind);
 void App::init() {
   groups = {{"g1", "Stage Left", 2, true, 2, 0}, {"g2", "Audio React", 1, true, 1, 0}};
@@ -65,6 +78,7 @@ void App::init() {
       L("Backdrop", "", "Normal", 2.f, 100, 0, false, true,
         {C("Deep Ambient", "24s"), E(), E(), E(), C("Slow Drift", "40s"), E(), E(), E()}),
   };
+  EnsureLayerIds(layers);
   layers[0].clips[2].fx = {MkFx(1), MkFx(2)};
   layers[3].clips[0].fx = {MkFx(4), MkFx(5)};
   // mapping
@@ -190,6 +204,7 @@ void App::fireColumn(int ci) {
   }
   selMode = 2;
   activeCol = ci;
+  for (auto& g : groups) g.activeCol = ci;   // column select also selects every group's cue, so the Cue N highlight follows the column
   selectedCells.clear();
   for (int li = 0; li < (int)layers.size(); ++li) selectedCells.push_back({li, ci});
   // Preview Cue (Monitor reads selLi/selCi directly) follows the topmost layer that actually has a clip here,
@@ -297,8 +312,8 @@ void App::insertCol(int at) {
   colNames.resize(n);
   int k = n + 1;
   auto has = [&](const std::string& s) { for (auto& x : colNames) if (x == s) return true; return false; };
-  while (has("C\xE1\xBB\x99t " + std::to_string(k))) ++k;
-  colNames.insert(colNames.begin() + std::clamp(at, 0, n), "C\xE1\xBB\x99t " + std::to_string(k));
+  while (has("Column " + std::to_string(k))) ++k;
+  colNames.insert(colNames.begin() + std::clamp(at, 0, n), "Column " + std::to_string(k));
   for (auto& l : layers) l.clips.insert(l.clips.begin() + std::clamp(at, 0, (int)l.clips.size()), Clip());
   activeCol = std::min(activeCol, colCount() - 1);
 }
@@ -369,6 +384,7 @@ void App::addDeck() {
   size_t li = decks.size() - 1;
   Deck d; d.name = "Deck " + std::string(1, li < 25 ? letters[li] : 'X');
   for (int i = 0; i < 3; ++i) { Layer l; l.name = "Layer " + std::to_string(i + 1); l.blend = "Normal"; l.opacity = 100; l.clips.assign(8, Clip()); d.layers.push_back(l); }
+  EnsureLayerIds(d.layers);
   decks.push_back(d);
   curDeckIdx = (int)decks.size() - 1;
   groups = d.groups; layers = d.layers; colNames = d.colNames; activeCol = d.activeCol;
@@ -513,7 +529,10 @@ static CellOut ClipCell(ImRect r, Clip& cl, bool selectedCell, bool dragged, boo
     // ~16 s/frame (S_STARS worst) — so each Clip gets its own small texture, redrawn into an FBO at most a
     // few times a second, budgeted to a handful of clips per frame (ResetThumbBudget in DrawDeck). Falls
     // back to the flat gradient until the first render lands, or if the FBO functions never loaded.
-    bool stale = cl.thumbTex == 0 || g.time - cl.thumbAt > 1.0;
+    // Only the cued/live clip actually animates; every other cell renders once and then freezes — a still
+    // frame, not a second copy of the same motion playing out of sync in 40 places at once.
+    bool active = live || preview;
+    bool stale = cl.thumbTex == 0 || (active && g.time - cl.thumbAt > 0.2);
     if (stale && ThumbBudgetLeft()) RenderClipThumbnail(cl);
     if (cl.thumbTex != 0) g.dl->AddImage((ImTextureID)(intptr_t)cl.thumbTex, bodyR.Min, bodyR.Max, ImVec2(0, 1), ImVec2(1, 0), Ca(IM_COL32_WHITE));
     else GradDiag(bodyR, col, Dark45(col), live ? 0.45f : 0.22f);
@@ -731,11 +750,16 @@ static void Monitor(ImRect r, bool live) {
     const std::vector<Fx>& chain = sc.fx;
     int act = 0; for (auto& f : chain) if (f.on) act++;
     Fill(well, K(0x080808));
-    DrawClipContent(well, sc, (float)g.time * 1.5f, 480.f, 1.f);
-    g.dl->PushClipRect(well.Min, well.Max, true);
-    for (float x = well.Min.x + 13; x < well.Max.x; x += 14) VLine(std::floor(x), well.Min.y, well.Max.y, K(0xffffff, 0.045f));
-    for (float y = well.Min.y + 13; y < well.Max.y; y += 14) HLine(well.Min.x, well.Max.x, std::floor(y), K(0xffffff, 0.045f));
+    // same default size as Live Output: letterbox to the canvas aspect and use the same
+    // 960 base width (the old full-well rect + 480 base zoomed the cue ~2x vs live).
+    ImRect cv = CanvasRect(well);
+    Fill(cv, K(0x0a0a0a));
+    g.dl->PushClipRect(cv.Min, cv.Max, true);
+    DrawClipContent(cv, sc, (float)g.time * 1.5f, 960.f, 1.f);
+    for (float x = cv.Min.x + 13; x < cv.Max.x; x += 14) VLine(std::floor(x), cv.Min.y, cv.Max.y, K(0xffffff, 0.045f));
+    for (float y = cv.Min.y + 13; y < cv.Max.y; y += 14) HLine(cv.Min.x, cv.Max.x, std::floor(y), K(0xffffff, 0.045f));
     g.dl->PopClipRect();
+    Border(cv, K(pal::g2a));
     std::string nm = sc.name.empty() ? "no cue" : Upper(sc.name);
     Text(well.Min.x + 6, well.Max.y - 10, MONO_M, 10, K(pal::cyan), nm.c_str(), 0.09f);
     char fx[16]; snprintf(fx, sizeof fx, act ? "FX %d/%d" : "FX DRY", act, (int)chain.size());
@@ -1259,6 +1283,7 @@ static void DeckGridTools(ImRect r) {
       Layer nl; nl.name = "Layer " + std::to_string(A.layers.size() + 1); nl.blend = "Normal"; nl.blendTime = 0; nl.opacity = 100;
       nl.clips.assign(8, Clip());
       A.layers.push_back(nl);
+      EnsureLayerIds(A.layers);
     }
     if (cl && i == 1 && !A.layers.empty()) {   // Group: put the selected layer into a new group
       int li = std::clamp(A.selLayer, 0, (int)A.layers.size() - 1);

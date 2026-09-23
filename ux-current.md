@@ -227,7 +227,7 @@ Ba vùng: **cây Screen/Slice/Mask** (trái) | **Stage canvas** (giữa) | **Pro
 |---|---|---|
 | M1 | Bấm dòng Screen/Slice/Mask → chọn | ✅ |
 | M2 | ▾ thu gọn Screen; 👁 ẩn/hiện | ✅ |
-| M3 | **Chuột phải** → menu: Screen (Move up/down, Duplicate, Add slice, Delete) · Slice (Hide/Show, **Solo/Unsolo**, … Reset warp, Add mask, Delete) · Mask (Duplicate, Delete) | ✅ |
+| M3 | **Chuột phải** → menu: Screen (Move up/down, Duplicate, Add slice, Delete) · Slice (Hide/Show, **Solo/Unsolo**, Whole area, Match output to input, Reset warp, Reset mesh warp, Reset all warping, Add mask, Delete) · Mask (Duplicate, Delete) | ✅ |
 | M4 | Nút thêm **Screen / Slice / Mask** | ✅ |
 | M5 | Thu gọn cây thành rail; bấm tên Screen trong rail để mở tạm | ✅ |
 
@@ -239,7 +239,7 @@ Ba vùng: **cây Screen/Slice/Mask** (trái) | **Stage canvas** (giữa) | **Pro
 - **Zoom**: 5 nút icon (phóng to, thu nhỏ, tìm/vừa vùng, phóng tối đa, bật/tắt chế độ tập trung — tên chính xác chưa kiểm chứng). **Alt + lăn chuột**
   = zoom theo con trỏ. **Lăn chuột** = cuộn dọc, **lăn ngang** = cuộn ngang.
   **Kéo chuột phải** = pan.
-- Menu **Reset**: Reset 4 corner pins · Reset mesh warp · Reset all warping.
+- Menu **Reset** (theo trang đang xem): Input → Whole area; Output → Reset 4 corner pins · Match output to input · Reset mesh warp · Reset all warping.
 
 **Trang Input**: kéo **4 góc** của khung cyan để đổi vùng lấy (tối thiểu 20px). ✅
 

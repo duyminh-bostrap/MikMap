@@ -138,7 +138,7 @@
 | [ ] | **F19** | Color correction per-slice (brightness/gamma/RGB) | M | 🟡 P2 |
 | [~] | **F20** | **Soft edge blending** (ghép nhiều máy chiếu) | L | 🟡 P2 |
 | [ ] | **F21** | Snapping / đường gióng khi kéo | M | 🟡 P2 |
-| [ ] | **F22** | Slice input từ Layer / Group cụ thể | M | 🟡 P2 |
+| [x] | **F22** | Slice input từ Layer / Group cụ thể | M | 🟡 P2 |
 | [ ] | **F23** | Output ra Spout / NDI (screen ảo) | M | 🟡 P2 |
 | [ ] | **F24** | LED mapping qua Art-Net / sACN | XL | ⚪ P3 |
 | [ ] | **F25** | Output SDI qua capture card | L | ⚪ P3 |
@@ -314,6 +314,7 @@
   - `Clip::thumbTex`/`thumbAt` là state runtime thuần, **không** vào `ClipJ`/`ReadClip` (không lưu vào `.mikmap`, không tính vào so sánh undo/dirty) — giống nguyên tắc `Layer::fadeFrom`/`fadeT` đã có từ trước. Copy một `Clip` (undo snapshot, `App tmp = A`) sẽ copy luôn giá trị `thumbTex` — vô hại (bản sao trỏ chung 1 texture GL còn sống), không phải double-free, vì không chỗ nào gọi `glDeleteTextures` (giống hạn chế "texture chưa được giải phóng" đã ghi ở B2).
   - **Đã xác nhận bằng ảnh chụp thật** (`--shot --page 0 --frames 200`, máy Windows thật, không phải suy đoán): các ô hiện đúng hình sinh riêng của từng clip (Cyber Hex Grid = lưới lục giác, Particle Vortex = chấm rải rác, Mesh Pulse = vòng tròn...), không bị lật ngược, khớp đúng hình ở Preview Cue/Live Output. PerfPanel ổn định **P99 ~17.7ms** sau 200 khung — đúng mục tiêu `tech-defaults.md` (p99 < ~17ms), không tái diễn regression ~16s/khung.
   - **Giới hạn còn lại:** `Strobe Tunnel` có thể thumbnail tối/đen nếu bắt đúng lúc FX Strobe đang ở pha "tắt" — đây là hành vi đúng theo FX thật (khác gradient tĩnh trước đây không phản ánh FX gì cả), không phải lỗi. Texture không bao giờ được giải phóng (leak nhẹ theo phong cách hiện có của `src/`, xem B2); nếu cần dọn khi xoá/đổi clip thì phải thêm `glDeleteTextures` — chưa làm ở đợt này.
+  - **Chỉ ô đang live/preview mới "phát" thumbnail, còn lại là ảnh tĩnh (2026-09-23, theo yêu cầu người dùng):** ban đầu mọi ô có `thumbTex` đều vẽ lại sau mỗi 1 giây bất kể trạng thái — 40 ô cùng "phát" một lúc trông rối, không đúng ý người dùng chỉ muốn thấy ô đang chọn động. Sửa: `bool active = live || preview;` (đúng 2 cờ đã tính sẵn trong `ClipCell` cho màu viền) — chỉ `active` mới coi là cũ sau 0.2s và được vẽ lại; các ô còn lại (`Loaded`) chỉ vẽ **đúng một lần** (lúc `thumbTex==0`) rồi đứng yên vĩnh viễn trong phiên đó, không bao giờ đặt lại `stale=true` nữa. Đã xác nhận: chạy `--shot` cùng kịch bản 3 lần liên tiếp, ô không active cho hình hơi khác nhau **giữa các lần mở app** (vì mỗi lần là tiến trình mới, bắt được một mốc thời gian animation khác nhau lúc lần vẽ đầu tiên) nhưng ô Live thì đổi rõ rệt hơn nhiều theo tổng số khung hình chạy — đúng như kỳ vọng "tĩnh trong 1 phiên, không tiếp tục phát". Debug bật assertion chạy sạch.
   - **Sửa lỗi nghiêm trọng: `abort()` khi chạy bản Debug (2026-09-23, người dùng báo qua F5 VS Code):** bản Release (`--shot`) không lộ ra vì `IM_ASSERT` bị tắt ở Release, nhưng bản Debug thật (build+chạy trực tiếp, không qua `--shot`) crash ngay khi thumbnail đầu tiên render, với thông báo *"ImDrawCmd is referring to ImTextureData that wasn't uploaded to graphics system"*. Nguyên nhân: ở bản Dear ImGui mới (1.92.x, texture quản lý động), font atlas chỉ thật sự upload lên GPU khi có lệnh `RenderDrawData` xử lý `draw_data->Textures` — lệnh vẽ khung hình chính chỉ làm việc đó **một lần, ở CUỐI khung hình**, còn thumbnail vẽ **giữa** khung hình (trong `DrawDeck`), nên ở khung hình đầu tiên atlas chưa kịp upload. Thử sửa lần 1 (trỏ `dd.Textures` vào `ImGui::GetPlatformIO().Textures`) **không đủ** vì list đó bị `UpdateTexturesEndFrame()` dọn rỗng đầu mỗi khung hình và chỉ được đổ lại ở cuối — giữa khung hình nó luôn rỗng. Sửa đúng: tự dựng một `ImVector<ImTextureData*>` một phần tử trỏ thẳng `io.Fonts->TexData` (đã build sẵn ngay sau `NewFrame()`, không phụ thuộc `platformIO.Textures`) làm `dd.Textures`, để lệnh render thumbnail tự upload atlas nếu cần, y hệt lệnh render chính làm — an toàn gọi lại nhiều lần (bỏ qua nếu atlas đã `ImTextureStatus_OK`). Đã xác nhận: chạy trực tiếp bản Debug 30s không còn assert, và `--shot --frames 200` trên **cả 3 màn hình bằng chính bản Debug** (bật assertion, phép thử nghiêm ngặt hơn `--shot` Release trước đó) đều exit 0, 0 dòng stderr.
 
 ### F5/F9 — corner-pin và mesh không kéo ra ngoài vùng 1920×1080 được (2026-09-23, người dùng báo)
@@ -335,3 +336,96 @@ buộc `0..1920`/`0..1080`) — không mở rộng, vì đó là không gian kh�
 Đã xác nhận bằng ảnh chụp thật (`--drag`, cả bản Release lẫn Debug bật assertion): kéo góc TL của corner-pin từ
 trong khung ra ngoài, số hiện `-299, -201` (âm, vượt hẳn khung) và tứ giác kéo dài ra ngoài canvas thấy rõ; kéo
 điểm mesh nội bộ lên trên khung, đỉnh lưới lồi ra ngoài viền cam. `--roundtrip` vẫn pass.
+
+### F5/F9 — kéo thả keystone/warp kiểu Resolume (2026-09-23, người dùng báo tiếp)
+Sau bản sửa ở trên, người dùng báo thêm 2 lỗi: (1) điểm keystone **bị che mất** khi kéo ra ngoài vùng màn hình,
+(2) **warp không liên kết gì với keystone** — kéo góc thì lưới mesh đứng yên. Cả hai đều có gốc thật trong
+`src/mapping.cpp`:
+- (1) mọi thứ trên Stage bị `PushClipRect` cắt đúng theo khung 1920×1080, hit-test chỉ nhận click trong khung
+  (`cv.Contains(m)`), zoom bị kẹp tối thiểu 100%, và cuộn bị kẹp trong khung canvas — nên điểm ra ngoài vừa
+  vô hình vừa không nắm lại được.
+- (2) `Slice::meshPts` lưu toạ độ output **tuyệt đối**, và ở chế độ mesh `SliceMapUV` bỏ qua hẳn `q[]` — kéo góc
+  chỉ đổi `q`, lưới không hề biết.
+
+**Đã làm (theo mô hình Resolume / engine `WarpCornerPin`):**
+- **Keystone là phép phối cảnh thật** (homography unit-square→quad dạng đóng Heckbert, struct `Keystone` trong
+  `mapping.cpp`, có cả nghịch đảo) thay cho nội suy bilinear 4 góc trước đây — đường thẳng giữ thẳng, khoảng
+  cách co theo phối cảnh như máy chiếu đặt nghiêng. Tứ giác lõm/bắt chéo (không có homography hợp lệ) tự lùi
+  về bilinear để không lật nội dung qua vô cực. **Thay đổi hành vi có chủ đích:** slice hình thang cũ sẽ hiển
+  thị theo phối cảnh (hình chữ nhật/hình bình hành thì y hệt cũ).
+- **Mesh sống trong không gian cục bộ của keystone:** `Slice::meshPts` (tuyệt đối) → `Slice::meshLocal` (toạ độ
+  unit-square của keystone); output = `keystone(bilinear lưới cục bộ)`. Kéo góc keystone là cả lưới đi theo,
+  giữ nguyên chỗ uốn. Kéo điểm mesh thì chuyển vị trí chuột qua **nghịch đảo keystone** rồi mới lưu. 4 góc
+  lưới chính là 4 góc keystone (tay nắm lớn = keystone, chấm nhỏ = warp). Lưới chưa uốn = y hệt corner pin.
+- **File cũ tự chuyển đổi khi mở** (`MigrateAbsoluteMesh`, gọi từ `ReadSlice` — áp dụng cho cả `.mikmap` lẫn
+  `.mikmap-preset`): nếu có `meshPts` mà không có `meshLocal`, ở chế độ mesh thì lấy 4 góc lưới cũ làm keystone
+  (vì renderer cũ vẽ đúng lưới đó, bỏ qua `q`), rồi đổi các điểm còn lại sang toạ độ cục bộ — hình hiển thị giữ
+  nguyên. File mới chỉ ghi `meshLocal`.
+- **Stage là khung nhìn pan/zoom tự do trên không gian output:** zoom **20%–600%** (trước: 100–600%), pan không
+  bị kẹp theo khung canvas (chỉ giữ tâm nhìn trong `-4000..8000`, đúng biên của điểm), mọi thứ vẽ và hit-test
+  trên **toàn vùng Stage** chứ không chỉ trong khung 1920×1080. Nút **Fit** (maximize) giờ khung **toàn bộ điểm**
+  kể cả điểm ngoài khung (vẫn là 100% như cũ khi mọi điểm nằm trong khung); nút zoom-vào-slice khung theo
+  bbox thật của slice (kể cả mesh). Alt+lăn zoom giữ nguyên điểm dưới con trỏ. Kéo điểm sát/qua mép Stage thì
+  khung nhìn **tự cuộn** theo, nên điểm không bao giờ trượt xuống dưới panel bên cạnh.
+- Tay nắm có **kích thước cố định theo pixel màn hình** (trước co theo zoom), sáng lên khi hover/kéo, giữ khoảng
+  lệch lúc nắm (nắm lệch tâm không làm điểm nhảy), và hiện **nhãn toạ độ** cạnh con trỏ khi kéo.
+- Ở chế độ mesh, Stage tô theo **từng ô lưới** + vẽ **viền lưới thật** (biên mesh có thể lồi ra ngoài quad),
+  khung keystone vẽ mờ phía sau. Chọn slice bằng click dùng viền thật này. Điểm "LAST POINT"/thêm cột-hàng
+  tính u,v qua nghịch đảo keystone thay vì bbox xấp xỉ.
+- `output.cpp`: khung cắt cửa sổ máy chiếu lấy bbox của **cả lưới** (`SliceOutputBounds`), không chỉ 4 góc —
+  trước đây phần mesh lồi ra ngoài quad bị cắt mất trên máy chiếu.
+
+**Kiểm:** `--roundtrip` thêm kịch bản: keystone đi qua đúng 4 góc; tâm unit-square rơi đúng giao điểm hai đường
+chéo (tính chất riêng của homography, bilinear không có); lưới chưa uốn trùng corner pin; uốn 1 điểm rồi kéo
+góc TR ra ngoài khung → điểm đi theo và vẫn đúng vị trí trong không gian keystone; bbox bao được góc ngoài
+khung; `meshLocal` lưu/mở đúng; file preset kiểu cũ (`meshPts` tuyệt đối) mở ra giữ nguyên hình. Ảnh chụp thật
+(Release + Debug bật assertion, `--drag`/`--click`/`--outshot`): kéo góc ra ngoài → khung tự cuộn, Fit khung được
+cả tay nắm ngoài khung; uốn mesh rồi kéo góc → lưới đi theo phối cảnh; cửa sổ máy chiếu render đúng nội dung
+đã uốn. Hiệu năng so với code cũ cùng kịch bản (output mở): 59 FPS · P99 33.8ms mới vs 59 FPS · P99 36.2ms cũ —
+không chậm đi.
+
+**Chưa làm (có thể làm tiếp nếu cần giống Resolume hơn):** kéo cả slice bằng cách nắm vào giữa; chọn nhiều điểm
+cùng lúc; nudge bằng phím mũi tên; đổi số cột/hàng hoặc thêm cột/hàng hiện vẫn **reset** lưới về chưa uốn (như
+cũ) thay vì lấy mẫu lại hình đang uốn; mask (dragKind 3) vẫn ở toạ độ output tuyệt đối, chưa đi theo keystone.
+
+### F22 — Slice input từ Composition / Layer / Group (2026-09-23, theo yêu cầu người dùng)
+Mỗi slice có **Input source** (Properties → Slice, ngay dưới tên slice): **Composition** (mặc định, như trước),
+**Layer · <tên>** hoặc **Group · <tên>**. Input rectangle vẫn cắt trên nguồn đó (cùng canvas 1920×1080).
+- Model: `Slice::srcKind` (`SrcComp/SrcLayer/SrcGroup`) + `Slice::srcRef` (id). Layer trước đây **không có id** —
+  thêm `Layer::id` ổn định (`EnsureLayerIds`, gọi ở mọi chỗ tạo/nạp/nhân bản layer), để đổi tên hay trùng tên
+  layer không làm gãy routing. File cũ không có id được gán `layer-1..n` khi mở; layer nhân bản nhận id mới.
+- Render: `DrawSliceSource` (`clipart.cpp`) — cùng quy tắc blend/opacity/fader nhóm/dissolve với composite, chỉ
+  lọc layer thuộc nguồn. Bypass/mute vẫn ẩn layer; **solo chỉ tính trong tập layer của nguồn** (solo một layer
+  khác ở main mix không làm tắt slice đang route layer riêng). `DrawComposite` giờ chỉ là nguồn Composition.
+  Cửa sổ máy chiếu (`output.cpp`) vẽ mỗi slice theo nguồn riêng của nó.
+- Nguồn mất (layer/group đã xoá): slice lùi về Composition, ô chọn hiện đỏ "Missing · showing Composition";
+  tham chiếu **không** bị xoá nên undo khôi phục layer là routing trở lại. Lưu trong `.mikmap` và preset output.
+- Giới hạn: tham chiếu theo deck hiện tại (mỗi deck có layer riêng; deck nhân bản giữ cùng id nên routing đi
+  theo layer tương ứng). Stage/Live Output monitor chưa xem trước được nội dung theo nguồn slice (chỉ cửa sổ
+  máy chiếu vẽ nội dung).
+- Kiểm: `--roundtrip` (id duy nhất; mặc định Composition; đổi tên layer không gãy; lưu/mở Layer và Group; xoá
+  layer → lùi Composition; `EnsureLayerIds` giữ id tốt, sửa id trống/trùng). Ảnh chụp thật `--outshot`: cùng
+  slice đổi Composition → Layer · Spectrum thì máy chiếu chỉ còn spectrum, slice bên cạnh vẫn mix đầy đủ; bản
+  Debug (bật assertion) chọn Group chạy sạch.
+
+### Reset slice về default + cue group theo column + icon reset + Preview đúng cỡ (2026-09-23, theo yêu cầu người dùng)
+- **Reset warp về default thật:** `resetWarp()` trước đây đặt quad output = input rect hiện tại (slice đang crop
+  thì "reset" ra hình crop — sai nghĩa reset). Nay về fullscreen mặc định (0,0,1920,1080, khớp `NewBlankProject`);
+  mesh đi theo tự động vì sống trong không gian keystone. Hành vi cũ giữ lại thành action riêng
+  **`matchOutputToInput()`** (kiểu Resolume "match output to input"), không lẫn với reset.
+- **Các hàm reset còn lại cũng về default:** `resetMeshWarp()` (chỉ xả uốn, giữ mật độ/splits lưới),
+  `resetAllWarping()` (fullscreen + lưới uniform 4×3 mặc định, không uốn), `resetInputRect()` ("Whole area",
+  theo `canvasW/H` thay vì cứng 1920×1080). Menu nút Reset trên toolbar gọi đúng các hàm này (trước là lambda
+  rời rạc, "Reset mesh warp" còn xoá cả splits).
+- **Menu chuột phải slice** (cây + Stage output): Whole area (input) · Match output to input · Reset warp ·
+  Reset mesh warp · Reset all warping (trước chỉ có Reset warp).
+- **Chọn column cũng chọn cue của group:** `fireColumn()` set `activeCol` cho mọi group nên ô `Cue N` chạy theo
+  column (trước chỉ đổi `activeCol` của app, highlight cue lệch với column đang chọn).
+- **Tên cột mặc định tiếng Anh:** `colName()` fallback và `insertCol()` dùng "Column N" thay "Cột N".
+- **Icon nút reset (`rotate-ccw`, `ui.cpp`):** cung tròn cũ (-0.6→4.9 rad) hở ở trên-phải, mũi tên ở trên-trái —
+  rời nhau nên nhìn như icon hỏng. Đổi cung -1.15→3.56 rad để đầu cung chạm đúng góc mũi tên (3,8), khớp bản
+  Lucide gốc. Một chỗ sửa, hết cho toolbar Mapping, menu slice và nút reset FX bên deck.
+- **Preview Cue đúng cỡ mặc định:** trước vẽ full `well` với base 480 → to gấp ~2x so với Live (letterbox +
+  base 960). Nay letterbox `CanvasRect` + base 960, lưới grid và viền gói trong vùng letterbox.
+- Kiểm: build Release sạch (chỉ warning có sẵn); `--roundtrip` pass; ảnh chụp headless trang Mapping (icon
+  reset hiện tròn-mũi tên đúng) và Composition (Preview cùng cỡ Live).

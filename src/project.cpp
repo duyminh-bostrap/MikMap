@@ -94,8 +94,9 @@ JsonValue SliceJ(const Slice& s) {
   o.set("meshCols", s.meshCols); o.set("meshRows", s.meshRows);
   o.set("meshU", FloatsJ(s.meshU)); o.set("meshV", FloatsJ(s.meshV));
   JsonValue mp = JsonValue::array();
-  for (auto& row : s.meshPts) { JsonValue r = JsonValue::array(); for (auto& p : row) r.push(V2(p)); mp.push(r); }
-  o.set("meshPts", mp);
+  for (auto& row : s.meshLocal) { JsonValue r = JsonValue::array(); for (auto& p : row) r.push(V2(p)); mp.push(r); }
+  o.set("meshLocal", mp);
+  o.set("srcKind", s.srcKind); o.set("srcRef", s.srcRef);
   o.set("ix", s.ix); o.set("iy", s.iy); o.set("iw", s.iw); o.set("ih", s.ih);
   JsonValue q = JsonValue::array(); for (int i = 0; i < 4; ++i) q.push(V2(s.q[i]));
   o.set("q", q);
@@ -116,10 +117,15 @@ Slice ReadSlice(const JsonValue& o) {
   s.warp = std::clamp(o["warp"].asInt(0), 0, 1);
   s.meshCols = std::clamp(o["meshCols"].asInt(4), 2, 64); s.meshRows = std::clamp(o["meshRows"].asInt(3), 2, 64);
   s.meshU = ReadFloats(o["meshU"]); s.meshV = ReadFloats(o["meshV"]);
-  if (o["meshPts"].isArray()) for (auto& r : o["meshPts"].arrayItems()) {
-    std::vector<ImVec2> row; if (r.isArray()) for (auto& p : r.arrayItems()) row.push_back(ReadV2(p));
-    s.meshPts.push_back(row);
-  }
+  auto readGrid = [](const JsonValue& a) {
+    std::vector<std::vector<ImVec2>> g;
+    if (a.isArray()) for (auto& r : a.arrayItems()) { std::vector<ImVec2> row; if (r.isArray()) for (auto& p : r.arrayItems()) row.push_back(ReadV2(p)); g.push_back(row); }
+    return g;
+  };
+  s.meshLocal = readGrid(o["meshLocal"]);
+  // a dangling ref is kept, not cleared: the slice shows the composition and the UI warns, and reappearing
+  // layer/group (e.g. an undo) restores the routing
+  s.srcKind = std::clamp(o["srcKind"].asInt(0), 0, 2); s.srcRef = o["srcRef"].asString();
   s.ix = o["ix"].asInt(0); s.iy = o["iy"].asInt(0); s.iw = std::max(20, o["iw"].asInt(1920)); s.ih = std::max(20, o["ih"].asInt(1080));
   ImVec2 def[4] = {{(float)s.ix, (float)s.iy}, {(float)(s.ix + s.iw), (float)s.iy}, {(float)(s.ix + s.iw), (float)(s.iy + s.ih)}, {(float)s.ix, (float)(s.iy + s.ih)}};
   for (int i = 0; i < 4; ++i) s.q[i] = o["q"].isArray() && o["q"].size() > (size_t)i ? ReadV2(o["q"].at(i), def[i]) : def[i];
@@ -128,6 +134,8 @@ Slice ReadSlice(const JsonValue& o) {
     for (int i = 0; i < 4; ++i) m.pts[i] = mo["pts"].isArray() && mo["pts"].size() > (size_t)i ? ReadV2(mo["pts"].at(i)) : ImVec2(0, 0);
     s.masks.push_back(m);
   }
+  // files/presets from before meshLocal: absolute output-pixel mesh, converted once here (needs q, so after reading it)
+  if (!o["meshLocal"].isArray() && o["meshPts"].isArray()) MigrateAbsoluteMesh(s, readGrid(o["meshPts"]));
   return s;
 }
 
@@ -164,7 +172,7 @@ static void WriteDeckContent(JsonValue& obj, const std::vector<Group>& groups, c
   JsonValue ls = JsonValue::array();
   for (auto& l : layers) {
     JsonValue lo = JsonValue::object();
-    lo.set("name", l.name); lo.set("group", l.group); lo.set("blend", l.blend); lo.set("blendTime", l.blendTime);
+    lo.set("id", l.id); lo.set("name", l.name); lo.set("group", l.group); lo.set("blend", l.blend); lo.set("blendTime", l.blendTime);
     lo.set("opacity", l.opacity); lo.set("audio", l.audio);
     lo.set("solo", l.solo); lo.set("muted", l.muted); lo.set("bypassed", l.bypassed); lo.set("collapsed", l.collapsed);
     JsonValue cs = JsonValue::array(); for (auto& c : l.clips) cs.push(ClipJ(c));
@@ -236,7 +244,7 @@ static bool ReadDeckContent(const JsonValue& dj, Deck& d) {
   d.layers.clear();
   size_t cols = 1;
   for (auto& lo : dj["layers"].arrayItems()) {
-    Layer l; l.name = lo["name"].asString("Layer"); l.group = lo["group"].asString(); l.blend = lo["blend"].asString("Normal");
+    Layer l; l.id = lo["id"].asString(); l.name = lo["name"].asString("Layer"); l.group = lo["group"].asString(); l.blend = lo["blend"].asString("Normal");
     if (BlendIndex(l.blend) == 0) l.blend = "Normal";
     l.blendTime = std::max(0.f, F(lo, "blendTime", 0)); l.opacity = std::clamp(F(lo, "opacity", 100), 0.f, 100.f); l.audio = std::clamp(F(lo, "audio", 0), 0.f, 100.f);
     l.solo = lo["solo"].asBool(); l.muted = lo["muted"].asBool(); l.bypassed = lo["bypassed"].asBool(); l.collapsed = lo["collapsed"].asBool();
@@ -244,6 +252,7 @@ static bool ReadDeckContent(const JsonValue& dj, Deck& d) {
     cols = std::max(cols, l.clips.size());
     d.layers.push_back(std::move(l));
   }
+  EnsureLayerIds(d.layers);   // files from before layer ids, or hand-edited duplicates
   for (auto& l : d.layers) {
     l.clips.resize(cols);
     l.live = false; for (auto& c : l.clips) if (c.isLive()) l.live = true;
@@ -274,7 +283,7 @@ bool Deserialize(const JsonValue& root, App& out, std::string& err) {
   out.layers.clear();
   size_t cols = 1;
   for (auto& lo : comp["layers"].arrayItems()) {
-    Layer l; l.name = lo["name"].asString("Layer"); l.group = lo["group"].asString(); l.blend = lo["blend"].asString("Normal");
+    Layer l; l.id = lo["id"].asString(); l.name = lo["name"].asString("Layer"); l.group = lo["group"].asString(); l.blend = lo["blend"].asString("Normal");
     if (BlendIndex(l.blend) == 0) l.blend = "Normal";
     l.blendTime = std::max(0.f, F(lo, "blendTime", 0)); l.opacity = std::clamp(F(lo, "opacity", 100), 0.f, 100.f); l.audio = std::clamp(F(lo, "audio", 0), 0.f, 100.f);
     l.solo = lo["solo"].asBool(); l.muted = lo["muted"].asBool(); l.bypassed = lo["bypassed"].asBool(); l.collapsed = lo["collapsed"].asBool();
@@ -282,6 +291,7 @@ bool Deserialize(const JsonValue& root, App& out, std::string& err) {
     cols = std::max(cols, l.clips.size());
     out.layers.push_back(std::move(l));
   }
+  EnsureLayerIds(out.layers);
   for (auto& l : out.layers) {                      // every layer must have the same number of columns
     l.clips.resize(cols);
     l.live = false; for (auto& c : l.clips) if (c.isLive()) l.live = true;
@@ -508,6 +518,7 @@ void NewBlankProject() {
     Layer l; l.name = "Layer " + std::to_string(i + 1); l.blend = "Normal"; l.opacity = 100; l.clips.assign(8, Clip());
     A.layers.push_back(l);
   }
+  EnsureLayerIds(A.layers);
   Screen s; s.id = "screen1"; s.name = "Screen 1"; s.outDev = "Display 1"; s.w = 1920; s.h = 1080; s.role = 0;
   Slice sl; sl.id = "slice1"; sl.name = "Slice 1"; sl.ix = 0; sl.iy = 0; sl.iw = 1920; sl.ih = 1080;
   sl.q[0] = ImVec2(0, 0); sl.q[1] = ImVec2(1920, 0); sl.q[2] = ImVec2(1920, 1080); sl.q[3] = ImVec2(0, 1080);

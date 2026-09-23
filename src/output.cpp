@@ -129,18 +129,14 @@ void RenderOutput() {
       WarpMap wm;
       wm.slice = &sl;
       wm.ox = 0; wm.oy = 0; wm.sx = sx; wm.sy = sy;
-      // clip to the quad's bounding box (ImGui clipping is rectangular)
-      float mnx = 1e9f, mxx = -1e9f, mny = 1e9f, mxy = -1e9f;
-      for (int i = 0; i < 4; ++i) {
-        ImVec2 p = wm.Map(sl.ix + (i == 1 || i == 2 ? sl.iw : 0.f), sl.iy + (i >= 2 ? sl.ih : 0.f));
-        mnx = std::min(mnx, p.x); mxx = std::max(mxx, p.x);
-        mny = std::min(mny, p.y); mxy = std::max(mxy, p.y);
-      }
-      ImRect bb(mnx, mny, mxx, mxy);
+      // clip to the warped slice's bounding box (ImGui clipping is rectangular) — the whole mesh, not just the 4 corners,
+      // or a mesh point bulging past the keystone quad gets cut off on the projector
+      ImVec2 omn, omx; SliceOutputBounds(sl, omn, omx);
+      ImRect bb(omn.x * sx, omn.y * sy, omx.x * sx, omx.y * sy);
       dl.PushClipRect(bb.Min, bb.Max, true);
       g.warp = &wm;
       if (A.testCard) OutputTestCard(bb);
-      else DrawComposite(bb, t, 1.f);
+      else DrawSliceSource(sl, bb, t, 1.f);   // F22: composition, or just the layer/group this slice is routed to
       g.warp = nullptr;
       dl.PopClipRect();
     }

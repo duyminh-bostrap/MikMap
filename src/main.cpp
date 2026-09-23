@@ -466,9 +466,10 @@ void DrawOverlays(ImVec2 disp) {
         int to = li + (hit == 0 ? -1 : 1);
         if (to >= 0 && to < n) { std::swap(A.layers[li], A.layers[to]); A.selLayer = to; }
       } else if (hit == 2) {
-        Layer c = A.layers[li]; c.name += " copy"; c.live = false;
+        Layer c = A.layers[li]; c.name += " copy"; c.live = false; c.id.clear();   // a copy is a new routing target
         for (auto& k : c.clips) if (k.isLive()) k.st = Clip::Loaded;
         A.layers.insert(A.layers.begin() + li + 1, c); A.selLayer = li + 1;
+        EnsureLayerIds(A.layers);
       } else if (hit == 3) { A.beginRename(0, li, A.layerMenu.pos, A.layers[li].name); }
       else if (hit == 4) { for (auto& k : A.layers[li].clips) k = Clip(); A.layers[li].live = false; }
       else if (hit == 5 && n > 1) { A.layers.erase(A.layers.begin() + li); A.selLayer = std::clamp(A.selLayer, 0, (int)A.layers.size() - 1); A.selLi = std::clamp(A.selLi, 0, (int)A.layers.size() - 1); }
@@ -771,7 +772,7 @@ int main(int argc, char** argv) {
     if (A.autoStartCol != -1) return fail("autoStartCol must default to off");
     for (auto& l : A.layers) for (auto& c : l.clips) if (c.isLive()) c.st = Clip::Loaded;   // clean baseline: stop the demo's own default-live clips
     for (auto& l : A.layers) l.live = false;
-    A.autoStartCol = 2;   // Cột 3, non-empty in every layer of the demo
+    A.autoStartCol = 2;   // Column 3, non-empty in every layer of the demo
     if (!SaveProject(roundtrip, err)) return fail(err.c_str());
     NewProject();   // must NOT inherit the setting from the in-memory state -- only a real load applies it
     if (A.autoStartCol != -1) return fail("NewProject must not carry over autoStartCol");
@@ -874,6 +875,78 @@ int main(int argc, char** argv) {
       if (loadedNoise != 3.5f || loadedBlob != 7.25f) return fail("calibration profile did not round-trip noise/blobSize");
       { std::FILE* f = std::fopen(calibPath.c_str(), "wb"); if (f) { std::fputs("{\"format\":1,\"calib\":[1,2,3]}", f); std::fclose(f); } }
       if (LoadCalibProfile(calibPath, loadedCalib, loadedRoi, loadedNoise, loadedBlob, perr)) return fail("a calibration file without exactly 4 points was accepted");
+    }
+    // F5/F9: keystone is a true perspective map, and the mesh warp lives in keystone space so it follows the corners.
+    {
+      auto closeTo = [](ImVec2 a, ImVec2 b, float tol) { return std::fabs(a.x - b.x) <= tol && std::fabs(a.y - b.y) <= tol; };
+      Slice k; k.q[0] = ImVec2(100, 100); k.q[1] = ImVec2(900, 200); k.q[2] = ImVec2(850, 700); k.q[3] = ImVec2(150, 900);
+      for (int i = 0; i < 4; ++i) if (!closeTo(SliceMapUV(k, i == 1 || i == 2 ? 1.f : 0.f, i >= 2 ? 1.f : 0.f), k.q[i], 0.01f)) return fail("keystone does not hit its own corners");
+      // a homography sends the square's centre to where the quad's diagonals cross (bilinear would not)
+      ImVec2 p0 = k.q[0], p2 = k.q[2], p1 = k.q[1], p3 = k.q[3];
+      float d1x = p2.x - p0.x, d1y = p2.y - p0.y, d2x = p3.x - p1.x, d2y = p3.y - p1.y;
+      float t = ((p1.x - p0.x) * d2y - (p1.y - p0.y) * d2x) / (d1x * d2y - d1y * d2x);
+      if (!closeTo(SliceMapUV(k, 0.5f, 0.5f), ImVec2(p0.x + d1x * t, p0.y + d1y * t), 0.05f)) return fail("keystone is not a perspective (homography) map");
+      // mesh mode with an undeformed grid must look exactly like plain corner pin
+      Slice w = k; w.warp = 1; w.meshCols = 4; w.meshRows = 3;
+      for (float u : {0.1f, 0.5f, 0.83f}) for (float v : {0.2f, 0.6f}) if (!closeTo(SliceMapUV(w, u, v), SliceMapUV(k, u, v), 0.05f)) return fail("undeformed mesh differs from corner pin");
+      // deform one interior vertex, then move a keystone corner: the vertex must move with it
+      std::vector<float> us = {0, 0.25f, 0.5f, 0.75f, 1}, vs = {0, 1 / 3.f, 2 / 3.f, 1};
+      for (float v : vs) { std::vector<ImVec2> row; for (float u : us) row.push_back(ImVec2(u, v)); w.meshLocal.push_back(row); }
+      w.meshLocal[1][2] = ImVec2(0.5f, 0.2f);
+      auto cornerPinAt = [&](const Slice& s, ImVec2 l) { Slice c = s; c.warp = 0; return SliceMapUV(c, l.x, l.y); };
+      if (!closeTo(SliceMapUV(w, 0.5f, 1 / 3.f), cornerPinAt(w, ImVec2(0.5f, 0.2f)), 0.05f)) return fail("mesh vertex not mapped through the keystone");
+      ImVec2 before = SliceMapUV(w, 0.5f, 1 / 3.f);
+      w.q[1] = ImVec2(1300, -150);   // drag TR far outside the output box
+      ImVec2 after = SliceMapUV(w, 0.5f, 1 / 3.f);
+      if (closeTo(before, after, 1.f)) return fail("mesh did not follow the keystone corner");
+      if (!closeTo(after, cornerPinAt(w, ImVec2(0.5f, 0.2f)), 0.05f)) return fail("mesh vertex left its place in keystone space");
+      // bounds cover points outside both the quad and the output box
+      ImVec2 bmn, bmx; SliceOutputBounds(w, bmn, bmx);
+      if (bmx.x < 1300 || bmn.y > -150) return fail("slice bounds miss an outside corner");
+      // meshLocal survives save/load
+      NewProject();
+      A.screens[0].slices[0] = w; A.screens[0].slices[0].id = "kw";
+      if (!SaveProject(roundtrip, err)) return fail(err.c_str());
+      NewProject();
+      if (!LoadProject(roundtrip, err)) return fail(err.c_str());
+      const Slice& lw = A.screens[0].slices[0];
+      if (lw.meshLocal.size() != 4 || !closeTo(lw.meshLocal[1][2], ImVec2(0.5f, 0.2f), 1e-4f) || !closeTo(lw.q[1], ImVec2(1300, -150), 1e-3f)) return fail("meshLocal/keystone not saved");
+      // older files stored the mesh in absolute output pixels and, in mesh mode, ignored q: loading must keep the look
+      std::string oldPath = roundtrip + ".oldmesh";
+      { std::FILE* f = std::fopen(oldPath.c_str(), "wb"); if (f) { std::fputs(
+          "{\"format\":1,\"screen\":{\"id\":\"s\",\"name\":\"S\",\"slices\":[{\"id\":\"a\",\"name\":\"A\",\"warp\":1,\"meshCols\":2,\"meshRows\":2,"
+          "\"q\":[[100,100],[900,100],[900,700],[100,700]],"
+          "\"meshPts\":[[[0,0],[500,0],[1000,0]],[[0,500],[520,480],[1000,500]],[[0,1000],[500,1000],[1000,1000]]]}]}}", f); std::fclose(f); } }
+      Screen old;
+      if (!LoadOutputPreset(oldPath, old, err) || old.slices.size() != 1) return fail("old-format preset did not load");
+      const Slice& os = old.slices[0];
+      if (!closeTo(os.q[1], ImVec2(1000, 0), 1e-3f)) return fail("old mesh corners were not adopted as the keystone");
+      if (!closeTo(SliceMapUV(os, 0.5f, 0.5f), ImVec2(520, 480), 0.05f) || !closeTo(SliceMapUV(os, 0.5f, 0.f), ImVec2(500, 0), 0.05f)) return fail("old absolute mesh changed shape on load");
+    }
+    // F22: slice input source = composition / one layer / one group, routed by stable ids
+    {
+      NewProject();
+      for (size_t i = 0; i < A.layers.size(); ++i) for (size_t j = i + 1; j < A.layers.size(); ++j)
+        if (A.layers[i].id.empty() || A.layers[i].id == A.layers[j].id) return fail("layers need unique non-empty ids");
+      Slice& s = A.screens[0].slices[0];
+      if (SliceSourceName(s) != "Composition") return fail("a new slice must default to the composition");
+      std::string lid = A.layers[1].id;
+      s.srcKind = Slice::SrcLayer; s.srcRef = lid;
+      A.layers[1].name = "Renamed Layer";
+      if (!SliceSourceValid(s) || SliceSourceName(s) != "Layer \xC2\xB7 Renamed Layer") return fail("layer routing must survive a rename");
+      A.screens[0].slices[1].srcKind = Slice::SrcGroup; A.screens[0].slices[1].srcRef = A.groups[0].id;
+      if (!SaveProject(roundtrip, err)) return fail(err.c_str());
+      NewProject();
+      if (!LoadProject(roundtrip, err)) return fail(err.c_str());
+      const Slice& ls = A.screens[0].slices[0];
+      if (ls.srcKind != Slice::SrcLayer || ls.srcRef != lid || !SliceSourceValid(ls)) return fail("layer source not saved/loaded");
+      if (A.screens[0].slices[1].srcKind != Slice::SrcGroup || !SliceSourceValid(A.screens[0].slices[1])) return fail("group source not saved/loaded");
+      if (A.layers[1].id != lid) return fail("layer id changed across save/load");
+      A.layers.erase(A.layers.begin() + 1);
+      if (SliceSourceValid(ls) || SliceSourceName(ls) != "Composition") return fail("a deleted layer must fall back to the composition");
+      std::vector<Layer> dup(3); dup[0].id = "layer-1"; dup[1].id = "layer-1";
+      EnsureLayerIds(dup);
+      if (dup[0].id != "layer-1" || dup[1].id.empty() || dup[1].id == dup[0].id || dup[2].id.empty() || dup[2].id == dup[1].id) return fail("EnsureLayerIds must keep good ids and fix blank/duplicate ones");
     }
     std::printf("roundtrip OK\n"); return 0;
   }

@@ -210,7 +210,7 @@ void Icon(const char* n, ImVec2 c, float sz, ImU32 col) {
   else if (is("settings")) { Circ(12, 12, 3); Circ(12, 12, 8); for (int i = 0; i < 8; ++i) { float a = i * 0.7853982f; dl->AddLine(P(12 + cosf(a) * 8, 12 + sinf(a) * 8), P(12 + cosf(a) * 10.5f, 12 + sinf(a) * 10.5f), col, th * 1.4f); } }
   else if (is("circle-help")) { Circ(12, 12, 10); Poly({P(9.5f, 9), P(10.5f, 7.5f), P(13.5f, 7.5f), P(14.5f, 9.5f), P(12, 12), P(12, 13.5f)}); dl->AddCircleFilled(P(12, 17), 1.1f * s + 0.3f, col); }
   else if (is("info")) { Circ(12, 12, 10); Line(12, 16, 12, 12); dl->AddCircleFilled(P(12, 8), 1.1f * s + 0.3f, col); }
-  else if (is("rotate-ccw")) { dl->PathArcTo(P(12, 12), 9 * s, -0.6f, 4.9f, 24); dl->PathStroke(col, 0, th); Poly({P(3, 3), P(3, 8), P(8, 8)}); }
+  else if (is("rotate-ccw")) { dl->PathArcTo(P(12, 12), 9 * s, -1.15f, 3.56f, 24); dl->PathStroke(col, 0, th); Poly({P(3, 3), P(3, 8), P(8, 8)}); }
   else if (is("monitor")) { Rect(2, 3, 22, 16, 2); Line(8, 21, 16, 21); Line(12, 16, 12, 21); }
   else if (is("maximize")) { Poly({P(8, 3), P(3, 3), P(3, 8)}); Poly({P(21, 8), P(21, 3), P(16, 3)}); Poly({P(3, 16), P(3, 21), P(8, 21)}); Poly({P(16, 21), P(21, 21), P(21, 16)}); }
   else if (is("scissors")) { Circ(6, 6, 3); Circ(6, 18, 3); Line(20, 4, 8.1f, 15.9f); Line(14.5f, 14.5f, 20, 20); Line(8.1f, 8.1f, 12, 12); }

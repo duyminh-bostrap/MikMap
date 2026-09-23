@@ -167,12 +167,32 @@ ImRect CanvasRect(ImRect fit) {
   return ImRect(c.x - w * 0.5f, c.y - h * 0.5f, c.x + w * 0.5f, c.y + h * 0.5f);
 }
 
-void DrawComposite(ImRect canvas, float t, float alpha) {
+void DrawComposite(ImRect canvas, float t, float alpha) { Slice comp; DrawSliceSource(comp, canvas, t, alpha); }
+
+static const Layer* FindLayer(const std::string& id) { for (auto& l : A.layers) if (!id.empty() && l.id == id) return &l; return nullptr; }
+bool SliceSourceValid(const Slice& s) {
+  if (s.srcKind == Slice::SrcLayer) return FindLayer(s.srcRef) != nullptr;
+  if (s.srcKind == Slice::SrcGroup) return A.group(s.srcRef) != nullptr;
+  return true;
+}
+std::string SliceSourceName(const Slice& s) {
+  if (s.srcKind == Slice::SrcLayer) if (const Layer* l = FindLayer(s.srcRef)) return "Layer \xC2\xB7 " + l->name;
+  if (s.srcKind == Slice::SrcGroup) if (const Group* g = A.group(s.srcRef)) return "Group \xC2\xB7 " + g->name;
+  return "Composition";
+}
+
+void DrawSliceSource(const Slice& s, ImRect canvas, float t, float alpha) {
+  int kind = SliceSourceValid(s) ? s.srcKind : (int)Slice::SrcComp;
+  auto member = [&](const Layer& l) {
+    return kind == Slice::SrcComp || (kind == Slice::SrcLayer && l.id == s.srcRef) || (kind == Slice::SrcGroup && l.group == s.srcRef);
+  };
+  // Solo is a composition-mix control: it only silences layers within the set this source draws, so routing one
+  // layer to a slice keeps working while the operator solos something else on the main output.
   bool anySolo = false;
-  for (auto& l : A.layers) if (l.solo) anySolo = true;
+  for (auto& l : A.layers) if (l.solo && member(l)) anySolo = true;
   for (int li = (int)A.layers.size() - 1; li >= 0; --li) {   // bottom layer first, top layer draws last
     const Layer& l = A.layers[li];
-    if (l.bypassed || l.muted || (anySolo && !l.solo)) continue;
+    if (!member(l) || l.bypassed || l.muted || (anySolo && !l.solo)) continue;
     const Clip* lc = nullptr;
     for (auto& c : l.clips) if (c.isLive()) { lc = &c; break; }
     if (!lc) continue;

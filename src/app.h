@@ -40,6 +40,7 @@ struct Clip {
   double thumbAt = -1;
 };
 struct Layer {
+  std::string id;   // F22: stable handle a slice's input source points at — names repeat and get renamed
   std::string name, group, blend;
   float blendTime = 0, opacity = 100, audio = 0;
   bool live = false, solo = false, muted = false, bypassed = false, collapsed = false;
@@ -77,9 +78,15 @@ struct Slice {
   int warp = 0;  // 0 cornerPin, 1 mesh
   int meshCols = 4, meshRows = 3;
   std::vector<float> meshU, meshV;                 // custom column/row split positions (0..1)
-  std::vector<std::vector<ImVec2>> meshPts;        // dragged mesh points (rows x cols), empty = derived
+  // Mesh vertices (rows x cols) in the keystone's own unit space, not output pixels: output = keystone(local).
+  // That is what makes the warp ride along when a corner pin moves. Empty (or wrong size) = undeformed grid.
+  std::vector<std::vector<ImVec2>> meshLocal;
+  // F22 input source: what this slice takes its picture from. The input rect (ix..ih) crops that source.
+  enum Src { SrcComp = 0, SrcLayer = 1, SrcGroup = 2 };
+  int srcKind = SrcComp;
+  std::string srcRef;   // Layer::id or Group::id; ignored for SrcComp
   int ix = 0, iy = 0, iw = 1920, ih = 1080;
-  ImVec2 q[4];   // tl, tr, br, bl
+  ImVec2 q[4];   // tl, tr, br, bl — keystone corners (perspective, like Resolume / engine WarpCornerPin)
   std::vector<Mask> masks;
 };
 struct Screen {
@@ -98,6 +105,10 @@ struct WarpMap {
   ImVec2 Map(float canvasX, float canvasY) const;
 };
 ImVec2 SliceMapUV(const Slice& s, float u, float v);  // unit square → output-space point
+void SliceOutputBounds(const Slice& s, ImVec2& mn, ImVec2& mx);   // output-space bbox of the whole warped slice
+// Files written before meshLocal existed stored mesh vertices in absolute output pixels (and ignored q in mesh mode).
+// Converts such a grid into keystone-local space so the slice still looks exactly as it did.
+void MigrateAbsoluteMesh(Slice& s, const std::vector<std::vector<ImVec2>>& abs);
 
 // ───────────── sensor model ─────────────
 struct Device { std::string id, name, endpoint; bool connected; int fps, latency; std::string packets; };
@@ -199,7 +210,7 @@ struct App {
     return p;
   }
   int colCount() const { return layers.empty() ? 8 : (int)layers[0].clips.size(); }
-  std::string colName(int i) { return i < (int)colNames.size() && !colNames[i].empty() ? colNames[i] : "C\xE1\xBB\x99t " + std::to_string(i + 1); }
+  std::string colName(int i) { return i < (int)colNames.size() && !colNames[i].empty() ? colNames[i] : "Column " + std::to_string(i + 1); }
   void insertCol(int at); void deleteCol(int ci); void moveColTo(int from, int to);
   void addFx(int kind); void removeFx(int i); void dupFx(int i); void moveFx(int i, int d); void resetFx(int i);
   std::vector<Fx>& fxChain() { int li = std::clamp(selLi, 0, (int)layers.size() - 1); return layers[li].clips[std::clamp(selCi, 0, (int)layers[li].clips.size() - 1)].fx; }
@@ -235,7 +246,9 @@ struct App {
   int selKind = -1;  // -1 auto, 0 screen, 1 slice, 2 mask
   float mapZ = 1, mapScrollX = 0, mapScrollY = 0, mapCx = 0.5f, mapCy = 0.5f;
   struct MapReq { bool valid = false; float z = 1, cx = 0.5f, cy = 0.5f; } mapReq;
-  void setZoom(float z, float cx = -1, float cy = -1) { mapReq.valid = true; mapReq.z = z; mapReq.cx = cx < 0 ? mapCx : cx; mapReq.cy = cy < 0 ? mapCy : cy; }
+  // cx/cy: view centre in canvas-normalised units — may be <0 or >1, since points can live outside the output box
+  void setZoom(float z) { setZoom(z, mapCx, mapCy); }
+  void setZoom(float z, float cx, float cy) { mapReq.valid = true; mapReq.z = z; mapReq.cx = cx; mapReq.cy = cy; }
   bool mapFocus = false;
   char meshArm = 0; bool meshPickOn = false; float meshPickU = 0, meshPickV = 0;
   // Undo/redo is global (project.cpp): snapshots are taken automatically when input goes idle, so pushHist() is a
@@ -278,7 +291,11 @@ struct App {
   void moveClip(int fl, int fc, int tl, int tc);
   // mapping actions
   void addScreen(); void addSlice(); void addMask(); void deleteMask(); void deleteSlice();
-  void resetWarp();
+  void resetWarp();         // output corner pins -> fullscreen default (0,0,1920,1080), mesh follows (keystone-relative)
+  void resetMeshWarp();     // flatten mesh deformation only, keep grid density/splits
+  void resetAllWarping();   // fullscreen + default 4x3 uniform grid, no deformation
+  void matchOutputToInput();  // Resolume-style: output quad = current input rect (explicit match, NOT a reset)
+  void resetInputRect();   // F13-ish, Resolume-style "Whole area": input rect back to the full canvas
   void dupScreen(const std::string& id); void dupSlice(const std::string& sc, const std::string& sl);
   void removeSlice(const std::string& sc, const std::string& sl);
   void deleteScreen(const std::string& id);
@@ -360,6 +377,12 @@ float ClipSeconds(const Clip& c);   // real length from Clip::dur ("16s"); gener
 // composition rendering (A1) — shared by the Live Output monitor and the projector window
 ImRect CanvasRect(ImRect fit);                             // letterbox `fit` to the canvas aspect
 void DrawComposite(ImRect canvas, float t, float alpha);   // all live clips, bottom layer first
+// F22: a slice's picture — the whole composition, one layer, or one group's layers (same blend/opacity/dissolve rules).
+// A source whose layer/group no longer exists falls back to the composition (SliceSourceValid tells the UI to warn).
+void DrawSliceSource(const Slice& s, ImRect canvas, float t, float alpha);
+bool SliceSourceValid(const Slice& s);
+std::string SliceSourceName(const Slice& s);
+void EnsureLayerIds(std::vector<Layer>& layers);            // give every layer a unique id (new, loaded or duplicated)
 // projector output window (F2/I1)
 bool OutputOpen();
 void OpenOutput(struct GLFWwindow* share, int monitorIdx);
