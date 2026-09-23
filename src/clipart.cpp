@@ -263,6 +263,19 @@ void RenderClipThumbnail(Clip& c) {
       dd.DisplayPos = ImVec2(0, 0); dd.DisplaySize = ImVec2((float)kThumbW, (float)kThumbH); dd.FramebufferScale = ImVec2(1, 1);
       dd.AddDrawList(&dl);
       dd.Valid = true;
+      // Newer Dear ImGui (texture refactor) only actually uploads the font atlas to the GPU when a
+      // RenderDrawData call processes pending textures via draw_data->Textures — the main frame's own render
+      // call does that, but only once per frame, at the END of the frame; this thumbnail pass runs mid-frame
+      // (inside DrawDeck), before that has happened, so ImGui::GetPlatformIO().Textures is still the EMPTY
+      // list UpdateTexturesEndFrame() resets it to — pointing Textures there is a no-op, not a fix. Building
+      // our own one-entry list from io.Fonts->TexData (valid as soon as the atlas is built, which NewFrame()
+      // already guarantees by this point) makes this call upload the atlas itself if nothing else has yet,
+      // instead of asserting "ImDrawCmd is referring to ImTextureData that wasn't uploaded" (IM_ASSERT is a
+      // no-op in Release, which is why --shot never caught this — only a real Debug run did).
+      static ImVector<ImTextureData*> fontTexList;
+      fontTexList.resize(0);
+      fontTexList.push_back(ImGui::GetIO().Fonts->TexData);
+      dd.Textures = &fontTexList;
       ImGui_ImplOpenGL3_RenderDrawData(&dd);
     }
   }
