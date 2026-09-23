@@ -575,6 +575,14 @@ static void Stage(ImRect r) {
   }
   auto toPx = [&](ImVec2 p) { return ImVec2(cv.Min.x + p.x * s, cv.Min.y + p.y * s); };
   ImVec2 mu(std::clamp(std::round((m.x - cv.Min.x) / cw * 1920.f), 0.f, 1920.f), std::clamp(std::round((m.y - cv.Min.y) / ch * 1080.f), 0.f, 1080.f));
+  // F5/F9: corner-pin and mesh points are OUTPUT-space and must be draggable well outside the nominal
+  // 1920x1080 box — e.g. correcting extreme projector keystone, or a mesh vertex bulging past the rectangle
+  // for a curved surface. The numeric corner-pin fields a few hundred lines down already allow -4000..8000
+  // (IntField calls below); muOut matches that range so a mouse drag can reach exactly as far as typing a
+  // number could. `mu` (canvas-bound) stays as-is for the input-rect drag (dragKind==2, A.mpage==0), which
+  // selects a sub-region of canvas CONTENT and must stay within it — a different coordinate space, not an
+  // oversight to widen too.
+  ImVec2 muOut(std::clamp(std::round((m.x - cv.Min.x) / cw * 1920.f), -4000.f, 8000.f), std::clamp(std::round((m.y - cv.Min.y) / ch * 1080.f), -4000.f, 8000.f));
 
   g.dl->PushClipRect(area.Min, area.Max, true);
   Box(cv, K(0x0d0d0d), 0, 3);
@@ -588,9 +596,9 @@ static void Stage(ImRect r) {
     if (dragKind == 4) {
       auto gr = MeshGrid(*sl); sl->meshPts = gr;
       int rr = dragIdx / 100, cc = dragIdx % 100;
-      if (rr < (int)sl->meshPts.size() && cc < (int)sl->meshPts[rr].size()) sl->meshPts[rr][cc] = mu;
+      if (rr < (int)sl->meshPts.size() && cc < (int)sl->meshPts[rr].size()) sl->meshPts[rr][cc] = muOut;
     }
-    else if (dragKind == 1) sl->q[dragIdx] = mu;
+    else if (dragKind == 1) sl->q[dragIdx] = muOut;
     else if (dragKind == 3 && mk) mk->pts[dragIdx] = mu;
     else if (dragKind == 2) {
       int x = (int)mu.x, y = (int)mu.y, ix = sl->ix, iy = sl->iy, iw = sl->iw, ih = sl->ih, nx = ix, ny = iy, nw = iw, nh = ih;

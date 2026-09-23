@@ -315,3 +315,23 @@
   - **Đã xác nhận bằng ảnh chụp thật** (`--shot --page 0 --frames 200`, máy Windows thật, không phải suy đoán): các ô hiện đúng hình sinh riêng của từng clip (Cyber Hex Grid = lưới lục giác, Particle Vortex = chấm rải rác, Mesh Pulse = vòng tròn...), không bị lật ngược, khớp đúng hình ở Preview Cue/Live Output. PerfPanel ổn định **P99 ~17.7ms** sau 200 khung — đúng mục tiêu `tech-defaults.md` (p99 < ~17ms), không tái diễn regression ~16s/khung.
   - **Giới hạn còn lại:** `Strobe Tunnel` có thể thumbnail tối/đen nếu bắt đúng lúc FX Strobe đang ở pha "tắt" — đây là hành vi đúng theo FX thật (khác gradient tĩnh trước đây không phản ánh FX gì cả), không phải lỗi. Texture không bao giờ được giải phóng (leak nhẹ theo phong cách hiện có của `src/`, xem B2); nếu cần dọn khi xoá/đổi clip thì phải thêm `glDeleteTextures` — chưa làm ở đợt này.
   - **Sửa lỗi nghiêm trọng: `abort()` khi chạy bản Debug (2026-09-23, người dùng báo qua F5 VS Code):** bản Release (`--shot`) không lộ ra vì `IM_ASSERT` bị tắt ở Release, nhưng bản Debug thật (build+chạy trực tiếp, không qua `--shot`) crash ngay khi thumbnail đầu tiên render, với thông báo *"ImDrawCmd is referring to ImTextureData that wasn't uploaded to graphics system"*. Nguyên nhân: ở bản Dear ImGui mới (1.92.x, texture quản lý động), font atlas chỉ thật sự upload lên GPU khi có lệnh `RenderDrawData` xử lý `draw_data->Textures` — lệnh vẽ khung hình chính chỉ làm việc đó **một lần, ở CUỐI khung hình**, còn thumbnail vẽ **giữa** khung hình (trong `DrawDeck`), nên ở khung hình đầu tiên atlas chưa kịp upload. Thử sửa lần 1 (trỏ `dd.Textures` vào `ImGui::GetPlatformIO().Textures`) **không đủ** vì list đó bị `UpdateTexturesEndFrame()` dọn rỗng đầu mỗi khung hình và chỉ được đổ lại ở cuối — giữa khung hình nó luôn rỗng. Sửa đúng: tự dựng một `ImVector<ImTextureData*>` một phần tử trỏ thẳng `io.Fonts->TexData` (đã build sẵn ngay sau `NewFrame()`, không phụ thuộc `platformIO.Textures`) làm `dd.Textures`, để lệnh render thumbnail tự upload atlas nếu cần, y hệt lệnh render chính làm — an toàn gọi lại nhiều lần (bỏ qua nếu atlas đã `ImTextureStatus_OK`). Đã xác nhận: chạy trực tiếp bản Debug 30s không còn assert, và `--shot --frames 200` trên **cả 3 màn hình bằng chính bản Debug** (bật assertion, phép thử nghiêm ngặt hơn `--shot` Release trước đó) đều exit 0, 0 dòng stderr.
+
+### F5/F9 — corner-pin và mesh không kéo ra ngoài vùng 1920×1080 được (2026-09-23, người dùng báo)
+`src/mapping.cpp` (`Stage()`): toạ độ chuột khi kéo (`mu`) bị `std::clamp` cứng vào đúng `[0,1920]×[0,1080]` — dùng
+chung cho **cả 4 loại kéo** (corner pin, input rect, mask, mesh). Vì vậy kéo chuột **không bao giờ** đưa được
+điểm corner-pin hay mesh ra ngoài khung, dù kéo chuột xa đến đâu — trong khi ô nhập toạ độ bằng số cho corner pin
+(F15, `IntField` cạnh "CORNER PINS") đã luôn cho phép `-4000..8000` từ trước, tức là gõ số thì đi ra ngoài được,
+kéo chuột thì không — hai đường không khớp nhau.
+
+Kéo mesh point **bên trong** khung đã hoạt động đúng từ trước (đã xác nhận bằng ảnh chụp `--drag`, lưới biến dạng
+thật khi kéo điểm nội bộ) — không phải "mesh hoàn toàn không kéo được", chỉ là không vượt được ra ngoài khung
+giống corner-pin.
+
+**Đã sửa:** thêm biến `muOut` (cùng công thức nhưng clamp `-4000..8000`, khớp đúng ô nhập số) dùng riêng cho
+`dragKind==1` (corner pin, F5) và `dragKind==4` (mesh, F9). `dragKind==2` (input rect — chọn vùng nguồn trong
+composition canvas, không gian khác, phải ở trong canvas) và `dragKind==3` (mask) **giữ nguyên** `mu` cũ (bó
+buộc `0..1920`/`0..1080`) — không mở rộng, vì đó là không gian khác/tính năng khác chưa được người dùng báo lỗi.
+
+Đã xác nhận bằng ảnh chụp thật (`--drag`, cả bản Release lẫn Debug bật assertion): kéo góc TL của corner-pin từ
+trong khung ra ngoài, số hiện `-299, -201` (âm, vượt hẳn khung) và tứ giác kéo dài ra ngoài canvas thấy rõ; kéo
+điểm mesh nội bộ lên trên khung, đỉnh lưới lồi ra ngoài viền cam. `--roundtrip` vẫn pass.
