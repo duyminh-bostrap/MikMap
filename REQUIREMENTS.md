@@ -79,16 +79,21 @@ Windows.
 | | |
 |---|---|
 | CMake | `winget install Kitware.CMake` |
-| Trình biên dịch | MinGW-w64 qua MSYS2: `pacman -S mingw-w64-x86_64-gcc mingw-w64-x86_64-gdb` (hoặc w64devkit). MSVC biên dịch được nhưng **chưa có ai kiểm chứng thật** trên MSVC. |
+| Trình biên dịch | **MSVC** (Visual Studio 2022 / VS Build Tools, component "Desktop development with C++") **hoặc** MinGW-w64 qua MSYS2: `pacman -S mingw-w64-x86_64-gcc mingw-w64-x86_64-gdb` (hoặc w64devkit) — cả hai đã kiểm chứng thật. CMake tự chọn compiler nào có trên PATH (mở "Developer PowerShell for VS 2022" để có `cl.exe`, hoặc dùng generator mặc định `Visual Studio 17 2022` — cả hai cách đều không cần vào MSYS2 shell). |
 | GLFW | Không bắt buộc cài — CMake tự dựng từ nguồn nếu không có |
-| Đã kiểm chứng | Cross-compile MinGW-w64 từ máy trắng (không có `.tools/`) ra `mikmap.exe` PE32+ thật, chạy qua Wine, chụp màn hình xác nhận giao diện + tiếng Việt có dấu render đúng |
+| Đã kiểm chứng | **MinGW-w64**: cross-compile từ máy trắng (không có `.tools/`) ra `mikmap.exe` PE32+ thật, chạy qua Wine, chụp màn hình xác nhận giao diện + tiếng Việt có dấu render đúng. **MSVC**: biên dịch + chạy thật trên Windows thật (2026-09-23) — Release và Debug, dòng lệnh và task/F5 VS Code; ban đầu build gãy 2 chỗ (thiếu `NOMINMAX`, sai entry point cho `int main()` dưới `/SUBSYSTEM:WINDOWS`), đã sửa trong `src/CMakeLists.txt`, xem README.md để biết chi tiết. |
 | Cờ MSVC (nếu build bằng MSVC) | `/W4 /permissive- /fp:precise /utf-8` — **`/fp:precise` bắt buộc** cho `engine/core/math` (toán homography/calibration cần độ chính xác, không đổi sang `/fp:fast`) |
 
 ```powershell
 winget install Kitware.CMake
-# MSYS2 shell:
-pacman -S mingw-w64-x86_64-gcc mingw-w64-x86_64-gdb
 
+# Cách A — MSVC (đã kiểm chứng): mở "Developer PowerShell for VS 2022", rồi
+cmake -S src -B src/build -DCMAKE_BUILD_TYPE=Release
+cmake --build src/build --config Release
+.\src\build\mikmap.exe
+
+# Cách B — MinGW-w64 (đã kiểm chứng): trong MSYS2 shell
+pacman -S mingw-w64-x86_64-gcc mingw-w64-x86_64-gdb
 cmake -S src -B src/build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build src/build
 .\src\build\mikmap.exe
@@ -98,7 +103,16 @@ Ghi chú:
 
 - Macro `near`/`far` của `windows.h` — không đặt tên biến/lambda trùng, lỗi
   báo ra khó hiểu (đã từng mắc lỗi này).
-- Debug F5 trong VS Code dùng `gdb`, đuôi file `.exe`.
+- `<windows.h>` (qua `glfw3native.h`/`dwmapi.h` trong `main.cpp`, và trực tiếp
+  trong `output.cpp`/`clipart.cpp`) định nghĩa macro `min`/`max` nếu thiếu
+  `NOMINMAX` — đè lên `std::min/std::max/std::clamp`, chỉ lộ ra khi build bằng
+  MSVC thật (MinGW không dính). `src/CMakeLists.txt` đã tự thêm `NOMINMAX` cho
+  mọi build Windows, không cần làm gì thêm.
+- Debug F5 trong VS Code: `.vscode/launch.json` có **2 config riêng** —
+  `"MikMap (Debug)"` dùng `gdb` (cho MinGW-w64) và
+  `"MikMap (Debug, MSVC)"` dùng `cppvsdbg` (cho MSVC, không cần cài gdb).
+  Chọn đúng config theo trình biên dịch đang dùng ở dropdown Run and Debug
+  trước khi bấm F5, không thì debugger không khởi động được dù build vẫn qua.
 - `.claude/hooks/pre-push.sh` build+test bằng CMake trước mỗi `git push` — chỉ
   chạy hệ `engine/`, không phụ thuộc GLFW nên chạy được trên mọi OS kể cả
   Windows.

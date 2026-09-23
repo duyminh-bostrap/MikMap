@@ -24,7 +24,7 @@ còn ở giai đoạn prototype:
 | Engine dùng chung (`engine/core`, `engine/io`) | Đã biên dịch & link vào app; `src/` mới chỉ gọi `core/util/Json` (cho lưu/mở dự án), **chưa gọi model/calib/io thật** |
 | Mô hình dữ liệu app hiện tại | Struct riêng trong `src/app.h`, chưa dùng `core/model` thật |
 | Đối chiếu chi tiết | `features.md` — 49 mục `[x]` hành vi thật · 18 mục `[~]` một phần · 68 mục `[ ]`, trên 135 mục Resolume-parity |
-| Build đa nền tảng | **Đã kiểm chứng thật** (2026-09-22): macOS (build+chạy trên máy Mac thật) · Linux (build native + chạy dưới Xvfb, chụp màn hình) · Windows (cross-compile MinGW-w64 ra `mikmap.exe` PE32+ thật, đúng lệnh `build.ps1`/F5 dùng, chạy qua Wine, chụp màn hình) — cả 3 cùng render đúng giao diện, cùng tiếng Việt có dấu |
+| Build đa nền tảng | **Đã kiểm chứng thật**: macOS (2026-09-22, build+chạy trên máy Mac thật) · Linux (2026-09-22, build native + chạy dưới Xvfb, chụp màn hình) · Windows — **hai đường kiểm chứng riêng**: cross-compile MinGW-w64 (2026-09-22, ra `mikmap.exe` PE32+ thật, chạy qua Wine, chụp màn hình) **và MSVC thật trên Windows thật** (2026-09-23, build Debug lẫn Release qua cả dòng lệnh lẫn task/F5 của VS Code, chạy được) — cả 3 OS cùng render đúng giao diện, cùng tiếng Việt có dấu |
 
 Xem [`features.md`](features.md) để biết chính xác cái gì thật/cái gì chỉ có
 UI, và [`architecture.md`](architecture.md) để biết đích đến kiến trúc (chuỗi
@@ -79,7 +79,7 @@ Chỉ cần **CMake + một trình biên dịch C++20**, không cần dựng s�
 
 | OS | Cần cài |
 |---|---|
-| Windows | CMake (`winget install Kitware.CMake`) + MinGW-w64 (MSYS2: `pacman -S mingw-w64-x86_64-gcc mingw-w64-x86_64-gdb`, hoặc w64devkit). MSVC cũng build được nhưng chưa ai kiểm chứng. |
+| Windows | CMake (`winget install Kitware.CMake`) + **MSVC** (Visual Studio / VS Build Tools, đã kiểm chứng thật) hoặc MinGW-w64 (MSYS2: `pacman -S mingw-w64-x86_64-gcc mingw-w64-x86_64-gdb`, hoặc w64devkit — cũng đã kiểm chứng). CMake tự chọn trình biên dịch nào có trên PATH. |
 | macOS | `xcode-select --install` + `brew install cmake` (GLFW qua `brew install glfw` nếu muốn, không bắt buộc) |
 | Linux | `apt install cmake g++ libgl-dev` (GLFW qua `apt install libglfw3-dev` nếu muốn, không bắt buộc) |
 
@@ -88,17 +88,30 @@ hệ thống nếu có (brew/apt/vcpkg), không có thì CMake tự tải và d�
 từ nguồn — nên máy trắng vẫn build được, chỉ tốn thêm ~1 phút lần đầu.
 
 **VS Code:** bấm `F5` là xong (`.vscode/tasks.json` configure+build vào
-`src/build-debug`, `.vscode/launch.json` chạy debugger). Một cấu hình dùng
-chung cho cả 3 OS, chỉ đè vài trường khác nhau thật sự (macOS `lldb`,
-Windows/Linux `gdb`, đuôi `.exe`).
+`src/build-debug`, `.vscode/launch.json` chạy debugger). Build task dùng
+chung một cấu hình cho cả 3 OS. Debugger thì **Windows có 2 config** vì gdb và
+cppvsdbg không thay thế nhau được: `"MikMap (Debug)"` (gdb — cho ai build bằng
+MinGW-w64) và `"MikMap (Debug, MSVC)"` (`cppvsdbg`, debugger gốc của VS, đọc
+được PDB của MSVC, không cần cài gdb) — chọn đúng config theo trình biên dịch
+đang dùng ở dropdown Run and Debug. macOS dùng `lldb`, Linux dùng `gdb`, đều
+chỉ 1 config như cũ.
 
-Đã kiểm chứng thật: **Linux** (build native + chạy dưới Xvfb) · **macOS**
-(Apple Silicon, Xcode SDK 15.0, GLFW qua Homebrew — build sạch, app chạy ổn
-định, F5 hoạt động; app xin OpenGL 3.2 core + GLSL 150 vì macOS không cấp
-context 3.0 thường, có vài cảnh báo `deprecated` vô hại; cửa sổ output máy
-chiếu F2/I1 mở và vẽ đúng, chụp bằng `--outshot`, chưa thử đa màn hình thật) ·
-**Windows** (cross-compile MinGW-w64 từ máy trắng không có `.tools/`: CMake tự
-dựng GLFW từ nguồn, ra `mikmap.exe` PE32+ chạy đúng qua Wine).
+Đã kiểm chứng thật: **Linux** (2026-09-22, build native + chạy dưới Xvfb) ·
+**macOS** (2026-09-22, Apple Silicon, Xcode SDK 15.0, GLFW qua Homebrew — build
+sạch, app chạy ổn định, F5 hoạt động; app xin OpenGL 3.2 core + GLSL 150 vì
+macOS không cấp context 3.0 thường, có vài cảnh báo `deprecated` vô hại; cửa sổ
+output máy chiếu F2/I1 mở và vẽ đúng, chụp bằng `--outshot`, chưa thử đa màn
+hình thật) · **Windows** — hai đường kiểm chứng riêng:
+- *MinGW-w64* (2026-09-22, cross-compile từ máy trắng không có `.tools/`: CMake
+  tự dựng GLFW từ nguồn, ra `mikmap.exe` PE32+ chạy đúng qua Wine).
+- *MSVC* (2026-09-23, biên dịch thật trên Windows thật bằng Visual Studio 2022
+  — cả Release lẫn Debug, cả dòng lệnh lẫn task/F5 VS Code, app chạy được).
+  Build ban đầu **gãy 2 chỗ**, cả hai đã sửa trong `src/CMakeLists.txt`:
+  thiếu `NOMINMAX` (`<windows.h>` qua `glfw3native.h`/`dwmapi.h` định nghĩa
+  macro `min`/`max`, đè lên `std::min/max/clamp` — MinGW không dính lỗi này
+  nên chưa từng lộ ra), và entry point (`WIN32_EXECUTABLE TRUE` bắt MSVC tìm
+  `WinMain`, nhưng `main.cpp` dùng `int main()` chuẩn — MinGW's `-mwindows` tự
+  xử lý được còn MSVC cần `/ENTRY:mainCRTStartup` tường minh).
 
 Tắt engine để dựng riêng phần giao diện: `-DMIKMAP_WITH_ENGINE=OFF`.
 

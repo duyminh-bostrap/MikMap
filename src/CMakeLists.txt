@@ -80,11 +80,21 @@ target_link_libraries(mikmap PRIVATE glfw OpenGL::GL Threads::Threads)
 
 # ── per-platform extras (glfw's own target already carries gdi32/Cocoa/X11 etc.) ──
 if(WIN32)
+  # NOMINMAX: <windows.h> (pulled in by glfw3native.h/dwmapi.h here, and directly
+  # in output.cpp/clipart.cpp for <GL/gl.h>) otherwise #defines min/max as macros,
+  # which breaks std::min/std::max/std::clamp calls under MSVC.
+  target_compile_definitions(mikmap PRIVATE NOMINMAX)
   target_link_libraries(mikmap PRIVATE dwmapi ws2_32)   # dark titlebar (main.cpp) + UDP socket (OscSource.cpp)
   # GUI subsystem: no console window. Works for both MSVC (/SUBSYSTEM:WINDOWS)
   # and MinGW (-mwindows), unlike a hardcoded linker flag.
   if(NOT MIKMAP_CONSOLE)
     set_target_properties(mikmap PROPERTIES WIN32_EXECUTABLE TRUE)
+    if(MSVC)
+      # main.cpp defines int main(), not WinMain(); MinGW's -mwindows tolerates
+      # that via its own startup shim, but MSVC's /SUBSYSTEM:WINDOWS needs the
+      # entry point pointed at the C-main CRT startup explicitly.
+      target_link_options(mikmap PRIVATE /ENTRY:mainCRTStartup)
+    endif()
   endif()
 elseif(NOT APPLE)
   target_link_libraries(mikmap PRIVATE dl)

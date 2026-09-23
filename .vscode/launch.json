@@ -26,6 +26,22 @@
             "windows": {
                 "program": "${workspaceFolder}/src/build-debug/mikmap.exe"
             }
+        },
+        {
+            // Windows + MSVC only: cppdbg/gdb above can't read MSVC's PDB debug
+            // info, and gdb usually isn't installed at all without MinGW/MSYS2.
+            // cppvsdbg is VS's own native debugger (ships with the C/C++
+            // extension), so it needs no external debugger binary on PATH.
+            "name": "MikMap (Debug, MSVC)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/build-debug/mikmap.exe",
+            "args": [],
+            "cwd": "${workspaceFolder}/src/build-debug",
+            "stopAtEntry": false,
+            "environment": [],
+            "externalConsole": false,
+            "preLaunchTask": "mikmap: build (Debug)"
         }
     ]
 }
