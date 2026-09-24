@@ -37,6 +37,24 @@ if(NOT DEFINED TYPE)
     set(TYPE Debug)
 endif()
 
+# Thư mục build từng configure HỎNG bằng NMake (máy không có nmake — ví dụ bấm
+# F5 trước khi có script này) để lại CMakeCache.txt ghi generator NMake. Giữ
+# cache đó thì lần nào cũng hỏng y hệt, vì CMake không cho đổi generator của
+# một thư mục đã configure. Cache như vậy không thể chạy trên máy này, nên xoá
+# phần trạng thái của CMake (CMakeCache.txt + CMakeFiles/, không đụng gì khác)
+# rồi chọn lại generator bên dưới.
+if(CMAKE_HOST_WIN32 AND EXISTS "${BUILD}/CMakeCache.txt")
+    file(STRINGS "${BUILD}/CMakeCache.txt" _cachedGen REGEX "^CMAKE_GENERATOR:INTERNAL=")
+    if(_cachedGen MATCHES "=NMake")
+        find_program(_nmakeCached nmake)
+        if(NOT _nmakeCached)
+            message(STATUS "configure.cmake: ${BUILD} con cache NMake tu lan configure hong -> xoa de chon lai generator")
+            file(REMOVE "${BUILD}/CMakeCache.txt")
+            file(REMOVE_RECURSE "${BUILD}/CMakeFiles")
+        endif()
+    endif()
+endif()
+
 set(_gen "")
 if(CMAKE_HOST_WIN32
    AND "$ENV{CMAKE_GENERATOR}" STREQUAL ""
