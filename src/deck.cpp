@@ -208,10 +208,14 @@ void App::fireColumn(int ci) {
   selectedCells.clear();
   for (int li = 0; li < (int)layers.size(); ++li) selectedCells.push_back({li, ci});
   // Preview Cue (Monitor reads selLi/selCi directly) follows the topmost layer that actually has a clip here,
-  // same "layer 0 draws on top" convention as DrawComposite. Firing an all-empty column leaves it unchanged.
+  // same "layer 0 draws on top" convention as DrawComposite. selCi always moves to the fired column — even an
+  // all-empty one — so DrawClipContent's own empty check (it draws nothing for Clip::Empty/Armed) makes Preview
+  // Cue go blank; leaving selCi unchanged here used to keep the PREVIOUS column's clip animating in Preview
+  // after firing an empty column, which read as "the preview is still running" even though nothing was cued.
+  selCi = ci;
   for (int li = 0; li < (int)layers.size(); ++li)
     if (ci < (int)layers[li].clips.size() && layers[li].clips[ci].st != Clip::Empty && layers[li].clips[ci].st != Clip::Armed) {
-      selLi = li; selCi = ci; selLayer = li;
+      selLi = li; selLayer = li;
       break;
     }
 }
