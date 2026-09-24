@@ -1185,7 +1185,37 @@ static void PropsPanel(ImRect r) {
     Text(ix, oy + yy + 4.5f, MONO_R, 9, K(pal::t66), "SCREEN NAME", 0.09f); yy += 9 + 2;
     TextField("##scname", Rc(ix, oy + yy, iw, 26), sc->name); yy += 26 + 6;
     Text(ix, oy + yy + 4.5f, MONO_R, 9, K(pal::t66), "OUTPUT DEVICE", 0.09f); yy += 9 + 2;
-    TextField("##scout", Rc(ix, oy + yy, iw, 26), sc->outDev); yy += 26 + 6;
+    // F2/I1: the physical display this screen is sent to. This one dropdown IS the projector output choice — it
+    // used to be a free-text field here plus a separate click-to-cycle "PROJECTOR OUTPUT" box below, two controls
+    // for the same thing that could disagree with each other.
+    {
+      ImRect dr2(ix, oy + yy, ix + iw, oy + yy + 26);
+      Hit dh2 = HitR(dr2);
+      bool haveMon = MonitorCount() > 0;
+      std::string cur = haveMon ? MonitorName(A.outMonitor) : sc->outDev;
+      Box(dr2, dh2.hover ? K(pal::ctrlHover) : K(pal::g1c), K(pal::g22), 3);
+      Icon("monitor", ImVec2(dr2.Min.x + 14, (dr2.Min.y + dr2.Max.y) * 0.5f), 11, K(pal::cyan));
+      TextEll(dr2.Min.x + 28, (dr2.Min.y + dr2.Max.y) * 0.5f, iw - 50, UI_S, 10, K(pal::tf3), cur.c_str());
+      Icon("chevron-down", ImVec2(dr2.Max.x - 12, (dr2.Min.y + dr2.Max.y) * 0.5f), 10, K(pal::t66));
+      if (dh2.hover) CursorHand();
+      if (dh2.click) {
+        std::string scId = sc->id;
+        std::vector<MenuItem> mi;
+        for (int i = 0; i < MonitorCount(); ++i) {
+          MenuItem it; it.label = MonitorName(i); it.icon = "monitor"; it.toneHex = (i == A.outMonitor) ? pal::cyan : 0;
+          it.run = [i, scId] {
+            A.pushHist();
+            for (auto& S : A.screens) if (S.id == scId) S.outDev = MonitorName(i);
+            A.outMonitor = i;
+            if (OutputOpen()) OpenOutput(glfwWin(), A.outMonitor);
+          };
+          mi.push_back(it);
+        }
+        if (mi.empty()) { MenuItem it; it.label = "No display detected"; it.disabled = true; mi.push_back(it); }
+        A.openCtx(ImVec2(dr2.Min.x, dr2.Max.y + 4), mi);
+      }
+      yy += 26 + 6;
+    }
     char rl[64]; snprintf(rl, sizeof rl, "RES: %d x %d @ %dHz", sc->w, sc->h, sc->fps);
     Text(ix, oy + yy + 4.5f, MONO_R, 9, K(pal::tcc), rl); yy += 9 + 6;
     HLine(ix, ix + iw, oy + yy, K(pal::g2a)); yy += 1 + 4;
@@ -1200,23 +1230,9 @@ static void PropsPanel(ImRect r) {
     if (eh.hover) CursorHand();
     if (eh.click) sc->edgeBlend = !sc->edgeBlend;
     y = bx + box.GetHeight() + 8;
-    // ── F2/I1: send this screen to a physical display ──
+    // ── F2/I1: open / close the output window on the display chosen in OUTPUT DEVICE above ──
     HLine(ox, ox + W, oy + y, K(pal::g2a)); y += 1 + 8;
-    Text(x, oy + y + 5, MONO_R, 9, K(pal::t88), "PROJECTOR OUTPUT", 0.09f);
-    y += 9 + 4;
     {
-      ImRect mr(x, oy + y, x + w, oy + y + 26);
-      Hit mh = HitR(mr);
-      Box(mr, mh.hover ? K(pal::ctrlHover) : K(pal::g1c), K(pal::g22), 3);
-      std::string mn = MonitorName(A.outMonitor);
-      TextEll(mr.Min.x + 8, (mr.Min.y + mr.Max.y) * 0.5f, w - 30, MONO_R, 10, K(pal::tcc), mn.c_str());
-      Icon("chevron-down", ImVec2(mr.Max.x - 12, (mr.Min.y + mr.Max.y) * 0.5f), 10, K(pal::t66));
-      if (mh.hover) CursorHand();
-      if (mh.click && MonitorCount() > 0) {          // cycle through the connected displays
-        A.outMonitor = (A.outMonitor + 1) % MonitorCount();
-        if (OutputOpen()) OpenOutput(glfwWin(), A.outMonitor);
-      }
-      y += 26 + 6;
       ImRect ob(x, oy + y, x + w, oy + y + 30);
       Hit oh = HitR(ob);
       bool on = OutputOpen();
