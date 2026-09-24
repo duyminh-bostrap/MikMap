@@ -26,7 +26,7 @@
 | [x] | **A8** | Layer solo / bypass / clear | S | 🟠 P1 |
 | [x] | **A9** | Deck — nhiều lưới clip, chuyển không ngắt playback | M | 🟠 P1 |
 | [x] | **A10** | Transition giữa clip (dissolve + thời lượng) | M | 🟠 P1 |
-| [ ] | **A11** | Master opacity toàn composition | S | 🟠 P1 |
+| [x] | **A11** | Master opacity toàn composition | S | 🟠 P1 |
 | [x] | **A12** | Đặt tên / gán màu cho clip, layer, deck | S | 🟡 P2 |
 | [x] | **A13** | Group (sub-composition, nhiều layer 1 fader) | L | 🟡 P2 |
 | [ ] | **A14** | Crossfader A/B | M | ⚪ P3 |
@@ -429,3 +429,186 @@ Mỗi slice có **Input source** (Properties → Slice, ngay dưới tên slice)
   base 960). Nay letterbox `CanvasRect` + base 960, lưới grid và viền gói trong vùng letterbox.
 - Kiểm: build Release sạch (chỉ warning có sẵn); `--roundtrip` pass; ảnh chụp headless trang Mapping (icon
   reset hiện tròn-mũi tên đúng) và Composition (Preview cùng cỡ Live).
+
+### Kéo-thả file từ Explorer vào Browser và vào ô clip (2026-09-24, theo yêu cầu người dùng)
+Ảnh / video / âm thanh kéo từ Explorer (Finder) thả thẳng vào cửa sổ:
+- **Thả vào panel Browser** → file vào danh sách **Media** (tham chiếu tại chỗ, không copy — video 4K không bị copy
+  nghìn MB). Danh sách lưu ở cài đặt máy (`settings.json`, khoá `mediaExtra`), không nằm trong project; file bị
+  xoá/di chuyển thì tự biến khỏi Browser. Thư mục `Documents/MikMap/media` vẫn được quét như trước, nay nhận cả
+  video/âm thanh.
+- **Thả vào một ô clip** (lưới Deck, hoặc làn Timeline) → clip nạp ngay. Thả nhiều file: file đầu vào ô đó, mỗi file
+  tiếp theo vào ô **trống** kế tiếp cùng layer (bỏ qua ô đã có clip); hết ô thì chỉ vào Browser.
+- Nhận: `.png .jpg .jpeg .bmp .tga` (ảnh), `.mov .mp4 .m4v .avi .mkv .webm .wmv` (video), `.wav .mp3 .ogg .flac .aac
+  .m4a .aif .aiff` (âm thanh) — phân loại theo đuôi file (`MediaKindOf`). File khác bị bỏ qua, có thông báo.
+- **Giới hạn thật:** chỉ **ảnh** được vẽ (B2). Video/âm thanh được nạp vào ô clip và Browser nhưng **chưa phát**
+  (B1 vẫn `[ ]`) — ô clip hiện "VIDEO / AUDIO — playback not available yet" thay vì "MISSING MEDIA" gây hiểu nhầm.
+- Kiểm: `--roundtrip` thêm kịch bản (phân loại đuôi, file đầu vào ô đích + file sau vào ô trống kế tiếp, bỏ qua ô đã
+  có clip, `.txt` bị loại, nhập trùng không nhân đôi, New project giữ danh sách). Ảnh chụp headless bằng cờ mới
+  `--drop x,y <file>` (mô phỏng thả ở toạ độ đó): thả vào Browser hiện đúng 3 file, thả vào ô trống nạp ảnh + video.
+  **Chưa thử kéo thả bằng chuột thật từ Explorer** (không tự động hoá được) — chỉ dựa vào việc GLFW đặt con trỏ tại
+  điểm thả trước khi gọi callback (Win32 `WM_DROPFILES`), nên nếu ô nhận sai vị trí thì kiểm tra chỗ này đầu tiên.
+- Lỗi phát hiện khi làm: chạy `--shot`/`--roundtrip` không nạp `settings.json` nên nếu gọi `SaveSettings()` sẽ ghi đè
+  cài đặt thật bằng mặc định — đã chặn bằng `SetSettingsPersistence(false)` ở chế độ headless.
+
+### Properties > Comp: chỉnh độ phân giải + các thông số composition (2026-09-24, theo yêu cầu người dùng)
+Tab **Comp** không còn chỉ là bảng đọc: có các mục sửa được, xếp theo bố cục Resolume người dùng gửi. Lưu theo project
+(`composition.props` trong `.mikmap`), undo/redo và cờ "chưa lưu" tính cả các giá trị này.
+- **COMPOSITION — Resolution:** hai ô W × H (gõ số, áp khi Enter/Tab/bấm ra ngoài — không áp từng phím vì "3840" đi
+  qua 3, 38, 384) + 4 nút preset 720p / 1080p / 1440p / 4K; hiện tỉ lệ + megapixel. Đổi độ phân giải thì **input rect
+  của mọi slice co giãn theo từng trục** để vẫn phủ cùng một phần canvas (slice "whole area" 1920×1080 vẫn là whole
+  area ở 3840×2160); quad/mesh/mask đầu ra ở không gian pixel của screen nên không đổi. Giới hạn 64…16384.
+  Trang Advanced Mapping › **Input selection** trước đây cứng 1920×1080 — nay khung sân khấu theo đúng độ phân giải và
+  tỉ lệ canvas (đã xem ở 3840×1080 và 1920×1080); trang Output routing vẫn 1920×1080 pixel của screen như cũ.
+- **Master** (0–100%) và **Video › Opacity** nhân vào alpha của toàn bộ composite (Live Output + cửa sổ máy chiếu +
+  slice lấy nguồn Composition/Layer/Group; Preview Cue chỉ xem một clip nên không đổi) → **A11 chuyển `[x]`**.
+- **Speed** (0–400%) nhân tốc độ chạy của mọi clip đang chạy và của playhead Timeline.
+- **Transform** (Position X/Y theo pixel canvas, Scale %, Rotation °, Anchor X/Y): áp cho **cả composite** bằng cách
+  gộp vào transform riêng của từng clip (clip là art căn giữa nên phép gộp cho kết quả đúng như biến đổi cả ảnh xong);
+  nút RESET trả về mặc định.
+- **CHƯA có tác dụng (chỉ lưu giá trị, panel ghi rõ):** **Audio** Volume/Pan (chưa có audio engine) và **CrossFader**
+  Blend Mode/Behaviour/Curve (A14 crossfader A/B vẫn `[ ]`).
+- Kiểm: `--roundtrip` thêm kịch bản (đổi độ phân giải co giãn input rect đúng từng trục, đổi cùng cỡ không trôi, kẹp
+  64–16384, mọi thông số lưu/nạp được, đổi thông số làm project "dirty", vừa nạp thì không dirty). Ảnh chụp headless
+  bằng cờ test mới `--comp scale=55,rot=25,px=300,...`: Live Output xoay/thu nhỏ/dịch đúng, Preview Cue giữ nguyên;
+  Master 35% × Opacity 80% làm Live Output tối đi; preset 4K đổi nhãn Live Output thành 3840×2160.
+  **Chưa thử** kéo các thanh trượt bằng chuột thật (chỉ thử qua `--click` preset và `--comp`); các thanh trượt dùng
+  đúng widget `Slider` của Properties › Clip nên hành vi giống hệt.
+
+### Properties > Layer: bố cục theo Resolume (2026-09-24, theo yêu cầu người dùng)
+Tab **Layer** xếp lại theo ảnh người dùng gửi (Layer / Audio / Video / Transition / Transform), thay cho lưới chip blend cũ.
+- **Chạy thật:** **Master** (0–100%, nhân alpha cả layer), **Audio › Volume** (hiện/sửa bằng dB, ghi vào chính thanh A
+  trên dải layer — 100% = 0 dB), **Video › Blend Mode** (dropdown, đúng 8 mode đang render), **Opacity**,
+  **Transition › Duration** (= `blendTime` của dissolve A10, đồng bộ với ô "ADD 0.5 s" trên dải layer), và **Transform**
+  (Position X/Y, Scale, Rotation, Anchor X/Y — áp cho clip của layer đó, xong mới đến transform của composition).
+- **Chỉ lưu giá trị, panel ghi rõ:** **Pan** (chưa có audio engine), **Size W×H / Auto Size** (chưa có canvas riêng cho
+  layer), **Transition › Blend Mode** (mới có dissolve alpha). Mục Solo/Mute/Bypass vẫn giữ (dạng nút ROUTING).
+- Lưu theo project (các khoá mới trong mỗi layer; file cũ thiếu khoá → mặc định trung tính).
+- Kiểm: `--roundtrip` thêm kịch bản lưu/nạp mọi thuộc tính layer + không dirty sau khi nạp. Ảnh chụp headless (cờ test mới
+  `--layer N,scale=60,rot=20,px=250,master=60`, `--band 70` để panel hiện đủ): Layer 3 thu nhỏ/xoay/dịch/tối đi còn các layer
+  khác trong Live Output giữ nguyên; giá trị Volume −6 dB khớp thanh A 50% trên dải layer. **Chưa thử** kéo thanh trượt bằng chuột thật.
+
+### Menu deck lên thanh SYSTEM TIME (2026-09-24, theo yêu cầu người dùng)
+Tab **DECK A/B…** và công tắc **GRID | TIMELINE** chuyển từ hai hàng phía trên lưới deck lên **thanh SYSTEM TIME** dưới hai
+màn Preview/Live (tab ở dòng trên, GRID|TIMELINE ở dòng dưới, nằm giữa đồng hồ và cụm nút transport). Phía trên lưới còn
+đúng một hàng (nút +LAYER/GROUP/COLUMN/SYNC hoặc LOOP ON/OFF của Timeline) nên lưới deck cao thêm 26px. Tab quá nhiều thì
+co nhỏ và cắt bớt chữ; menu chuột phải/đổi tên bằng bấm đúp giữ nguyên. **Dự phòng:** nếu thanh bị ẩn/thấp hơn 44px
+(Cài đặt › Layout › timeline height) hoặc quá hẹp thì hai hàng cũ tự hiện lại phía trên lưới — menu deck không thể biến mất.
+Đã chụp cả chế độ Grid và Timeline (bấm công tắc ở chỗ mới). **Chưa thử** nhánh dự phòng (thanh thấp) và nhiều hơn 1 deck.
+
+### Bỏ đồng hồ SYSTEM TIME + cụm nút +LAYER/GROUP/COLUMN/SYNC → menu "DECK TOOLS" (2026-09-24, theo yêu cầu người dùng)
+- **Đồng hồ SYSTEM TIME** (nhãn + giờ hệ thống) đã bỏ khỏi thanh transport; tab deck + GRID|TIMELINE giờ nằm sát mép trái thanh.
+- **Cụm 4 nút** phía trên lưới deck đã bỏ. Nhãn ghim "LAYERS ⌄" ở góc trên-trái lưới (trước đây chỉ là chữ) thành nút **DECK TOOLS ⌄**
+  mở menu: **Add layer** · **New group from selected layer** · **Add column** · **Sync to beat: ON/OFF** — đủ 4 chức năng cũ, không mất gì.
+  Trong Grid mode không còn hàng nào phía trên lưới (lưới cao thêm 34px); Timeline mode giữ một hàng cho nút LOOP ON/OFF.
+- Đổi nhỏ kèm theo: "Add layer" tạo layer có **đúng số ô bằng số cột của deck** (trước cứng 8 ô — lệch khi deck có số cột khác 8).
+- Kiểm: `--roundtrip` thêm kịch bản cho 3 hàm mới `App::addLayer/groupSelectedLayer/toggleSync`; ảnh chụp nhãn và menu mở ra đủ 4 mục.
+  **Chưa bấm thử** từng mục menu bằng chuột trong app.
+
+### Layer thu gọn không hiện thumbnail (2026-09-24, theo yêu cầu người dùng)
+Ô clip của layer đã thu gọn (hoặc nằm trong group đóng) chỉ còn **dải tên + chế độ phát/thời lượng**, không vẽ thumbnail nữa
+(trước đây là một lát ảnh 16px khó đọc, lại tốn ngân sách vẽ thumbnail mỗi khung hình). Bấm dải tên/thân ô vẫn cue/phát như cũ.
+Đã chụp ảnh layer thu gọn cạnh layer mở. Layer mở giữ nguyên thumbnail.
+
+### Properties Comp/Layer: tên lên đầu, bỏ các dòng thông tin thừa (2026-09-24, theo yêu cầu người dùng)
+Tab **Comp** và **Layer** mở đầu bằng dòng **tên** (Composition · tên project / Layer · tên layer), rồi tới các điều khiển. Đã bỏ các dòng
+đọc-số ở cuối: Comp (Layers, Groups, Columns, BPM, Beat sync, Rate, Latency, Output — trùng với deck và thanh trạng thái), Layer (Group,
+Play mode, State). Tab Clip giữ nguyên. Đã chụp cả hai tab; **chưa cuộn tới cuối panel** để xem bằng mắt (chỉ xác nhận qua code là các dòng đã bị xoá).
+
+### Tên layer sửa được trong Properties › Layer (2026-09-24, theo yêu cầu người dùng)
+Đầu tab Layer là ô **Name** sửa trực tiếp (ghi vào tên layer ngay khi gõ; tên rỗng/toàn khoảng trắng thì giữ tên cũ, cắt khoảng trắng hai đầu — cùng
+quy tắc với popup đổi tên). Bấm đúp tên trên dải layer vẫn đổi tên được như cũ. Tên Composition vẫn chỉ đọc (gắn với tên file project).
+Đã chụp ô Name; **chưa thử gõ chữ thật** (script test không gõ phím được).
+
+### Properties > Clip làm lại theo Resolume + mục riêng cho từng effect (2026-09-24, theo yêu cầu người dùng)
+Tab **Clip** xếp theo ảnh người dùng gửi: **Name** (sửa được ngay, đổi tên vẫn ghim hình vẽ) · ảnh xem trước · **Transport** · **Autopilot** ·
+**Audio** (chỉ hiện với file audio/video) · **Video** · **Transform** · **Effects**.
+- **Chạy thật:**
+  - **Transport:** thanh timeline có **kéo playhead để tua**, **hai mốc in/out** (kéo được) giới hạn vùng phát — loop/bounce/once/hold đều chạy trong vùng
+    này (`AdvanceClip`; mặc định 0–100 phát cả clip như cũ); nút **◀ ‖ ▶** là transport riêng của clip (đảo chiều / tạm dừng / phát; bấm phát lại clip thì tự
+    tiếp tục); dropdown **chế độ lặp** (Loop/Bounce/Hold/Once); **Speed** 0–400%; **Duration** hiện giây, nút **/2** và **×2** đổi thời lượng thật.
+  - **Video:** kênh **R G B** (tắt kênh nào thì kênh đó biến mất khỏi hình, cả thumbnail/preview/output), **Opacity**, **Blend Mode** riêng của clip
+    (Layer Determined = theo layer, hoặc 8 mode ghi đè), thông tin nguồn (ảnh: kích thước thật; generator; video: ghi rõ chưa giải mã được).
+  - **Transform:** Position X/Y (hiện theo pixel canvas), Scale %, Rotation, **Anchor X/Y** (tâm xoay/phóng — đã chụp: anchor lệch phải làm hình quay quanh điểm đó), Flip H/V, RESET.
+  - **Effects:** mỗi effect trên clip có **một mục riêng** với đủ tham số của nó (slider, lựa chọn, Dry/Wet, BEAT/AUDIO) + nút mắt (bypass) và × (xoá);
+    chuột phải tiêu đề mở menu (move/duplicate/reset/remove). Kéo effect từ Browser vào clip → mục của effect đó tự xuất hiện. (Thay cho danh sách chain +
+    một bảng chỉnh cho effect đang chọn trước đây.)
+- **Chỉ lưu giá trị, panel ghi rõ:** chế độ Transport (BPM Sync), **Autopilot** (Action/Loops — vì hiện chỉ clip đang được CHỌN mới chạy playhead nên
+  autopilot chưa có nền để chạy), **Audio** Volume/Pan (chưa có audio engine), **Size W×H**, kênh **A** (xám: clip không có kênh alpha để bật/tắt).
+- Đã bỏ các dòng đọc-số cũ (Clip/Source/Duration/Play mode/Speed/Playhead/Resolution/Codec/Beat sync/State) và nhãn giả "TUNNEL_04.MOV".
+  Lưu theo project (khoá mới trong mỗi clip; pause là trạng thái runtime, không lưu).
+- Kiểm: `--roundtrip` thêm kịch bản (loop/once/bounce trong vùng in-out, pause đứng yên, mặc định vẫn 0–100, lưu/nạp mọi thuộc tính, không dirty sau
+  khi nạp). Ảnh chụp headless (cờ test `--clip`, `--fx`, `--inspscroll`): toàn bộ panel kể cả 4 effect, kênh R-only ra hình đỏ, anchor lệch làm hình dịch/quay quanh điểm.
+  **Chưa thử** bằng chuột thật: kéo playhead/mốc in-out, bấm ◀ ‖ ▶, /2 ×2, gõ tên clip; **chưa thử** Blend Mode override và clip file ảnh/video trong panel này.
+
+### Giảm glow viền ô clip + màu clip gộp vào popover (2026-09-24, theo yêu cầu người dùng)
+- **Glow ô clip:** quầng sáng quanh ô đang chọn giảm từ 0.35 → 0.14 (blur 12 → 5), quanh ô đang live từ 0.40 → 0.20 (blur 12 → 6) — không còn lan sang ô bên cạnh.
+  Viền 2px của ô được chọn giữ nguyên nên vẫn nhận ra ô nào đang chọn/đang live.
+- **CLIP COLOR:** ô chọn màu trước đây là một hộp thứ hai treo bên dưới popover; nay nằm **trong cùng một popover** của clip (dưới "Clear Slot", ngăn bằng một vạch).
+  Đã chụp popover chuột phải trên thanh tên clip. **Chưa bấm thử** đổi màu bằng chuột.
+
+### Màu clip điều khiển cả trạng thái chọn của ô (2026-09-24, theo yêu cầu người dùng)
+Ô clip nay lấy **cả ba trạng thái từ màu riêng của clip** (Clip color trong popover) thay vì cố định nâu/cyan/cam: **không chọn** = sắc tối của màu đó (cam → nâu,
+xanh dương → xanh đen, xanh lá → lục tối…), **được chọn/cue** = chính màu đó (viền + dải tên sáng lên), **đang live** = màu đó đậm nhất kèm glow. Vòng chọn cũng theo màu clip
+(trước là cyan cố định cho ô cue). Màu mặc định (cam) giữ đúng vẻ cũ: nâu khi không chọn, cam khi chọn/live — chỉ ô "được chọn" đổi từ cyan sang cam. Đã chụp
+clip xanh dương / xanh lá / tím cạnh clip cam. **Chưa** áp cho khối clip trong Timeline (vẫn dùng cyan làm viền chọn).
+
+### Màu layer đổi được trong Properties › Layer (2026-09-24, theo yêu cầu người dùng)
+Tab Layer có hàng **Color** (6 màu, cùng bảng màu với clip) ngay dưới Name. Màu layer là **màu nhấn của dải layer** trong deck: thanh chọn bên trái + quầng sáng khi layer được chọn,
+mũi tên khi layer đang live, thanh trượt V; layer không được chọn có thanh trái mờ (35%) để vẫn thấy màu. Màu mặc định (cam) giữ như cũ. Lưu theo project (`color` trong layer,
+`--roundtrip` đã kiểm). Màu layer **không** đổi màu các clip trong layer — clip giữ màu riêng (đổi ở popover clip). Đã chụp hai layer đổi sang xanh dương/xanh lá.
+
+### Preview Cue chỉnh transform trực tiếp + menu chuột phải (2026-09-24, theo yêu cầu người dùng)
+Khung **Preview Cue** giờ là bảng chỉnh transform của clip đang cue (cùng dữ liệu với Properties › Clip › Transform, nên nếu clip đang live thì Live Output đổi theo):
+- **Khung viền + tay nắm** quanh nội dung clip (ảnh: đúng khung ảnh đã fit vào canvas; generator/video: cả canvas), đi theo tịnh tiến/xoay/scale/anchor hiện có.
+  **Kéo trong khung = dời**, **kéo ô vuông nhỏ (4 góc + 4 cạnh) = scale**, **kéo vòng tròn quanh góc = xoay**.
+- **Chuột phải:** Center X · Center Y · Mirror X · Mirror Y · Left Half · Top Half · Right Half · Bottom Half · Reset. Half = xoay về 0, scale đều để vừa nửa canvas và đặt vào giữa
+  nửa đó; Center tính cả anchor; Reset trả mọi thứ (kể cả flip/anchor) về mặc định.
+- Menu chuột phải chung nay có **vạch ngăn** và mục không icon (trước chỉ có mục có icon), và tô màu mục theo `toneHex` (mục đang chọn của các dropdown ô chọn).
+- **Giới hạn thật:** clip chỉ có **một hệ số scale đều** nên ô vuông ở cạnh giữa cũng scale đều (chưa kéo giãn riêng chiều ngang/dọc); bỏ qua khi có popover/menu/hộp thoại mở;
+  khung bị cắt theo viền màn hình Preview nếu clip đã dời ra ngoài.
+- Kiểm: `--roundtrip` thêm kịch bản cho cả 9 mục menu + công thức anchor (`ClipEffectivePos`). Ảnh chụp headless: khung + tay nắm; kéo dời 68px làm nội dung dịch (cả Live Output vì clip đang live); menu đúng bố cục ảnh tham chiếu.
+  **Chưa thử** kéo scale/xoay bằng chuột (đã thử dời); các phép toán scale/xoay theo tỉ lệ khoảng cách/góc từ tâm khung khi bắt đầu kéo.
+
+### Màu layer: xuống cuối tab, swatch sáng không viền, đổi theo cả clip (2026-09-24, theo yêu cầu người dùng — thay cho ghi chú trước đó "màu layer không đổi màu clip")
+- Hàng **COLOR** chuyển xuống **cuối** tab Layer (sau ROUTING). 6 ô là 6 màu cố định ở độ sáng đầy đủ, **không viền**; màu đang dùng có một chấm trắng nhỏ ở giữa.
+- **Đổi màu layer thì các clip đang cùng màu với layer (màu cũ) đổi sang màu mới**; clip mà người dùng đã tô màu khác thì giữ nguyên. Logic ở `App::setLayerColor`
+  (`--roundtrip` kiểm: chỉ clip cùng màu cũ đổi, chọn lại đúng màu đó thì không đụng gì, chỉ số layer sai bị bỏ qua). Đã chụp cuối tab Layer. **Chưa bấm thử** bằng chuột.
+
+### Preview Cue: khung transform chỉ hiện khi rê chuột, zoom/kéo màn hình (2026-09-24, theo yêu cầu người dùng)
+- **Khung chỉnh transform chỉ hiện khi con trỏ nằm trong khung Preview** (hoặc đang kéo dở); rời chuột ra là ẩn. Khi bật công cụ bàn tay thì khung ẩn hẳn.
+- **Cuộn chuột giữa = zoom** quanh con trỏ (điểm dưới chuột đứng yên), 10%–1600% so với vừa khít. **Giữ chuột giữa + kéo = kéo màn hình** (cả ngang lẫn dọc).
+- **Hai nút góc trên-phải Preview:** dropdown zoom (hiện % kích thước pixel thật của canvas; menu: Fit · 12% · 25% · 50% · 100% · 200% · 400%) và **bàn tay** (bật thì kéo bằng chuột trái để dời màn hình, con trỏ thành bàn tay).
+  Trạng thái zoom/vị trí là của phiên làm việc (không lưu vào project); Fit đưa về mặc định. Thêm icon `hand` vào bộ icon vẽ tay.
+- Kiểm: ảnh chụp headless (cờ test `--pv zoom,panX,panY,hand`, `--hover x,y`): ẩn khung khi không hover, hiện khi hover; zoom 0.5× + kéo + bàn tay bật; menu zoom. **Chưa thử bằng chuột thật:** cuộn giữa để zoom,
+  giữ chuột giữa để kéo, kéo trái với bàn tay, chọn mục % trong menu (các phép tính giống editor Preview đã dùng).
+
+### Thanh tên clip sáng bằng viền (2026-09-24, theo yêu cầu người dùng)
+Thanh tên của ô clip nay sáng **bằng đúng màu viền**: ô được chọn/cue và ô live → thanh là chính màu clip (chữ tự chọn tối/trắng theo độ sáng của màu — chữ trắng trên vàng sẽ khó đọc);
+ô không chọn → thanh cùng sắc tối với viền (không còn sáng hơn hay tối hơn viền). Đã chụp clip cam / vàng / xanh dương / xanh lá.
+
+### Ô clip: viền = đang phát, thanh = đang chọn (2026-09-24, theo yêu cầu người dùng)
+Viền và thanh tên của ô clip giờ trả lời hai câu hỏi khác nhau (trước đây cùng sáng/tối theo một trạng thái):
+- **Viền sáng (dày) = clip đang phát.** **Thanh sáng = clip đang được chọn/xem preview.**
+- Bấm thân clip → clip vừa phát vừa được chọn: **viền và thanh cùng sáng**. Sau đó cue clip khác trong cùng layer (bấm thanh): clip đó **sáng thanh, viền thường**;
+  clip đang phát **giữ viền sáng nhưng thanh tối**. Đã chụp đúng chuỗi này (bấm thân Strobe Tunnel rồi bấm thanh Plasma Waves). Bỏ quầng sáng chung quanh ô chỉ-được-chọn
+  (chỉ ô đang phát còn glow). Ô trống được chọn vẫn có viền mảnh để thấy chỗ đang chọn. **Chưa bấm thử** bằng chuột thật.
+
+### GRID|TIMELINE xuống chỗ DECK TOOLS, chức năng deck tools vào menu tab DECK (2026-09-24, theo yêu cầu người dùng — thay cho mục "DECK TOOLS" trước đó)
+- Nút **DECK TOOLS** bỏ. Công tắc **GRID | TIMELINE** chuyển xuống đúng chỗ đó (góc trên-trái lưới deck; ở chế độ Timeline thì nằm bên trái hàng có nút LOOP ON/OFF). Thanh transport chỉ còn tab deck.
+- **Add layer · New group from selected layer · Add column · Sync to beat: ON/OFF** nay nằm trong **menu của tab DECK**: chuột phải tab, hoặc bấm **mũi tên nhỏ** mới có trên tab đang chọn
+  (bấm phần chữ của tab vẫn là chuyển deck, bấm đúp vẫn đổi tên). Nếu mở menu từ một tab không phải deck hiện tại, các thao tác này áp vào deck của tab đó (tự chuyển sang tab đó trước).
+- Dự phòng khi thanh transport bị ẩn/quá thấp: hàng tab + hàng công tắc vẫn hiện phía trên lưới như trước. Đã chụp bố cục mới, menu từ mũi tên tab và chế độ Timeline; bốn thao tác dùng lại
+  các hàm `App::addLayer/groupSelectedLayer/toggleSync/insertCol` đã có test. **Chưa bấm thử** từng mục menu bằng chuột.
+
+### Timeline: công tắc GRID|TIMELINE thay chỗ nhãn "BAR nn", bỏ nút LOOP ON/OFF (2026-09-24, theo yêu cầu người dùng)
+Ở chế độ Timeline, công tắc **GRID | TIMELINE** nằm ở **ô trái của thước** (chỗ nhãn "BAR nn" cũ — thước cao thêm 18 → 26px cho vừa nút); hàng riêng phía trên timeline bỏ hẳn cùng **nút LOOP ON/OFF**.
+Khi tab deck không nằm trên thanh transport (thanh bị ẩn/quá thấp) thì hàng phía trên vẫn giữ công tắc và nhãn "BAR nn" vẫn hiện. **Hệ quả cần biết:** không còn chỗ nào bật/tắt lặp playhead Timeline
+(`tlLoopOn` vẫn còn trong code, giữ nguyên giá trị hiện có, chỉ mất nút) — nếu cần lại thì báo. Đã chụp chế độ Timeline.
+
+### Hàng SYSTEM TIME phía trên deck (2026-09-24, theo yêu cầu người dùng)
+Thêm một hàng mảnh (26px) ở đầu vùng deck, ngay trên lưới/timeline, hiện **SYSTEM TIME** + giờ hệ thống `HH:MM:SS` (font số cố định). Hàng này luôn có (cả Grid lẫn Timeline, cả khi tab deck nằm ở dự phòng); lưới/timeline thấp đi 26px. Đã chụp chế độ Grid.
+
+### Thanh transport bên trái thành 2 hàng: SYSTEM TIME + menu deck kiểu thanh nav (2026-09-24, theo yêu cầu người dùng — thay cho hàng "SYSTEM TIME phía trên deck")
+Khối bên trái thanh transport có **2 hàng như khối TIMELINE bên phải**: hàng 1 = **SYSTEM TIME + giờ hệ thống**; hàng 2 = **menu deck** vẽ giống thanh nav trên cùng (Composition / Advanced Mapping / Sensor I/O):
+một nhóm bo tròn tối, tab đang chọn viền + glow cam, tab khác chữ xám, tab đang chọn có mũi tên mở menu deck. Hàng SYSTEM TIME riêng phía trên lưới deck đã bỏ (lưới cao lại như trước).
+Dự phòng khi thanh transport thấp hơn 44px hoặc quá hẹp: Deck() tự vẽ hàng SYSTEM TIME + hàng tab (kiểu nav) phía trên lưới. Đã chụp bố cục 2 hàng; nhánh dự phòng **chưa chụp**.

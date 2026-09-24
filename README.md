@@ -24,7 +24,7 @@ còn ở giai đoạn prototype:
 | Giao diện | 3 màn Composition · Advanced Mapping · Sensor I/O + cửa sổ Cài đặt, bám bản thiết kế `MikMap Workspace.dc.html` |
 | Engine dùng chung (`engine/core`, `engine/io`) | Đã biên dịch & link vào app; `src/` mới chỉ gọi `core/util/Json` (cho lưu/mở dự án), **chưa gọi model/calib/io thật** |
 | Mô hình dữ liệu app hiện tại | Struct riêng trong `src/app.h`, chưa dùng `core/model` thật |
-| Đối chiếu chi tiết | `features.md` — 53 mục `[x]` hành vi thật · 15 mục `[~]` một phần · 67 mục `[ ]`, trên 135 mục Resolume-parity |
+| Đối chiếu chi tiết | `features.md` — 54 mục `[x]` hành vi thật · 15 mục `[~]` một phần · 66 mục `[ ]`, trên 135 mục Resolume-parity |
 | Build đa nền tảng | **Đã kiểm chứng thật**: macOS (2026-09-22, build+chạy trên máy Mac thật) · Linux (2026-09-22, build native + chạy dưới Xvfb, chụp màn hình) · Windows — **hai đường kiểm chứng riêng**: cross-compile MinGW-w64 (2026-09-22, ra `mikmap.exe` PE32+ thật, chạy qua Wine, chụp màn hình) **và MSVC thật trên Windows thật** (2026-09-23, build Debug lẫn Release qua cả dòng lệnh lẫn task/F5 của VS Code, chạy được) — cả 3 OS cùng render đúng giao diện, cùng tiếng Việt có dấu |
 
 Xem [`features.md`](features.md) để biết chính xác cái gì thật/cái gì chỉ có
