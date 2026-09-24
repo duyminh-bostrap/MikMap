@@ -28,6 +28,27 @@
             }
         },
         {
+            // Unit test của engine/ (không cần GPU/GLFW). Build bằng root
+            // CMakeLists.txt, file chạy nằm thẳng trong build/ với mọi generator.
+            "name": "Engine tests (Debug)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/mikmap_tests",
+            "args": [],
+            "cwd": "${workspaceFolder}/build",
+            "stopAtEntry": false,
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "preLaunchTask": "engine: build tests (Debug)",
+            "osx": {
+                "MIMode": "lldb"
+            },
+            "windows": {
+                "program": "${workspaceFolder}/build/mikmap_tests.exe"
+            }
+        },
+        {
             // Windows + MSVC only: cppdbg/gdb above can't read MSVC's PDB debug
             // info, and gdb usually isn't installed at all without MinGW/MSYS2.
             // cppvsdbg is VS's own native debugger (ships with the C/C++

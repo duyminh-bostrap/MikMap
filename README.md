@@ -59,7 +59,7 @@ Hai hệ build **tách biệt**, đọc chung `engine/`:
 ### `engine/` + unit test — CMake thuần, chạy trên Linux/macOS/Windows
 
 ```bash
-cmake -S . -B build
+cmake -DBUILD=build -P cmake/configure.cmake
 cmake --build build --target mikmap_tests -j
 ctest --test-dir build --output-on-failure
 ```
@@ -67,10 +67,19 @@ ctest --test-dir build --output-on-failure
 Không cần GPU, không cần GLFW/ImGui. Toàn bộ toán học mapping và calibration
 nằm ở `engine/core`, test trong vài giây.
 
+**Đã kiểm chứng bộ test bằng MinGW-w64 GCC 16 trên Windows (2026-09-24):**
+416 test / 5706 assertion đạt, build không cảnh báo, F5 *Engine tests (Debug)*
+dừng đúng breakpoint bằng gdb. Lần đầu chạy bằng GCC lộ ra 3 lỗi mà MSVC giấu
+(nay đã sửa): `test_filter.cpp` thiếu `#include <algorithm>` (không biên dịch
+được); winsock chỉ được nối bằng `#pragma comment(lib)` của MSVC (link thiếu
+`ws2_32`); và `if (!f)` không bắt được file không tồn tại trên libstdc++ của
+MinGW (dùng `is_open()`). Cũng thêm `-ffp-contract=off` cho GCC/Clang để toán
+homography không bị gộp FMA. **Chưa chạy** bộ test này trên macOS/Linux thật.
+
 ### `src/` — app GLFW + ImGui, **một lệnh giống nhau cho Windows/Linux/macOS**
 
 ```bash
-cmake -S src -B src/build -DCMAKE_BUILD_TYPE=Release
+cmake -DSRC=src -DBUILD=src/build -DTYPE=Release -P cmake/configure.cmake
 cmake --build src/build --config Release
 ./src/build/mikmap          # Windows: .\src\build\mikmap.exe
 ```
@@ -83,6 +92,14 @@ Chỉ cần **CMake + một trình biên dịch C++20**, không cần dựng s�
 | Windows | CMake (`winget install Kitware.CMake`) + **MSVC** (Visual Studio / VS Build Tools, đã kiểm chứng thật) hoặc MinGW-w64 (MSYS2: `pacman -S mingw-w64-x86_64-gcc mingw-w64-x86_64-gdb`, hoặc w64devkit — cũng đã kiểm chứng). CMake tự chọn trình biên dịch nào có trên PATH. |
 | macOS | `xcode-select --install` + `brew install cmake` (GLFW qua `brew install glfw` nếu muốn, không bắt buộc) |
 | Linux | `apt install cmake g++ libgl-dev` (GLFW qua `apt install libglfw3-dev` nếu muốn, không bắt buộc) |
+
+> **Vì sao configure qua `cmake/configure.cmake` thay vì `cmake -S … -B …`:**
+> hai lệnh tương đương, trừ một chỗ — trên Windows **không có Visual Studio**,
+> CMake mặc định chọn `NMake Makefiles` rồi hỏng vì thiếu `nmake`. Script tự
+> chuyển sang Ninja (hoặc `MinGW Makefiles`), nên máy mới clone về chạy được
+> ngay, không phải đặt biến môi trường nào. Trên macOS, Linux, hoặc Windows có
+> Visual Studio thì nó không đổi gì — gõ `cmake -S … -B …` trần cũng được.
+> VS Code task (F5), `src/build.ps1` và hook pre-push đều đi qua script này.
 
 **Dear ImGui** (v1.92.9b) luôn được CMake tải lúc configure. **GLFW** dùng bản
 hệ thống nếu có (brew/apt/vcpkg), không có thì CMake tự tải và dựng GLFW 3.5.1

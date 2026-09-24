@@ -732,7 +732,8 @@ bool save(const std::string& path, const Project& p, std::string& outError) {
 
     {
         std::ofstream f(tmp, std::ios::binary | std::ios::trunc);
-        if (!f) {
+        // is_open() chứ không phải `!f` — xem ghi chú ở load() bên dưới.
+        if (!f.is_open()) {
             outError = "Khong mo duoc file de ghi: " + tmp;
             return false;
         }
@@ -756,7 +757,11 @@ LoadResult load(const std::string& path, Project& out) {
     LoadResult res;
 
     std::ifstream f(path, std::ios::binary);
-    if (!f) {
+    // ★ PHẢI hỏi is_open(), không được viết `if (!f)`. Trên libstdc++ của
+    //   MinGW (GCC 16) mở file không tồn tại KHÔNG bật failbit: `!f` là
+    //   false, stream đọc ra chuỗi rỗng và lỗi biến thành "JSON sai cú
+    //   pháp" thay vì "không mở được file". is_open() đúng trên mọi nền.
+    if (!f.is_open()) {
         res.error = "Khong mo duoc file: " + path;
         return res;
     }

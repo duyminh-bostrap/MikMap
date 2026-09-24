@@ -1,15 +1,45 @@
 {
     // Needs only CMake + a C++20 compiler on PATH. On Windows that means either
-    // Visual Studio / VS Build Tools (MSVC) or MinGW-w64; CMake picks whichever
-    // it finds. GLFW and Dear ImGui are fetched/built by src/CMakeLists.txt, so
-    // nothing has to be pre-installed for them.
+    // Visual Studio / VS Build Tools (MSVC) or MinGW-w64 (+ Ninja). Configure goes
+    // through cmake/configure.cmake, which picks a working generator on a
+    // MinGW-only Windows machine (CMake's own default there, NMake, isn't
+    // installed) — so a fresh clone runs F5 without any per-machine setup.
+    // GLFW and Dear ImGui are fetched/built by src/CMakeLists.txt, so nothing
+    // has to be pre-installed for them.
     "version": "2.0.0",
     "tasks": [
+        {
+            "label": "engine: configure (Debug)",
+            "type": "shell",
+            "command": "cmake",
+            "args": ["-DBUILD=build", "-DTYPE=Debug", "-P", "cmake/configure.cmake"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "problemMatcher": []
+        },
+        {
+            "label": "engine: build tests (Debug)",
+            "type": "shell",
+            "command": "cmake",
+            "args": ["--build", "build", "--config", "Debug", "--target", "mikmap_tests", "-j"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "dependsOn": "engine: configure (Debug)",
+            "problemMatcher": ["$gcc", "$msCompile"]
+        },
+        {
+            "label": "engine: run tests",
+            "type": "shell",
+            "command": "ctest",
+            "args": ["--test-dir", "build", "-C", "Debug", "--output-on-failure"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "dependsOn": "engine: build tests (Debug)",
+            "problemMatcher": [],
+            "group": { "kind": "test", "isDefault": true }
+        },
         {
             "label": "mikmap: configure (Debug)",
             "type": "shell",
             "command": "cmake",
-            "args": ["-S", "src", "-B", "src/build-debug", "-DCMAKE_BUILD_TYPE=Debug"],
+            "args": ["-DSRC=src", "-DBUILD=src/build-debug", "-DTYPE=Debug", "-P", "cmake/configure.cmake"],
             "options": { "cwd": "${workspaceFolder}" },
             "problemMatcher": []
         },

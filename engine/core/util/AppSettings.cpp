@@ -25,7 +25,10 @@ bool AppSettings::load(const std::string& path, std::string& outWarning) {
     outWarning.clear();
 
     std::ifstream f(path, std::ios::binary);
-    if (!f) return true;   // chưa có file = lần chạy đầu, dùng mặc định
+    // is_open() chứ không phải `!f`: trên libstdc++ của MinGW (GCC 16),
+    // mở file không tồn tại không bật failbit, nên `!f` sẽ bỏ lọt nhánh
+    // "lần chạy đầu" và báo nhầm "settings.json hong".
+    if (!f.is_open()) return true;   // chưa có file = lần chạy đầu, dùng mặc định
 
     std::ostringstream ss;
     ss << f.rdbuf();
@@ -96,7 +99,7 @@ bool AppSettings::save(const std::string& path, std::string& outError) const {
     const std::string tmp = path + ".tmp";
     {
         std::ofstream f(tmp, std::ios::binary | std::ios::trunc);
-        if (!f) { outError = "Khong mo duoc " + tmp; return false; }
+        if (!f.is_open()) { outError = "Khong mo duoc " + tmp; return false; }
         const std::string text = root.dump(2);
         f.write(text.data(), static_cast<std::streamsize>(text.size()));
         if (!f) { outError = "Loi khi ghi " + tmp; return false; }

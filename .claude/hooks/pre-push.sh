@@ -34,8 +34,8 @@ elif [ "$issues" -gt 0 ]; then
     info "Đã có lỗi layering ở mục 1 — bỏ qua build/test, sửa layering trước."
 else
     BUILD_DIR="build"
-    info "Build mikmap_tests (cmake -S . -B $BUILD_DIR)..."
-    if ! cmake -S . -B "$BUILD_DIR" >/tmp/mikmap_prepush_configure.log 2>&1; then
+    info "Build mikmap_tests (cmake/configure.cmake -> $BUILD_DIR)..."
+    if ! cmake -DBUILD="$BUILD_DIR" -DTYPE=Debug -P cmake/configure.cmake >/tmp/mikmap_prepush_configure.log 2>&1; then
         fail "cmake configure thất bại — xem /tmp/mikmap_prepush_configure.log"
     elif ! cmake --build "$BUILD_DIR" --target mikmap_tests -j >/tmp/mikmap_prepush_build.log 2>&1; then
         fail "Build mikmap_tests thất bại:"

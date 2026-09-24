@@ -29,8 +29,21 @@ if(MSVC)
     # /fp:precise   KHÔNG dùng /fp:fast — toán homography cần độ chính xác
     add_compile_options(/W4 /permissive- /fp:precise /utf-8)
 else()
-    add_compile_options(-Wall -Wextra -Wpedantic)
+    # -ffp-contract=off là bản tương đương /fp:precise của GCC/Clang: cấm
+    # gộp a*b+c thành FMA. Thiếu nó, cùng một ma trận homography cho kết
+    # quả lệch bit giữa Windows-MSVC và macOS/Linux, và test so sánh số
+    # với epsilon nhỏ sẽ đỏ trên đúng một nền tảng.
+    add_compile_options(-Wall -Wextra -Wpedantic -ffp-contract=off)
 endif()
+
+# Test engine xuất file chạy thẳng vào <build>/ (giống src/CMakeLists.txt),
+# với mọi generator — Ninja/Makefiles lẫn Visual Studio/Xcode (multi-config,
+# vốn mặc định thêm thư mục Debug/). launch.json nhờ vậy chỉ cần MỘT đường dẫn.
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
+foreach(_cfg IN LISTS CMAKE_CONFIGURATION_TYPES)
+    string(TOUPPER "${_cfg}" _cfgUpper)
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${_cfgUpper} "${CMAKE_BINARY_DIR}")
+endforeach()
 
 # ── Thư viện core: C++ thuần, KHÔNG GL / oF / ImGui ─────────────────────
 file(GLOB_RECURSE MIKMAP_CORE_SOURCES CONFIGURE_DEPENDS
@@ -60,6 +73,14 @@ find_package(Threads REQUIRED)
 add_library(mikmap_io STATIC ${MIKMAP_IO_SOURCES} ${MIKMAP_IO_HEADERS})
 target_include_directories(mikmap_io PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/engine")
 target_link_libraries(mikmap_io PUBLIC mikmap_core Threads::Threads)
+
+# Winsock: PHẢI khai ở đây, không chỉ dựa vào `#pragma comment(lib, ...)`
+# trong OscSource.cpp — pragma đó là đặc sản của MSVC, MinGW/clang trên
+# Windows bỏ qua nó và linker báo thiếu __imp_socket, __imp_WSAStartup...
+# PUBLIC vì test_osc.cpp cũng tự mở socket.
+if(WIN32)
+    target_link_libraries(mikmap_io PUBLIC ws2_32)
+endif()
 
 # ── Thư viện i18n: bảng chuỗi giao diện ────────────────────────────────
 #

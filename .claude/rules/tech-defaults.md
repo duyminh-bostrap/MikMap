@@ -22,22 +22,20 @@ Hai hệ build tách biệt, đọc chung `engine/`, đừng trộn:
 
 ```bash
 # engine/ (core+io+i18n) + unit test — CMake thuần, không cần GPU/GLFW
-cmake -S . -B build
+cmake -DBUILD=build -P cmake/configure.cmake
 cmake --build build --target mikmap_tests -j
 ctest --test-dir build --output-on-failure
 ```
 
-```powershell
-# app (src/) — Windows: MinGW/GLFW/.tools trong src/.tools/ (không vào git)
-cmake -S src -B src/build -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build src/build
-```
-
 ```bash
-# app (src/) — Linux: apt install libglfw3-dev libgl-dev trước
-# app (src/) — macOS: brew install glfw trước
-# ImGui v1.92.9b tự tải qua FetchContent lúc configure, không vào git.
-cmake -S src -B src/build && cmake --build src/build
+# app (src/) — MỘT lệnh cho Windows/macOS/Linux, không cần src/.tools/ hay
+# biến môi trường nào. Cần: CMake + trình biên dịch C++20 (Windows: MSVC,
+# hoặc MinGW-w64 + Ninja). ImGui v1.92.9b tự tải lúc configure; GLFW dùng bản
+# hệ thống nếu có (brew/apt), không có thì tự tải 3.5.1. Linux cần libgl-dev.
+# cmake/configure.cmake tự chọn generator chạy được (Windows không có Visual
+# Studio thì CMake mặc định chọn NMake rồi hỏng — script đổi sang Ninja).
+cmake -DSRC=src -DBUILD=src/build -DTYPE=Release -P cmake/configure.cmake
+cmake --build src/build --config Release -j
 ```
 
 - `src/CMakeLists.txt` tự `file(GLOB_RECURSE ...)` `../engine/core` +

@@ -1,0 +1,6 @@
+# Line ending cố định trong repo, không phụ thuộc core.autocrlf của từng máy.
+# Kho luôn lưu LF; file văn bản được Git đổi theo hệ khi checkout, riêng
+# script shell PHẢI giữ LF — bash (kể cả Git Bash trên Windows) chạy script
+# CRLF sẽ lỗi "$'\r': command not found".
+* text=auto
+*.sh text eol=lf

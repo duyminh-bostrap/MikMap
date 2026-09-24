@@ -42,7 +42,7 @@ phải git hook, nên `--no-verify` không có tác dụng — nếu hook sai, s
    và build được cả trên Linux/macOS (cần `libglfw3-dev`
    +`libgl-dev` trên Linux, hoặc `brew install glfw` trên macOS — xem
    `README.md`), không chỉ Windows như trước — chạy
-   `cmake -S src -B src/build && cmake --build src/build` để xác nhận build
+   `cmake -DSRC=src -DBUILD=src/build -P cmake/configure.cmake && cmake --build src/build` để xác nhận build
    sạch trước khi báo "đã sửa xong", đừng chỉ đọc code. Nếu máy không có
    GLFW/OpenGL để thử chạy thật (không chỉ build), nói rõ điều đó thay vì báo
    "đã test" khi chỉ build được nhị phân.

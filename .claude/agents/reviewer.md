@@ -32,7 +32,7 @@ dấu hiệu diff đang nhắm nhầm nhánh.
    toạ độ THÔ (chưa áp `H_w`/`H_s`) không?
 2. **Build sạch** — chạy:
    ```
-   cmake -S . -B build && cmake --build build --target mikmap_tests -j
+   cmake -DBUILD=build -P cmake/configure.cmake && cmake --build build --target mikmap_tests -j
    ```
    0 lỗi, và trên máy có MSVC thì 0 cảnh báo `/W4`. Trên Linux dùng
    `-Wall -Wextra -Wpedantic` làm proxy hợp lý.

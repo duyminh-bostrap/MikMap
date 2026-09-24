@@ -1,6 +1,7 @@
 // Settings window (language · fonts · theme colour · text size) and the font / theme machinery behind it.
 #include "app.h"
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -47,7 +48,10 @@ void LoadAllFonts(ImGuiIO& io, const std::string& assets) {
   // changes WHICH paths get tried per platform, not the failure behavior.
 const std::string fd = assets + "/fonts/";
 #ifdef _WIN32
-  const std::string sysFontDir = "C:\\Windows\\Fonts\\";
+  // %WINDIR% thay vì cứng C:\Windows — Windows không nhất thiết cài ở ổ C:.
+  const char* winDir = std::getenv("WINDIR");
+  // Dấu "/" chạy được trên Windows (fopen/CreateFile đều nhận), khỏi phải escape "\\".
+  const std::string sysFontDir = std::string(winDir ? winDir : "C:/Windows") + "/Fonts/";
   const std::vector<std::string> cjkFallback = {sysFontDir + "msyh.ttc", sysFontDir + "YuGothM.ttc", sysFontDir + "malgun.ttf"};
   const char* segoe[4] = {"segoeui.ttf", "seguisb.ttf", "segoeuib.ttf", "seguibl.ttf"};
 #elif defined(__APPLE__)

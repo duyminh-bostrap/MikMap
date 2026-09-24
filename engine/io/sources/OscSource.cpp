@@ -14,7 +14,11 @@
 #  endif
 #  include <winsock2.h>
 #  include <ws2tcpip.h>
+#  if defined(_MSC_VER)
+// Chỉ MSVC hiểu pragma này. MinGW/clang trên Windows bỏ qua (kèm cảnh
+// báo -Wunknown-pragmas) — ở đó ws2_32 được nối trong CMakeLists.txt.
 #  pragma comment(lib, "ws2_32.lib")
+#  endif
 using SocketHandle = SOCKET;
 static constexpr SocketHandle kInvalidSocket = INVALID_SOCKET;
 #else

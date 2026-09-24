@@ -3,6 +3,7 @@
 #include "core/filter/OneEuroFilter.h"
 #include "core/filter/PointTracker.h"
 
+#include <algorithm>
 #include <cmath>
 #include <random>
 

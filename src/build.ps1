@@ -21,7 +21,10 @@ if (-not (Get-Command cmake -ErrorAction SilentlyContinue)) {
   exit 1
 }
 
-cmake -S $r -B "$r\build" -DCMAKE_BUILD_TYPE=Release
+# Qua cmake/configure.cmake: tren may Windows khong co Visual Studio no tu chon
+# Ninja thay cho NMake (mac dinh cua CMake, se hong vi khong co nmake).
+$fs = $r.Replace('\', '/')
+cmake "-DSRC=$fs" "-DBUILD=$fs/build" -DTYPE=Release -P "$fs/../cmake/configure.cmake"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 cmake --build "$r\build" --config Release
 if ($Run -and $LASTEXITCODE -eq 0) { Start-Process "$r\build\mikmap.exe" }
