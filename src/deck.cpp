@@ -752,10 +752,13 @@ static void Monitor(ImRect r, bool live) {
     Fill(well, K(0x080808));
     // same default size as Live Output: letterbox to the canvas aspect and use the same
     // 960 base width (the old full-well rect + 480 base zoomed the cue ~2x vs live).
+    // Time multiplier must match every other "live motion" draw call (DrawComposite above, the
+    // deck thumbnails) so the same clip animates at the same phase/speed everywhere it's shown —
+    // this used to be 1.5f here alone, which desynced Preview Cue from Live Output for a live clip.
     ImRect cv = CanvasRect(well);
     Fill(cv, K(0x0a0a0a));
     g.dl->PushClipRect(cv.Min, cv.Max, true);
-    DrawClipContent(cv, sc, (float)g.time * 1.5f, 960.f, 1.f);
+    DrawClipContent(cv, sc, (float)g.time * 1.2f, 960.f, 1.f);
     for (float x = cv.Min.x + 13; x < cv.Max.x; x += 14) VLine(std::floor(x), cv.Min.y, cv.Max.y, K(0xffffff, 0.045f));
     for (float y = cv.Min.y + 13; y < cv.Max.y; y += 14) HLine(cv.Min.x, cv.Max.x, std::floor(y), K(0xffffff, 0.045f));
     g.dl->PopClipRect();
