@@ -33,7 +33,7 @@
 
 #include "core/math/Vec2.h"
 
-namespace hexmap {
+namespace mikmap {
 
 /// Nghịch đảo nội suy song tuyến tính trên một tứ giác.
 ///
@@ -56,4 +56,4 @@ bool pointInQuad(const Vec2& p00, const Vec2& p10,
                  const Vec2& p11, const Vec2& p01,
                  const Vec2& P);
 
-} // namespace hexmap
+} // namespace mikmap

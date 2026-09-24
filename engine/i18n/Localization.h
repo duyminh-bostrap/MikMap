@@ -23,7 +23,7 @@
 #include <utility>
 #include <vector>
 
-namespace hexmap {
+namespace mikmap {
 namespace i18n {
 
 void     setLanguage(Language l);
@@ -48,13 +48,13 @@ int missingCount();
 std::vector<std::pair<std::string, std::string>> dumpTable(Language l);
 
 } // namespace i18n
-} // namespace hexmap
+} // namespace mikmap
 
 /// Viết tắt. Cố ý ngắn vì nó xuất hiện ở mọi dòng UI.
 // ★ Ten macro CO Y khong phai la `T`.
 //
 //   Mot macro mot chu cai `T` pha vo moi thu vien C++ co template: ImGui
 //   viet `p->~T()` trong IM_DELETE, va bo tien xu ly bien no thanh
-//   `p->~::hexmap::i18n::t()`. Loi bao o imgui.h chu khong phai o day, nen
+//   `p->~::mikmap::i18n::t()`. Loi bao o imgui.h chu khong phai o day, nen
 //   rat kho lan ra. `TR` du ngan de viet nhung du hiem de khong dung do.
-#define TR(key) ::hexmap::i18n::t(key)
+#define TR(key) ::mikmap::i18n::t(key)

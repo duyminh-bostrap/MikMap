@@ -6,7 +6,7 @@
 #include <cmath>
 #include <random>
 
-namespace hexmap {
+namespace mikmap {
 namespace homography {
 namespace {
 
@@ -371,4 +371,4 @@ void evaluate(const Mat3& H,
 }
 
 } // namespace homography
-} // namespace hexmap
+} // namespace mikmap

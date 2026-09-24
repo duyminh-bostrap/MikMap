@@ -28,7 +28,7 @@
 #include <string>
 #include <vector>
 
-namespace hexmap {
+namespace mikmap {
 
 struct SensorRoute {
     uint16_t sourceId = 0;
@@ -55,4 +55,4 @@ struct SensorRoutingTable {
 SensorRoutingTable buildSensorRoutes(const std::vector<CalibrationProfile>& profiles,
                                      const std::vector<Screen>& screens);
 
-} // namespace hexmap
+} // namespace mikmap

@@ -35,7 +35,7 @@
 
 #include <array>
 
-namespace hexmap {
+namespace mikmap {
 
 class WarpBezier final : public IWarp {
 public:
@@ -101,4 +101,4 @@ private:
     std::array<Vec2, kPointCount> m_points{};
 };
 
-} // namespace hexmap
+} // namespace mikmap

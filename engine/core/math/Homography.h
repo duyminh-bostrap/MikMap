@@ -27,7 +27,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace hexmap {
+namespace mikmap {
 
 /// Một cặp điểm tương ứng dùng cho calibration.
 struct CorrespondencePair {
@@ -105,4 +105,4 @@ void evaluate(const Mat3& H,
 bool isValidQuad(const Vec2 quad[4], double minArea = 1e-6);
 
 } // namespace homography
-} // namespace hexmap
+} // namespace mikmap

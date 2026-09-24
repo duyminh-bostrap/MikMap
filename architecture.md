@@ -1,4 +1,4 @@
-# HexMapping — Architecture
+# MikMap — Architecture
 
 > **Projection Mapping Engine + Sensor Calibration System**
 > Stack: **C++20 · openFrameworks 0.12.x · OpenGL 4.x · Dear ImGui · OpenCV**
@@ -69,14 +69,14 @@ app    ──▶ core, io, render, ui
 ## 2. Cấu trúc thư mục
 
 ```
-HexMapping/
+MikMap/
 │
 ├─ architecture.md                  # ← tài liệu này
 ├─ README.md
 ├─ .gitignore  .clang-format  .editorconfig
 ├─ CMakeLists.txt                   # build core/ + tests (ĐỘC LẬP với oF)
 │
-├─ HexMapping.sln                   # sinh bởi oF Project Generator
+├─ MikMap.sln                   # sinh bởi oF Project Generator
 ├─ addons.make                      # danh sách addon cho Project Generator
 │
 ├─ addons/                          # oF addons (git submodule)
@@ -106,7 +106,7 @@ HexMapping/
 │  │  │   ├─ Deck.h / .cpp              # lưới Layer × Column + logic trigger
 │  │  │   ├─ Screen.h / .cpp            # 1 máy chiếu = 1 screen + N slice
 │  │  │   ├─ Composition.h / .cpp       # gốc cây: canvas + decks + screens
-│  │  │   └─ ProjectIO.h / .cpp         # (de)serialize JSON — .hexmap
+│  │  │   └─ ProjectIO.h / .cpp         # (de)serialize JSON — .mikmap
 │  │  │
 │  │  ├─ calib/                     # ★ hệ thống calibration
 │  │  │   ├─ CorrespondencePair.h       # (điểm sensor, điểm output) + trọng số
@@ -187,7 +187,7 @@ HexMapping/
 │  └─ check_layering.ps1                # ★ ép quy tắc phụ thuộc ở mục 1
 │
 ├─ bin/data/                       # thư mục runtime của oF
-│  ├─ projects/    *.hexmap
+│  ├─ projects/    *.mikmap
 │  ├─ media/       *.mov (HAP), *.png
 │  ├─ calib/       *.calib.json
 │  └─ shaders/
@@ -554,12 +554,12 @@ thần trên `new_UI`, chỉ khác chỗ đặt vật lý — `core/`/`io/` nay 
    ../engine/core)               ../engine/core, ../engine/io)
         │                        │
         ▼                        ▼
-  hexmap_tests               mikmap.exe
+  mikmap_tests               mikmap.exe
   chạy trên CI, ~2 giây      ứng dụng, chỉ Windows
-  KHÔNG cần GLFW/ImGui       (bản oF cũ: HexMapping.exe, nhánh legacy-oF-ui)
+  KHÔNG cần GLFW/ImGui       (bản oF cũ: MikMap.exe, nhánh legacy-oF-ui)
 ```
 
-**Ràng buộc để mô hình này hoạt động:** `core/` chỉ được phụ thuộc STL. Nếu cần OpenCV cho RANSAC, đặt sau macro `HEXMAP_USE_OPENCV` kèm một fallback DLT tự viết — để test vẫn build được ở môi trường tối giản.
+**Ràng buộc để mô hình này hoạt động:** `core/` chỉ được phụ thuộc STL. Nếu cần OpenCV cho RANSAC, đặt sau macro `MIKMAP_USE_OPENCV` kèm một fallback DLT tự viết — để test vẫn build được ở môi trường tối giản.
 
 ---
 

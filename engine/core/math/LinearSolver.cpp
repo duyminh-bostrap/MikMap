@@ -3,7 +3,7 @@
 #include <cmath>
 #include <cstddef>
 
-namespace hexmap {
+namespace mikmap {
 
 bool solveLinearSystem(std::vector<double>& A,
                        std::vector<double>& b,
@@ -62,4 +62,4 @@ bool solveLinearSystem(std::vector<double>& A,
     return true;
 }
 
-} // namespace hexmap
+} // namespace mikmap

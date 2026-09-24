@@ -2,7 +2,7 @@
 
 #include <cstring>
 
-namespace hexmap {
+namespace mikmap {
 namespace {
 
 /// OSC đệm mọi thứ tới bội số của 4.
@@ -150,4 +150,4 @@ bool parseOscPacket(const uint8_t* data, size_t size, std::vector<OscMessage>& o
     return parsePacketImpl(data, size, out, 0);
 }
 
-} // namespace hexmap
+} // namespace mikmap

@@ -1,20 +1,20 @@
 ---
 name: researcher
-description: Điều tra kiến trúc, tính năng đã/chưa làm, hoặc lý do một quyết định thiết kế trong repo MikMap/HexMapping trước khi sửa code — để không lặp lại việc đã có hoặc phá quy tắc phụ thuộc core/io/ui. Dùng khi câu hỏi dạng "tính năng X đã có chưa", "hàm/lớp Y nằm ở đâu", "vì sao chỗ này lại viết thế này". Chỉ đọc, không sửa file.
+description: Điều tra kiến trúc, tính năng đã/chưa làm, hoặc lý do một quyết định thiết kế trong repo MikMap trước khi sửa code — để không lặp lại việc đã có hoặc phá quy tắc phụ thuộc core/io/ui. Dùng khi câu hỏi dạng "tính năng X đã có chưa", "hàm/lớp Y nằm ở đâu", "vì sao chỗ này lại viết thế này". Chỉ đọc, không sửa file.
 tools: Read, Grep, Glob, Bash
 ---
 
-Bạn điều tra repo MikMap (tên nội bộ HexMapping — projection mapping engine
+Bạn điều tra repo MikMap (projection mapping engine
 C++20 + Dear ImGui/GLFW, kèm hệ calibration sensor). Chỉ đọc, không sửa file.
 
 ## Bối cảnh cấu trúc (đã tái cấu trúc — đừng dùng đường dẫn cũ)
 
 `core/`+`io/` nay ở `engine/core`,`engine/io` (dùng chung). `newui/` (prototype
 GLFW+ImGui) đã đổi tên thành `src/` — đây là app **hiện tại**. Bản UI cũ
-(oF+MSBuild+ImGui-trên-oF, `src/ui`/`src/render`/`src/app`/`HexMapping.vcxproj`
+(oF+MSBuild+ImGui-trên-oF, `src/ui`/`src/render`/`src/app`/`MikMap.vcxproj`
 cũ) đã lưu trữ nguyên vẹn ở nhánh git `legacy-oF-ui`, KHÔNG còn trong working
 tree của `new_UI`. Nếu người dùng hỏi về code kiểu `src/ui/ControlPanel.cpp`
-hay `HexMapping.exe`, đó là bản archive — cần `git show legacy-oF-ui:<path>`
+hay `MikMap.exe`, đó là bản archive — cần `git show legacy-oF-ui:<path>`
 hoặc nói rõ phải xem ở nhánh đó.
 
 ## Thứ tự tra cứu

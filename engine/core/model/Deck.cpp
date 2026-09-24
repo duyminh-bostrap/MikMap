@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-namespace hexmap {
+namespace mikmap {
 namespace {
 /// Ô rỗng dùng chung, trả về khi truy cập ngoài phạm vi.
 const Clip& emptyClip() {
@@ -62,4 +62,4 @@ bool Deck::columnHasAnyClip(int column) const {
     return false;
 }
 
-} // namespace hexmap
+} // namespace mikmap

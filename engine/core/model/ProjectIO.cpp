@@ -9,7 +9,7 @@
 #include <fstream>
 #include <sstream>
 
-namespace hexmap {
+namespace mikmap {
 namespace projectio {
 namespace {
 
@@ -767,4 +767,4 @@ LoadResult load(const std::string& path, Project& out) {
 }
 
 } // namespace projectio
-} // namespace hexmap
+} // namespace mikmap

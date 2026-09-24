@@ -10,7 +10,7 @@
 #include <chrono>
 #include <cstdint>
 
-namespace hexmap {
+namespace mikmap {
 
 struct Clock {
     static int64_t nowNs() {
@@ -23,4 +23,4 @@ struct Clock {
     static double nsToSec(int64_t ns) { return static_cast<double>(ns) / 1.0e9; }
 };
 
-} // namespace hexmap
+} // namespace mikmap

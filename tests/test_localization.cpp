@@ -22,7 +22,7 @@
 #include <string>
 #include <vector>
 
-using namespace hexmap;
+using namespace mikmap;
 
 namespace {
 

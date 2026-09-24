@@ -4,7 +4,7 @@
 #include <set>
 #include <string>
 
-namespace hexmap {
+namespace mikmap {
 namespace i18n {
 namespace {
 
@@ -56,8 +56,8 @@ const Table& tableVI() {
         {"topbar.autocalib",        "Tự Hiệu Chỉnh"},
         {"topbar.autocalib.tip",    "Tự hiệu chỉnh cảm biến giả lập (A)"},
         {"topbar.fullscreen.tip",   "Toàn màn hình cửa sổ chiếu (F11)"},
-        {"topbar.save.tip",         "Lưu dự án (.hexmap)"},
-        {"topbar.load.tip",         "Mở dự án (.hexmap)"},
+        {"topbar.save.tip",         "Lưu dự án (.mikmap)"},
+        {"topbar.load.tip",         "Mở dự án (.mikmap)"},
         {"topbar.lang.tip",         "Đổi ngôn ngữ (VI / EN)"},
         {"topbar.latency",          "ĐỘ TRỄ:"},
         {"browser.title",           "THƯ VIỆN"},
@@ -409,8 +409,8 @@ const Table& tableEN() {
         {"topbar.autocalib",        "Auto Calib"},
         {"topbar.autocalib.tip",    "Auto-calibrate mock sensor (A)"},
         {"topbar.fullscreen.tip",   "Fullscreen projector window (F11)"},
-        {"topbar.save.tip",         "Save project (.hexmap)"},
-        {"topbar.load.tip",         "Open project (.hexmap)"},
+        {"topbar.save.tip",         "Save project (.mikmap)"},
+        {"topbar.load.tip",         "Open project (.mikmap)"},
         {"topbar.lang.tip",         "Switch language (VI / EN)"},
         {"topbar.latency",          "LATENCY:"},
         {"browser.title",           "LIBRARY"},
@@ -749,4 +749,4 @@ std::vector<std::pair<std::string, std::string>> dumpTable(Language l) {
 }
 
 } // namespace i18n
-} // namespace hexmap
+} // namespace mikmap

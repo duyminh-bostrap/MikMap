@@ -9,7 +9,7 @@
 // ════════════════════════════════════════════════════════════════════════
 #pragma once
 
-namespace hexmap {
+namespace mikmap {
 
 enum class BlendMode {
     Normal = 0,   ///< alpha blend thông thường
@@ -50,4 +50,4 @@ inline const char* blendModeName(BlendMode m) {
 /// Tên lạ (file cũ, hoặc mode chưa cài đặt) → Normal, không làm hỏng project.
 BlendMode blendModeFromName(const char* name);
 
-} // namespace hexmap
+} // namespace mikmap

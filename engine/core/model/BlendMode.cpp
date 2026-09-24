@@ -2,7 +2,7 @@
 
 #include <cstring>
 
-namespace hexmap {
+namespace mikmap {
 
 BlendMode blendModeFromName(const char* name) {
     if (name == nullptr) return BlendMode::Normal;
@@ -18,4 +18,4 @@ BlendMode blendModeFromName(const char* name) {
     return BlendMode::Normal;
 }
 
-} // namespace hexmap
+} // namespace mikmap

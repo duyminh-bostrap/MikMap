@@ -20,7 +20,7 @@
 
 #include <string>
 
-namespace hexmap {
+namespace mikmap {
 
 class Layer {
 public:
@@ -82,4 +82,4 @@ public:
     }
 };
 
-} // namespace hexmap
+} // namespace mikmap

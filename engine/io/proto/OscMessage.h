@@ -24,7 +24,7 @@
 #include <string>
 #include <vector>
 
-namespace hexmap {
+namespace mikmap {
 
 struct OscArg {
     enum class Type { Int32, Float32, String };
@@ -70,4 +70,4 @@ struct OscMessage {
 /// @return false nếu gói dị dạng (out có thể đã chứa message hợp lệ đọc được)
 bool parseOscPacket(const uint8_t* data, size_t size, std::vector<OscMessage>& out);
 
-} // namespace hexmap
+} // namespace mikmap

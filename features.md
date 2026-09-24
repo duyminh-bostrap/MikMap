@@ -1,4 +1,4 @@
-﻿# MikMap — Bảng tính năng mới (bỏ tích)
+# MikMap — Bảng tính năng mới (bỏ tích)
 
 > **Kiểm tra lần này áp dụng cho bản prototype C++ / Dear ImGui (`mikmap-cpp`)** — chỉ phần UI + mô hình dữ liệu trong bộ nhớ; chưa có engine oF, HAP, output ra máy chiếu hay I/O thật.
 > Tích theo code thực tế (đã đối chiếu source), không theo mong muốn.
@@ -195,7 +195,7 @@
 | ✓ | ID | Tính năng | Công sức | Đề xuất |
 |:-:|---|---|:-:|:-:|
 | [x] | **I1** | Cửa sổ control tách khỏi cửa sổ output | S | 🔴 P0 |
-| [x] | **I2** | Save / load project (.hexmap) | M | 🔴 P0 |
+| [x] | **I2** | Save / load project (.mikmap) | M | 🔴 P0 |
 | [x] | **I3** | Preview output trong control window | M | 🔴 P0 |
 | [x] | **I4** | Panel thông số (chỉnh param clip/slice) | M | 🔴 P0 |
 | [x] | **I5** | **Show Mode** — ẩn toàn bộ overlay chỉnh sửa | S | 🟠 P1 |
@@ -249,7 +249,7 @@
 
 ### Đợt bổ sung UX & lưu/mở dự án (2026-09-21)
 Đã grep `src/*.cpp` xác nhận từng mục:
-- **I2 — lưu/mở dự án `[x]`** (`src/project.cpp`): định dạng `.mikmap` (JSON, dùng `engine/core/util/Json`, ghi qua file tạm rồi rename), thư mục `~/Documents/MikMap`. Có Dự án mới (trống) / Mở (hộp thoại liệt kê, mới nhất trước) / Lưu / Lưu bản sao, phát hiện thay đổi chưa lưu (bỏ qua playhead và trạng thái live) và cảnh báo khi bỏ/thoát, nạp file hỏng hoặc rỗng không làm hỏng trạng thái đang chạy. **Lưu ý:** đây là schema riêng của `src/`, **chưa gọi `ProjectIO`/`.hexmap` của `engine/`**. Kiểm bằng `mikmap --roundtrip <file>` (chạy không cần cửa sổ).
+- **I2 — lưu/mở dự án `[x]`** (`src/project.cpp`): định dạng `.mikmap` (JSON, dùng `engine/core/util/Json`, ghi qua file tạm rồi rename), thư mục `~/Documents/MikMap`. Có Dự án mới (trống) / Mở (hộp thoại liệt kê, mới nhất trước) / Lưu / Lưu bản sao, phát hiện thay đổi chưa lưu (bỏ qua playhead và trạng thái live) và cảnh báo khi bỏ/thoát, nạp file hỏng hoặc rỗng không làm hỏng trạng thái đang chạy. **Lưu ý:** đây là schema riêng của `src/`, **chưa gọi `ProjectIO`/`.mikmap` của `engine/`**. Kiểm bằng `mikmap --roundtrip <file>` (chạy không cần cửa sổ).
 - **Cài đặt máy tách khỏi dự án:** ngôn ngữ/font/màu/cỡ chữ/màn hình output lưu ở thư mục config của hệ điều hành (`settings.json`), tự lưu khi đổi.
 - **F8, G8 `[~]`:** output (screen/slice/mask) và calibration được lưu **cùng dự án**, chưa có preset/profile riêng để nạp lẫn giữa các dự án.
 - **H1 `[~]`:** Space play/pause, Enter trigger clip đang chọn, ←/→ đổi cột, L loop, Delete xoá clip, Ctrl/Cmd+N/O/S/Shift+S/Z/Y. Chưa có phím gán tuỳ ý cho từng clip/cột.
@@ -295,7 +295,7 @@
   - **Ghim ngang:** cột layer 178px không còn cuộn mất khi lưới tràn khung — dựng lại `DeckGrid()` thành ba lượt (layout-only → ô clip cuộn → dải ghim vẽ đè lên trên, cùng kiểu với hàng tiêu đề cột đã ghim dọc từ trước). **Sửa tiếp một lỗi do chính lượt ghim gây ra** (người dùng báo qua ảnh chụp, 2 vòng): cột cuộn **nửa chừng** (chưa ẩn hẳn) vẽ đè ô "Cue N" của nhóm lên tên/fader nhóm, và glow (blur 12px) của ô clip/Cue đang active tràn qua khe 4px sang thẻ/ô bên cạnh. Sửa dứt điểm bằng một quy tắc vẽ duy nhất: mọi thứ cuộn ngang vẽ TRƯỚC và bị cắt cứng bằng `PushClipRect` tại mép phải dải ghim; dải ghim vẽ SAU CÙNG; hit-test theo đúng ranh giới đó (bấm lên dải ghim không lọt xuống ô đang ẩn phía sau).
   - **C10 — Cue nhóm chọn clip thật:** `selectGroupCue()` trước đây chỉ ghi `selectedCells` để tham khảo nội bộ, không đổi `Clip::st` — bấm Cue N của nhóm không đổi màu ô nào cả (trông như không có tác dụng). Sửa để mô phỏng đúng `cue()` cho từng layer thành viên (Loaded↔Selected, Live↔LiveSel), Properties tự chuyển tab Clip.
   - **Deck tabs:** bỏ nút **+ DECK** riêng; chuột phải vào tab deck bất kỳ mở menu có thêm **Add deck** và **Move left/right** (đổi thứ tự, cùng kiểu "dịch trái/phải" của menu cột C9) — `App::moveDeckTo()` mới, mirror `moveColTo()`.
-  - Kiểm bằng `--shot` (cuộn nửa cột, bấm lên dải ghim, bấm Cue nhóm, bấm menu chuột phải tab deck) và `--roundtrip` (thêm scenario cho `selectGroupCue`/`moveDeckTo`). `hexmap_tests` không đổi (không đụng `engine/`); 0 cảnh báo mới Debug lẫn Release.
+  - Kiểm bằng `--shot` (cuộn nửa cột, bấm lên dải ghim, bấm Cue nhóm, bấm menu chuột phải tab deck) và `--roundtrip` (thêm scenario cho `selectGroupCue`/`moveDeckTo`). `mikmap_tests` không đổi (không đụng `engine/`); 0 cảnh báo mới Debug lẫn Release.
 - **Thanh SYSTEM TIME thay Timeline ở góc trái + Cài đặt có tab Layout chỉnh được panel (2026-09-22, người dùng tự viết trực tiếp trên đĩa — không qua phiên Claude Code này; ghi lại sau khi được yêu cầu "kiểm tra code mới, note lại tiến độ"):**
   - `DrawDeck()`: góc trái thanh dưới 2 monitor đổi từ nhãn "TIMELINE"+timecode sang **SYSTEM TIME** (giờ hệ thống thật `HH:MM:SS`, `localtime_r`/`localtime_s`); nhãn TIMELINE+timecode dời sang góc phải, cỡ nhỏ hơn, chỉ còn để tham khảo. **Bỏ hẳn thanh kéo (scrub bar)** dưới 2 monitor — xem lại C8 bên dưới. Cả thanh (label + 5 nút transport) giờ **ẩn được khi `prefs.timelineH = 0`**.
   - `settings.cpp`/`project.cpp`/`app.h`: thêm tab thứ 5 **Layout** trong Cài đặt — 4 slider chỉnh `browserW`/`inspectorW`/`bandPct`/`timelineH`, áp dụng ngay + lưu `settings.json` (mô tả máy, đúng nguyên tắc tách máy/dự án). Cỡ chữ thêm mức thứ 5 (150%, "X-Large").

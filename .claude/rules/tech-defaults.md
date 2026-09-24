@@ -23,7 +23,7 @@ Hai hệ build tách biệt, đọc chung `engine/`, đừng trộn:
 ```bash
 # engine/ (core+io+i18n) + unit test — CMake thuần, không cần GPU/GLFW
 cmake -S . -B build
-cmake --build build --target hexmap_tests -j
+cmake --build build --target mikmap_tests -j
 ctest --test-dir build --output-on-failure
 ```
 
@@ -57,7 +57,7 @@ cmake -S src -B src/build && cmake --build src/build
 - Chuỗi hex trong literal (`"\xE1\xBB\x8B"`) mà đứng ngay trước ký tự hex
   (`0-9a-fA-F`) sẽ bị GCC/Clang coi là một escape dài và báo lỗi (MSVC bỏ
   qua) — tách bằng `" "` như `"...\x8B" "ch"`.
-- *(Chỉ nhánh `legacy-oF-ui`)* App oF cũ build bằng MSBuild + `HexMapping.vcxproj`,
+- *(Chỉ nhánh `legacy-oF-ui`)* App oF cũ build bằng MSBuild + `MikMap.vcxproj`,
   file mới phải thêm thủ công vào đó, và phải chạy lại `tools/fix_project.ps1`
   sau mỗi lần chạy oF Project Generator. Không áp dụng cho `new_UI`.
 
@@ -111,7 +111,7 @@ Bezier) phải theo đúng chữ ký này ngay từ `IWarp`, không thêm muộn
 ## `engine/core/` chỉ phụ thuộc STL
 
 Nếu một tính năng trong `engine/core/` (vd RANSAC) muốn dùng OpenCV, đặt sau
-macro `HEXMAP_USE_OPENCV` kèm fallback tự viết — để `hexmap_tests` vẫn build
+macro `MIKMAP_USE_OPENCV` kèm fallback tự viết — để `mikmap_tests` vẫn build
 được ở môi trường tối giản (CI, máy không có OpenCV). Đừng thêm dependency
 ngoài STL vào `engine/core/` mà không có fallback này.
 
@@ -131,7 +131,7 @@ màu ra sai — chi tiết ofxHapPlayer chỉ tồn tại ở bản đó.
 
 - `Json` tự viết (0 phụ thuộc), escape `\` cho đường dẫn Windows —
   `engine/core/util/Json.*`.
-- `ProjectIO` (`.hexmap`, `engine/core/model/ProjectIO.*`) ghi qua file tạm
+- `ProjectIO` (`.mikmap`, `engine/core/model/ProjectIO.*`) ghi qua file tạm
   rồi rename — nạp file hỏng không được làm app sập. `src/` hiện tự viết lưu/mở
   riêng trong `settings.cpp`/`app.h`, **chưa gọi** `ProjectIO` thật (I2/F8/G8
   trong `features.md`).
@@ -144,5 +144,5 @@ màu ra sai — chi tiết ofxHapPlayer chỉ tồn tại ở bản đó.
 `engine/i18n/Localization.{h,cpp}` — thêm ngôn ngữ mới: chép một bảng, dịch
 giá trị, thêm vào `enum class Language`. `tests/test_localization.cpp` báo
 ngay nếu thiếu khoá hoặc lệch định dạng `%d`/`%s` giữa các bảng — chạy lại
-test này sau khi sửa bất kỳ bảng ngôn ngữ nào. Target build là `hexmap_i18n`
-trong `CMakeLists.txt` gốc, tách khỏi mọi UI cụ thể (chỉ std + `hexmap_core`).
+test này sau khi sửa bất kỳ bảng ngôn ngữ nào. Target build là `mikmap_i18n`
+trong `CMakeLists.txt` gốc, tách khỏi mọi UI cụ thể (chỉ std + `mikmap_core`).

@@ -2,7 +2,7 @@
 
 #include "core/math/Mat3.h"
 
-using namespace hexmap;
+using namespace mikmap;
 
 TEST_CASE("Mat3: identity khong lam thay doi diem") {
     const Mat3 I;

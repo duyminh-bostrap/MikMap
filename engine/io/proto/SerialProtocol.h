@@ -35,7 +35,7 @@
 #include <string>
 #include <vector>
 
-namespace hexmap {
+namespace mikmap {
 
 struct SerialCommand {
     enum class Kind { Touch, Up, Clear };
@@ -77,4 +77,4 @@ private:
     uint64_t    m_badLines = 0;
 };
 
-} // namespace hexmap
+} // namespace mikmap

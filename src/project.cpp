@@ -16,7 +16,7 @@
 #include <sstream>
 
 namespace fs = std::filesystem;
-using hexmap::JsonValue;
+using mikmap::JsonValue;
 
 namespace {
 

@@ -13,7 +13,7 @@
 #include <string>
 #include <vector>
 
-namespace hexmap {
+namespace mikmap {
 
 class Deck {
 public:
@@ -47,4 +47,4 @@ private:
     int m_columnCount = 0;
 };
 
-} // namespace hexmap
+} // namespace mikmap

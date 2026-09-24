@@ -38,7 +38,7 @@
 #include <string>
 #include <vector>
 
-namespace hexmap {
+namespace mikmap {
 
 /// Một gói đã ghi.
 struct LoggedPacket {
@@ -97,4 +97,4 @@ size_t collectDuePackets(const std::vector<LoggedPacket>& log,
                          size_t& cursor,
                          std::vector<const LoggedPacket*>& out);
 
-} // namespace hexmap
+} // namespace mikmap

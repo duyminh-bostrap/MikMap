@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace hexmap {
+namespace mikmap {
 namespace {
 /// Khoảng cắt tối thiểu — chặn chia cho 0 khi in ≈ out.
 constexpr double kMinTrim = 1e-6;
@@ -127,4 +127,4 @@ TransportEvent Transport::advance(double dtSec) {
     return TransportEvent::None;
 }
 
-} // namespace hexmap
+} // namespace mikmap

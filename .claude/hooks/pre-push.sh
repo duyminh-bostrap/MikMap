@@ -4,7 +4,7 @@
 #
 # Kiểm nặng hơn pre-commit vì push ảnh hưởng người khác:
 #   1. Kiểm layering nhẹ (grep include cấm) — core/ và io/ không được đụng GL/oF/ImGui.
-#   2. Build hexmap_core + hexmap_tests bằng CMake (không cần openFrameworks/GPU).
+#   2. Build mikmap_core + mikmap_tests bằng CMake (không cần openFrameworks/GPU).
 #   3. Chạy ctest — chặn push nếu có test đỏ.
 #
 # Bỏ qua an toàn (không chặn, chỉ cảnh báo) nếu máy này không có cmake/ctest —
@@ -34,15 +34,18 @@ elif [ "$issues" -gt 0 ]; then
     info "Đã có lỗi layering ở mục 1 — bỏ qua build/test, sửa layering trước."
 else
     BUILD_DIR="build"
-    info "Build hexmap_tests (cmake -S . -B $BUILD_DIR)..."
+    info "Build mikmap_tests (cmake -S . -B $BUILD_DIR)..."
     if ! cmake -S . -B "$BUILD_DIR" >/tmp/mikmap_prepush_configure.log 2>&1; then
         fail "cmake configure thất bại — xem /tmp/mikmap_prepush_configure.log"
-    elif ! cmake --build "$BUILD_DIR" --target hexmap_tests -j >/tmp/mikmap_prepush_build.log 2>&1; then
-        fail "Build hexmap_tests thất bại:"
+    elif ! cmake --build "$BUILD_DIR" --target mikmap_tests -j >/tmp/mikmap_prepush_build.log 2>&1; then
+        fail "Build mikmap_tests thất bại:"
         tail -40 /tmp/mikmap_prepush_build.log | sed 's/^/    /' >&2
     else
         info "Build OK — chạy ctest..."
-        if ! ctest --test-dir "$BUILD_DIR" --output-on-failure >/tmp/mikmap_prepush_test.log 2>&1; then
+        # -C Debug khớp config mặc định của bước build ở trên (không truyền --config nên
+        # generator đa-cấu-hình như Visual Studio build Debug) — bắt buộc phải có trên
+        # generator đa-cấu-hình (Visual Studio/Xcode), vô hại trên generator đơn (Ninja/Makefiles).
+        if ! ctest --test-dir "$BUILD_DIR" -C Debug --output-on-failure >/tmp/mikmap_prepush_test.log 2>&1; then
             fail "Có unit test đỏ:"
             tail -60 /tmp/mikmap_prepush_test.log | sed 's/^/    /' >&2
         else

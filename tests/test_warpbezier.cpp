@@ -7,7 +7,7 @@
 
 #include <cmath>
 
-using namespace hexmap;
+using namespace mikmap;
 
 namespace {
 
@@ -263,7 +263,7 @@ TEST_CASE("F10: doi tu Mesh sang Bezier giu bon goc") {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-//  F10 — nối vào Slice và file .hexmap
+//  F10 — nối vào Slice và file .mikmap
 // ═══════════════════════════════════════════════════════════════════════
 
 // ★ Doi loai warp sang Bezier PHAI giu bon goc da can.

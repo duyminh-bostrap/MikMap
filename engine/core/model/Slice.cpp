@@ -6,7 +6,7 @@
 
 #include <cmath>
 
-namespace hexmap {
+namespace mikmap {
 
 Slice::Slice()
     : m_warp(std::make_unique<WarpCornerPin>()) {}
@@ -98,4 +98,4 @@ Vec2 Slice::contentToOutput(const Vec2& contentUV) const {
     return m_warp->forward(contentUV);
 }
 
-} // namespace hexmap
+} // namespace mikmap

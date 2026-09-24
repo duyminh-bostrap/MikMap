@@ -17,7 +17,7 @@
 #include "core/math/Mat3.h"
 #include "core/model/IWarp.h"
 
-namespace hexmap {
+namespace mikmap {
 
 class WarpCornerPin final : public IWarp {
 public:
@@ -67,4 +67,4 @@ private:
     bool m_valid = false;
 };
 
-} // namespace hexmap
+} // namespace mikmap

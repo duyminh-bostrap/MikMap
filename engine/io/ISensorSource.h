@@ -19,7 +19,7 @@
 
 #include <string>
 
-namespace hexmap {
+namespace mikmap {
 
 enum class SourceStatus {
     Stopped = 0,
@@ -59,4 +59,4 @@ protected:
     uint16_t m_sourceId = 0;
 };
 
-} // namespace hexmap
+} // namespace mikmap

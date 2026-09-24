@@ -3,7 +3,7 @@
 #include <cstdio>
 #include <cstring>
 
-namespace hexmap {
+namespace mikmap {
 namespace {
 
 constexpr char     kMagic[8]   = {'H','E','X','S','L','O','G','1'};
@@ -171,4 +171,4 @@ size_t collectDuePackets(const std::vector<LoggedPacket>& log,
     return added;
 }
 
-} // namespace hexmap
+} // namespace mikmap

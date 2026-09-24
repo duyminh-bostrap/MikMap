@@ -27,7 +27,7 @@ using SocketHandle = int;
 static constexpr SocketHandle kInvalidSocket = -1;
 #endif
 
-namespace hexmap {
+namespace mikmap {
 namespace {
 
 constexpr size_t kMaxPacketSize = 65536;
@@ -243,7 +243,7 @@ void OscSource::handleTuio(const std::vector<OscMessage>& msgs) {
 
         // ★ TUIO LUÔN gửi toạ độ chuẩn hoá [0,1] — đó là quy định của
         //   giao thức, không phải tuỳ chọn. Nên KHÔNG hỏi `normalizedInput`
-        //   ở đây: cờ đó dành cho phương ngữ Hexmap, nơi bên gửi tự chọn.
+        //   ở đây: cờ đó dành cho phương ngữ MikMap, nơi bên gửi tự chọn.
         //   Đọc cờ đó ở đây nghĩa là cấu hình sai một lần sẽ dồn mọi điểm
         //   chạm về góc trên-trái, trong một ô vuông 1x1 pixel.
         const double x = c.x * m_cfg.sensorRange.x;
@@ -404,4 +404,4 @@ void OscSource::publishFrame() {
     m_frames.publish();
 }
 
-} // namespace hexmap
+} // namespace mikmap

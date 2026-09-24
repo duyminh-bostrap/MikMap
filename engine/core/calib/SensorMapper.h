@@ -27,7 +27,7 @@
 #include "core/math/Vec2.h"
 #include "core/model/Screen.h"
 
-namespace hexmap {
+namespace mikmap {
 
 /// Kết quả tra cứu một điểm chạm.
 struct MappedPoint {
@@ -75,4 +75,4 @@ private:
     mutable MapFailure        m_lastFailure = MapFailure::None;
 };
 
-} // namespace hexmap
+} // namespace mikmap

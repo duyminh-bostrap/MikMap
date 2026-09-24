@@ -29,7 +29,7 @@
 #include <memory>
 #include <vector>
 
-namespace hexmap {
+namespace mikmap {
 
 enum class WarpType {
     CornerPin,   ///< keystone 4 điểm — homography, nghịch đảo dạng đóng
@@ -149,4 +149,4 @@ private:
     std::unique_ptr<IWarp> m_p;
 };
 
-} // namespace hexmap
+} // namespace mikmap

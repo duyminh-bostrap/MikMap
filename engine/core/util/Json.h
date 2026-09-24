@@ -7,7 +7,7 @@
 //  cấu trúc phẳng, không cần tính năng cao siêu — vài trăm dòng là đủ.
 //
 //  ── Yêu cầu bắt buộc ─────────────────────────────────────────────────
-//  · Xuất có THỤT LỀ: file .hexmap là thứ người ta sẽ mở ra đọc và sửa
+//  · Xuất có THỤT LỀ: file .mikmap là thứ người ta sẽ mở ra đọc và sửa
 //    tay khi cần cứu một show. JSON một dòng thì vô dụng cho việc đó.
 //  · Escape đúng dấu \ : đường dẫn Windows "D:\media\clip.mov" mà không
 //    escape sẽ tạo ra JSON hỏng, và project không nạp lại được.
@@ -20,7 +20,7 @@
 #include <string>
 #include <vector>
 
-namespace hexmap {
+namespace mikmap {
 
 class JsonValue {
 public:
@@ -87,4 +87,4 @@ private:
     std::map<std::string, JsonValue> m_obj;
 };
 
-} // namespace hexmap
+} // namespace mikmap

@@ -327,7 +327,7 @@ Trạng thái sau đợt sửa 2026-09-21 (✅ đã sửa · ⛔ còn tồn tạ
 
 | Mã | Vấn đề | |
 |---|---|---|
-| X1 | Không lưu/mở dự án và cài đặt | ✅ Đã có `.mikmap` + settings; **chưa dùng `ProjectIO`/`.hexmap` của engine** |
+| X1 | Không lưu/mở dự án và cài đặt | ✅ Đã có `.mikmap` + settings; **chưa dùng `ProjectIO`/`.mikmap` của engine** |
 | X2 | Menu Project và nút Group/Column/Sync là hình | ✅ Đã nối hết |
 | X3 | Rename layer/cột, Loop trong popover không làm gì | ✅ Đã sửa |
 | X4 | Chip blend mode có tên khác dropdown, chọn Alpha/Additive rơi về Normal | ✅ Đã sửa (đã xác nhận đúng là lỗi thật) |

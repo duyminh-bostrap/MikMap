@@ -26,7 +26,7 @@
 
 #include <vector>
 
-namespace hexmap {
+namespace mikmap {
 
 class WarpMesh final : public IWarp {
 public:
@@ -84,4 +84,4 @@ private:
     std::vector<Vec2> m_points;   ///< (cols+1) × (rows+1)
 };
 
-} // namespace hexmap
+} // namespace mikmap

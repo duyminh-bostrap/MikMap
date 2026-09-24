@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace hexmap {
+namespace mikmap {
 namespace {
 
 /// Bốn đa thức Bernstein bậc ba tại t.
@@ -361,4 +361,4 @@ WarpBezier WarpBezier::fromWarp(const IWarp& src) {
     return out;
 }
 
-} // namespace hexmap
+} // namespace mikmap

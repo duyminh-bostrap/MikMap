@@ -2,7 +2,7 @@
 
 #include "core/model/Composition.h"
 
-using namespace hexmap;
+using namespace mikmap;
 
 namespace {
 

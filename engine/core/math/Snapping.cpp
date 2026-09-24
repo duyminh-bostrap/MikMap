@@ -2,7 +2,7 @@
 
 #include <cmath>
 
-namespace hexmap {
+namespace mikmap {
 namespace {
 
 /// Đường gióng gần `v` nhất trong ngưỡng.
@@ -69,4 +69,4 @@ double snapThresholdFor(double pixels, double zoom) {
     return pixels / zoom;
 }
 
-} // namespace hexmap
+} // namespace mikmap

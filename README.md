@@ -3,9 +3,10 @@
 Projection mapping engine kết hợp hệ thống calibration sensor: **chạm vào vật
 thể thật, hiệu ứng nổ đúng chỗ đó**.
 
-> **Lưu ý về tên:** repo tên `MikMap`, mã nguồn dùng tên nội bộ **HexMapping**
-> (namespace `hexmap`, target `hexmap_core`/`hexmap_io`). Hai tên này chỉ khác
-> nhau ở nhãn, không phải hai thứ khác nhau.
+> **Lưu ý về tên:** repo, namespace (`mikmap`) và target CMake
+> (`mikmap_core`/`mikmap_io`/`mikmap_i18n`/`mikmap_tests`) nay dùng thống nhất
+> một tên `MikMap`/`mikmap` — trước đây mã nguồn dùng tên nội bộ riêng
+> `HexMapping`/`hexmap`, đã đổi hết.
 
 ```
 C++20 · Dear ImGui + GLFW (app) · CMake (engine + app, hai project riêng)
@@ -59,7 +60,7 @@ Hai hệ build **tách biệt**, đọc chung `engine/`:
 
 ```bash
 cmake -S . -B build
-cmake --build build --target hexmap_tests -j
+cmake --build build --target mikmap_tests -j
 ctest --test-dir build --output-on-failure
 ```
 

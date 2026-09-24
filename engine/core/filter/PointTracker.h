@@ -30,7 +30,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace hexmap {
+namespace mikmap {
 
 struct TrackedPoint {
     uint32_t id = 0;
@@ -87,4 +87,4 @@ private:
     uint32_t m_nextId = 1;
 };
 
-} // namespace hexmap
+} // namespace mikmap

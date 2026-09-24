@@ -23,7 +23,7 @@
 #include <random>
 #include <vector>
 
-namespace hexmap {
+namespace mikmap {
 
 /// Trigger cả cột thì các layer có ô TRỐNG ở cột đó xử lý thế nào?
 enum class EmptyCellBehavior {
@@ -134,4 +134,4 @@ private:
     std::mt19937 m_rng{12345};
 };
 
-} // namespace hexmap
+} // namespace mikmap

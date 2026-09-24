@@ -4,7 +4,7 @@
 #include "core/model/Transform2D.h"
 #include "core/model/Transport.h"
 
-using namespace hexmap;
+using namespace mikmap;
 
 // ═══════════════════════════════════════════════════════════════════════
 //  C1 C2 — play / pause / stop / loop

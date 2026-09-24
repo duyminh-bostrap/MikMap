@@ -4,7 +4,7 @@
 #include "core/model/WarpCornerPin.h"
 #include "core/model/WarpMesh.h"
 
-using namespace hexmap;
+using namespace mikmap;
 
 // ═══════════════════════════════════════════════════════════════════════
 //  F3 F4 — Slice

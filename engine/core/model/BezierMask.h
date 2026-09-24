@@ -33,7 +33,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace hexmap {
+namespace mikmap {
 
 /// Một điểm neo trên đường mặt nạ, kèm hai tay nắm bezier.
 struct MaskNode {
@@ -146,4 +146,4 @@ public:
     int closestSegment(const Vec2& uv, double& outT, double& outDist) const;
 };
 
-} // namespace hexmap
+} // namespace mikmap

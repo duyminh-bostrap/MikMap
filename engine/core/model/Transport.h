@@ -17,7 +17,7 @@
 // ════════════════════════════════════════════════════════════════════════
 #pragma once
 
-namespace hexmap {
+namespace mikmap {
 
 enum class PlayState {
     Stopped = 0,
@@ -94,4 +94,4 @@ struct Transport {
     void setTrim(double in, double out);
 };
 
-} // namespace hexmap
+} // namespace mikmap

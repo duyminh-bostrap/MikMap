@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-using namespace hexmap;
+using namespace mikmap;
 
 namespace {
 
@@ -435,15 +435,15 @@ TEST_CASE("★ G14: nhac tay -> sinh su kien Up NGAY, khong doi het han") {
     CHECK(src.frames().readSlot().count == 1);
 }
 
-TEST_CASE("G14: nguon TUIO khong dinh gi toi phuong ngu Hexmap") {
-    // Cung mot lop, hai che do — gui goi Hexmap vao nguon TUIO thi khong
+TEST_CASE("G14: nguon TUIO khong dinh gi toi phuong ngu Mikmap") {
+    // Cung mot lop, hai che do — gui goi Mikmap vao nguon TUIO thi khong
     // duoc sinh diem nao.
     OscConfig cfg;
     cfg.protocol = OscProtocol::Tuio;
     OscSource src(cfg);
 
     std::vector<uint8_t> m;
-    pushStr(m, "/hexmap/touch");
+    pushStr(m, "/mikmap/touch");
     pushStr(m, ",iff");
     pushI32(m, 1);
     pushF32(m, 100.0f);

@@ -21,7 +21,7 @@
 #include <string>
 #include <vector>
 
-namespace hexmap {
+namespace mikmap {
 
 /// Loại thiết bị output. P0 chỉ làm Display; các loại khác là P2.
 enum class ScreenOutputType {
@@ -95,4 +95,4 @@ public:
 std::vector<int> layersUsedAsSource(const std::vector<Screen>& screens,
                                     int layerCount);
 
-} // namespace hexmap
+} // namespace mikmap

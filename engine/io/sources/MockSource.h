@@ -22,7 +22,7 @@
 #include <random>
 #include <thread>
 
-namespace hexmap {
+namespace mikmap {
 
 enum class MockPattern {
     Circle = 0,    ///< các điểm chạy vòng tròn
@@ -86,4 +86,4 @@ private:
     bool m_pointActive[kMaxTouchPoints]{};
 };
 
-} // namespace hexmap
+} // namespace mikmap

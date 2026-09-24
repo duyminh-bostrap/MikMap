@@ -14,7 +14,7 @@
 #include <string>
 #include <vector>
 
-namespace hexmap {
+namespace mikmap {
 
 struct GeneratorInfo {
     const char* id;      ///< khoá bền, ghi vào file project
@@ -46,4 +46,4 @@ inline const char* generatorLabel(const std::string& id) {
     return "";
 }
 
-} // namespace hexmap
+} // namespace mikmap

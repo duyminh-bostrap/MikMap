@@ -6,7 +6,7 @@
 #include "core/model/WarpCornerPin.h"
 #include "core/model/WarpMesh.h"
 
-using namespace hexmap;
+using namespace mikmap;
 
 namespace {
 

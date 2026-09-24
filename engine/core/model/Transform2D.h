@@ -17,7 +17,7 @@
 #include "core/math/Mat3.h"
 #include "core/math/Vec2.h"
 
-namespace hexmap {
+namespace mikmap {
 
 struct Transform2D {
     Vec2   position{0.0, 0.0};    ///< px trên canvas
@@ -39,4 +39,4 @@ struct Transform2D {
     void reset() { *this = Transform2D{}; }
 };
 
-} // namespace hexmap
+} // namespace mikmap

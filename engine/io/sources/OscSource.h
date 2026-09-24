@@ -6,10 +6,10 @@
 //  Arduino có Ethernet, hay bất kỳ cầu nối sensor nào.
 //
 //  ── Lược đồ địa chỉ mặc định ─────────────────────────────────────────
-//      /hexmap/touch      <id:int> <x:float> <y:float> [z:float]
-//      /hexmap/touch/down <id:int> <x:float> <y:float>
-//      /hexmap/touch/up   <id:int>
-//      /hexmap/clear
+//      /mikmap/touch      <id:int> <x:float> <y:float> [z:float]
+//      /mikmap/touch/down <id:int> <x:float> <y:float>
+//      /mikmap/touch/up   <id:int>
+//      /mikmap/clear
 //
 //  Tiền tố đổi được để khớp với thiết bị sẵn có mà không phải sửa code.
 //
@@ -33,7 +33,7 @@
 #include <string>
 #include <thread>
 
-namespace hexmap {
+namespace mikmap {
 
 /// G4 / G14 — hai phương ngữ chạy trên cùng một socket OSC.
 ///
@@ -43,14 +43,14 @@ namespace hexmap {
 ///   UDP đánh rơi gói. Chép lại toàn bộ khối đó cho TUIO nghĩa là nhân
 ///   đôi chỗ để sai, và sửa lỗi ở một bản sẽ quên bản kia.
 enum class OscProtocol {
-    Hexmap = 0,   ///< phương ngữ riêng: /hexmap/touch[/down|/up|/clear]
+    Mikmap = 0,   ///< phương ngữ riêng: /mikmap/touch[/down|/up|/clear]
     Tuio,         ///< TUIO 1.1 — /tuio/2Dcur set|alive|fseq
 };
 
 struct OscConfig {
     uint16_t    port = 9000;
-    OscProtocol protocol = OscProtocol::Hexmap;
-    std::string addressPrefix = "/hexmap/touch";
+    OscProtocol protocol = OscProtocol::Mikmap;
+    std::string addressPrefix = "/mikmap/touch";
 
     /// Toạ độ đến đã chuẩn hoá [0,1]? Nhiều nguồn (TouchDesigner, app
     /// điện thoại) gửi dạng này. Khi bật, giá trị được nhân với
@@ -128,4 +128,4 @@ private:
     double nowSec() const;
 };
 
-} // namespace hexmap
+} // namespace mikmap

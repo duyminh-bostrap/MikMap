@@ -7,7 +7,7 @@
 #include <fstream>
 #include <sstream>
 
-namespace hexmap {
+namespace mikmap {
 
 const char* languageCode(Language l) {
     switch (l) {
@@ -110,4 +110,4 @@ bool AppSettings::save(const std::string& path, std::string& outError) const {
     return true;
 }
 
-} // namespace hexmap
+} // namespace mikmap

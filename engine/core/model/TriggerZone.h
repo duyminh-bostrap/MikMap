@@ -42,7 +42,7 @@
 #include <string>
 #include <vector>
 
-namespace hexmap {
+namespace mikmap {
 
 enum class TriggerAction {
     None = 0,
@@ -125,4 +125,4 @@ public:
     void resetRuntimeState();
 };
 
-} // namespace hexmap
+} // namespace mikmap

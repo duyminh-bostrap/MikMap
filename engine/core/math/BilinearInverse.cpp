@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace hexmap {
+namespace mikmap {
 namespace {
 
 /// Tính u từ v đã biết, dùng thành phần có mẫu số lớn hơn để ổn định số học.
@@ -137,4 +137,4 @@ bool pointInQuad(const Vec2& p00, const Vec2& p10,
     return inTriangle(p00, p10, p11) || inTriangle(p00, p11, p01);
 }
 
-} // namespace hexmap
+} // namespace mikmap

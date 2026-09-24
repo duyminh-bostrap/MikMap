@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-using namespace hexmap;
+using namespace mikmap;
 
 namespace {
 
@@ -34,7 +34,7 @@ void writeRaw(const std::string& path, const std::vector<uint8_t>& b) {
 // ═══════════════════════════════════════════════════════════════════════
 
 TEST_CASE("G16: ghi roi doc lai ra dung goi, dung thu tu") {
-    const std::string path = "hexmap_test_log.hexslog";
+    const std::string path = "mikmap_test_log.hexslog";
 
     {
         SensorLogWriter w;
@@ -65,7 +65,7 @@ TEST_CASE("G16: ghi roi doc lai ra dung goi, dung thu tu") {
 }
 
 TEST_CASE("G16: file rong (chi co header) doc ra 0 goi, khong loi") {
-    const std::string path = "hexmap_test_log_empty.hexslog";
+    const std::string path = "mikmap_test_log_empty.hexslog";
     { SensorLogWriter w; REQUIRE(w.open(path)); }
 
     std::vector<LoggedPacket> log;
@@ -81,7 +81,7 @@ TEST_CASE("G16: file khong ton tai / khong phai log -> tu choi") {
     std::string warn;
     CHECK(!readSensorLog("khong_ton_tai_98765.hexslog", log, warn));
 
-    const std::string path = "hexmap_test_notlog.hexslog";
+    const std::string path = "mikmap_test_notlog.hexslog";
     writeRaw(path, bytes({'x','x','x','x','x','x','x','x', 1,0,0,0}));
     CHECK(!readSensorLog(path, log, warn));
     removeFile(path);
@@ -91,7 +91,7 @@ TEST_CASE("G16: file khong ton tai / khong phai log -> tu choi") {
 //   loai phien hay can xem lai nhat. Doc duoc toi dau lay toi do, kem
 //   canh bao, thay vi vut ca file.
 TEST_CASE("★ G16: file cut giua chung van doc duoc phan lanh") {
-    const std::string path = "hexmap_test_log_trunc.hexslog";
+    const std::string path = "mikmap_test_log_trunc.hexslog";
     {
         SensorLogWriter w;
         REQUIRE(w.open(path));
@@ -123,7 +123,7 @@ TEST_CASE("★ G16: file cut giua chung van doc duoc phan lanh") {
 //   chuong trinh chet vi het bo nho khi nguoi dung chi dinh MO mot file.
 //   Doc file la cho du lieu KHONG dang tin, ke ca khi chinh ta ghi ra.
 TEST_CASE("★ G16: do dai goi vo ly khong duoc lam no bo nho") {
-    const std::string path = "hexmap_test_log_huge.hexslog";
+    const std::string path = "mikmap_test_log_huge.hexslog";
 
     std::vector<uint8_t> b;
     const char magic[8] = {'H','E','X','S','L','O','G','1'};
@@ -142,7 +142,7 @@ TEST_CASE("★ G16: do dai goi vo ly khong duoc lam no bo nho") {
 }
 
 TEST_CASE("G16: goi qua to hoac rong thi khong duoc ghi") {
-    const std::string path = "hexmap_test_log_size.hexslog";
+    const std::string path = "mikmap_test_log_size.hexslog";
     std::vector<uint8_t> big(70000, 0xAB);
 
     {
@@ -239,7 +239,7 @@ void pushF32(std::vector<uint8_t>& b, float v) {
 
 std::vector<uint8_t> touchPacket(int id, float x, float y) {
     std::vector<uint8_t> b;
-    pushStr(b, "/hexmap/touch");
+    pushStr(b, "/mikmap/touch");
     pushStr(b, ",iff");
     pushI32(b, id);
     pushF32(b, x);
@@ -253,7 +253,7 @@ std::vector<uint8_t> touchPacket(int id, float x, float y) {
 //   bom vao dung cai nguon that dung luc dien — va ra dung diem cham.
 //   `OscSource::feedPacket` ton tai san cho viec nay tu dau.
 TEST_CASE("★ G16: ca vong ghi -> doc -> phat lai vao OscSource") {
-    const std::string path = "hexmap_test_log_e2e.hexslog";
+    const std::string path = "mikmap_test_log_e2e.hexslog";
 
     const auto p1 = touchPacket(1, 400.0f, 300.0f);
     const auto p2 = touchPacket(1, 410.0f, 305.0f);

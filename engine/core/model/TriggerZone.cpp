@@ -2,7 +2,7 @@
 
 #include <cstring>
 
-namespace hexmap {
+namespace mikmap {
 
 const char* triggerActionName(TriggerAction a) {
     switch (a) {
@@ -76,4 +76,4 @@ void TriggerZoneSet::resetRuntimeState() {
     }
 }
 
-} // namespace hexmap
+} // namespace mikmap

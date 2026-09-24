@@ -17,7 +17,7 @@
 #include <cstdint>
 #include <string>
 
-namespace hexmap {
+namespace mikmap {
 
 enum class MediaType {
     Empty = 0,   ///< ô trống
@@ -57,4 +57,4 @@ struct Clip {
     }
 };
 
-} // namespace hexmap
+} // namespace mikmap

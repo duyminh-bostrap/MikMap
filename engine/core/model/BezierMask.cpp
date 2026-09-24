@@ -4,7 +4,7 @@
 #include <cmath>
 #include <cstring>
 
-namespace hexmap {
+namespace mikmap {
 namespace {
 
 /// Bezier bậc 3 tại tham số t.
@@ -326,4 +326,4 @@ int BezierMask::closestSegment(const Vec2& uv, double& outT, double& outDist) co
     return bestSeg;
 }
 
-} // namespace hexmap
+} // namespace mikmap

@@ -1,7 +1,7 @@
 // ════════════════════════════════════════════════════════════════════════
-//  core/model/ProjectIO.h — lưu / nạp project .hexmap (F8 I2)
+//  core/model/ProjectIO.h — lưu / nạp project .mikmap (F8 I2)
 //
-//  Một file .hexmap chứa TOÀN BỘ trạng thái show:
+//  Một file .mikmap chứa TOÀN BỘ trạng thái show:
 //    · Composition — canvas, layer, deck, clip
 //    · Screen      — slice, warp, vùng lấy
 //    · Calibration — H_s và các cặp điểm đã chạm
@@ -24,7 +24,7 @@
 #include <string>
 #include <vector>
 
-namespace hexmap {
+namespace mikmap {
 
 /// Phiên bản định dạng file. Tăng khi có thay đổi phá vỡ tương thích.
 inline constexpr int kProjectFormatVersion = 1;
@@ -63,4 +63,4 @@ bool save(const std::string& path, const Project& p, std::string& outError);
 LoadResult load(const std::string& path, Project& out);
 
 } // namespace projectio
-} // namespace hexmap
+} // namespace mikmap

@@ -5,8 +5,8 @@
 #include <random>
 #include <string>
 
-using namespace hexmap;
-using namespace hexmap::homography;
+using namespace mikmap;
+using namespace mikmap::homography;
 
 namespace {
 

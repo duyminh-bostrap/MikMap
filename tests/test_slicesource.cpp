@@ -6,7 +6,7 @@
 
 #include <cstdio>
 
-using namespace hexmap;
+using namespace mikmap;
 
 namespace {
 
@@ -133,7 +133,7 @@ TEST_CASE("F22: screen dang tat van giu FBO, cung ly do") {
 // ═══════════════════════════════════════════════════════════════════════
 
 TEST_CASE("★ F22: nguon Layer song sot qua luu / nap") {
-    const std::string path = "hexmap_test_f22.hexmap";
+    const std::string path = "mikmap_test_f22.mikmap";
 
     Project a;
     a.composition = Composition(3, 4, 1);

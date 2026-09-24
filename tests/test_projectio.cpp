@@ -8,7 +8,7 @@
 
 #include <cstdio>
 
-using namespace hexmap;
+using namespace mikmap;
 
 // ═══════════════════════════════════════════════════════════════════════
 //  JSON toi gian
@@ -395,7 +395,7 @@ TEST_CASE("ProjectIO: loai warp la -> canh bao va thay bang CornerPin") {
 // ═══════════════════════════════════════════════════════════════════════
 
 TEST_CASE("★★ ProjectIO: ghi ra file va nap lai duoc") {
-    const std::string path = "hexmap_test_project.hexmap";
+    const std::string path = "mikmap_test_project.mikmap";
     const Project a = makeRichProject();
 
     std::string err;
@@ -415,13 +415,13 @@ TEST_CASE("★★ ProjectIO: ghi ra file va nap lai duoc") {
 
 TEST_CASE("ProjectIO: nap file khong ton tai -> bao loi ro rang") {
     Project b;
-    const LoadResult r = projectio::load("khong_ton_tai_12345.hexmap", b);
+    const LoadResult r = projectio::load("khong_ton_tai_12345.mikmap", b);
     REQUIRE(!r.ok);
     REQUIRE(r.error.find("Khong mo duoc file") != std::string::npos);
 }
 
 TEST_CASE("★ ProjectIO: ghi de len project cu van an toan") {
-    const std::string path = "hexmap_test_overwrite.hexmap";
+    const std::string path = "mikmap_test_overwrite.mikmap";
     Project a = makeRichProject();
 
     std::string err;
@@ -447,7 +447,7 @@ TEST_CASE("★ ProjectIO: ghi de len project cu van an toan") {
 //   moi thu ve hinh chu nhat. Loi kieu do khong lam sap gi ca — no chi
 //   lang le nuot cong viec.
 TEST_CASE("★ F10: warp Bezier song sot qua luu / nap") {
-    const std::string path = "hexmap_test_bezier.hexmap";
+    const std::string path = "mikmap_test_bezier.mikmap";
 
     Project a;
     a.composition = Composition(1, 1, 1);

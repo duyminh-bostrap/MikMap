@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace hexmap {
+namespace mikmap {
 namespace {
 constexpr double kPi = 3.14159265358979323846;
 
@@ -64,4 +64,4 @@ void OneEuroFilter::reset() {
     m_lastTimeSec = -1.0;
 }
 
-} // namespace hexmap
+} // namespace mikmap

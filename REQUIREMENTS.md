@@ -8,7 +8,7 @@ Có **hai hệ build tách biệt**, cài đặt yêu cầu khác nhau:
 
 | Hệ build | Cần gì tối thiểu | GPU/GLFW? |
 |---|---|---|
-| `engine/` (`engine/core`+`engine/io`+`engine/i18n`) + `hexmap_tests` | CMake + trình biên dịch C++20 | Không — chạy được trên CI headless |
+| `engine/` (`engine/core`+`engine/io`+`engine/i18n`) + `mikmap_tests` | CMake + trình biên dịch C++20 | Không — chạy được trên CI headless |
 | `src/` (app GLFW + Dear ImGui) | CMake + trình biên dịch C++20 (+ GLFW nếu muốn dùng bản hệ thống) | Có — cần OpenGL, cần cửa sổ để *chạy* (build thì không) |
 
 Cả hai đều dùng **C++20**, `CMAKE_CXX_EXTENSIONS OFF` (không dùng extension
@@ -31,7 +31,7 @@ thư mục `.tools/` trên bất kỳ OS nào.
 ```bash
 xcode-select --install
 brew install cmake        # glfw tuỳ chọn: brew install glfw
-cmake -S . -B build && cmake --build build --target hexmap_tests -j && ctest --test-dir build
+cmake -S . -B build && cmake --build build --target mikmap_tests -j && ctest --test-dir build
 cmake -S src -B src/build && cmake --build src/build
 ./src/build/mikmap
 ```
@@ -64,7 +64,7 @@ Ghi chú riêng của macOS (đã kiểm chứng thật, không phải suy đoá
 
 ```bash
 sudo apt install cmake g++ libgl-dev      # libglfw3-dev tuỳ chọn
-cmake -S . -B build && cmake --build build --target hexmap_tests -j && ctest --test-dir build
+cmake -S . -B build && cmake --build build --target mikmap_tests -j && ctest --test-dir build
 cmake -S src -B src/build && cmake --build src/build
 ./src/build/mikmap
 ```

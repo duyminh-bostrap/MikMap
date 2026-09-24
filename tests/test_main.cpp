@@ -31,7 +31,7 @@ int runAll() {
 
     std::printf("\n");
     std::printf("========================================================\n");
-    std::printf("  HexMapping — core unit tests\n");
+    std::printf("  MikMap — core unit tests\n");
     std::printf("========================================================\n\n");
     std::fflush(stdout);
 

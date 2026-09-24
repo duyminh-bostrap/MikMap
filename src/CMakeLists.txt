@@ -17,7 +17,7 @@
 cmake_minimum_required(VERSION 3.20)
 project(MikMapUI CXX)
 
-set(CMAKE_CXX_STANDARD 20)          # matches the engine (hexmap_core is C++20)
+set(CMAKE_CXX_STANDARD 20)          # matches the engine (mikmap_core is C++20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)   # feeds VS Code IntelliSense, no hardcoded compiler path
 

@@ -28,7 +28,7 @@
 #include <atomic>
 #include <cstdint>
 
-namespace hexmap {
+namespace mikmap {
 
 template <typename T>
 class TripleBuffer {
@@ -115,4 +115,4 @@ private:
     std::atomic<uint64_t> m_consumed{0};
 };
 
-} // namespace hexmap
+} // namespace mikmap

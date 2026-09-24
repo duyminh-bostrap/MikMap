@@ -4,7 +4,7 @@
 #include <cstdio>
 #include <cstdlib>
 
-namespace hexmap {
+namespace mikmap {
 namespace {
 
 const JsonValue& nullValue() {
@@ -375,4 +375,4 @@ bool JsonValue::parse(const std::string& text, JsonValue& outValue, std::string&
     return true;
 }
 
-} // namespace hexmap
+} // namespace mikmap

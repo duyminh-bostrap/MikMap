@@ -17,7 +17,7 @@
 
 #include <array>
 
-namespace hexmap {
+namespace mikmap {
 
 class Mat3 {
 public:
@@ -96,4 +96,4 @@ public:
     bool isFinite() const;
 };
 
-} // namespace hexmap
+} // namespace mikmap

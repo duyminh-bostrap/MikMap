@@ -2,7 +2,7 @@
 
 #include <cmath>
 
-namespace hexmap {
+namespace mikmap {
 
 Mat3 Transform2D::toMatrix(const Vec2& contentSize) const {
     // Anchor theo tỉ lệ → px, để phép xoay/co giãn quay quanh đúng điểm
@@ -36,4 +36,4 @@ bool Transform2D::isIdentity() const {
         && !flipH && !flipV;
 }
 
-} // namespace hexmap
+} // namespace mikmap

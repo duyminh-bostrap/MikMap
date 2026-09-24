@@ -6,7 +6,7 @@
 #include <chrono>
 #include <cmath>
 
-namespace hexmap {
+namespace mikmap {
 namespace {
 constexpr double kPi = 3.14159265358979323846;
 } // namespace
@@ -170,4 +170,4 @@ void MockSource::threadLoop() {
     }
 }
 
-} // namespace hexmap
+} // namespace mikmap

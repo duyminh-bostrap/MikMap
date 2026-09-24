@@ -37,7 +37,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace hexmap {
+namespace mikmap {
 
 /// Một điểm chạm đã giải mã, toạ độ CHUẨN HOÁ [0,1] như TUIO quy định.
 struct TuioCursor {
@@ -85,4 +85,4 @@ private:
     bool    m_haveFseq = false;
 };
 
-} // namespace hexmap
+} // namespace mikmap

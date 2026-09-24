@@ -9,7 +9,7 @@
 #include <chrono>
 #include <thread>
 
-using namespace hexmap;
+using namespace mikmap;
 
 // ═══════════════════════════════════════════════════════════════════════
 //  SensorFrame — rang buoc POD

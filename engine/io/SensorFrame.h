@@ -13,7 +13,7 @@
 
 #include <cstdint>
 
-namespace hexmap {
+namespace mikmap {
 
 /// Trạng thái vòng đời của một điểm chạm.
 enum class TouchState : uint8_t {
@@ -73,4 +73,4 @@ struct TouchEvent {
     int64_t    tCaptureNs = 0;
 };
 
-} // namespace hexmap
+} // namespace mikmap

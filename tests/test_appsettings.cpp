@@ -6,7 +6,7 @@
 #include <fstream>
 #include <string>
 
-using namespace hexmap;
+using namespace mikmap;
 
 namespace {
 
@@ -27,7 +27,7 @@ void removeFile(const std::string& path) {
 // ═══════════════════════════════════════════════════════════════════════
 
 TEST_CASE("AppSettings: luu roi nap lai giu nguyen tham so sensor") {
-    const std::string path = "hexmap_test_settings.json";
+    const std::string path = "mikmap_test_settings.json";
 
     AppSettings a;
     a.sensorMinCutoff  = 0.4;
@@ -55,7 +55,7 @@ TEST_CASE("AppSettings: luu roi nap lai giu nguyen tham so sensor") {
 //   phai 0 — minCutoff = 0 lam bo loc dung hinh, va nguoi dung se thay
 //   "diem sensor khong nhuc nhich" sau khi cap nhat phan mem.
 TEST_CASE("★ AppSettings: file cu thieu khoa sensor -> ve dung mac dinh") {
-    const std::string path = "hexmap_test_settings_old.json";
+    const std::string path = "mikmap_test_settings_old.json";
     writeFile(path, "{\"language\":\"en\",\"vsync\":false}");
 
     AppSettings s;
@@ -76,7 +76,7 @@ TEST_CASE("★ AppSettings: file cu thieu khoa sensor -> ve dung mac dinh") {
 //     maxMatchDistance = 0 -> khong diem nao khop frame truoc, ID doi moi
 //                             frame, tuc la mat sach tinh ben vung cua G12
 TEST_CASE("★ AppSettings: so vo ly bi kep ve khoang dung duoc") {
-    const std::string path = "hexmap_test_settings_bad.json";
+    const std::string path = "mikmap_test_settings_bad.json";
     writeFile(path,
               "{\"sensorMinCutoff\":0,\"sensorBeta\":-3,"
               "\"trackMaxDistance\":0,\"trackGraceSec\":-1}");
@@ -94,7 +94,7 @@ TEST_CASE("★ AppSettings: so vo ly bi kep ve khoang dung duoc") {
 }
 
 TEST_CASE("AppSettings: file hong -> khong sap, dung mac dinh") {
-    const std::string path = "hexmap_test_settings_broken.json";
+    const std::string path = "mikmap_test_settings_broken.json";
     writeFile(path, "{ khong phai json");
 
     AppSettings s;

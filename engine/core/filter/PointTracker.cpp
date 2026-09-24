@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace hexmap {
+namespace mikmap {
 
 void PointTracker::update(const std::vector<Vec2>& observations, double nowSec) {
     m_justLost.clear();
@@ -108,4 +108,4 @@ void PointTracker::reset() {
     // một điểm chạm hoàn toàn khác.
 }
 
-} // namespace hexmap
+} // namespace mikmap

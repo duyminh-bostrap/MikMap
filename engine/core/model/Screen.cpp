@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-namespace hexmap {
+namespace mikmap {
 namespace {
 /// Nới biên khi lọc bằng hộp bao.
 ///
@@ -126,4 +126,4 @@ std::vector<int> layersUsedAsSource(const std::vector<Screen>& screens,
     return out;
 }
 
-} // namespace hexmap
+} // namespace mikmap

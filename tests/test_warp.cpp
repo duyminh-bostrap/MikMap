@@ -6,7 +6,7 @@
 
 #include <cmath>
 
-using namespace hexmap;
+using namespace mikmap;
 
 // ═══════════════════════════════════════════════════════════════════════
 //  Nghich dao song tuyen tinh

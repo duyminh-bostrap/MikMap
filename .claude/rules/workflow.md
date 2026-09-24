@@ -24,7 +24,7 @@
 - `git commit*` → chạy `pre-commit.sh`: chặn commit nếu có file media/binary
   lớn hoặc file "riêng máy" (`bin/data/settings.json`, `.vs/`, `imgui.ini`...)
   lỡ bị stage.
-- `git push*` → chạy `pre-push.sh`: build `hexmap_core` + `hexmap_tests` bằng
+- `git push*` → chạy `pre-push.sh`: build `mikmap_core` + `mikmap_tests` bằng
   CMake và chạy `ctest`; chặn push nếu build lỗi hoặc test đỏ. Cũng chạy một
   bản kiểm layering nhẹ (grep include cấm trong `engine/core/`/`engine/io/`).
 
@@ -36,7 +36,7 @@ phải git hook, nên `--no-verify` không có tác dụng — nếu hook sai, s
 ## Trước khi báo "xong"
 
 1. Nếu sửa `engine/core`/`engine/io`: chạy `cmake --build build --target
-   hexmap_tests && ctest --test-dir build --output-on-failure` — 0 test đỏ,
+   mikmap_tests && ctest --test-dir build --output-on-failure` — 0 test đỏ,
    0 cảnh báo mới.
 2. Nếu sửa `src/`: chạy thêm `ctest --test-dir src/build` (test `project_roundtrip`: lưu/nạp/undo, không cần cửa sổ)
    và build được cả trên Linux/macOS (cần `libglfw3-dev`

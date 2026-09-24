@@ -3,7 +3,7 @@
 #include "core/model/ProjectIO.h"
 #include "core/model/TriggerZone.h"
 
-using namespace hexmap;
+using namespace mikmap;
 
 namespace {
 

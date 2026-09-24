@@ -4,7 +4,7 @@
 
 #include <algorithm>
 
-namespace hexmap {
+namespace mikmap {
 
 WarpCornerPin::WarpCornerPin() {
     resetToRect({0.0, 0.0}, {1920.0, 1080.0});
@@ -144,4 +144,4 @@ void WarpCornerPin::boundingBox(Vec2& outMin, Vec2& outMax) const {
     }
 }
 
-} // namespace hexmap
+} // namespace mikmap

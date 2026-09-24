@@ -1,4 +1,4 @@
-# MikMap / HexMapping — bộ não dự án
+# MikMap — bộ não dự án
 
 > File này Claude Code tự nạp mỗi phiên làm việc trong repo. Nội dung dưới đây
 > lấy trực tiếp từ `architecture.md` (kiến trúc + nguyên tắc bất di bất dịch),
@@ -16,7 +16,9 @@
 Projection mapping engine kiểu Resolume (deck · layer · column) → composition
 canvas ảo → slice có keystone/mesh warp → máy chiếu, kèm chuỗi ánh xạ ngược từ
 sensor về toạ độ nội dung: **chạm vào vật thể thật, hiệu ứng nổ đúng chỗ đó**.
-Repo tên `MikMap`, mã nguồn tên nội bộ `HexMapping`.
+Repo tên `MikMap`, mã nguồn dùng thống nhất cùng tên (namespace `mikmap`,
+target `mikmap_core`/`mikmap_io`/`mikmap_i18n`/`mikmap_tests` — trước đây
+dùng tên nội bộ riêng `HexMapping`/`hexmap`, đã đổi hết).
 
 ```
 C++20 · Dear ImGui + GLFW (app hiện tại, src/) · CMake (engine + app, hai project riêng)
@@ -53,7 +55,7 @@ io     ──▶ core                     engine/io — không biết Slice/Laye
 - `engine/core/` không bao giờ `#include` `<GL/...>`, GLFW, `imgui.h`.
 - `engine/io/` không bao giờ biết `Slice`, `Layer`, hay ma trận mapping tồn tại.
 - `engine/core/` chỉ được phụ thuộc STL. Nếu cần OpenCV (RANSAC), đặt sau macro
-  `HEXMAP_USE_OPENCV` kèm fallback DLT tự viết.
+  `MIKMAP_USE_OPENCV` kèm fallback DLT tự viết.
 - `.claude/hooks/pre-push.sh` chạy một bản kiểm nhẹ bằng grep trước khi push
   (đường dẫn đã cập nhật theo `engine/core`, `engine/io`).
 
@@ -188,9 +190,11 @@ dự án (trừ playhead/loop của Timeline, chỉ runtime).
 **Vẫn còn giả/thiếu — dễ bị đánh giá cao hơn thực tế:** `B3` generator vẽ bằng CPU, chưa
 phải shader GLSL; `A4` thumbnail là gradient tĩnh (cố ý — thumbnail động làm
 deck tụt còn ~16s/khung); chưa có nguồn video/ảnh thật (`B1`), chưa có thread sensor thật (`G1`).
-`I2` (lưu/mở dự án) **đã chạy** qua `src/project.cpp` (định dạng `.mikmap`, schema riêng của
-`src/`) nhưng **vẫn chưa gọi `ProjectIO`/`.hexmap` của `engine/`**; cài đặt máy lưu ở
-thư mục config OS, tách khỏi dự án.
+`I2` (lưu/mở dự án) **đã chạy** qua `src/project.cpp` (đọc/ghi `.mikmap` bằng schema
+JSON tự viết riêng của `src/`) nhưng **vẫn chưa gọi `engine/core/model/ProjectIO`** —
+`ProjectIO` định nghĩa MỘT schema khác, chưa được `src/` dùng tới, dù tài liệu của nó
+cũng nhắm tới cùng đuôi `.mikmap`; hai schema hiện KHÔNG tương thích nhau, đọc file
+của bên này bằng bên kia sẽ lỗi. Cài đặt máy lưu ở thư mục config OS, tách khỏi dự án.
 
 **Việc còn lại để ghép engine thật vào `src/`** (chi tiết ở `README.md`): (1)
 `ProjectIO`, (2) `core/calib/*` thay `calib.cpp` tự viết, (3) `Slice`+
@@ -204,7 +208,7 @@ Khi tick một mục hoặc báo "đã làm", grep đúng `src/*.cpp` để xác
 
 ```bash
 # engine (core+io+i18n) + unit test — build được ngay trên máy này, không cần GPU/GLFW
-cmake -S . -B build && cmake --build build --target hexmap_tests -j
+cmake -S . -B build && cmake --build build --target mikmap_tests -j
 ctest --test-dir build --output-on-failure
 ```
 

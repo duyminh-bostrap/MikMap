@@ -1,6 +1,6 @@
 #include "core/calib/SensorMapper.h"
 
-namespace hexmap {
+namespace mikmap {
 
 bool SensorMapper::sensorToOutput(const Vec2& sensor, Vec2& outputPx) const {
     if (m_calib == nullptr || !m_calib->isValid()) {
@@ -69,4 +69,4 @@ bool SensorMapper::contentToSensor(int sliceIndex,
     return true;
 }
 
-} // namespace hexmap
+} // namespace mikmap

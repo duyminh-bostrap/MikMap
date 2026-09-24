@@ -1,7 +1,7 @@
 // ════════════════════════════════════════════════════════════════════════
 //  core/util/AppSettings.h — cấu hình ỨNG DỤNG (khác cấu hình project)
 //
-//  ── Vì sao tách khỏi .hexmap ─────────────────────────────────────────
+//  ── Vì sao tách khỏi .mikmap ─────────────────────────────────────────
 //  Project mô tả MỘT show: canvas, clip, slice, calibration. Nó được
 //  chép qua máy khác, gửi cho người khác, đưa vào git.
 //
@@ -14,7 +14,7 @@
 
 #include <string>
 
-namespace hexmap {
+namespace mikmap {
 
 enum class Language {
     Vietnamese = 0,
@@ -85,4 +85,4 @@ struct AppSettings {
     bool save(const std::string& path, std::string& outError) const;
 };
 
-} // namespace hexmap
+} // namespace mikmap

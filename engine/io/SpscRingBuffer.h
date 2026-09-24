@@ -23,7 +23,7 @@
 #include <cstdint>
 #include <type_traits>
 
-namespace hexmap {
+namespace mikmap {
 
 // C4324 "structure was padded due to alignment specifier" — MSVC cảnh báo
 // đúng, nhưng phần đệm ở đây là CHỦ ĐÍCH: alignas(64) tách head/tail sang
@@ -117,4 +117,4 @@ private:
 #  pragma warning(pop)
 #endif
 
-} // namespace hexmap
+} // namespace mikmap

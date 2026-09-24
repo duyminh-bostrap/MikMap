@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-namespace hexmap {
+namespace mikmap {
 namespace {
 
 /// TUIO 1.1 định nghĩa nhiều hồ sơ; ta nhận hai loại điểm.
@@ -141,4 +141,4 @@ bool TuioDecoder::feed(const std::vector<OscMessage>& messages, TuioFrame& outFr
     return true;
 }
 
-} // namespace hexmap
+} // namespace mikmap

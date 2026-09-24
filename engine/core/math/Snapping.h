@@ -31,7 +31,7 @@
 
 #include <vector>
 
-namespace hexmap {
+namespace mikmap {
 
 struct SnapResult {
     Vec2 position;           ///< vị trí sau khi hút
@@ -63,4 +63,4 @@ SnapResult snapPoint(const Vec2& p,
 /// @return ngưỡng theo đơn vị thế giới; 0 khi zoom không hợp lệ (tắt hút)
 double snapThresholdFor(double pixels, double zoom);
 
-} // namespace hexmap
+} // namespace mikmap

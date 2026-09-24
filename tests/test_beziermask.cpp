@@ -14,7 +14,7 @@
 #include <cmath>
 #include <vector>
 
-using namespace hexmap;
+using namespace mikmap;
 
 namespace {
 

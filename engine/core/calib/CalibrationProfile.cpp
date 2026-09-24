@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-namespace hexmap {
+namespace mikmap {
 
 void CalibrationProfile::addPair(const Vec2& sensor, const Vec2& output) {
     CorrespondencePair p;
@@ -88,4 +88,4 @@ HomographyResult CalibrationProfile::solve() {
     return r;
 }
 
-} // namespace hexmap
+} // namespace mikmap

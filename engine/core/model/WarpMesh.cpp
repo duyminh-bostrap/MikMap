@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace hexmap {
+namespace mikmap {
 
 WarpMesh::WarpMesh() {
     resetToRect({0.0, 0.0}, {1920.0, 1080.0});
@@ -205,4 +205,4 @@ void WarpMesh::boundingBox(Vec2& outMin, Vec2& outMax) const {
     }
 }
 
-} // namespace hexmap
+} // namespace mikmap

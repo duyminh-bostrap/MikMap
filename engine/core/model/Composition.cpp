@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-namespace hexmap {
+namespace mikmap {
 namespace {
 Layer& dummyLayer() {
     static Layer kDummy{};
@@ -319,4 +319,4 @@ void Composition::update(double dtSec) {
     }
 }
 
-} // namespace hexmap
+} // namespace mikmap

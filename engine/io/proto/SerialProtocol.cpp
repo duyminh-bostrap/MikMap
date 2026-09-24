@@ -2,7 +2,7 @@
 
 #include <cstdlib>
 
-namespace hexmap {
+namespace mikmap {
 namespace {
 
 /// Tách một dòng thành các từ ngăn bởi khoảng trắng.
@@ -140,4 +140,4 @@ void SerialProtocol::parseLine(const std::string& line,
     ++m_badLines;
 }
 
-} // namespace hexmap
+} // namespace mikmap

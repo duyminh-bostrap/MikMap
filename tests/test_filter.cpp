@@ -6,7 +6,7 @@
 #include <cmath>
 #include <random>
 
-using namespace hexmap;
+using namespace mikmap;
 
 // ═══════════════════════════════════════════════════════════════════════
 //  G11 — OneEuroFilter

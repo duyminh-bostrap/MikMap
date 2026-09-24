@@ -29,7 +29,7 @@
 
 #include "core/math/Vec2.h"
 
-namespace hexmap {
+namespace mikmap {
 
 /// Bộ lọc thông thấp bậc một — thành phần của One Euro.
 class LowPassFilter {
@@ -104,4 +104,4 @@ private:
     OneEuroFilter m_y;
 };
 
-} // namespace hexmap
+} // namespace mikmap

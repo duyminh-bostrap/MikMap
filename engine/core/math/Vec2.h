@@ -10,7 +10,7 @@
 
 #include <cmath>
 
-namespace hexmap {
+namespace mikmap {
 
 struct Vec2 {
     double x = 0.0;
@@ -72,4 +72,4 @@ constexpr Vec2 bilerp(const Vec2& p00, const Vec2& p10,
     return lerp(top, bottom, v);
 }
 
-} // namespace hexmap
+} // namespace mikmap

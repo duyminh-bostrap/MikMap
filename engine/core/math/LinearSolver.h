@@ -10,7 +10,7 @@
 
 #include <vector>
 
-namespace hexmap {
+namespace mikmap {
 
 /// Giải A·x = b với A là ma trận đặc n×n (lưu row-major, n*n phần tử).
 ///
@@ -23,4 +23,4 @@ bool solveLinearSystem(std::vector<double>& A,
                        int n,
                        std::vector<double>& x);
 
-} // namespace hexmap
+} // namespace mikmap

@@ -32,7 +32,7 @@
 #include <memory>
 #include <string>
 
-namespace hexmap {
+namespace mikmap {
 
 /// F19 — hieu chinh mau cho tung slice.
 ///
@@ -227,4 +227,4 @@ private:
     WarpPtr m_warp;
 };
 
-} // namespace hexmap
+} // namespace mikmap

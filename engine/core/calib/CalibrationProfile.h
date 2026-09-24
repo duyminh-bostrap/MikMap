@@ -22,7 +22,7 @@
 #include <string>
 #include <vector>
 
-namespace hexmap {
+namespace mikmap {
 
 /// Cách giải ma trận từ các cặp điểm.
 enum class SolveMethod {
@@ -107,4 +107,4 @@ private:
     std::vector<bool> m_outliers;
 };
 
-} // namespace hexmap
+} // namespace mikmap

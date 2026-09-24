@@ -2,7 +2,7 @@
 
 #include <cmath>
 
-namespace hexmap {
+namespace mikmap {
 
 Mat3 Mat3::rotation(double radians) {
     const double c = std::cos(radians);
@@ -125,4 +125,4 @@ bool Mat3::isFinite() const {
     return true;
 }
 
-} // namespace hexmap
+} // namespace mikmap

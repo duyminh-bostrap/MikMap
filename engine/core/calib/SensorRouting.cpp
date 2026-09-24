@@ -1,6 +1,6 @@
 #include "core/calib/SensorRouting.h"
 
-namespace hexmap {
+namespace mikmap {
 
 const SensorRoute* SensorRoutingTable::find(uint16_t sourceId) const {
     for (const SensorRoute& r : routes) {
@@ -82,4 +82,4 @@ SensorRoutingTable buildSensorRoutes(const std::vector<CalibrationProfile>& prof
     return table;
 }
 
-} // namespace hexmap
+} // namespace mikmap

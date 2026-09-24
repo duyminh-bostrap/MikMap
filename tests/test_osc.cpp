@@ -26,7 +26,7 @@
 #  include <unistd.h>
 #endif
 
-using namespace hexmap;
+using namespace mikmap;
 
 namespace {
 
@@ -78,17 +78,17 @@ OscBuilder makeMessage(const std::string& addr, const std::string& tags) {
 
 TEST_CASE("OSC: message khong tham so") {
     OscBuilder b;
-    b.str("/hexmap/clear");
+    b.str("/mikmap/clear");
 
     std::vector<OscMessage> msgs;
     REQUIRE(parseOscPacket(b.ptr(), b.size(), msgs));
     REQUIRE(msgs.size() == 1u);
-    REQUIRE(msgs[0].address == "/hexmap/clear");
+    REQUIRE(msgs[0].address == "/mikmap/clear");
     REQUIRE(msgs[0].args.empty());
 }
 
 TEST_CASE("★ OSC: doc dung int va float BIG-ENDIAN") {
-    OscBuilder b = makeMessage("/hexmap/touch", "iff");
+    OscBuilder b = makeMessage("/mikmap/touch", "iff");
     b.i32(7);
     b.f32(123.5f);
     b.f32(-45.25f);
@@ -210,7 +210,7 @@ TEST_CASE("★ OSC: dem chuoi dung boi so 4") {
 namespace {
 void feedTouch(OscSource& src, int id, float x, float y,
                const std::string& suffix = "") {
-    OscBuilder b = makeMessage("/hexmap/touch" + suffix, "iff");
+    OscBuilder b = makeMessage("/mikmap/touch" + suffix, "iff");
     b.i32(id);
     b.f32(x);
     b.f32(y);
@@ -237,7 +237,7 @@ TEST_CASE("★ G4: nhieu diem gom thanh MOT frame nhat quan") {
     bundle.str("#bundle");
     for (int i = 0; i < 8; ++i) bundle.data.push_back(0);
     for (int id = 1; id <= 3; ++id) {
-        OscBuilder m = makeMessage("/hexmap/touch", "iff");
+        OscBuilder m = makeMessage("/mikmap/touch", "iff");
         m.i32(id);
         m.f32(static_cast<float>(id * 100));
         m.f32(static_cast<float>(id * 50));
@@ -282,7 +282,7 @@ TEST_CASE("★ G4: /up xoa diem va phat su kien Up") {
     OscSource src;
     feedTouch(src, 2, 400.0f, 400.0f);
 
-    OscBuilder up = makeMessage("/hexmap/touch/up", "i");
+    OscBuilder up = makeMessage("/mikmap/touch/up", "i");
     up.i32(2);
     src.feedPacket(up.ptr(), up.size());
 
@@ -303,7 +303,7 @@ TEST_CASE("G4: /clear xoa het moi diem") {
     feedTouch(src, 2, 20.0f, 20.0f);
 
     OscBuilder c;
-    c.str("/hexmap/touch/clear");
+    c.str("/mikmap/touch/clear");
     src.feedPacket(c.ptr(), c.size());
 
     REQUIRE(src.frames().consume());
@@ -388,7 +388,7 @@ TEST_CASE("★★ G4: nhan duoc goi OSC that qua UDP loopback") {
     REQUIRE(src.status() == SourceStatus::Running);
 
     // Gui mot goi OSC that bang socket rieng.
-    OscBuilder b = makeMessage("/hexmap/touch", "iff");
+    OscBuilder b = makeMessage("/mikmap/touch", "iff");
     b.i32(42);
     b.f32(777.0f);
     b.f32(555.0f);
