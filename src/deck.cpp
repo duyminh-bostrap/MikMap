@@ -526,7 +526,9 @@ static void DashedRect(ImRect r, ImU32 c, float th) {
   DashedPoly(p, 4, c, th, 5, 3);
 }
 
-static CellOut ClipCell(ImRect r, Clip& cl, bool selectedCell, bool dragged, bool dropT, float progress) {
+// compact = the layer is collapsed (or its group is): a short cell that shows just the name strip + play mode/duration,
+// with no thumbnail (nothing to see in a 16px sliver, and it spares the per-frame thumbnail budget).
+static CellOut ClipCell(ImRect r, Clip& cl, bool selectedCell, bool dragged, bool dropT, float progress, bool compact = false) {
   bool empty = cl.st == Clip::Empty || cl.st == Clip::Armed;
   // Design tokens §3.2 give the clip cell THREE distinct looks, not "selected = coral / else = warm brown":
   // loaded-idle (warm amber, already at rest), cued-for-preview (cool cyan — about to show, not showing yet),
@@ -534,13 +536,12 @@ static CellOut ClipCell(ImRect r, Clip& cl, bool selectedCell, bool dragged, boo
   // operator mistaking "what's live" for "what's merely selected" is the one mistake this can't afford.
   bool live = cl.st == Clip::Live || cl.st == Clip::LiveSel;
   bool preview = cl.st == Clip::Selected;
-  uint32_t ringHex = live ? pal::coral : pal::cyan;  // outer selection ring: coral only for an actually-live cell
   Hit h = HitR(r);
   uint32_t col = CLIP_COLORS[std::clamp(cl.color, 0, 5)];
+  uint32_t ringHex = col;   // the selection ring is the clip's own colour, not a fixed cyan/coral
   float prevA = g.alpha; if (dragged) g.alpha *= 0.4f;
 
   // wrapper fill + glow
-  if (selectedCell) Glow(r, ringHex, 0.35f, 12, 3);
   ImU32 wrapFill = 0;
   if (empty) { if (selectedCell) wrapFill = K(ringHex, 0.12f); }
   else wrapFill = K(col, selectedCell ? 0.18f : 0.07f);
@@ -549,12 +550,31 @@ static CellOut ClipCell(ImRect r, Clip& cl, bool selectedCell, bool dragged, boo
 
   ImU32 border = K(pal::g22), bar = K(pal::g1c), barFg = K(pal::te0), body = K(pal::clipLoadedBg), foot = K(pal::t88);
   bool barBold = false;
-  if (live) { border = K(pal::coral); bar = K(pal::clipBarLive); barFg = K(pal::clipLiveText); barBold = true; body = K(pal::clipBodyLive); foot = K(pal::clipFootLive); }
-  else if (preview) { border = K(pal::cyan); bar = K(pal::clipBarPreview); barFg = K(pal::clipPreviewText); body = K(pal::clipBodyPreview); foot = K(pal::clipFootPreview); }
-  else if (!empty) { border = K(pal::clipLoadedBorder); bar = K(pal::clipBarLoaded); barFg = K(pal::clipLoadedText); body = K(pal::clipBodyLoaded); foot = K(pal::clipFootLoaded); }
+  // All three states are shades of the CLIP'S OWN colour (Clip color in the clip popover): not selected = a dark shade
+  // (amber -> brown, cyan -> deep blue-black), selected/cued = the colour itself, live = the colour at full strength
+  // with the glow. The default amber reproduces the old brown / orange look.
+  auto mix = [&](uint32_t base, float t) { return MixHex(base, col, t); };
+  // The name bar is as bright as the border in every state (selected/live: the colour itself, with dark or white text
+  // chosen for contrast — white on yellow would be unreadable).
+  const float lum = (0.299f * ((col >> 16) & 0xFF) + 0.587f * ((col >> 8) & 0xFF) + 0.114f * (col & 0xFF)) / 255.f;
+  const ImU32 onCol = lum > 0.62f ? K(0x101010) : K(0xffffff);
+  // Border and bar answer two different questions. BORDER = "this clip is playing" (live only). BAR = "this is the clip
+  // selected / previewed". So in one layer: click a body -> that clip is live AND selected, border and bar both bright;
+  // then preview another clip -> its bar lights up but its border stays plain, and the playing clip keeps its bright
+  // border while its bar goes dark.
+  const bool sel = selectedCell || preview;
+  const ImU32 idleBorder = mix(0x1a1a1a, 0.30f), idleFg = mix(0xd0d0d0, 0.30f);
+  if (live) {
+    border = K(col); barBold = true; body = mix(0x080808, 0.22f); foot = mix(0xffffff, 0.30f);
+    if (sel) { bar = K(col); barFg = onCol; } else { bar = idleBorder; barFg = idleFg; }
+  } else if (!empty) {
+    border = idleBorder;
+    if (sel) { bar = K(col); barFg = onCol; body = mix(0x080808, 0.14f); foot = mix(0x777777, 0.5f); }
+    else { bar = idleBorder; barFg = idleFg; body = mix(0x080808, 0.06f); foot = mix(0x555555, 0.45f); }
+  }
   else if (h.hover) border = K(pal::g33);
 
-  if (live) Glow(r, pal::coral, 0.40f, 12, 4);
+  if (live) Glow(r, col, 0.20f, 6, 4);
   Fill(r, empty ? K(pal::g10) : body, 4);
   ImRect in = Inset(r, 1);
   float cx0 = in.Min.x, cx1 = in.Max.x;
@@ -569,11 +589,13 @@ static CellOut ClipCell(ImRect r, Clip& cl, bool selectedCell, bool dragged, boo
     // back to the flat gradient until the first render lands, or if the FBO functions never loaded.
     // Only the cued/live clip actually animates; every other cell renders once and then freezes — a still
     // frame, not a second copy of the same motion playing out of sync in 40 places at once.
-    bool active = live || preview;
-    bool stale = cl.thumbTex == 0 || (active && g.time - cl.thumbAt > 0.2);
-    if (stale && ThumbBudgetLeft()) RenderClipThumbnail(cl);
-    if (cl.thumbTex != 0) g.dl->AddImage((ImTextureID)(intptr_t)cl.thumbTex, bodyR.Min, bodyR.Max, ImVec2(0, 1), ImVec2(1, 0), Ca(IM_COL32_WHITE));
-    else GradDiag(bodyR, col, Dark45(col), live ? 0.45f : 0.22f);
+    if (!compact) {
+      bool active = live || preview;
+      bool stale = cl.thumbTex == 0 || (active && g.time - cl.thumbAt > 0.2);
+      if (stale && ThumbBudgetLeft()) RenderClipThumbnail(cl);
+      if (cl.thumbTex != 0) g.dl->AddImage((ImTextureID)(intptr_t)cl.thumbTex, bodyR.Min, bodyR.Max, ImVec2(0, 1), ImVec2(1, 0), Ca(IM_COL32_WHITE));
+      else GradDiag(bodyR, col, Dark45(col), live ? 0.45f : 0.22f);
+    }
     g.dl->PopClipRect();
     g.dl->AddRectFilled(barR.Min, ImVec2(cx1, in.Min.y + 22), Ca(bar), 3, ImDrawFlags_RoundCornersTop);
     TextEll(cx0 + 10, in.Min.y + 11, (cx1 - cx0) - 20, barBold ? UI_B : UI_S, 10, barFg, cl.name.c_str());
@@ -588,7 +610,8 @@ static CellOut ClipCell(ImRect r, Clip& cl, bool selectedCell, bool dragged, boo
   Border(r, border, 4);
   // selection outlines from the wrapper
   if (dropT) DashedRect(Inset(r, 1), K(pal::yellow), 2);
-  else if (selectedCell) Border(r, K(ringHex), 4, 2);
+  else if (live) Border(r, K(col), 4, 2);                                  // playing: thick bright border
+  else if (selectedCell && empty) Border(r, K(ringHex, 0.6f), 4, 1);        // an empty selected slot still needs a marker
   else if (!empty) Border(r, K(col, 0.35f), 4);
   g.alpha = prevA;
 
@@ -1691,7 +1714,11 @@ static void DeckGrid(ImRect r) {
       Clip& c = l.clips[ci];
       bool isDrag = A.dragging && A.dragLi == li && A.dragCi == ci;
       bool isDrop = (A.dragging || A.dragSrc.active) && A.dropLi == li && A.dropCi == ci;
-      CellOut o = ClipCell(cr, c, selc, isDrag, isDrop, c.progress);
+      CellOut o = ClipCell(cr, c, selc, isDrag, isDrop, c.progress, re.h < 60.f);   // collapsed layer row: no thumbnail
+      if (A.osDrop.pending && !A.osDrop.handled && !mouseUnderPin && cr.Contains(A.osDrop.pos) && area.Contains(A.osDrop.pos)) {
+        A.dropFilesOnCell(li, ci, A.osDrop.paths);   // file dragged in from the OS straight onto this clip
+        A.osDrop.handled = true;
+      }
       if (o.hover && !mouseUnderPin) {
         // bar: press arms a possible move-drag and, on plain release, only cues (selects/previews, never plays).
         if (o.barPress) { A.pressLi = li; A.pressCi = ci; A.dragStart = ImGui::GetIO().MousePos; if (c.st != Clip::Empty && c.st != Clip::Armed) { A.dragLi = li; A.dragCi = ci; } }

@@ -282,8 +282,9 @@ static void ProjectMenu() {
 struct PItem { const char* label; const char* icon; const char* sc; int tone; bool disabled, divider; };
 
 // Popover component: title + rows. Returns the clicked row index (or -1); rect receives the popover bounds.
-static int PopoverList(ImVec2 pos, ImVec2 disp, const char* title, const std::vector<PItem>& items, bool fresh, ImRect& out) {
-  float w = 168, h = 2 + 3 + 9 + 4 + 2;
+// extraH reserves room at the bottom of the SAME box for content the caller draws itself (the clip popover's colour swatches).
+static int PopoverList(ImVec2 pos, ImVec2 disp, const char* title, const std::vector<PItem>& items, bool fresh, ImRect& out, float extraH = 0.f) {
+  float w = 168, h = 2 + 3 + 9 + 4 + 2 + extraH;
   for (auto& it : items) h += it.divider ? 7 : 22;
   ImVec2 p(std::min(pos.x, disp.x - w - 4), std::min(pos.y, disp.y - h - 4 - 50));
   ImRect r(p.x, p.y, p.x + w, p.y + h);
@@ -430,16 +431,16 @@ void DrawOverlays(ImVec2 disp) {
     std::vector<PItem> items = {{"Trigger", "play", "\xE2\x86\xB5", 1, false, false}, {"Cue to Preview", "eye", "C", 0, false, false},
                                 {"Loop", "repeat", "L", 0, false, false}, {"Rename", "pencil", "", 0, A.layers[A.pop.li].clips[A.pop.ci].st == Clip::Empty, false},
                                 {"", "", "", 0, false, true}, {"Clear Slot", "trash-2", "", 2, false, false}};
-    ImRect pr; int hit = PopoverList(A.pop.pos, disp, "Clip", items, freshPop, pr);
-    ImRect cb(pr.Min.x, pr.Max.y + 4, pr.Min.x + 180, pr.Max.y + 4 + 6 + 9 + 4 + 18 + 6);
-    Shadow(cb, 4, 24, 0.7f);
-    Box(cb, K(pal::g16), K(pal::g3a), 4);
-    Text(cb.Min.x + 6, cb.Min.y + 6 + 4.5f, MONO_R, 9, K(pal::t66), "CLIP COLOR", 0.09f);
+    // the colour swatches live INSIDE the popover box (one popover, not a second box hanging below it)
+    const float colH = 1 + 6 + 9 + 4 + 18 + 6;
+    ImRect pr; int hit = PopoverList(A.pop.pos, disp, "Clip", items, freshPop, pr, colH);
+    ImRect cb(pr.Min.x + 1, pr.Max.y - colH - 1, pr.Max.x - 1, pr.Max.y - 1);
+    HLine(cb.Min.x + 1, cb.Max.x - 1, cb.Min.y, K(pal::g2a));
+    Text(cb.Min.x + 8, cb.Min.y + 1 + 6 + 4.5f, MONO_R, 9, K(pal::t66), "CLIP COLOR", 0.09f);
     Clip& cell = A.layers[A.pop.li].clips[A.pop.ci];
-    float sw = (cb.GetWidth() - 12 - 5 * 4) / 6.f;
-    bool inBox = Raw(cb);
+    float sw = (cb.GetWidth() - 16 - 5 * 4) / 6.f;
     for (int k = 0; k < 6; ++k) {
-      ImRect sr(cb.Min.x + 6 + k * (sw + 4), cb.Min.y + 6 + 9 + 4, cb.Min.x + 6 + k * (sw + 4) + sw, cb.Min.y + 6 + 9 + 4 + 18);
+      ImRect sr(cb.Min.x + 8 + k * (sw + 4), cb.Min.y + 1 + 6 + 9 + 4, cb.Min.x + 8 + k * (sw + 4) + sw, cb.Min.y + 1 + 6 + 9 + 4 + 18);
       bool on = cell.color == k;
       if (on) Glow(sr, CLIP_COLORS[k], 0.45f, 10, 2);
       Box(sr, MixHex(pal::g16, CLIP_COLORS[k], 0.28f), on ? K(CLIP_COLORS[k]) : K(pal::g22), 2);
@@ -450,7 +451,7 @@ void DrawOverlays(ImVec2 disp) {
       int li = A.pop.li, ci = A.pop.ci;
       if (hit == 0) A.trigger(li, ci); else if (hit == 1) A.cue(li, ci); else if (hit == 2) A.layers[li].clips[ci].playMode = PM_LOOP; else if (hit == 3) A.beginRename(2, li * 1000 + ci, A.pop.pos, A.layers[li].clips[ci].name); else if (hit == 5) A.layers[li].clips[ci] = Clip();
       A.pop.open = false;
-    } else if (!freshPop && !inBox && (io.MouseClicked[0] || io.MouseClicked[1]) && !Raw(pr)) A.pop.open = false;
+    } else if (!freshPop && (io.MouseClicked[0] || io.MouseClicked[1]) && !Raw(pr)) A.pop.open = false;
     g.blocked = true;
   }
 
@@ -638,6 +639,7 @@ int main(int argc, char** argv) {
     }
     else if (a == "--inspscroll" && i + 1 < argc) gTestInspScroll = (float)atof(argv[++i]);   // test aid, see gTestInspScroll
     else if (a == "--clip" && i + 1 < argc) clipTest = argv[++i];   // test aid: --clip chan=1,blend=2,ax=300,ay=0,rot=30,scale=0.6 (applies to layer 0, column 2 = the demo's live clip)
+    else if (a == "--clipcolor" && i + 1 < argc) clipColors.push_back(argv[++i]);   // test aid: --clipcolor layer,column,colorIndex
     else if (a == "--band" && i + 1 < argc) A.prefs.bandPct = std::clamp(atoi(argv[++i]), 25, 70);   // test aid: taller top band, so the whole Properties list fits in a screenshot
     else if (a == "--layer" && i + 1 < argc) layerTest.push_back(argv[++i]);   // test aid: --layer N,master=50,scale=60,rot=20,px=100,py=0,op=80,vol=50
     else if (a == "--comp" && i + 1 < argc) compTest = argv[++i];   // test aid: --comp scale=60,rot=20,master=50,px=100,py=-40,ax=0,ay=0,speed=200,op=80,w=3840,h=2160
@@ -1134,6 +1136,8 @@ int main(int argc, char** argv) {
   if (sel) A.cue(selLi, selCi);
   for (int k : fxTest) if (k >= 0 && k < FX_COUNT) A.addFx(k);
 
+  for (auto& cc : clipColors) { int li = 0, ci = 0, k = 0; std::sscanf(cc.c_str(), "%d,%d,%d", &li, &ci, &k);
+    if (li >= 0 && li < (int)A.layers.size() && ci >= 0 && ci < A.colCount()) A.layers[li].clips[ci].color = std::clamp(k, 0, 5); }
   if (!clipTest.empty()) {
     Clip& C0 = A.layers[0].clips[2]; size_t pos = 0;
     while (pos < clipTest.size()) {
