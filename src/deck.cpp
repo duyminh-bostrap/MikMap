@@ -773,11 +773,126 @@ static void TestCard(ImRect r) {
 }
 
 
+// ───────────────────────── Preview Cue transform editor ─────────────────────────
+// The Preview Cue monitor edits the previewed clip's transform directly: drag inside the frame to move, the small squares
+// to scale (uniform — clips have one scale), the big corner circles to rotate. Right-click for the quick presets. It edits
+// the very same Clip fields as Properties > Clip > Transform (and the live output, if that clip is live).
+static float gPvFitW = 0.f;   // width of the canvas at Fit in the Preview Cue monitor (the zoom menu's percentages are relative to it)
+static void ClipContentExtent(const Clip& c, float& w, float& h) {   // art units (the composite is 960 wide)
+  w = 960.f; h = 540.f;
+  int iw = 0, ih = 0;
+  if (MediaKindOf(c.media) == MEDIA_IMAGE && MediaImageSize(c.media, iw, ih) && iw > 0 && ih > 0) {
+    float s0 = std::min(960.f / iw, 540.f / ih); w = iw * s0; h = ih * s0;   // images are aspect-fitted into the canvas
+  }
+}
+
+void PreviewTransformMenu(int li, int ci, ImVec2 at) {
+  auto clipAt = [li, ci]() -> Clip* {
+    if (li < 0 || li >= (int)A.layers.size() || ci < 0 || ci >= (int)A.layers[li].clips.size()) return nullptr;
+    Clip& c = A.layers[li].clips[ci];
+    return (c.st == Clip::Empty || c.st == Clip::Armed) ? nullptr : &c;
+  };
+  // fit the clip into a rectangle of the composite (art units): no rotation, uniform scale, centred there
+  auto fitTo = [clipAt](float cx, float cy, float tw, float th) {
+    if (Clip* c = clipAt()) {
+      float w, h; ClipContentExtent(*c, w, h);
+      c->rotation = 0; c->anchorX = c->anchorY = 0;
+      c->scale = std::clamp(std::min(tw / w, th / h), 0.05f, 8.f); c->posX = cx; c->posY = cy;
+    }
+  };
+  std::vector<MenuItem> mi;
+  auto add = [&](const char* label, std::function<void()> fn, bool divider = false) {
+    if (divider) { MenuItem d; d.label = ""; d.disabled = true; d.divider = true; mi.push_back(d); }
+    MenuItem it; it.label = label; it.run = fn; mi.push_back(it);
+  };
+  add("Center X", [clipAt] { if (Clip* c = clipAt()) { float px, py; ClipEffectivePos(*c, 960.f, px, py); c->posX -= px; } });
+  add("Center Y", [clipAt] { if (Clip* c = clipAt()) { float px, py; ClipEffectivePos(*c, 960.f, px, py); c->posY -= py; } });
+  add("Mirror X", [clipAt] { if (Clip* c = clipAt()) c->flipH = !c->flipH; });
+  add("Mirror Y", [clipAt] { if (Clip* c = clipAt()) c->flipV = !c->flipV; });
+  add("Left Half", [fitTo] { fitTo(-240.f, 0.f, 480.f, 540.f); }, true);
+  add("Top Half", [fitTo] { fitTo(0.f, -135.f, 960.f, 270.f); });
+  add("Right Half", [fitTo] { fitTo(240.f, 0.f, 480.f, 540.f); });
+  add("Bottom Half", [fitTo] { fitTo(0.f, 135.f, 960.f, 270.f); });
+  add("Reset", [clipAt] { if (Clip* c = clipAt()) { c->posX = c->posY = c->rotation = c->anchorX = c->anchorY = 0; c->scale = 1; c->flipH = c->flipV = false; } }, true);
+  A.openCtx(at, mi);
+}
+
+static void PreviewTransformEditor(ImRect well, ImRect cv, ImRect ctl, int li, int ci) {
+  Clip& c = A.layers[li].clips[ci];
+  if (c.st == Clip::Empty || c.st == Clip::Armed) return;
+  if (A.pvHand) return;   // hand tool: left-drag pans the view instead of editing the clip
+  ImGuiIO& io = ImGui::GetIO();
+  const bool uiFree = !(A.ctx.open || A.pop.open || A.layerMenu.open || A.colMenu.open || A.deckMenu.open || A.blendDD.open ||
+                        A.projectMenu || A.rename.open || A.settingsOpen || A.openDialog || A.helpOpen);
+  float cw, ch; ClipContentExtent(c, cw, ch);
+  float px, py; ClipEffectivePos(c, 960.f, px, py);
+  const float k = cv.GetWidth() / 960.f;
+  const ImVec2 C((cv.Min.x + cv.Max.x) * 0.5f, (cv.Min.y + cv.Max.y) * 0.5f);
+  const float sc = std::max(0.01f, c.scale), rot = c.rotation * 3.14159265f / 180.f, cs = std::cos(rot), sn = std::sin(rot);
+  auto toScreen = [&](float lx, float ly) { float x = lx * sc, y = ly * sc; return ImVec2(C.x + (x * cs - y * sn + px) * k, C.y + (x * sn + y * cs + py) * k); };
+  ImVec2 corner[4] = {toScreen(-cw / 2, -ch / 2), toScreen(cw / 2, -ch / 2), toScreen(cw / 2, ch / 2), toScreen(-cw / 2, ch / 2)};
+  ImVec2 mid[4] = {toScreen(0, -ch / 2), toScreen(cw / 2, 0), toScreen(0, ch / 2), toScreen(-cw / 2, 0)};
+  const ImVec2 ctr = toScreen(0, 0);
+  auto near = [](ImVec2 a, ImVec2 b, float r) { return std::hypot(a.x - b.x, a.y - b.y) <= r; };
+  auto inQuad = [&](ImVec2 p) {   // convex quad: p on the same side of all four edges
+    int pos = 0, neg = 0;
+    for (int i = 0; i < 4; ++i) {
+      ImVec2 a = corner[i], b = corner[(i + 1) % 4];
+      float cr = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
+      (cr >= 0 ? pos : neg)++;
+    }
+    return pos == 4 || neg == 4;
+  };
+
+  static int dk = 0;   // 1 rotate, 2 scale, 3 move
+  static ImVec2 dm, dctr; static float dpx, dpy, dsc, drot, dang, ddist;
+  const ImVec2 m = io.MousePos;
+  const bool over = well.Contains(m) && uiFree && !ctl.Contains(m);
+  int hk = 0;
+  if (over) {
+    for (int i = 0; i < 4 && !hk; ++i) if (near(m, corner[i], 6.f) || near(m, mid[i], 6.f)) hk = 2;   // small squares: scale
+    for (int i = 0; i < 4 && !hk; ++i) if (near(m, corner[i], 14.f)) hk = 1;                         // ring around a corner: rotate
+    if (!hk && inQuad(m)) hk = 3;
+  }
+  if (dk == 0 && hk && ImGui::IsMouseClicked(0)) {
+    dk = hk; dm = m; dctr = ctr; dpx = c.posX; dpy = c.posY; dsc = c.scale; drot = c.rotation;
+    dang = std::atan2(m.y - ctr.y, m.x - ctr.x); ddist = std::max(4.f, std::hypot(m.x - ctr.x, m.y - ctr.y));
+  }
+  if (dk) {
+    if (ImGui::IsMouseDown(0)) {
+      if (dk == 3) { c.posX = dpx + (m.x - dm.x) / k; c.posY = dpy + (m.y - dm.y) / k; }
+      else if (dk == 2) c.scale = std::clamp(dsc * std::hypot(m.x - dctr.x, m.y - dctr.y) / ddist, 0.05f, 8.f);
+      else {
+        float r = drot + (std::atan2(m.y - dctr.y, m.x - dctr.x) - dang) * 180.f / 3.14159265f;
+        c.rotation = r - 360.f * std::floor((r + 180.f) / 360.f);   // keep within -180..180
+      }
+      ImGui::SetMouseCursor(dk == 3 ? ImGuiMouseCursor_Hand : ImGuiMouseCursor_ResizeAll);
+    } else dk = 0;
+  } else if (hk) ImGui::SetMouseCursor(hk == 3 ? ImGuiMouseCursor_Hand : ImGuiMouseCursor_ResizeAll);
+  if (over && dk == 0 && ImGui::IsMouseClicked(1)) PreviewTransformMenu(li, ci, m);
+
+  // drawing: the frame only shows while the pointer is over the monitor (or a drag is under way)
+  if (!over && dk == 0) return;
+  g.dl->PushClipRect(well.Min, well.Max, true);
+  const ImU32 line = Ca(K(pal::mint)), dark = Ca(K(0x0a0a0a));
+  g.dl->AddPolyline(corner, 4, line, ImDrawFlags_Closed, 1.5f);
+  for (int i = 0; i < 4; ++i) {
+    for (const ImVec2& p : {corner[i], mid[i]}) {
+      g.dl->AddRectFilled(ImVec2(p.x - 4, p.y - 4), ImVec2(p.x + 4, p.y + 4), dark);
+      g.dl->AddRect(ImVec2(p.x - 4, p.y - 4), ImVec2(p.x + 4, p.y + 4), line, 0.f, 0, 1.5f);
+    }
+    bool hot = (dk == 1 || (!dk && hk == 1)) && near(m, corner[i], 14.f);
+    g.dl->AddCircle(corner[i], 11.f, hot ? Ca(K(pal::white)) : line, 24, 1.5f);
+  }
+  g.dl->PopClipRect();
+}
+
 static void Monitor(ImRect r, bool live) {
   Fill(r, K(pal::g12), 3);
   ImRect hd(r.Min.x + 1, r.Min.y + 1, r.Max.x - 1, r.Min.y + 25);
   PanelHeader(hd, live ? "Live Output" : "Preview Cue", live ? pal::coral : pal::cyan, K(pal::g1c));
   float cy = (hd.Min.y + hd.Max.y - 1) * 0.5f;
+  ImRect pvHandB, pvZoomB;   // Preview Cue only: the zoom dropdown + hand tool live in the header, right of the resolution
   // header content: pulse dot precedes title, so re-draw title with offset
   Fill(ImRect(hd.Min.x, hd.Min.y, hd.Min.x + 130, hd.Max.y - 1), K(pal::g1c));
   bool blk = live && A.blackout;
@@ -802,7 +917,10 @@ static void Monitor(ImRect r, bool live) {
     rd("Output", cres, nullptr);
     rd("Rate", cfps, "fps");
   } else {
-    TextR(xr, cy, MONO_M, 10, K(pal::t66), "1920\xC3\x97" "1080");
+    ImRect hb(hd.Max.x - 6 - 24, cy - 9, hd.Max.x - 6, cy + 9);
+    pvHandB = hb; pvZoomB = ImRect(hb.Min.x - 4 - 56, hb.Min.y, hb.Min.x - 4, hb.Max.y);
+    char pres[32]; snprintf(pres, sizeof pres, "%d\xC3\x97%d", A.canvasW, A.canvasH);
+    TextR(pvZoomB.Min.x - 8, cy, MONO_M, 10, K(pal::t66), pres);
   }
   ImRect well(r.Min.x + 1, hd.Max.y, r.Max.x - 1, r.Max.y - 1);
   Fill(well, K(pal::g050));
@@ -834,14 +952,75 @@ static void Monitor(ImRect r, bool live) {
     // Time multiplier must match every other "live motion" draw call (DrawComposite above, the
     // deck thumbnails) so the same clip animates at the same phase/speed everywhere it's shown —
     // this used to be 1.5f here alone, which desynced Preview Cue from Live Output for a live clip.
-    ImRect cv = CanvasRect(well);
-    Fill(cv, K(0x0a0a0a));
-    g.dl->PushClipRect(cv.Min, cv.Max, true);
-    DrawClipContent(cv, sc, (float)g.time * 1.2f, 960.f, 1.f);
-    for (float x = cv.Min.x + 13; x < cv.Max.x; x += 14) VLine(std::floor(x), cv.Min.y, cv.Max.y, K(0xffffff, 0.045f));
-    for (float y = cv.Min.y + 13; y < cv.Max.y; y += 14) HLine(cv.Min.x, cv.Max.x, std::floor(y), K(0xffffff, 0.045f));
-    g.dl->PopClipRect();
+    ImRect cvFit = CanvasRect(well);
+    gPvFitW = cvFit.GetWidth();
+    ImGuiIO& pio = ImGui::GetIO();
+    const ImVec2 pm = pio.MousePos;
+    const bool pvFree = !(A.ctx.open || A.pop.open || A.layerMenu.open || A.colMenu.open || A.deckMenu.open || A.blendDD.open ||
+                          A.projectMenu || A.rename.open || A.settingsOpen || A.openDialog || A.helpOpen);
+    // zoom + hand buttons, top-right of the monitor
+    const ImRect handB = pvHandB, zoomB = pvZoomB;
+    ImRect ctlR(zoomB.Min.x, zoomB.Min.y, handB.Max.x, handB.Max.y);
+    const bool pvOver = well.Contains(pm) && pvFree;
+    static int panBtn = -1;   // -1 none, 0 left (hand tool), 2 middle
+    if (pvOver && !ctlR.Contains(pm)) {
+      if (pio.MouseWheel != 0.f) {   // wheel: zoom about the pointer (the point under it stays put)
+        ImVec2 wc((well.Min.x + well.Max.x) * 0.5f, (well.Min.y + well.Max.y) * 0.5f);
+        float z0 = A.pvZoom, z1 = std::clamp(z0 * (pio.MouseWheel > 0 ? 1.15f : 1.f / 1.15f), 0.1f, 16.f);
+        float dx = pm.x - (wc.x + A.pvPanX), dy = pm.y - (wc.y + A.pvPanY);
+        A.pvPanX += dx * (1.f - z1 / z0); A.pvPanY += dy * (1.f - z1 / z0);
+        A.pvZoom = z1;
+      }
+      if (panBtn < 0 && ImGui::IsMouseClicked(2)) panBtn = 2;
+      else if (panBtn < 0 && A.pvHand && ImGui::IsMouseClicked(0)) panBtn = 0;
+    }
+    if (panBtn >= 0) {
+      if (ImGui::IsMouseDown(panBtn)) { A.pvPanX += pio.MouseDelta.x; A.pvPanY += pio.MouseDelta.y; ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll); }
+      else panBtn = -1;
+    } else if (pvOver && A.pvHand && !ctlR.Contains(pm)) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+    {
+      float lim = cvFit.GetWidth() * A.pvZoom + well.GetWidth();   // keep the picture reachable
+      A.pvPanX = std::clamp(A.pvPanX, -lim, lim); A.pvPanY = std::clamp(A.pvPanY, -lim, lim);
+    }
+    ImVec2 wcn((well.Min.x + well.Max.x) * 0.5f, (well.Min.y + well.Max.y) * 0.5f);
+    ImVec2 ccn(wcn.x + A.pvPanX, wcn.y + A.pvPanY);
+    ImRect cv(ccn.x - cvFit.GetWidth() * 0.5f * A.pvZoom, ccn.y - cvFit.GetHeight() * 0.5f * A.pvZoom,
+              ccn.x + cvFit.GetWidth() * 0.5f * A.pvZoom, ccn.y + cvFit.GetHeight() * 0.5f * A.pvZoom);
+    ImRect vis(std::max(cv.Min.x, well.Min.x), std::max(cv.Min.y, well.Min.y), std::min(cv.Max.x, well.Max.x), std::min(cv.Max.y, well.Max.y));
+    if (vis.Max.x > vis.Min.x && vis.Max.y > vis.Min.y) {
+      Fill(vis, K(0x0a0a0a));
+      g.dl->PushClipRect(vis.Min, vis.Max, true);
+      DrawClipContent(cv, sc, (float)g.time * 1.2f, 960.f, 1.f);
+      g.dl->PopClipRect();
+    }
+    g.dl->PushClipRect(well.Min, well.Max, true);
     Border(cv, K(pal::g2a));
+    g.dl->PopClipRect();
+    PreviewTransformEditor(well, cv, ctlR, sli, std::clamp(A.selCi, 0, (int)A.layers[sli].clips.size() - 1));
+    {
+      // zoom dropdown (percent of the canvas's real pixel size) and the hand tool
+      Hit zh = pvFree ? HitR(zoomB) : Hit(), hh = pvFree ? HitR(handB) : Hit();
+      char zt[16]; snprintf(zt, sizeof zt, "%d%%", (int)std::round(cv.GetWidth() / std::max(1, A.canvasW) * 100.f));
+      Box(zoomB, zh.hover ? K(pal::ctrlHover) : K(0x101010, 0.92f), K(pal::g2a), 3);
+      Text(zoomB.Min.x + 8, (zoomB.Min.y + zoomB.Max.y) * 0.5f, MONO_B, 10, K(pal::tcc), zt);
+      Icon("chevron-down", ImVec2(zoomB.Max.x - 10, (zoomB.Min.y + zoomB.Max.y) * 0.5f), 9, K(pal::t88));
+      Box(handB, A.pvHand ? K(pal::cyan, 0.2f) : hh.hover ? K(pal::ctrlHover) : K(0x101010, 0.92f), A.pvHand ? K(pal::cyan) : K(pal::g2a), 3);
+      Icon("hand", ImVec2((handB.Min.x + handB.Max.x) * 0.5f, (handB.Min.y + handB.Max.y) * 0.5f), 13, K(A.pvHand ? pal::cyan : pal::tcc));
+      if (zh.hover || hh.hover) CursorHand();
+      if (hh.click) A.pvHand = !A.pvHand;
+      if (zh.click) {
+        std::vector<MenuItem> mi;
+        MenuItem f; f.label = "Fit"; f.run = [] { A.pvZoom = 1.f; A.pvPanX = A.pvPanY = 0.f; }; mi.push_back(f);
+        MenuItem d; d.divider = true; mi.push_back(d);
+        for (int pct : {12, 25, 50, 100, 200, 400}) {
+          char lb[16]; snprintf(lb, sizeof lb, "%d%%", pct);
+          MenuItem it; it.label = lb;
+          it.run = [pct] { if (gPvFitW > 1.f) A.pvZoom = std::clamp(A.canvasW * pct / 100.f / gPvFitW, 0.1f, 16.f); };   // percent of the canvas's real pixel size
+          mi.push_back(it);
+        }
+        A.openCtx(ImVec2(zoomB.Min.x, zoomB.Max.y + 4), mi);
+      }
+    }
     std::string nm = sc.name.empty() ? "no cue" : Upper(sc.name);
     Text(well.Min.x + 6, well.Max.y - 10, MONO_M, 10, K(pal::cyan), nm.c_str(), 0.09f);
     char fx[16]; snprintf(fx, sizeof fx, act ? "FX %d/%d" : "FX DRY", act, (int)chain.size());

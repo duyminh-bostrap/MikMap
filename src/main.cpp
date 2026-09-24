@@ -546,22 +546,27 @@ void DrawOverlays(ImVec2 disp) {
   DrawSettings(disp);
   // context menu
   if (A.ctx.open) {
-    float w = 182, h = 8 + 24.f * A.ctx.items.size();
-    ImVec2 p(std::min(A.ctx.pos.x, disp.x - 190), std::min(A.ctx.pos.y, disp.y - (A.ctx.items.size() * 24 + 16)));
+    // rows are 24px, a divider row 8px (a line); an item without an icon starts its text at the left edge
+    float rowsH = 0; for (auto& it : A.ctx.items) rowsH += it.divider ? 8.f : 24.f;
+    float w = 182, h = 8 + rowsH;
+    ImVec2 p(std::min(A.ctx.pos.x, disp.x - 190), std::min(A.ctx.pos.y, disp.y - (rowsH + 16)));
     ImRect r(p.x, p.y, p.x + w, p.y + h);
     Shadow(r, 4, 24, 0.7f);
     Box(r, K(pal::g16), K(pal::g3a), 4);
     bool acted = false;
+    float ry = r.Min.y + 4;
     for (size_t i = 0; i < A.ctx.items.size(); ++i) {
       auto& it = A.ctx.items[i];
-      ImRect ir(r.Min.x + 4, r.Min.y + 4 + i * 24, r.Max.x - 4, r.Min.y + 4 + (i + 1) * 24);
+      if (it.divider) { HLine(r.Min.x + 6, r.Max.x - 6, ry + 4, K(pal::g2a)); ry += 8; continue; }
+      ImRect ir(r.Min.x + 4, ry, r.Max.x - 4, ry + 24);
+      ry += 24;
       bool hv = Raw(ir);
       float prev = g.alpha; if (it.disabled) g.alpha = 0.45f;
       if (hv && !it.disabled) Fill(ir, K(pal::g18), 3);
-      uint32_t col = it.disabled ? pal::t66 : it.danger ? pal::red : pal::te0;
+      uint32_t col = it.disabled ? pal::t66 : it.danger ? pal::red : it.toneHex ? it.toneHex : pal::te0;
       float cy = (ir.Min.y + ir.Max.y) * 0.5f;
-      Icon(it.icon.c_str(), ImVec2(ir.Min.x + 8 + 5.5f, cy), 11, K(col));
-      Text(ir.Min.x + 8 + 11 + 8, cy, UI_S, 10, K(col), it.label.c_str());
+      if (!it.icon.empty()) { Icon(it.icon.c_str(), ImVec2(ir.Min.x + 8 + 5.5f, cy), 11, K(col)); Text(ir.Min.x + 8 + 11 + 8, cy, UI_S, 10, K(col), it.label.c_str()); }
+      else Text(ir.Min.x + 10, cy, UI_S, 10, K(col), it.label.c_str());
       g.alpha = prev;
       if (hv && !it.disabled) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
       if (hv && io.MouseClicked[0] && !freshCtx) { acted = true; if (!it.disabled && it.run) { auto f = it.run; A.ctx.open = false; f(); } }
@@ -618,6 +623,7 @@ struct Script { int kind; float x0, y0, x1, y1; };
 
 int main(int argc, char** argv) {
   std::vector<Script> script;
+  bool hoverTest = false; float hoverX = 0, hoverY = 0;
   std::string compTest, clipTest, pvTest; std::vector<std::string> layerTest, clipColors;
   OsDrop dropTest;   // --drop: injected at frame 8 of a --shot run, standing in for a real Explorer drag
   bool openOut = false; std::string outShot;
@@ -647,6 +653,8 @@ int main(int argc, char** argv) {
     else if (a == "--inspscroll" && i + 1 < argc) gTestInspScroll = (float)atof(argv[++i]);   // test aid, see gTestInspScroll
     else if (a == "--clip" && i + 1 < argc) clipTest = argv[++i];   // test aid: --clip chan=1,blend=2,ax=300,ay=0,rot=30,scale=0.6 (applies to layer 0, column 2 = the demo's live clip)
     else if (a == "--clipcolor" && i + 1 < argc) clipColors.push_back(argv[++i]);   // test aid: --clipcolor layer,column,colorIndex
+    else if (a == "--pv" && i + 1 < argc) pvTest = argv[++i];   // test aid: --pv zoom,panX,panY,hand (Preview Cue view)
+    else if (a == "--hover" && i + 1 < argc) { hoverTest = true; std::sscanf(argv[++i], "%f,%f", &hoverX, &hoverY); }   // test aid: hold the pointer here (headless runs have no real pointer)
     else if (a == "--band" && i + 1 < argc) A.prefs.bandPct = std::clamp(atoi(argv[++i]), 25, 70);   // test aid: taller top band, so the whole Properties list fits in a screenshot
     else if (a == "--layer" && i + 1 < argc) layerTest.push_back(argv[++i]);   // test aid: --layer N,master=50,scale=60,rot=20,px=100,py=0,op=80,vol=50
     else if (a == "--comp" && i + 1 < argc) compTest = argv[++i];   // test aid: --comp scale=60,rot=20,master=50,px=100,py=-40,ax=0,ay=0,speed=200,op=80,w=3840,h=2160
@@ -981,6 +989,30 @@ int main(int argc, char** argv) {
       if (A.quantize == q0) return fail("toggleSync must flip Sync");
       A.toggleSync();
     }
+    // Preview Cue right-click presets (Center/Mirror/Halves/Reset) act on the previewed clip's transform
+    {
+      NewProject();
+      Clip& tc = A.layers[0].clips[2];
+      auto runItem = [&](const char* label) {
+        PreviewTransformMenu(0, 2, ImVec2(0, 0));
+        for (auto& it : A.ctx.items) if (it.label == label && it.run) { it.run(); break; }
+        A.ctx.open = false;
+      };
+      tc.posX = 100; tc.posY = 50; tc.rotation = 30; tc.scale = 2; tc.flipH = false;
+      runItem("Center X");  if (tc.posX != 0 || tc.posY != 50) return fail("Center X must zero only the horizontal position");
+      runItem("Center Y");  if (tc.posY != 0) return fail("Center Y must zero the vertical position");
+      runItem("Mirror X");  if (!tc.flipH) return fail("Mirror X must flip horizontally");
+      runItem("Mirror Y");  if (!tc.flipV) return fail("Mirror Y must flip vertically");
+      runItem("Left Half"); if (std::fabs(tc.scale - 0.5f) > 1e-4f || tc.posX != -240 || tc.posY != 0 || tc.rotation != 0) return fail("Left Half must fit the clip into the left half of the canvas");
+      runItem("Top Half");  if (std::fabs(tc.scale - 0.5f) > 1e-4f || tc.posX != 0 || tc.posY != -135) return fail("Top Half must fit the clip into the top half");
+      runItem("Right Half"); if (tc.posX != 240) return fail("Right Half");
+      runItem("Bottom Half"); if (tc.posY != 135) return fail("Bottom Half");
+      tc.anchorX = 50; tc.rotation = 20;
+      runItem("Reset");     if (tc.posX != 0 || tc.posY != 0 || tc.rotation != 0 || tc.scale != 1 || tc.flipH || tc.flipV || tc.anchorX != 0) return fail("Reset must restore the identity transform");
+      float px, py; tc.anchorX = 100; tc.scale = 2; tc.rotation = 0; tc.posX = 0;
+      ClipEffectivePos(tc, 960.f, px, py);
+      if (std::fabs(px - (100.f * 960.f / A.canvasW) * (1.f - 2.f)) > 1e-3f) return fail("anchor must fold into the effective position");
+    }
     // Comp properties: a canvas resolution change rescales each slice's input rect per axis, and everything saves/loads
     {
       NewProject();
@@ -1157,6 +1189,7 @@ int main(int argc, char** argv) {
 
   for (auto& cc : clipColors) { int li = 0, ci = 0, k = 0; std::sscanf(cc.c_str(), "%d,%d,%d", &li, &ci, &k);
     if (li >= 0 && li < (int)A.layers.size() && ci >= 0 && ci < A.colCount()) A.layers[li].clips[ci].color = std::clamp(k, 0, 5); }
+  if (!pvTest.empty()) { float z = 1, px = 0, py = 0; int hnd = 0; std::sscanf(pvTest.c_str(), "%f,%f,%f,%d", &z, &px, &py, &hnd); A.pvZoom = z; A.pvPanX = px; A.pvPanY = py; A.pvHand = hnd != 0; }
   if (!clipTest.empty()) {
     Clip& C0 = A.layers[0].clips[2]; size_t pos = 0;
     while (pos < clipTest.size()) {
@@ -1238,6 +1271,7 @@ int main(int argc, char** argv) {
         io.AddMousePosEvent((float)mx / Zs, (float)my / Zs);
       }
     }
+    if (!shot.empty() && hoverTest && frame >= 3 + 6 * (int)script.size()) io.AddMousePosEvent(hoverX / Zs, hoverY / Zs);
     if (!shot.empty()) {
       // each scripted action occupies 6 frames starting at frame 3
       int rel = frame - 3;

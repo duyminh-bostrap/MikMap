@@ -251,6 +251,8 @@ struct App {
   std::vector<std::string> mediaList; bool mediaStale = true;   // Browser "Media" list cache (rescanned on demand, never per frame)
   std::vector<std::string> mediaExtra;                          // files imported by drag & drop, referenced in place (machine setting, not per project)
   OsDrop osDrop;
+  // Preview Cue view: zoom relative to "fit" (1 = the canvas letterboxed in the monitor), pan in screen px, hand tool on/off
+  float pvZoom = 1.f, pvPanX = 0.f, pvPanY = 0.f; bool pvHand = false;
   void addLayer(); void groupSelectedLayer(); void toggleSync();
   void setLayerColor(int li, int color);   // recolours the layer AND the clips that still have the layer's old colour   // Deck tools menu
   void dropFilesOnCell(int li, int ci, const std::vector<std::string>& paths);   // first file -> this cell, the rest -> following empty cells of the layer
@@ -371,6 +373,7 @@ void SetSettingsPersistence(bool on);         // off in headless --shot/--roundt
 void RebuildMediaList();                    // A.mediaList = ListMedia() + drag & drop imports that still exist
 int ImportMedia(const std::vector<std::string>& paths);   // remember dropped files in the Browser; returns how many were new
 void PreloadMedia(const std::string& path);   // upload the texture now instead of on first draw
+void PreviewTransformMenu(int layer, int column, ImVec2 at);   // Preview Cue right-click presets (opens A.ctx)
 void ClipEffectivePos(const Clip& c, float base, float& px, float& py);   // clip position with its anchor folded in (art units at `base` width)
 bool MediaImageSize(const std::string& path, int& w, int& h);   // pixel size of a loaded image clip source
 std::vector<ProjectFile> ListProjects();
