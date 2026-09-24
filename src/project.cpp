@@ -369,16 +369,45 @@ static fs::path ConfigDir() {
 }
 
 std::string MediaDir() { return (fs::path(ProjectsDir()) / "media").string(); }
+MediaKind MediaKindOf(const std::string& path) {
+  std::string ext = fs::path(path).extension().string();
+  for (auto& ch : ext) ch = (char)std::tolower((unsigned char)ch);
+  for (const char* e : {".png", ".jpg", ".jpeg", ".bmp", ".tga"}) if (ext == e) return MEDIA_IMAGE;
+  for (const char* e : {".mov", ".mp4", ".m4v", ".avi", ".mkv", ".webm", ".wmv"}) if (ext == e) return MEDIA_VIDEO;
+  for (const char* e : {".wav", ".mp3", ".ogg", ".flac", ".aac", ".m4a", ".aif", ".aiff"}) if (ext == e) return MEDIA_AUDIO;
+  return MEDIA_NONE;
+}
 std::vector<std::string> ListMedia() {
   std::vector<std::string> out; std::error_code ec;
   for (auto& e : fs::directory_iterator(MediaDir(), ec)) {
     if (!e.is_regular_file(ec)) continue;
-    std::string ext = e.path().extension().string();
-    for (auto& ch : ext) ch = (char)std::tolower((unsigned char)ch);
-    if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".bmp" || ext == ".tga") out.push_back(e.path().string());
+    if (MediaKindOf(e.path().string()) != MEDIA_NONE) out.push_back(e.path().string());
   }
   std::sort(out.begin(), out.end());
   return out;
+}
+void RebuildMediaList() {
+  A.mediaList = ListMedia();
+  std::error_code ec;
+  for (auto& p : A.mediaExtra) {
+    if (!fs::is_regular_file(p, ec)) continue;   // a dropped file that was moved/deleted quietly disappears from the Browser
+    if (std::find(A.mediaList.begin(), A.mediaList.end(), p) == A.mediaList.end()) A.mediaList.push_back(p);
+  }
+  A.mediaStale = false;
+}
+static bool gPersistSettings = true;   // not an App member: NewProject()/LoadProject() rebuild App and would reset it
+void SetSettingsPersistence(bool on) { gPersistSettings = on; }
+int ImportMedia(const std::vector<std::string>& paths) {
+  int added = 0; std::error_code ec;
+  for (auto& p : paths) {
+    if (MediaKindOf(p) == MEDIA_NONE || !fs::is_regular_file(p, ec)) continue;
+    if (std::find(A.mediaExtra.begin(), A.mediaExtra.end(), p) != A.mediaExtra.end()) continue;
+    if (fs::path(p).parent_path() == fs::path(MediaDir())) continue;   // already listed by the folder scan
+    A.mediaExtra.push_back(p); ++added;
+  }
+  A.mediaStale = true;
+  if (added && gPersistSettings) SaveSettings();
+  return added;
 }
 
 // Shared by ListProjects/ListPresets/ListCalibProfiles — same "newest first" file listing, only the folder and
@@ -434,9 +463,9 @@ bool LoadProject(const std::string& path, std::string& err) {
   if (!JsonValue::parse(text, root, perr)) { err = "invalid JSON: " + perr; return false; }
   App tmp = A;                       // start from current app so absent optional sections keep sane values
   if (!Deserialize(root, tmp, err)) return false;
-  Prefs keepPrefs = A.prefs; int keepMon = A.outMonitor; int keepScreen = A.screen; bool keepBlack = A.blackout;
+  Prefs keepPrefs = A.prefs; int keepMon = A.outMonitor; int keepScreen = A.screen; auto keepMedia = A.mediaExtra; bool keepBlack = A.blackout;
   A = tmp;
-  A.prefs = keepPrefs; A.outMonitor = keepMon; A.screen = keepScreen; A.blackout = keepBlack;
+  A.prefs = keepPrefs; A.outMonitor = keepMon; A.screen = keepScreen; A.mediaExtra = keepMedia; A.mediaStale = true; A.blackout = keepBlack;
   // fresh selection/UI state: nothing carried over from the previous show
   A.selectedCells.clear(); A.selMode = 2; A.activeCol = 0; A.selLi = A.selLayer = A.selCi = 0; A.fxSel = 0;
   A.pop.open = A.layerMenu.open = A.colMenu.open = A.deckMenu.open = A.ctx.open = A.blendDD.open = A.rename.open = false;
@@ -502,17 +531,17 @@ bool LoadCalibProfile(const std::string& path, std::vector<Calib>& calib, ImVec2
 }
 
 void NewProject() {
-  Prefs keepPrefs = A.prefs; int keepMon = A.outMonitor; int keepScreen = A.screen;
+  Prefs keepPrefs = A.prefs; int keepMon = A.outMonitor; int keepScreen = A.screen; auto keepMedia = A.mediaExtra;
   A = App(); A.init();
-  A.prefs = keepPrefs; A.outMonitor = keepMon; A.screen = keepScreen;
+  A.prefs = keepPrefs; A.outMonitor = keepMon; A.screen = keepScreen; A.mediaExtra = keepMedia; A.mediaStale = true;
   A.projectPath.clear(); A.projectName = "MikMap Stage 01";
   MarkSaved();
 }
 
 void NewBlankProject() {
-  Prefs keepPrefs = A.prefs; int keepMon = A.outMonitor; int keepScreen = A.screen;
+  Prefs keepPrefs = A.prefs; int keepMon = A.outMonitor; int keepScreen = A.screen; auto keepMedia = A.mediaExtra;
   A = App(); A.init();
-  A.prefs = keepPrefs; A.outMonitor = keepMon; A.screen = keepScreen;
+  A.prefs = keepPrefs; A.outMonitor = keepMon; A.screen = keepScreen; A.mediaExtra = keepMedia; A.mediaStale = true;
   A.groups.clear(); A.layers.clear(); A.colNames.clear();
   for (int i = 0; i < 4; ++i) {
     Layer l; l.name = "Layer " + std::to_string(i + 1); l.blend = "Normal"; l.opacity = 100; l.clips.assign(8, Clip());
@@ -634,6 +663,7 @@ void SaveSettings() {
   o.set("surface", A.prefs.surface); o.set("scale", A.prefs.scale); o.set("outMonitor", A.outMonitor);
   o.set("browserW", A.prefs.browserW); o.set("inspectorW", A.prefs.inspectorW);
   o.set("bandPct", A.prefs.bandPct); o.set("timelineH", A.prefs.timelineH);
+  { JsonValue me = JsonValue::array(); for (auto& p : A.mediaExtra) me.push(p); o.set("mediaExtra", me); }
   std::string err; WriteAtomic(ConfigDir() / "settings.json", o.dump(2), err);
 }
 
@@ -652,4 +682,6 @@ void LoadSettings() {
   p.bandPct = std::clamp(o["bandPct"].asInt(p.bandPct), 25, 70);
   p.timelineH = std::clamp(o["timelineH"].asInt(p.timelineH), 0, 96);
   A.prefs = p; A.outMonitor = std::max(0, o["outMonitor"].asInt(0));
+  A.mediaExtra.clear();
+  if (o["mediaExtra"].isArray()) for (auto& v : o["mediaExtra"].arrayItems()) { std::string s = v.asString(); if (!s.empty()) A.mediaExtra.push_back(s); }
 }

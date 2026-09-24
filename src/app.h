@@ -128,6 +128,10 @@ constexpr int FX_COUNT = 8;
 struct ColMenu { bool open = false; int ci = 0; ImVec2 pos; };
 struct DeckMenu { bool open = false; int idx = 0; ImVec2 pos; };
 struct DragSrc { bool active = false; std::string name, dur, media; int fxKind = -1; };
+// Files dropped from the OS (Explorer/Finder) onto the window. The GLFW callback only records them; the UI code
+// that owns the drop targets (Browser panel, deck clip cells, timeline lanes) consumes them the same frame, by
+// testing `pos` against its own rects, and sets `handled` so main can tell the user when a drop hit nothing.
+struct OsDrop { bool pending = false, handled = false; ImVec2 pos; std::vector<std::string> paths; };
 struct Prefs { int lang = 0, ui = 0, mono = 0, accent = 0, surface = 0, scale = 100;
   int browserW = 200, inspectorW = 236, bandPct = 42, timelineH = 48; };
 struct ProjectFile { std::string path, name; long long mtime = 0; };
@@ -215,7 +219,10 @@ struct App {
   void addFx(int kind); void removeFx(int i); void dupFx(int i); void moveFx(int i, int d); void resetFx(int i);
   std::vector<Fx>& fxChain() { int li = std::clamp(selLi, 0, (int)layers.size() - 1); return layers[li].clips[std::clamp(selCi, 0, (int)layers[li].clips.size() - 1)].fx; }
   void loadClip(int li, int ci, const std::string& name, const std::string& dur, const std::string& media = std::string());
-  std::vector<std::string> mediaList; bool mediaStale = true;   // Browser "Media" folder cache (rescanned on demand, never per frame)
+  std::vector<std::string> mediaList; bool mediaStale = true;   // Browser "Media" list cache (rescanned on demand, never per frame)
+  std::vector<std::string> mediaExtra;                          // files imported by drag & drop, referenced in place (machine setting, not per project)
+  OsDrop osDrop;
+  void dropFilesOnCell(int li, int ci, const std::vector<std::string>& paths);   // first file -> this cell, the rest -> following empty cells of the layer
   // deck selection / drag & drop
   int selMode = 2;  // 0 layer, 1 clip, 2 column
   int dragLi = -1, dragCi = -1, dropLi = -1, dropCi = -1;
@@ -325,7 +332,12 @@ void ApplyPrefs();
 // project / settings persistence (project.cpp)
 std::string ProjectsDir();
 std::string MediaDir();                       // ~/Documents/MikMap/media
-std::vector<std::string> ListMedia();        // image files there, sorted by name
+std::vector<std::string> ListMedia();        // image / video / audio files there, sorted by name
+enum MediaKind { MEDIA_NONE, MEDIA_IMAGE, MEDIA_VIDEO, MEDIA_AUDIO };
+MediaKind MediaKindOf(const std::string& path);   // by extension only
+void SetSettingsPersistence(bool on);         // off in headless --shot/--roundtrip runs: they never load settings.json, so writing it would clobber the user's real one
+void RebuildMediaList();                    // A.mediaList = ListMedia() + drag & drop imports that still exist
+int ImportMedia(const std::vector<std::string>& paths);   // remember dropped files in the Browser; returns how many were new
 void PreloadMedia(const std::string& path);   // upload the texture now instead of on first draw
 std::vector<ProjectFile> ListProjects();
 bool SaveProject(const std::string& path, std::string& err);

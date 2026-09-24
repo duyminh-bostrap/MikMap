@@ -610,6 +610,7 @@ struct Script { int kind; float x0, y0, x1, y1; };
 
 int main(int argc, char** argv) {
   std::vector<Script> script;
+  OsDrop dropTest;   // --drop: injected at frame 8 of a --shot run, standing in for a real Explorer drag
   bool openOut = false; std::string outShot;
   std::string roundtrip; std::vector<int> fxTest;
   std::string shot; int startScreen = 0, frames = 12, W = 1440, H = 900, tab = -1, page = -1;
@@ -636,7 +637,12 @@ int main(int argc, char** argv) {
     }
     else if (a == "--fx" && i + 1 < argc) fxTest.push_back(atoi(argv[++i]));   // test aid: add FX kind N to the selected clip
     else if (a == "--cell" && i + 2 < argc) { sel = true; selLi = atoi(argv[++i]); selCi = atoi(argv[++i]); }
+    else if (a == "--drop" && i + 2 < argc) {   // headless check of OS file drop: --drop x,y <path> (repeatable paths accumulate)
+      float dx = 0, dy = 0; sscanf(argv[++i], "%f,%f", &dx, &dy);
+      dropTest.pos = ImVec2(dx, dy); dropTest.paths.push_back(argv[++i]); dropTest.pending = true;
+    }
   }
+  if (!shot.empty() || !roundtrip.empty()) SetSettingsPersistence(false);
   if (!roundtrip.empty()) {
     // Headless self-check of project persistence: save -> edit -> load must restore the saved state exactly.
     auto fail = [](const char* w) { std::fprintf(stderr, "roundtrip FAILED: %s\n", w); return 1; };
@@ -948,6 +954,24 @@ int main(int argc, char** argv) {
       EnsureLayerIds(dup);
       if (dup[0].id != "layer-1" || dup[1].id.empty() || dup[1].id == dup[0].id || dup[2].id.empty() || dup[2].id == dup[1].id) return fail("EnsureLayerIds must keep good ids and fix blank/duplicate ones");
     }
+    // OS file drop (media kinds by extension; a multi-file drop on a cell fills the following EMPTY cells of that layer)
+    {
+      if (MediaKindOf("a.PNG") != MEDIA_IMAGE || MediaKindOf("b.mov") != MEDIA_VIDEO || MediaKindOf("c.WAV") != MEDIA_AUDIO || MediaKindOf("d.txt") != MEDIA_NONE) return fail("media kind by extension");
+      std::string f1 = roundtrip + ".drop1.mov", f2 = roundtrip + ".drop2.wav", f3 = roundtrip + ".drop3.txt";
+      for (auto* f : {&f1, &f2, &f3}) { std::FILE* fp = std::fopen(f->c_str(), "wb"); if (fp) { std::fputs("x", fp); std::fclose(fp); } }
+      NewBlankProject(); A.mediaExtra.clear();
+      A.dropFilesOnCell(0, 1, {f1, f2, f3});
+      if (A.layers[0].clips[1].media != f1 || A.layers[0].clips[2].media != f2) return fail("dropped files must land in the target cell and the next empty one");
+      if (A.layers[0].clips[3].st != Clip::Empty) return fail("an unsupported file (.txt) must not create a clip");
+      if (A.mediaExtra.size() != 2) return fail("dropped media must be remembered in the Browser list (and .txt ignored)");
+      A.dropFilesOnCell(0, 1, {f1, f2});   // cell 1 replaced, cell 2 occupied -> the second file skips to the next empty cell (3)
+      if (A.layers[0].clips[1].media != f1 || A.layers[0].clips[2].media != f2 || A.layers[0].clips[3].media != f2) return fail("a further file must skip occupied cells");
+      if (ImportMedia({f1, f2}) != 0 || A.mediaExtra.size() != 2) return fail("re-importing the same files must not duplicate them");
+      NewProject();
+      if (A.mediaExtra.size() != 2) return fail("dropped media is machine-level: New project must keep it");
+      A.mediaExtra.clear(); A.mediaStale = true;
+      for (auto* f : {&f1, &f2, &f3}) std::remove(f->c_str());
+    }
     std::printf("roundtrip OK\n"); return 0;
   }
   gAssets = FindAssets(argv[0]);
@@ -990,6 +1014,14 @@ int main(int argc, char** argv) {
   io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
   SetupStyle();
   ImGui_ImplGlfw_InitForOpenGL(win, true);
+  // Files dragged in from Explorer/Finder. GLFW moves its cursor position to the drop point before this fires
+  // (Win32 WM_DROPFILES, X11 XdndPosition), so glfwGetCursorPos tells the UI which panel/cell was hit.
+  glfwSetDropCallback(win, [](GLFWwindow* w, int n, const char** paths) {
+    double cx = 0, cy = 0; glfwGetCursorPos(w, &cx, &cy);
+    const float zs = A.prefs.scale / 100.f;
+    A.osDrop = OsDrop(); A.osDrop.pending = true; A.osDrop.pos = ImVec2((float)cx / zs, (float)cy / zs);
+    for (int i = 0; i < n; ++i) A.osDrop.paths.push_back(paths[i]);
+  });
   #ifdef __APPLE__
   ImGui_ImplOpenGL3_Init("#version 150");
 #else
@@ -1014,6 +1046,7 @@ int main(int argc, char** argv) {
   double last = glfwGetTime(); double progAcc = 0; int frame = 0;
   while (!glfwWindowShouldClose(win)) {
     glfwPollEvents();
+    if (!shot.empty() && dropTest.pending && frame == 8) { A.osDrop = dropTest; dropTest.pending = false; }
     if (glfwWindowShouldClose(win) && shot.empty() && A.projectDirty && glfwGetTime() >= A.discardUntil) {
       glfwSetWindowShouldClose(win, GLFW_FALSE);    // unsaved edits: first close request only warns
       A.discardUntil = glfwGetTime() + 4; g.time = glfwGetTime(); A.notify("Unsaved changes \xE2\x80\x94 close again to quit and discard", 4);
@@ -1135,6 +1168,10 @@ int main(int argc, char** argv) {
     if (ImGui::IsKeyPressed(ImGuiKey_F11, false)) ToggleOutput(win, A.outMonitor);
     ImGui::End();
 
+    if (A.osDrop.pending) {   // every drop target has had its chance this frame
+      if (!A.osDrop.handled) A.notify("Drop files onto the Browser or onto a clip cell (Composition page)");
+      A.osDrop = OsDrop();
+    }
     ImGui::Render();
     int dw, dh; glfwGetFramebufferSize(win, &dw, &dh);
     glViewport(0, 0, dw, dh);

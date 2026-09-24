@@ -396,6 +396,11 @@ static void DrawClipCore(ImRect a, const Clip& c, float t, float base, float alp
                          P(-hw + 2 * hw * u1, -hh + 2 * hh * v1), P(-hw + 2 * hw * u0, -hh + 2 * hh * v1),
                          ImVec2(u0, v0), ImVec2(u1, v0), ImVec2(u1, v1), ImVec2(u0, v1), tint);
       }
+    } else if (MediaKindOf(c.media) == MEDIA_VIDEO || MediaKindOf(c.media) == MEDIA_AUDIO) {
+      // No decoder for these yet (B1): say so instead of the misleading "MISSING MEDIA" the file-not-found case shows.
+      bool vid = MediaKindOf(c.media) == MEDIA_VIDEO;
+      TextC(Ctr().x, Ctr().y - 7, MONO_B, 11, K(vid ? pal::cyan : pal::mint), vid ? "VIDEO" : "AUDIO");
+      TextC(Ctr().x, Ctr().y + 7, MONO_R, 9, K(pal::t88), "playback not available yet");
     } else TextC(Ctr().x, Ctr().y, MONO_M, 11, K(pal::red), "MISSING MEDIA");
   } else switch (c.style >= 0 ? c.style : ClipStyleOf(c.name)) {
     case S_PLASMA: {

@@ -363,9 +363,30 @@ void App::moveColTo(int from, int to) {
   for (auto& c : selectedCells) c.second = remap(c.second);
 }
 void App::loadClip(int li, int ci, const std::string& name, const std::string& dur, const std::string& media) {
-  Clip c; c.st = Clip::Loaded; c.name = name; c.media = media; if (!media.empty()) PreloadMedia(media); c.dur = dur.empty() ? "\xE2\x88\x9E" : dur;
+  Clip c; c.st = Clip::Loaded; c.name = name; c.media = media; if (MediaKindOf(media) == MEDIA_IMAGE) PreloadMedia(media); c.dur = dur.empty() ? "\xE2\x88\x9E" : dur;
   layers[li].clips[ci] = c;
   selLayer = li; selLi = li; selCi = ci; selectedCells = {{li, ci}}; selMode = 1;
+}
+// Files dropped from the OS onto a clip cell: the first goes into that cell, each further file into the next
+// empty cell of the same layer (so dropping a folder's worth of stills fills a row); files with no free cell
+// still land in the Browser. Everything dropped is also remembered in the Browser's Media list.
+void App::dropFilesOnCell(int li, int ci, const std::vector<std::string>& paths) {
+  if (li < 0 || li >= (int)layers.size()) return;
+  std::vector<std::string> ok;
+  for (auto& p : paths) if (MediaKindOf(p) != MEDIA_NONE) ok.push_back(p);
+  if (ok.empty()) { notify("Unsupported file type \xE2\x80\x94 drop an image, video or audio file"); return; }
+  ImportMedia(ok);
+  int placed = 0, c = ci;
+  for (auto& p : ok) {
+    while (c < (int)layers[li].clips.size() && placed > 0 && layers[li].clips[c].st != Clip::Empty && layers[li].clips[c].st != Clip::Armed) ++c;
+    if (c >= (int)layers[li].clips.size()) break;
+    loadClip(li, c, std::filesystem::path(p).filename().string(), "", p);
+    ++placed; ++c;
+  }
+  MediaKind k = MediaKindOf(ok[0]);
+  std::string msg = "Loaded " + std::to_string(placed) + (placed == 1 ? " clip" : " clips");
+  if (k != MEDIA_IMAGE && placed) msg += std::string(" \xE2\x80\x94 ") + (k == MEDIA_VIDEO ? "video" : "audio") + " playback isn't available yet";
+  notify(msg);
 }
 
 // ───────────────────────── multi-deck ─────────────────────────
@@ -1168,10 +1189,21 @@ static void Browser(ImRect r) {
     rows.push_back({n, ic, d ? d : "", 1, fx, false, true, 0, ""});
     rows[fi].count++;
   };
-  if (A.mediaStale) { A.mediaList = ListMedia(); A.mediaStale = false; }
-  int fMed = folder("Media", "folder");   // B2: images from Documents/MikMap/media
-  for (auto& p : A.mediaList) { item(fMed, std::filesystem::path(p).filename().string().c_str(), "video", "\xE2\x88\x9E", -1); rows.back().path = p; }
-  if (A.mediaList.empty()) rows.push_back({"Add PNG/JPG to Documents/MikMap/media", "info", "", 1, -3, false, true, 0, ""});
+  // Files dragged in from the OS: dropping anywhere on the Browser adds them to the Media list (referenced in place).
+  if (A.osDrop.pending && r.Contains(A.osDrop.pos)) {
+    int n = ImportMedia(A.osDrop.paths);
+    A.osDrop.handled = true;
+    A.browserOpen["Media"] = true;
+    A.notify(n > 0 ? "Added " + std::to_string(n) + (n == 1 ? " file" : " files") + " to Media" : "Nothing new to add \xE2\x80\x94 drop an image, video or audio file");
+  }
+  if (A.mediaStale) RebuildMediaList();
+  int fMed = folder("Media", "folder");   // B2: images/video/audio from Documents/MikMap/media + anything dropped in
+  for (auto& p : A.mediaList) {
+    MediaKind mk = MediaKindOf(p);
+    item(fMed, std::filesystem::path(p).filename().string().c_str(), mk == MEDIA_VIDEO ? "film" : mk == MEDIA_AUDIO ? "audio-waveform" : "frame", "\xE2\x88\x9E", -1);
+    rows.back().path = p;
+  }
+  if (A.mediaList.empty()) rows.push_back({"Drop image / video / audio files here", "info", "", 1, -3, false, true, 0, ""});
   int fSrc = folder("Sources", "folder");
   item(fSrc, "Particle Vortex", "video", "10s", -1); item(fSrc, "Cyber Hex Grid", "video", "8s", -1);
   item(fSrc, "Plasma Waves 01", "video", "12s", -1); item(fSrc, "Strobe Tunnel", "video", "6s", -1);
@@ -1628,6 +1660,13 @@ static void TimelineView(ImRect r) {
       if (bh.click) { A.cue(li, b.ci); A.tab = 2; }   // selecting a block shows ITS clip's properties
     }
     g.dl->PopClipRect();
+    if (A.osDrop.pending && !A.osDrop.handled && lane.Contains(A.osDrop.pos)) {   // OS file dropped onto a timeline lane: first free cell, like a Browser drag
+      int emptyCi = -1;
+      for (int ci = 0; ci < (int)l.clips.size(); ++ci) if (l.clips[ci].st == Clip::Empty || l.clips[ci].st == Clip::Armed) { emptyCi = ci; break; }
+      if (emptyCi < 0) { emptyCi = A.colCount(); A.insertCol(emptyCi); }
+      A.dropFilesOnCell(li, emptyCi, A.osDrop.paths);
+      A.osDrop.handled = true;
+    }
     if (A.dragSrc.active && Hover(lane)) {
       Border(lane, K(pal::coral), 0, 2);
       if (ImGui::IsMouseReleased(0)) {
