@@ -506,7 +506,10 @@ void DrawOverlays(ImVec2 disp) {
     int di = A.deckMenu.idx, n = (int)A.decks.size();
     std::vector<PItem> items = {{"Add deck", "plus", "", 0, false, false}, {"Rename deck", "pencil", "", 0, false, false}, {"Duplicate deck", "copy", "", 0, false, false},
                                 {"Move left", "chevron-left", "", 0, di == 0, false}, {"Move right", "chevron-right", "", 0, di >= n - 1, false},
-                                {"Delete deck", "trash-2", "", 2, n < 2, false}};
+                                {"Delete deck", "trash-2", "", 2, n < 2, false},
+                                {"", "", "", 0, false, true},
+                                {"Add layer", "plus", "", 0, false, false}, {"New group from selected layer", "folder-plus", "", 0, A.layers.empty() && di == A.curDeckIdx, false},
+                                {"Add column", "plus", "", 0, false, false}, {A.quantize ? "Sync to beat: ON" : "Sync to beat: OFF", "clock", "", A.quantize ? 1 : 0, false, false}};
     ImRect pr; int hit = PopoverList(A.deckMenu.pos, disp, "Deck", items, freshDeckMenu, pr);
     if (hit >= 0) {
       if (hit == 0) A.addDeck();
@@ -515,6 +518,10 @@ void DrawOverlays(ImVec2 disp) {
       else if (hit == 3) A.moveDeckTo(di, di - 1);
       else if (hit == 4) A.moveDeckTo(di, di + 1);
       else if (hit == 5) A.deleteDeck(di);
+      else if (hit >= 7) {   // structure actions apply to the deck being edited: make the clicked tab current first
+        if (di != A.curDeckIdx) A.switchDeck(di);
+        if (hit == 7) A.addLayer(); else if (hit == 8) A.groupSelectedLayer(); else if (hit == 9) A.insertCol(A.colCount()); else if (hit == 10) A.toggleSync();
+      }
       A.deckMenu.open = false;
     } else if (!freshDeckMenu && (io.MouseClicked[0] || io.MouseClicked[1]) && !Raw(pr)) A.deckMenu.open = false;
     g.blocked = true;
@@ -961,6 +968,18 @@ int main(int argc, char** argv) {
       std::vector<Layer> dup(3); dup[0].id = "layer-1"; dup[1].id = "layer-1";
       EnsureLayerIds(dup);
       if (dup[0].id != "layer-1" || dup[1].id.empty() || dup[1].id == dup[0].id || dup[2].id.empty() || dup[2].id == dup[1].id) return fail("EnsureLayerIds must keep good ids and fix blank/duplicate ones");
+    }
+    // Deck tools menu actions: add layer (as wide as the deck), group the selected layer, Sync toggle
+    {
+      NewProject();
+      size_t nl0 = A.layers.size(), ng0 = A.groups.size(); int nc0 = A.colCount(); bool q0 = A.quantize;
+      A.addLayer();
+      if (A.layers.size() != nl0 + 1 || (int)A.layers.back().clips.size() != nc0 || A.layers.back().id.empty()) return fail("addLayer must append a layer as wide as the deck, with an id");
+      A.selLayer = (int)A.layers.size() - 1; A.groupSelectedLayer();
+      if (A.groups.size() != ng0 + 1 || A.layers.back().group != A.groups.back().id) return fail("groupSelectedLayer must put the selected layer in a new group");
+      A.toggleSync();
+      if (A.quantize == q0) return fail("toggleSync must flip Sync");
+      A.toggleSync();
     }
     // Comp properties: a canvas resolution change rescales each slice's input rect per axis, and everything saves/loads
     {

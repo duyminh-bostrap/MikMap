@@ -251,6 +251,7 @@ struct App {
   std::vector<std::string> mediaList; bool mediaStale = true;   // Browser "Media" list cache (rescanned on demand, never per frame)
   std::vector<std::string> mediaExtra;                          // files imported by drag & drop, referenced in place (machine setting, not per project)
   OsDrop osDrop;
+  void addLayer(); void groupSelectedLayer(); void toggleSync();
   void setLayerColor(int li, int color);   // recolours the layer AND the clips that still have the layer's old colour   // Deck tools menu
   void dropFilesOnCell(int li, int ci, const std::vector<std::string>& paths);   // first file -> this cell, the rest -> following empty cells of the layer
   // deck selection / drag & drop

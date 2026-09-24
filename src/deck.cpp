@@ -371,6 +371,12 @@ void App::loadClip(int li, int ci, const std::string& name, const std::string& d
   layers[li].clips[ci] = c;
   selLayer = li; selLi = li; selCi = ci; selectedCells = {{li, ci}}; selMode = 1;
 }
+void App::addLayer() {
+  Layer nl; nl.name = "Layer " + std::to_string(layers.size() + 1); nl.blend = "Normal"; nl.blendTime = 0; nl.opacity = 100;
+  nl.clips.assign(colCount() > 0 ? colCount() : 8, Clip());   // as many cells as the deck has columns
+  layers.push_back(nl);
+  EnsureLayerIds(layers);
+}
 void App::setLayerColor(int li, int color) {
   if (li < 0 || li >= (int)layers.size()) return;
   color = std::clamp(color, 0, 5);
@@ -379,6 +385,17 @@ void App::setLayerColor(int li, int color) {
   if (old == color) return;
   for (auto& c : l.clips) if (c.color == old) c.color = color;   // a clip the user coloured differently keeps its own colour
   l.color = color;
+}
+void App::groupSelectedLayer() {
+  if (layers.empty()) return;
+  int li = std::clamp(selLayer, 0, (int)layers.size() - 1);
+  Group ng; ng.id = uid("g"); ng.name = "Group " + std::to_string(groups.size() + 1); ng.role = 2; ng.open = true;
+  groups.push_back(ng);
+  layers[li].group = ng.id;
+}
+void App::toggleSync() {
+  quantize = !quantize; pending.clear();
+  notify(quantize ? "Sync on â triggers wait for the next beat" : "Sync off â triggers fire immediately", 2.5);
 }
 // Files dropped from the OS onto a clip cell: the first goes into that cell, each further file into the next
 // empty cell of the same layer (so dropping a folder's worth of stills fills a row); files with no free cell
@@ -1602,30 +1619,20 @@ static void ColumnHeader(ImRect r, int i, bool active, int layerCount, bool iner
 // Add-Layer/Group/Column + Sync buttons — the design's RUN MODE row reserves this slot for mode-specific
 // controls (loop switches in Timeline mode, see TimelineView); Grid mode's own controls live here instead,
 // since the reference has no other spot for "add a layer/column" and these were already working features.
-static void DeckGridTools(ImRect r) {
-  float cy = (r.Min.y + r.Max.y) * 0.5f, xr = r.Max.x - 6;
-  struct TB { const char* l; Tone t; bool act; const char* ico; } tb[4] = {{"Layer", T_LIVE, false, "plus"}, {"Group", T_LIVE, false, "folder-plus"}, {"Column", T_LIVE, false, "plus"}, {"Sync", T_AUDIO, A.quantize, nullptr}};
-  for (int i = 3; i >= 0; --i) {
-    float w = ButtonW(tb[i].l, 0, tb[i].ico != nullptr);
-    ImRect br(xr - w, cy - 8, xr, cy + 8);
-    bool cl = Button(br, tb[i].l, tb[i].t, tb[i].act, 0, true, tb[i].ico);
-    if (cl && i == 0) {
-      Layer nl; nl.name = "Layer " + std::to_string(A.layers.size() + 1); nl.blend = "Normal"; nl.blendTime = 0; nl.opacity = 100;
-      nl.clips.assign(8, Clip());
-      A.layers.push_back(nl);
-      EnsureLayerIds(A.layers);
-    }
-    if (cl && i == 1 && !A.layers.empty()) {   // Group: put the selected layer into a new group
-      int li = std::clamp(A.selLayer, 0, (int)A.layers.size() - 1);
-      Group ng; ng.id = A.uid("g"); ng.name = "Group " + std::to_string(A.groups.size() + 1); ng.role = 2; ng.open = true;
-      A.groups.push_back(ng);
-      A.layers[li].group = ng.id;
-    }
-    if (cl && i == 2) A.insertCol(A.colCount());
-    if (cl && i == 3) { A.quantize = !A.quantize; A.pending.clear(); A.notify(A.quantize ? "Sync on \xE2\x80\x94 triggers wait for the next beat" : "Sync off \xE2\x80\x94 triggers fire immediately", 2.5); }   // Column: append an empty column
-    xr = br.Min.x - 4;
-  }
+// The Grid|Timeline toggle sits at the top-left of the grid (where the old DECK TOOLS button was); the deck's structure actions
+// (add layer / group / column, Sync) are in the DECK tab's menu (right-click a tab, or its little arrow), see main.cpp.
+static bool gDeckMenuInBar = false;                 // the deck tabs live in the transport bar (else Deck() draws its own rows)
+static void SystemTimeStr(char (&out)[16]) {
+  std::snprintf(out, sizeof out, "--:--:--");
+  std::time_t tt = std::time(nullptr); std::tm tmv{};
+#if defined(_WIN32)
+  localtime_s(&tmv, &tt);
+#else
+  localtime_r(&tt, &tmv);
+#endif
+  std::strftime(out, sizeof out, "%H:%M:%S", &tmv);
 }
+static float DeckModeToggle(float x, float cy, float h);
 
 static void DeckGrid(ImRect r) {
   Fill(r, K(pal::g12));
@@ -1809,8 +1816,7 @@ static void DeckGrid(ImRect r) {
     // pinned "LAYERS" label drawn LAST so it stays on top of any column header that has
     // scrolled underneath it (same draw-order trick as the pinned Layers strip below)
     Fill(ImRect(pinX - P, sy - P, pinX + LW + P, sy + 30 + GAP), K(pal::g12));   // re-cover where it crosses the pinned Layers strip
-    Text(pinX, sy + 15, UI_B, 9, K(pal::t66), "LAYERS", 0.14f);
-    Icon("chevron-down", ImVec2(pinX + TextW(UI_B, 9, "LAYERS", 0.14f) + 9, sy + 15), 8, K(pal::t66));
+    if (gDeckMenuInBar) DeckModeToggle(pinX + 2, sy + 15, 24);   // otherwise Deck() shows it in its own row
     (void)strip;
   }
   sa.End(contentW, contentH);
@@ -1833,70 +1839,108 @@ static void DeckGrid(ImRect r) {
 
 static void TimelineView(ImRect r);  // implemented further down — Deck() below picks it or DeckGrid per A.deckMode
 
-// Deck tabs (switch/rename/duplicate/delete, design ref: deckTabs) + Grid/Timeline run-mode toggle, then
-// whichever view is armed. Multiple decks let one show keep several independent layer/column sets (e.g. a
-// "warm-up" deck and a "main set" deck) without them fighting over the same grid.
+// The deck tabs live in the transport bar under the monitors (gDeckMenuInBar): one row less above the grid. When that bar is
+// hidden or too short (Settings > Layout > timeline height) Deck() draws them itself in a row above the grid, so they can
+// never disappear.
+
+// Deck tabs (switch / rename on double-click / menu on right-click) drawn inside [x0, xMax] on the row centred at cy.
+// They shrink (label ellipsised) when they don't fit; tabs that still don't fit are left out — right-click Add deck
+// and Move left/right are on each tab's menu.
+static void DeckTabs(float x0, float xMax, float cy) {
+  // Same look as the top navigation (Composition / Advanced Mapping / Sensor I/O): one dark rounded group, the active
+  // tab outlined and glowing in coral, the others plain grey text. The active tab carries a small arrow that opens the
+  // deck menu (right-click any tab opens it too).
+  int n = (int)A.decks.size();
+  if (n == 0) return;
+  const float pad = 3, gap = 3, tabH = 18, arrowW = 14;
+  std::vector<float> wv(n); float tot = 0;
+  for (int i = 0; i < n; ++i) { wv[i] = TextW(UI_B, 10, Upper(A.decks[i].name).c_str()) + 20 + (i == A.curDeckIdx ? arrowW : 0); tot += wv[i]; }
+  float avail = xMax - x0 - 2 * pad - gap * (n - 1);
+  float k = tot > avail ? std::max(0.3f, avail / tot) : 1.f;
+  float gw = 2 * pad + gap * (n - 1) + tot * k;
+  ImRect grp(x0, cy - tabH * 0.5f - pad, std::min(xMax, x0 + gw), cy + tabH * 0.5f + pad);
+  Box(grp, K(pal::g12), K(pal::g2a), 4);
+  float x = grp.Min.x + pad;
+  for (int i = 0; i < n; ++i) {
+    bool cur = i == A.curDeckIdx;
+    float w = wv[i] * k;
+    if (x + w > grp.Max.x) break;
+    std::string lab = Upper(A.decks[i].name);
+    ImRect tr(x, cy - tabH * 0.5f, x + w, cy + tabH * 0.5f);
+    Hit h = HitR(tr);
+    if (cur) { Glow(tr, pal::coral, 0.30f, 10, 3); Fill(tr, K(pal::g12), 3); Box(tr, K(pal::coral, 0.12f), K(pal::coral), 3); }
+    ImU32 fg = K(cur ? pal::coral : h.hover ? pal::white : pal::t77);
+    const float lw = w - (cur ? arrowW : 0.f);
+    if (k < 1.f) TextEll(tr.Min.x + 8, cy, lw - 12, UI_B, 10, fg, lab.c_str());
+    else Text(tr.Min.x + 10, cy, UI_B, 10, fg, lab.c_str());
+    ImRect arrow(tr.Max.x - arrowW - 2, tr.Min.y, tr.Max.x, tr.Max.y);
+    Hit ah2 = cur ? HitR(arrow) : Hit();
+    if (cur) Icon("chevron-down", ImVec2(tr.Max.x - 10, cy), 9, K(ah2.hover ? pal::white : pal::coral));
+    if (h.hover) CursorHand();
+    if (cur && ah2.click) { A.deckMenu.open = true; A.deckMenu.idx = i; A.deckMenu.pos = ImVec2(tr.Min.x, tr.Max.y + 4); }
+    else if (h.click) A.switchDeck(i);
+    if (h.dbl) A.beginRename(4, i, ImVec2(tr.Min.x, tr.Max.y + 4), A.decks[i].name);
+    if (h.rclick) { A.deckMenu.open = true; A.deckMenu.idx = i; A.deckMenu.pos = ImGui::GetIO().MousePos; }
+    x += w + gap;
+  }
+}
+
+// Grid | Timeline run-mode toggle, left edge at x, vertically centred on cy, `h` tall. Returns its width.
+static float DeckModeToggle(float x, float cy, float h) {
+  static const char* names[2] = {"Grid", "Timeline"};
+  static const char* icons[2] = {"grid-3x3", "film"};
+  float segW[2], segTotal = 4;   // each segment sized to fit its own label — "Timeline" is almost 2x "Grid"
+  for (int i = 0; i < 2; ++i) { segW[i] = 12 + 8 + TextW(UI_B, 10, Upper(names[i]).c_str(), 0.09f) + 10; segTotal += segW[i]; }
+  ImRect seg(x, cy - h * 0.5f, x + segTotal, cy + h * 0.5f);
+  Box(seg, K(pal::g050), K(pal::g2a), 4);
+  float segX = seg.Min.x + 2;
+  for (int i = 0; i < 2; ++i) {
+    ImRect mr(segX, seg.Min.y + 2, segX + segW[i], seg.Max.y - 2);
+    bool cur = A.deckMode == i;
+    Hit hh = HitR(mr);
+    if (cur) { Fill(mr, K(pal::g12), 3); Box(mr, K(pal::coral, 0.15f), K(pal::coral), 3); }
+    ImU32 fg = K(cur ? pal::coral : hh.hover ? pal::white : pal::tcc);
+    Icon(icons[i], ImVec2(mr.Min.x + 12, (mr.Min.y + mr.Max.y) * 0.5f), 10, fg);
+    Text(mr.Min.x + 20, (mr.Min.y + mr.Max.y) * 0.5f, UI_B, 10, fg, Upper(names[i]).c_str(), 0.09f);
+    if (hh.hover) CursorHand();
+    if (hh.click) A.deckMode = i;
+    segX += segW[i];
+  }
+  return segTotal;
+}
+
+// Multiple decks let one show keep several independent layer/column sets (e.g. a "warm-up" deck and a "main set"
+// deck) without them fighting over the same grid. Then whichever view is armed (Grid or Timeline).
 static void Deck(ImRect r) {
   Fill(r, K(pal::g12));
-  ImRect tabsRow(r.Min.x, r.Min.y, r.Max.x, r.Min.y + 26);
-  Fill(tabsRow, K(pal::g18));
-  HLine(tabsRow.Min.x, tabsRow.Max.x, tabsRow.Max.y - 1, K(pal::g2a));
-  {
-    float cy = (tabsRow.Min.y + tabsRow.Max.y - 1) * 0.5f, x = tabsRow.Min.x + 6;
-    for (int i = 0; i < (int)A.decks.size(); ++i) {
-      bool cur = i == A.curDeckIdx;
-      std::string lab = Upper(A.decks[i].name);
-      float w = TextW(UI_B, 10, lab.c_str(), 0.09f) + 16;
-      ImRect tr(x, cy - 10, x + w, cy + 10);
-      Hit h = HitR(tr);
-      if (cur) { Glow(tr, pal::coral, 0.25f, 8, 2); Fill(tr, K(pal::g12), 2); }
-      Box(tr, cur ? K(pal::coral, 0.15f) : K(pal::g1c), cur ? K(pal::coral) : h.hover ? K(pal::g33) : K(pal::g22), 2);
-      TextC((tr.Min.x + tr.Max.x) * 0.5f, cy, UI_B, 10, K(cur ? pal::coral : h.hover ? pal::white : pal::tcc), lab.c_str(), 0.09f);
-      if (h.hover) CursorHand();
-      if (h.click) A.switchDeck(i);
-      if (h.dbl) A.beginRename(4, i, ImVec2(tr.Min.x, tr.Max.y + 4), A.decks[i].name);
-      if (h.rclick) { A.deckMenu.open = true; A.deckMenu.idx = i; A.deckMenu.pos = ImGui::GetIO().MousePos; }
-      x += w + 4;
-    }
-    // no trailing "+ DECK" button anymore — right-click any tab's menu now has "Add deck" + "Move left/right"
+  float rowY = r.Min.y;
+  if (!gDeckMenuInBar) {   // normally the clock and the tabs sit in the transport bar; without the bar they get their own rows here
+    ImRect clockRow(r.Min.x, rowY, r.Max.x, rowY + 26);
+    Fill(clockRow, K(pal::g18));
+    HLine(clockRow.Min.x, clockRow.Max.x, clockRow.Max.y - 1, K(pal::g2a));
+    char sysTm[16]; SystemTimeStr(sysTm);
+    float cyc = (clockRow.Min.y + clockRow.Max.y - 1) * 0.5f;
+    Text(clockRow.Min.x + 10, cyc, UI_B, 9, K(pal::t88), "SYSTEM TIME", 0.14f);
+    Text(clockRow.Min.x + 10 + TextW(UI_B, 9, "SYSTEM TIME", 0.14f) + 12, cyc, MONO_B, 12, K(pal::tf3), sysTm, 0.04f);
+    rowY = clockRow.Max.y;
+    ImRect tabsRow(r.Min.x, rowY, r.Max.x, rowY + 30);
+    Fill(tabsRow, K(pal::g18));
+    HLine(tabsRow.Min.x, tabsRow.Max.x, tabsRow.Max.y - 1, K(pal::g2a));
+    DeckTabs(tabsRow.Min.x + 6, tabsRow.Max.x - 6, (tabsRow.Min.y + tabsRow.Max.y - 1) * 0.5f);
+    rowY = tabsRow.Max.y;
+  }
+  // A row above the grid/timeline exists only when the tabs are NOT in the transport bar: then it holds the Grid|Timeline toggle.
+  // (With the tabs in the bar the toggle sits inside the view itself — grid: its top-left corner, timeline: the ruler's left cell.)
+  float bodyY = rowY;
+  if (!gDeckMenuInBar) {
+    ImRect runRow(r.Min.x, rowY, r.Max.x, rowY + 34);
+    Fill(runRow, K(pal::g18));
+    HLine(runRow.Min.x, runRow.Max.x, runRow.Max.y - 1, K(pal::g2a));
+    DeckModeToggle(runRow.Min.x + 6, (runRow.Min.y + runRow.Max.y - 1) * 0.5f, 24);
+    bodyY = runRow.Max.y;
   }
 
-  ImRect runRow(r.Min.x, tabsRow.Max.y, r.Max.x, tabsRow.Max.y + 34);
-  Fill(runRow, K(pal::g18));
-  HLine(runRow.Min.x, runRow.Max.x, runRow.Max.y - 1, K(pal::g2a));
-  {
-    float cy = (runRow.Min.y + runRow.Max.y - 1) * 0.5f;
-    static const char* names[2] = {"Grid", "Timeline"};
-    static const char* icons[2] = {"grid-3x3", "film"};
-    float segW[2], segTotal = 4;   // each segment sized to fit its own label — "Timeline" is almost 2x "Grid"
-    for (int i = 0; i < 2; ++i) { segW[i] = 12 + 8 + TextW(UI_B, 10, Upper(names[i]).c_str(), 0.09f) + 10; segTotal += segW[i]; }
-    ImRect seg(runRow.Min.x + 6, cy - 12, runRow.Min.x + 6 + segTotal, cy + 12);
-    Box(seg, K(pal::g050), K(pal::g2a), 4);
-    float segX = seg.Min.x + 2;
-    for (int i = 0; i < 2; ++i) {
-      ImRect mr(segX, seg.Min.y + 2, segX + segW[i], seg.Max.y - 2);
-      bool cur = A.deckMode == i;
-      Hit h = HitR(mr);
-      if (cur) { Fill(mr, K(pal::g12), 3); Box(mr, K(pal::coral, 0.15f), K(pal::coral), 3); }
-      ImU32 fg = K(cur ? pal::coral : h.hover ? pal::white : pal::tcc);
-      Icon(icons[i], ImVec2(mr.Min.x + 12, (mr.Min.y + mr.Max.y) * 0.5f), 10, fg);
-      Text(mr.Min.x + 20, (mr.Min.y + mr.Max.y) * 0.5f, UI_B, 10, fg, Upper(names[i]).c_str(), 0.09f);
-      if (h.hover) CursorHand();
-      if (h.click) A.deckMode = i;
-      segX += segW[i];
-    }
-    if (A.deckMode == 1) {
-      float xr = runRow.Max.x - 6;
-      const char* lab = A.tlLoopOn ? "LOOP ON" : "LOOP OFF";
-      float w = ButtonW(lab, 0);
-      ImRect br(xr - w, cy - 10, xr, cy + 10);
-      if (Button(br, lab, T_PREVIEW, A.tlLoopOn)) A.tlLoopOn = !A.tlLoopOn;
-    } else {
-      DeckGridTools(runRow);
-    }
-  }
-
-  ImRect body(r.Min.x, runRow.Max.y, r.Max.x, r.Max.y);
+  ImRect body(r.Min.x, bodyY, r.Max.x, r.Max.y);
   if (A.deckMode == 0) DeckGrid(body); else TimelineView(body);
 }
 
@@ -1906,16 +1950,19 @@ static void Deck(ImRect r) {
 // itself (see TlAdvance in main.cpp), which is what actually flips clips live via A::tlSync().
 static void TimelineView(ImRect r) {
   Fill(r, K(pal::g050));
-  const float sideW = 150, rulerH = 18, laneH = 40;
+  const float sideW = 150, rulerH = 26, laneH = 40;
   ImRect side(r.Min.x, r.Min.y, r.Min.x + sideW, r.Max.y);
   ImRect main(r.Min.x + sideW, r.Min.y, r.Max.x, r.Max.y);
   Fill(side, K(pal::g14));
 
   ImRect sideHd(side.Min.x, side.Min.y, side.Max.x, side.Min.y + rulerH);
   Fill(sideHd, K(pal::g1c)); HLine(sideHd.Min.x, sideHd.Max.x, sideHd.Max.y - 1, K(pal::g2a));
-  int bar = (int)(A.tlProgress / 6.25f) + 1;
-  char barb[16]; snprintf(barb, sizeof barb, "BAR %02d", bar);
-  Text(sideHd.Min.x + 8, (sideHd.Min.y + sideHd.Max.y) * 0.5f, MONO_B, 8, K(pal::t66), barb, 0.09f);
+  if (gDeckMenuInBar) DeckModeToggle(sideHd.Min.x + 1, (sideHd.Min.y + sideHd.Max.y - 1) * 0.5f, 22);   // the Grid|Timeline toggle takes the spot of the old "BAR nn" label
+  else {   // tabs not in the bar: Deck() shows the toggle in its own row, so keep the bar counter here
+    int bar = (int)(A.tlProgress / 6.25f) + 1;
+    char barb[16]; snprintf(barb, sizeof barb, "BAR %02d", bar);
+    Text(sideHd.Min.x + 8, (sideHd.Min.y + sideHd.Max.y) * 0.5f, MONO_B, 8, K(pal::t66), barb, 0.09f);
+  }
 
   auto lay = A.tlLayout();
   ImVec2 mouse = ImGui::GetIO().MousePos;
@@ -2030,19 +2077,10 @@ void DrawDeck(ImRect body) {
   float mw = (mx1 - mx0 - 4) / 2.f;
   Monitor(Rc(mx0, y0 + 4, mw, monH), false);
   Monitor(Rc(mx0 + mw + 4, y0 + 4, mw, monH), true);
+  gDeckMenuInBar = false;
   if (timelineH > 0.5f) {
     ImRect tl(mx0, y0 + 4 + monH + 4, mx1, y0 + bandH - 4);
     Box(tl, K(pal::g18), K(pal::g2a), 3);
-    Text(tl.Min.x + 8, tl.Min.y + 15, UI_B, 9, K(pal::t88), "SYSTEM TIME", 0.14f);
-    char sysTm[16] = "--:--:--";
-    { std::time_t tt = std::time(nullptr); std::tm tmv{};
-#if defined(_WIN32)
-      localtime_s(&tmv, &tt);
-#else
-      localtime_r(&tt, &tmv);
-#endif
-      std::strftime(sysTm, sizeof sysTm, "%H:%M:%S", &tmv); }
-    Text(tl.Min.x + 8, tl.Min.y + 33, MONO_B, 13, K(pal::tf3), sysTm, 0.04f);
     const Clip* tc0 = A.topClip();
     float total = tc0 ? ClipSeconds(*tc0) : 10.f, t = A.topProgress() / 100.f * total;
     char tc[32]; snprintf(tc, sizeof tc, "00:%02d:%02d:%02d", (int)(t / 60), (int)fmodf(t, 60.f), (int)(fmodf(t, 1.f) * 25));
@@ -2085,6 +2123,18 @@ void DrawDeck(ImRect body) {
           case 8: A.tlProgress = std::min(100.f, A.tlProgress + 6.25f); break; // forward 1 bar
           case 9: A.tlProgress = 99.9f; break;                        // jump to timeline end
         }
+      }
+    }
+    // Left block, two rows like the TIMELINE block on the right: row 1 = SYSTEM TIME + the clock, row 2 = the deck menu (styled
+    // like the top navigation). Needs a bar tall enough for two rows; otherwise Deck() draws its own clock row and tabs row.
+    if (tl.GetHeight() >= 44.f) {
+      float zx0 = tl.Min.x + 8, zx1 = grp.Min.x - 14;
+      if (zx1 - zx0 >= 130.f) {
+        gDeckMenuInBar = true;
+        char sysTm[16]; SystemTimeStr(sysTm);
+        Text(zx0, tl.Min.y + 13, UI_B, 9, K(pal::t88), "SYSTEM TIME", 0.14f);
+        Text(zx0 + TextW(UI_B, 9, "SYSTEM TIME", 0.14f) + 10, tl.Min.y + 13, MONO_B, 12, K(pal::tf3), sysTm, 0.04f);
+        DeckTabs(zx0, zx1, tl.Min.y + 33.f);
       }
     }
   }
