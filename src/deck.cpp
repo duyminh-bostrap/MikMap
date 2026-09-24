@@ -746,8 +746,8 @@ static void LayerRow(ImRect r, int li, ScrollArea&) {
       char idb[32]; snprintf(idb, sizeof idb, "##bt%d", li);
       ImGuiID gid = ImGui::GetID(idb);
       if (ImGui::GetActiveID() != gid) edit = buf;
-      ImGui::SetCursorScreenPos(ImVec2(tb.Min.x + 4, tb.Min.y + 3));
-      ImGui::PushFont(F(MONO_B), 9);
+      ImGui::SetCursorScreenPos(ImVec2(tb.Min.x + 4, std::floor(tb.Min.y + (tb.GetHeight() - TextPx(9) - 2) * 0.5f)));   // centred: font + 2x1px padding
+      ImGui::PushFont(F(MONO_B), TextPx(9));
       ImGui::PushStyleColor(ImGuiCol_FrameBg, 0);
       ImGui::PushStyleColor(ImGuiCol_Text, K(pal::cyan));
       ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 1));
@@ -1936,11 +1936,15 @@ static void DeckGrid(ImRect r) {
         float cy = (gr.Min.y + gr.Max.y) * 0.5f;
         Icon(gp->open ? "chevron-down" : "chevron-right", ImVec2(gr.Min.x + 6 + 3 + 5, cy), 10, K(RoleHex(gp->role)));
         std::string nm = Upper(gp->name);
-        Text(gr.Min.x + 3 + 6 + 10 + 4, cy, UI_B, 11, K(pal::white), nm.c_str(), 0.09f);
-        float nw = TextW(UI_B, 11, nm.c_str(), 0.09f);
         int nInGroup = 0; for (auto& q : A.layers) if (q.group == re.groupId) ++nInGroup;
         char cn[8]; snprintf(cn, sizeof cn, "%d", nInGroup);
-        Text(gr.Min.x + 3 + 6 + 10 + 4 + nw + 4, cy, MONO_M, 10, K(pal::t77), cn);
+        // Name + member count end before the master fader (gr.Max.x - 66); a long name is shortened with "…" instead
+        // of running under the fader.
+        float nx = gr.Min.x + 3 + 6 + 10 + 4;
+        float nameMax = (gr.Max.x - 66 - 8) - TextW(MONO_M, 10, cn) - 4 - nx;
+        TextEll(nx, cy, nameMax, UI_B, 11, K(pal::white), nm.c_str(), 0.09f);
+        float nw = std::min(TextW(UI_B, 11, nm.c_str(), 0.09f), nameMax);
+        Text(nx + nw + 4, cy, MONO_M, 10, K(pal::t77), cn);
         if (gh.hover) CursorHand();
         {   // A13: master fader on the right of the header; pressing it must not collapse the group
           ImRect sr(gr.Max.x - 66, cy - 3, gr.Max.x - 30, cy + 3);

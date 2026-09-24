@@ -77,6 +77,14 @@ qua nhảy lại nếu dùng font tỉ lệ, khó liếc nhanh.
 và `MONO_R/MONO_M/MONO_B` (mono, 3 độ đậm) — dùng đúng hằng này khi vẽ chữ
 mới, đừng hard-code tên file font.
 
+**Cỡ chữ = số px của bản thiết kế × `ui::kTextScale` (1.2, theo yêu cầu người
+dùng 2026-09-24: chữ to hơn 20%).** Trong code vẫn ghi đúng số của bản thiết kế
+(`Text(..., UI_B, 11, ...)`); `ui::Text`/`TextW` tự nhân. Đừng tự nhân thêm 1.2
+ở chỗ gọi, và khi đối chiếu ảnh chụp với bản thiết kế thì chữ to hơn 20% là cố ý,
+không phải lệch. Chỗ nào đưa cỡ chữ thẳng cho ImGui (`ImGui::PushFont`) phải bọc
+`ui::TextPx(sz)`. Bố cục (khung, hàng, icon) KHÔNG nhân — ô chật phải dùng
+`TextEll` để cắt "…" chứ đừng để chữ tràn.
+
 ## Thao tác chuẩn (đối chiếu lại nếu nghi ngờ — đây là kỳ vọng thiết kế, không phải đã verify từng dòng)
 
 | Thao tác | Kết quả |

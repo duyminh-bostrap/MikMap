@@ -587,7 +587,7 @@ void DrawOverlays(ImVec2 disp) {
     ImGui::PushStyleColor(ImGuiCol_Text, K(pal::tf3));
     bool submit = false;
     ImGui::Begin("##rename", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize);
-    ImGui::PushFont(F(UI_B), 12);
+    ImGui::PushFont(F(UI_B), TextPx(12));
     ImGui::TextUnformatted(A.rename.kind == 0 ? "RENAME LAYER" : A.rename.kind == 1 ? "RENAME COLUMN" : A.rename.kind == 3 ? "RENAME GROUP" : A.rename.kind == 4 ? "RENAME DECK" : "RENAME CLIP");
     ImGui::SetNextItemWidth(-1);
     if (A.rename.fresh) ImGui::SetKeyboardFocusHere();

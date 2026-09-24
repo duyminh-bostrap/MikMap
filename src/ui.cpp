@@ -32,8 +32,11 @@ static int Utf8(const char* s, unsigned int* out) {
   return 4;
 }
 
+// TextW and Text are the only two entry points that apply kTextScale; TextR/TextC/TextEll go through them with the
+// logical size, so alignment and ellipsis stay consistent with what is drawn.
 float TextW(FontId f, float sz, const char* s, float ls) {
   if (!s || !*s) return 0;
+  sz = TextPx(sz);
   if (ls == 0.f) return F(f)->CalcTextSizeA(sz, FLT_MAX, 0.f, s).x;
   float w = 0;
   for (const char* p = s; *p;) {
@@ -51,13 +54,16 @@ static void DrawText(float x, float y, FontId f, float sz, ImU32 col, const char
   for (const char* p = s; *p;) {
     unsigned int cp; int n = Utf8(p, &cp);
     char buf[5] = {}; memcpy(buf, p, n);
-    g.dl->AddText(F(f), sz, ImVec2(x, y), col, buf);
+    // ImGui truncates each glyph's start x to a whole pixel; drawing tracked text glyph by glyph that makes the gaps
+    // uneven by up to 1px ("AD D"). Rounding to the nearest pixel keeps the error under half a pixel and even.
+    g.dl->AddText(F(f), sz, ImVec2(std::floor(x + 0.5f), y), col, buf);
     x += F(f)->CalcTextSizeA(sz, FLT_MAX, 0.f, buf).x + ls * sz;
     p += n;
   }
 }
 
 void Text(float x, float cy, FontId f, float sz, ImU32 col, const char* s, float ls) {
+  sz = TextPx(sz);
   DrawText(std::floor(x + 0.5f), std::floor(cy - sz * 0.5f + 0.5f), f, sz, col, s, ls);
 }
 void TextR(float xr, float cy, FontId f, float sz, ImU32 col, const char* s, float ls) {
@@ -411,6 +417,7 @@ void PropertyRow(ImRect r, const char* label, const char* value, const char* uni
 
 bool TextField(const char* id, ImRect r, std::string& v, FontId f, float sz, ImU32 textCol) {
   ImGui::SetCursorScreenPos(r.Min);
+  sz = TextPx(sz);
   ImGui::PushFont(F(f), sz);
   ImGui::PushStyleColor(ImGuiCol_FrameBg, K(pal::g050));
   ImGui::PushStyleColor(ImGuiCol_Border, K(pal::g22));
@@ -431,11 +438,11 @@ bool IntField(const char* id, ImRect r, int& v) {
   ImGuiID gid = ImGui::GetID(id);
   if (ImGui::GetActiveID() != gid) edit = std::to_string(v);
   ImGui::SetCursorScreenPos(r.Min);
-  ImGui::PushFont(F(MONO_R), 11);
+  ImGui::PushFont(F(MONO_R), TextPx(11));
   ImGui::PushStyleColor(ImGuiCol_FrameBg, K(pal::g050));
   ImGui::PushStyleColor(ImGuiCol_Border, K(pal::g22));
   ImGui::PushStyleColor(ImGuiCol_Text, K(pal::tf3));
-  ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(6, std::max(0.f, (r.GetHeight() - 11) * 0.5f)));
+  ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(6, std::max(0.f, (r.GetHeight() - TextPx(11)) * 0.5f)));
   ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 3.f);
   ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.f);
   ImGui::SetNextItemWidth(r.GetWidth());
