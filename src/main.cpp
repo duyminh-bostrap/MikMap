@@ -610,6 +610,7 @@ struct Script { int kind; float x0, y0, x1, y1; };
 
 int main(int argc, char** argv) {
   std::vector<Script> script;
+  std::string compTest, clipTest, pvTest; std::vector<std::string> layerTest, clipColors;
   OsDrop dropTest;   // --drop: injected at frame 8 of a --shot run, standing in for a real Explorer drag
   bool openOut = false; std::string outShot;
   std::string roundtrip; std::vector<int> fxTest;
@@ -635,6 +636,11 @@ int main(int argc, char** argv) {
       sscanf(argv[++i], "%f,%f,%f,%f", &s.x0, &s.y0, &s.x1, &s.y1);
       script.push_back(s);
     }
+    else if (a == "--inspscroll" && i + 1 < argc) gTestInspScroll = (float)atof(argv[++i]);   // test aid, see gTestInspScroll
+    else if (a == "--clip" && i + 1 < argc) clipTest = argv[++i];   // test aid: --clip chan=1,blend=2,ax=300,ay=0,rot=30,scale=0.6 (applies to layer 0, column 2 = the demo's live clip)
+    else if (a == "--band" && i + 1 < argc) A.prefs.bandPct = std::clamp(atoi(argv[++i]), 25, 70);   // test aid: taller top band, so the whole Properties list fits in a screenshot
+    else if (a == "--layer" && i + 1 < argc) layerTest.push_back(argv[++i]);   // test aid: --layer N,master=50,scale=60,rot=20,px=100,py=0,op=80,vol=50
+    else if (a == "--comp" && i + 1 < argc) compTest = argv[++i];   // test aid: --comp scale=60,rot=20,master=50,px=100,py=-40,ax=0,ay=0,speed=200,op=80,w=3840,h=2160
     else if (a == "--fx" && i + 1 < argc) fxTest.push_back(atoi(argv[++i]));   // test aid: add FX kind N to the selected clip
     else if (a == "--cell" && i + 2 < argc) { sel = true; selLi = atoi(argv[++i]); selCi = atoi(argv[++i]); }
     else if (a == "--drop" && i + 2 < argc) {   // headless check of OS file drop: --drop x,y <path> (repeatable paths accumulate)
@@ -954,6 +960,91 @@ int main(int argc, char** argv) {
       EnsureLayerIds(dup);
       if (dup[0].id != "layer-1" || dup[1].id.empty() || dup[1].id == dup[0].id || dup[2].id.empty() || dup[2].id == dup[1].id) return fail("EnsureLayerIds must keep good ids and fix blank/duplicate ones");
     }
+    // Comp properties: a canvas resolution change rescales each slice's input rect per axis, and everything saves/loads
+    {
+      NewProject();
+      Slice& s0 = A.screens[0].slices[0];
+      s0.ix = 100; s0.iy = 50; s0.iw = 1720; s0.ih = 980;
+      A.setCanvasSize(3840, 1080);
+      if (A.canvasW != 3840 || A.canvasH != 1080 || s0.ix != 200 || s0.iw != 3440 || s0.iy != 50 || s0.ih != 980) return fail("resolution change must rescale the slice input rect per axis");
+      A.setCanvasSize(3840, 2160);
+      if (s0.iy != 100 || s0.ih != 1960 || s0.ix != 200 || s0.iw != 3440) return fail("vertical-only resize must leave x/width alone");
+      A.setCanvasSize(3840, 2160);   // same size: no-op, no drift
+      if (s0.iy != 100 || s0.ih != 1960) return fail("resizing to the same size must not change anything");
+      A.setCanvasSize(1, 999999);
+      if (A.canvasW != 64 || A.canvasH != 16384) return fail("canvas size must clamp to 64..16384");
+      A.setCanvasSize(3840, 2160);
+      A.comp.master = 42; A.comp.speed = 150; A.comp.volume = -6; A.comp.pan = 25; A.comp.opacity = 80; A.comp.xfBlend = 2; A.comp.xfBehaviour = 1; A.comp.xfCurve = 2;
+      A.comp.posX = -123; A.comp.posY = 45; A.comp.scale = 75; A.comp.rotation = 30; A.comp.anchorX = 10; A.comp.anchorY = -20;
+      if (!SaveProject(roundtrip, err)) return fail(err.c_str());
+      A.comp = CompProps(); A.setCanvasSize(1280, 720);
+      if (!LoadProject(roundtrip, err)) return fail(err.c_str());
+      const CompProps& k = A.comp;
+      if (A.canvasW != 3840 || A.canvasH != 2160 || k.master != 42 || k.speed != 150 || k.volume != -6 || k.pan != 25 || k.opacity != 80 ||
+          k.xfBlend != 2 || k.xfBehaviour != 1 || k.xfCurve != 2 || k.posX != -123 || k.posY != 45 || k.scale != 75 || k.rotation != 30 ||
+          k.anchorX != 10 || k.anchorY != -20) return fail("comp properties + resolution must survive save/load");
+      if (ProjectDirty()) return fail("comp properties must not leave the project dirty right after load");
+      A.comp.master = 10;
+      if (!ProjectDirty()) return fail("changing a comp property must mark the project dirty");
+    }
+    // Clip transport: the in/out range bounds playback, pause holds still, the default range plays the whole clip as before
+    {
+      Clip c; c.st = Clip::Live; c.dur = "10s"; c.playMode = PM_LOOP; c.progress = 50; c.inPt = 20; c.outPt = 60;
+      AdvanceClip(c, 2.f);   // +20% -> 70, past the out point: wraps to in + (70-20) mod 40 = 30
+      if (std::fabs(c.progress - 30.f) > 0.01f) return fail("loop must wrap inside the in/out range");
+      c.paused = true; float held = c.progress; AdvanceClip(c, 5.f);
+      if (c.progress != held) return fail("a paused clip must not advance");
+      Clip o; o.st = Clip::Live; o.dur = "10s"; o.playMode = PM_ONCE; o.progress = 55; o.outPt = 60;
+      AdvanceClip(o, 2.f);
+      if (std::fabs(o.progress - 60.f) > 0.01f || o.st != Clip::Loaded) return fail("ONCE must stop at the out point");
+      Clip b; b.st = Clip::Live; b.dur = "10s"; b.playMode = PM_BOUN; b.progress = 55; b.inPt = 10; b.outPt = 60;
+      AdvanceClip(b, 1.f);   // +10 -> 65: bounces off 60 -> 55, now running backwards
+      if (std::fabs(b.progress - 55.f) > 0.01f || b.dir != -1) return fail("bounce must reflect at the out point");
+      Clip d; d.st = Clip::Live; d.dur = "10s"; d.playMode = PM_LOOP; d.progress = 95;
+      AdvanceClip(d, 1.f);
+      if (std::fabs(d.progress - 5.f) > 0.01f) return fail("default range must still wrap 0..100");
+      NewProject();
+      Clip& s0 = A.layers[0].clips[1];
+      s0.inPt = 15; s0.outPt = 85; s0.blend = 3; s0.chan = 5; s0.anchorX = 12; s0.anchorY = -8; s0.tMode = 1; s0.autoAction = 2; s0.autoLoops = 4;
+      s0.width = 640; s0.height = 360; s0.volume = -12; s0.pan = 30; s0.paused = true;
+      if (!SaveProject(roundtrip, err)) return fail(err.c_str());
+      A.layers[0].clips[1].inPt = 0; A.layers[0].clips[1].blend = 0; A.layers[0].clips[1].chan = 7;
+      if (!LoadProject(roundtrip, err)) return fail(err.c_str());
+      const Clip& r = A.layers[0].clips[1];
+      if (r.inPt != 15 || r.outPt != 85 || r.blend != 3 || r.chan != 5 || r.anchorX != 12 || r.anchorY != -8 || r.tMode != 1 || r.autoAction != 2 || r.autoLoops != 4 ||
+          r.width != 640 || r.height != 360 || r.volume != -12 || r.pan != 30) return fail("clip properties must survive save/load");
+      if (r.paused) return fail("pause is runtime state and must not be saved");
+      if (ProjectDirty()) return fail("clip properties must not leave the project dirty right after load");
+    }
+    // Layer colour: changing it recolours the clips that had the layer's old colour, and only those
+    {
+      NewProject();
+      Layer& L = A.layers[1];
+      for (auto& c : L.clips) c.color = 0;
+      L.color = 0; L.clips[0].color = 3;   // one clip the user coloured differently
+      A.setLayerColor(1, 2);
+      int same = 0, other = 0; for (auto& c : A.layers[1].clips) { if (c.color == 2) ++same; if (c.color == 3) ++other; }
+      if (A.layers[1].color != 2 || other != 1 || same != (int)A.layers[1].clips.size() - 1) return fail("layer colour must recolour only the clips that shared the layer's old colour");
+      A.setLayerColor(1, 2);   // same colour again: nothing changes
+      if (A.layers[1].clips[0].color != 3) return fail("re-selecting the same layer colour must not touch clips");
+      A.setLayerColor(9, 4); A.setLayerColor(-1, 4);   // out-of-range layer: ignored
+      if (A.layers[0].color != 0) return fail("setLayerColor must ignore an invalid layer index");
+    }
+    // Layer properties (Properties > Layer) survive save/load; a project without them gets neutral defaults
+    {
+      NewProject();
+      Layer& L = A.layers[1];
+      if (L.master != 100 || L.scale != 100 || L.pan != 0 || L.width != 0) return fail("layer property defaults");
+      L.master = 55; L.pan = -30; L.width = 1280; L.height = 720; L.autoSize = 2; L.transBlend = 3;
+      L.color = 4; L.posX = 40; L.posY = -60; L.scale = 130; L.rotation = -15; L.anchorX = 5; L.anchorY = 6; L.audio = 50; L.blendTime = 1.5f;
+      if (!SaveProject(roundtrip, err)) return fail(err.c_str());
+      A.layers[1].master = 100; A.layers[1].scale = 100; A.layers[1].pan = 0; A.layers[1].width = 0;
+      if (!LoadProject(roundtrip, err)) return fail(err.c_str());
+      const Layer& R = A.layers[1];
+      if (R.master != 55 || R.pan != -30 || R.width != 1280 || R.height != 720 || R.autoSize != 2 || R.transBlend != 3 || R.posX != 40 || R.posY != -60 ||
+          R.scale != 130 || R.rotation != -15 || R.anchorX != 5 || R.anchorY != 6 || R.color != 4 || R.audio != 50 || R.blendTime != 1.5f) return fail("layer properties must survive save/load");
+      if (ProjectDirty()) return fail("layer properties must not leave the project dirty right after load");
+    }
     // OS file drop (media kinds by extension; a multi-file drop on a cell fills the following EMPTY cells of that layer)
     {
       if (MediaKindOf("a.PNG") != MEDIA_IMAGE || MediaKindOf("b.mov") != MEDIA_VIDEO || MediaKindOf("c.WAV") != MEDIA_AUDIO || MediaKindOf("d.txt") != MEDIA_NONE) return fail("media kind by extension");
@@ -1043,6 +1134,41 @@ int main(int argc, char** argv) {
   if (sel) A.cue(selLi, selCi);
   for (int k : fxTest) if (k >= 0 && k < FX_COUNT) A.addFx(k);
 
+  if (!clipTest.empty()) {
+    Clip& C0 = A.layers[0].clips[2]; size_t pos = 0;
+    while (pos < clipTest.size()) {
+      size_t e = clipTest.find(',', pos); if (e == std::string::npos) e = clipTest.size();
+      std::string kv = clipTest.substr(pos, e - pos); pos = e + 1;
+      size_t q = kv.find('='); if (q == std::string::npos) continue;
+      std::string k = kv.substr(0, q); float v = (float)atof(kv.c_str() + q + 1);
+      if (k == "chan") C0.chan = (int)v; else if (k == "blend") C0.blend = (int)v; else if (k == "ax") C0.anchorX = v; else if (k == "ay") C0.anchorY = v;
+      else if (k == "rot") C0.rotation = v; else if (k == "scale") C0.scale = v; else if (k == "px") C0.posX = v;
+    }
+  }
+  for (auto& lt : layerTest) {
+    size_t pos = 0; int li = 0; bool first = true;
+    while (pos < lt.size()) {
+      size_t e = lt.find(',', pos); if (e == std::string::npos) e = lt.size();
+      std::string kv = lt.substr(pos, e - pos); pos = e + 1;
+      if (first) { li = std::clamp(atoi(kv.c_str()), 0, (int)A.layers.size() - 1); first = false; continue; }
+      size_t q = kv.find('='); if (q == std::string::npos) continue;
+      std::string k = kv.substr(0, q); float v = (float)atof(kv.c_str() + q + 1); Layer& L = A.layers[li];
+      if (k == "master") L.master = v; else if (k == "op") L.opacity = v; else if (k == "scale") L.scale = v; else if (k == "rot") L.rotation = v;
+      else if (k == "px") L.posX = v; else if (k == "py") L.posY = v; else if (k == "vol") L.audio = v; else if (k == "color") L.color = (int)v; else if (k == "dur") L.blendTime = v;
+    }
+  }
+  if (!compTest.empty()) {
+    std::string t = compTest; size_t pos = 0;
+    while (pos < t.size()) {
+      size_t e = t.find(',', pos); if (e == std::string::npos) e = t.size();
+      std::string kv = t.substr(pos, e - pos); pos = e + 1;
+      size_t q = kv.find('='); if (q == std::string::npos) continue;
+      std::string k = kv.substr(0, q); float v = (float)atof(kv.c_str() + q + 1); CompProps& c = A.comp;
+      if (k == "scale") c.scale = v; else if (k == "rot") c.rotation = v; else if (k == "master") c.master = v; else if (k == "px") c.posX = v;
+      else if (k == "py") c.posY = v; else if (k == "ax") c.anchorX = v; else if (k == "ay") c.anchorY = v; else if (k == "speed") c.speed = v;
+      else if (k == "op") c.opacity = v; else if (k == "w") A.setCanvasSize((int)v, A.canvasH); else if (k == "h") A.setCanvasSize(A.canvasW, (int)v);
+    }
+  }
   double last = glfwGetTime(); double progAcc = 0; int frame = 0;
   while (!glfwWindowShouldClose(win)) {
     glfwPollEvents();
@@ -1062,11 +1188,11 @@ int main(int argc, char** argv) {
     if (A.playing)
       for (auto& sc : A.selectedCells)
         if (sc.first < (int)A.layers.size() && sc.second < (int)A.layers[sc.first].clips.size())
-          AdvanceClip(A.layers[sc.first].clips[sc.second], (float)dt);
+          AdvanceClip(A.layers[sc.first].clips[sc.second], (float)dt * A.comp.speed / 100.f);   // Comp > Speed scales every clip's playback rate
     (void)progAcc;
     if (A.deckMode == 1) {   // Timeline run mode: advance the shared playhead, then re-derive which clip is live per layer
       if (A.playing) {
-        A.tlProgress += 10.f * (float)dt;   // 100% every 10s, matching the reference prototype's 1.5%/150ms rate
+        A.tlProgress += 10.f * (float)dt * A.comp.speed / 100.f;   // 100% every 10s, matching the reference prototype's 1.5%/150ms rate
         if (A.tlLoopOn) { if (A.tlProgress >= A.tlOut || A.tlProgress < A.tlIn) A.tlProgress = A.tlIn; }
         else if (A.tlProgress >= 100.f) A.tlProgress = 0.f;
       }

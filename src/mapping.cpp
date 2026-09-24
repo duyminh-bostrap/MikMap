@@ -245,6 +245,20 @@ void App::resetInputRect() {
     s->ix = 0; s->iy = 0; s->iw = cw; s->ih = ch;
   }
 }
+// A new canvas resolution rescales every slice's input rect (per axis) so it keeps covering the same part of the
+// canvas — a slice that took "the whole area" of 1920x1080 still takes the whole area of 3840x2160. Only the INPUT
+// side is content-space; output quads/meshes/masks live in the screen's own pixels and are left alone.
+void App::setCanvasSize(int w, int h) {
+  w = std::clamp(w, 64, 16384); h = std::clamp(h, 64, 16384);
+  if (w == canvasW && h == canvasH) return;
+  double fx = (double)w / std::max(1, canvasW), fy = (double)h / std::max(1, canvasH);
+  for (auto& sc : screens) for (auto& s : sc.slices) {
+    int x1 = (int)std::lround((s.ix + s.iw) * fx), y1 = (int)std::lround((s.iy + s.ih) * fy);
+    s.ix = (int)std::lround(s.ix * fx); s.iy = (int)std::lround(s.iy * fy);
+    s.iw = std::max(20, x1 - s.ix); s.ih = std::max(20, y1 - s.iy);
+  }
+  canvasW = w; canvasH = h;
+}
 void App::deleteScreen(const std::string& id) { pushHist();
   if (screens.size() <= 1) return;
   screens.erase(std::remove_if(screens.begin(), screens.end(), [&](const Screen& s) { return s.id == id; }), screens.end());
@@ -553,14 +567,23 @@ static ImVec2 dragOff;                  // grabbed point minus cursor (output px
 // over output space — zoom below 100% to reach them — rather than a scroll clamped to the canvas box.
 constexpr float kMinZoom = 0.2f, kMaxZoom = 6.f;
 static ImRect StageArea(ImRect r) { return ImRect(r.Min.x, r.Min.y + 44, r.Max.x, r.Max.y); }
-static float StageBaseW(ImRect area) {   // canvas width in px at 100%
+// The stage draws ONE space at a time: page 0 (Input selection) is the composition canvas, page 1 (Output routing)
+// is the screen's output pixels (1920x1080). Every "1920"/"1080" the stage math used to hard-code is this space now.
+static void StageSpace(float& w, float& h) {
+  if (A.mpage == 0) { w = (float)std::max(1, A.canvasW); h = (float)std::max(1, A.canvasH); }
+  else { w = 1920.f; h = 1080.f; }
+}
+static float StageBaseW(ImRect area) {   // space width in px at 100%
+  float SW, SH; StageSpace(SW, SH);
   float innerW = area.GetWidth() - 20, innerH = area.GetHeight() - 20;
-  return std::min(A.mapFocus ? innerW : std::min(innerW, 960.f), innerH * 16.f / 9.f);
+  return std::min(A.mapFocus ? innerW : std::min(innerW, 960.f), innerH * SW / SH);
 }
 static void Grow(ImVec2& mn, ImVec2& mx, ImVec2 p) { mn.x = std::min(mn.x, p.x); mn.y = std::min(mn.y, p.y); mx.x = std::max(mx.x, p.x); mx.y = std::max(mx.y, p.y); }
 // the output box plus every visible slice/mask point on this screen, however far outside the box it sits
 static void StageContentBox(const Screen& sc, ImVec2& mn, ImVec2& mx) {
-  mn = ImVec2(0, 0); mx = ImVec2(1920, 1080);
+  float SW, SH; StageSpace(SW, SH);
+  mn = ImVec2(0, 0); mx = ImVec2(SW, SH);
+  if (A.mpage == 0) return;   // the input page only ever shows the canvas box; slice output geometry is a different space
   for (auto& s : sc.slices) {
     if (!s.visible) continue;
     ImVec2 a, b; SliceOutputBounds(s, a, b); Grow(mn, mx, a); Grow(mn, mx, b);
@@ -571,13 +594,15 @@ static void StageContentBox(const Screen& sc, ImVec2& mn, ImVec2& mx) {
 static void FrameBox(ImRect area, ImVec2 mn, ImVec2 mx, float fill, float zHi) {
   float bw = StageBaseW(area);
   if (bw <= 0) return;
-  float z = std::min((area.GetWidth() - 40) * fill / (std::max(1.f, mx.x - mn.x) * bw / 1920.f),
-                     (area.GetHeight() - 40) * fill / (std::max(1.f, mx.y - mn.y) * bw / 1920.f));
-  A.setZoom(std::clamp(z, kMinZoom, zHi), (mn.x + mx.x) * 0.5f / 1920.f, (mn.y + mx.y) * 0.5f / 1080.f);
+  float SW, SH; StageSpace(SW, SH);
+  float z = std::min((area.GetWidth() - 40) * fill / (std::max(1.f, mx.x - mn.x) * bw / SW),
+                     (area.GetHeight() - 40) * fill / (std::max(1.f, mx.y - mn.y) * bw / SW));
+  A.setZoom(std::clamp(z, kMinZoom, zHi), (mn.x + mx.x) * 0.5f / SW, (mn.y + mx.y) * 0.5f / SH);
 }
 static void FitAll(ImRect area, const Screen& sc) {
   ImVec2 mn, mx; StageContentBox(sc, mn, mx);
-  if (mn.x >= 0 && mn.y >= 0 && mx.x <= 1920 && mx.y <= 1080) A.setZoom(1, 0.5f, 0.5f);   // all inside: plain 100%
+  float SW, SH; StageSpace(SW, SH);
+  if (mn.x >= 0 && mn.y >= 0 && mx.x <= SW && mx.y <= SH) A.setZoom(1, 0.5f, 0.5f);   // all inside: plain 100%
   else FrameBox(area, mn, mx, 1.f, 1.f);
 }
 static void ZoomToSlice(ImRect area, const Slice& s) { ImVec2 mn, mx; SliceOutputBounds(s, mn, mx); FrameBox(area, mn, mx, 0.85f, kMaxZoom); }
@@ -700,7 +725,7 @@ static void Stage(ImRect r) {
       A.openCtx(ImVec2(rb.Min.x - 60, rb.Max.y + 4), mi);
     }
     xr = hg.Min.x - 6;
-    std::string ro = A.mpage == 0 ? "Source Content: 1920x1080" : (sc ? sc->name + " (" + sc->outDev + ")" : "");
+    std::string ro = A.mpage == 0 ? "Source Content: " + std::to_string(A.canvasW) + "x" + std::to_string(A.canvasH) : (sc ? sc->name + " (" + sc->outDev + ")" : "");
     float lim = leftEnd + 8;
     float rw = std::min(TextW(MONO_R, 10, ro.c_str()), std::max(0.f, xr - lim));
     TextEll(xr - rw, cy, rw, MONO_R, 10, K(pal::t88), ro.c_str());
@@ -711,23 +736,24 @@ static void Stage(ImRect r) {
   // to the canvas box — points outside it must stay visible and grabbable — only the view centre is kept inside the
   // -4000..8000 range the points themselves are limited to, so you can't pan off into nothing.
   float baseW = StageBaseW(area);
+  float SW, SH; StageSpace(SW, SH);   // the space this page draws (canvas px on the input page, 1920x1080 output px on the output page)
   ImVec2 ac((area.Min.x + area.Max.x) * 0.5f, (area.Min.y + area.Max.y) * 0.5f);
   if (A.mapReq.valid) {   // centre the requested output point
     A.mapZ = std::clamp(A.mapReq.z, kMinZoom, kMaxZoom);
-    float sn = baseW * A.mapZ / 1920.f;
-    A.mapScrollX = (A.mapReq.cx * 1920.f - 960.f) * sn; A.mapScrollY = (A.mapReq.cy * 1080.f - 540.f) * sn;
+    float sn = baseW * A.mapZ / SW;
+    A.mapScrollX = (A.mapReq.cx * SW - SW * 0.5f) * sn; A.mapScrollY = (A.mapReq.cy * SH - SH * 0.5f) * sn;
     A.mapReq.valid = false;
   }
   bool inArea = area.Contains(m) && !g.blocked;
   ImGuiIO& io = ImGui::GetIO();
-  float s = baseW * A.mapZ / 1920.f;   // px per output px
+  float s = baseW * A.mapZ / SW;   // px per space px
   if (inArea && !io.KeyAlt && io.MouseWheel != 0.f) A.mapScrollY -= io.MouseWheel * 48.f;
   if (inArea && !io.KeyAlt && io.MouseWheelH != 0.f) A.mapScrollX -= io.MouseWheelH * 48.f;
   if (inArea && io.KeyAlt && io.MouseWheel != 0.f) {   // alt+wheel: zoom about the cursor (the point under it stays put)
-    ImVec2 p((m.x - ac.x + A.mapScrollX) / s + 960.f, (m.y - ac.y + A.mapScrollY) / s + 540.f);
+    ImVec2 p((m.x - ac.x + A.mapScrollX) / s + SW * 0.5f, (m.y - ac.y + A.mapScrollY) / s + SH * 0.5f);
     A.mapZ = std::clamp(A.mapZ * (io.MouseWheel > 0 ? 1.15f : 1.f / 1.15f), kMinZoom, kMaxZoom);
-    s = baseW * A.mapZ / 1920.f;
-    A.mapScrollX = (p.x - 960.f) * s + (ac.x - m.x); A.mapScrollY = (p.y - 540.f) * s + (ac.y - m.y);
+    s = baseW * A.mapZ / SW;
+    A.mapScrollX = (p.x - SW * 0.5f) * s + (ac.x - m.x); A.mapScrollY = (p.y - SH * 0.5f) * s + (ac.y - m.y);
   }
   static bool panning = false; static ImVec2 panM; static float panX, panY;   // right-drag pan
   bool rClick = false;   // right button released without dragging = context menu, not a pan
@@ -746,16 +772,16 @@ static void Stage(ImRect r) {
     };
     A.mapScrollX += push(m.x, area.Min.x, area.Max.x); A.mapScrollY += push(m.y, area.Min.y, area.Max.y);
   }
-  A.mapScrollX = std::clamp(A.mapScrollX, (-4000.f - 960.f) * s, (8000.f - 960.f) * s);
-  A.mapScrollY = std::clamp(A.mapScrollY, (-4000.f - 540.f) * s, (8000.f - 540.f) * s);
-  A.mapCx = (960.f + A.mapScrollX / s) / 1920.f; A.mapCy = (540.f + A.mapScrollY / s) / 1080.f;
-  float cw = 1920.f * s, ch = 1080.f * s;
+  A.mapScrollX = std::clamp(A.mapScrollX, (-4000.f - SW * 0.5f) * s, (8000.f - SW * 0.5f) * s);
+  A.mapScrollY = std::clamp(A.mapScrollY, (-4000.f - SH * 0.5f) * s, (8000.f - SH * 0.5f) * s);
+  A.mapCx = (SW * 0.5f + A.mapScrollX / s) / SW; A.mapCy = (SH * 0.5f + A.mapScrollY / s) / SH;
+  float cw = SW * s, ch = SH * s;
   ImRect cv(ac.x - cw * 0.5f - A.mapScrollX, ac.y - ch * 0.5f - A.mapScrollY, ac.x + cw * 0.5f - A.mapScrollX, ac.y + ch * 0.5f - A.mapScrollY);
   auto toPx = [&](ImVec2 p) { return ImVec2(cv.Min.x + p.x * s, cv.Min.y + p.y * s); };
   ImVec2 mo((m.x - cv.Min.x) / s, (m.y - cv.Min.y) / s);   // cursor in output px, unclamped
   // The input rect (page 0) and masks pick from canvas CONTENT and stay inside it; corner pins and mesh points are output
   // geometry and reach as far as the numeric corner-pin fields allow (-4000..8000).
-  auto inCanvas = [](ImVec2 p) { return ImVec2(std::clamp(std::round(p.x), 0.f, 1920.f), std::clamp(std::round(p.y), 0.f, 1080.f)); };
+  auto inCanvas = [SW, SH](ImVec2 p) { return ImVec2(std::clamp(std::round(p.x), 0.f, SW), std::clamp(std::round(p.y), 0.f, SH)); };
   auto inOutput = [](ImVec2 p) { return ImVec2(std::clamp(std::round(p.x), -4000.f, 8000.f), std::clamp(std::round(p.y), -4000.f, 8000.f)); };
   ImVec2 mu = inCanvas(mo);
 
@@ -800,7 +826,7 @@ static void Stage(ImRect r) {
       ImRect ir(cv.Min.x + sl->ix * s, cv.Min.y + sl->iy * s, cv.Min.x + (sl->ix + sl->iw) * s, cv.Min.y + (sl->iy + sl->ih) * s);
       // Resolume-style quick reset: right-click the input rect for "Whole area" instead of dragging all 4 corners by hand
       if (rClick && ir.Contains(m)) {
-        bool full = sl->ix == 0 && sl->iy == 0 && sl->iw == 1920 && sl->ih == 1080;
+        bool full = sl->ix == 0 && sl->iy == 0 && sl->iw == A.canvasW && sl->ih == A.canvasH;
         MenuItem it; it.label = "Whole area"; it.icon = "maximize"; it.disabled = full; it.run = [] { A.resetInputRect(); };
         A.openCtx(m, {it});
       }

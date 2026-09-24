@@ -30,6 +30,15 @@ struct Clip {
   // transform (D1/D2/D3/D5/D6), in canvas units / percent / degrees
   float posX = 0, posY = 0, scale = 1, rotation = 0, opacity = 100;
   bool flipH = false, flipV = false;
+  // Properties > Clip (Resolume-style). LIVE: paused, inPt/outPt (playback range, % of the clip), blend (0 = layer's own),
+  // chan (R/G/B render mask), anchor. Stored only: tMode, autoAction/autoLoops, width/height, volume/pan.
+  bool paused = false;        // runtime only (never saved): the clip's own pause button
+  float inPt = 0, outPt = 100;
+  int blend = 0;              // 0 = "Layer Determined", else BLEND_NAMES index + 1
+  int chan = 7;               // bit0 R, bit1 G, bit2 B
+  float anchorX = 0, anchorY = 0;   // canvas px from the centre: scale/rotation pivot
+  int tMode = 0, autoAction = 0, autoLoops = 1, width = 0, height = 0;
+  float volume = 0, pan = 0;  // dB, -100..100 (no audio engine yet)
   std::vector<Fx> fx;  // effects belong to the clip
   bool isLive() const { return st == Live || st == LiveSel; }
   // A4: cached deck-cell thumbnail (clipart.cpp:RenderClipThumbnail) — runtime GL state only, never
@@ -44,6 +53,12 @@ struct Layer {
   std::string name, group, blend;
   float blendTime = 0, opacity = 100, audio = 0;
   bool live = false, solo = false, muted = false, bypassed = false, collapsed = false;
+  // Properties > Layer. LIVE: master, opacity, blend, blendTime (transition duration), audio (strip A bar), transform.
+  // Stored only: pan, size/autoSize (0 = canvas size), transBlend — no audio engine / layer canvas / transition blends yet.
+  float master = 100, pan = 0;
+  int color = 0;   // index into CLIP_COLORS: the accent of this layer's strip (selection bar, glow, live chevron, V slider)
+  int width = 0, height = 0, autoSize = 0, transBlend = 0;
+  float posX = 0, posY = 0, scale = 100, rotation = 0, anchorX = 0, anchorY = 0;   // canvas px, %, degrees
   std::vector<Clip> clips;
   Clip fadeFrom; float fadeT = 1.f;   // A10 dissolve: the clip being replaced fades out while fadeT runs 0 -> 1 over blendTime (runtime only, not saved)
 };
@@ -128,6 +143,18 @@ constexpr int FX_COUNT = 8;
 struct ColMenu { bool open = false; int ci = 0; ImVec2 pos; };
 struct DeckMenu { bool open = false; int idx = 0; ImVec2 pos; };
 struct DragSrc { bool active = false; std::string name, dur, media; int fxKind = -1; };
+// Composition-level properties (Properties > Comp), saved with the project. What is REAL today: master (fader over the
+// whole composite), speed (multiplies every clip's playback rate), video opacity and the transform (applied to the
+// whole composite). Audio volume/pan and the crossfader are stored but drive nothing yet: there is no audio engine
+// and no A/B crossfader (A14) — the panel says so next to those sections.
+struct CompProps {
+  float master = 100, speed = 100;                       // %, playback-rate % (100 = 1x)
+  float volume = 0, pan = 0;                              // dB, -100..100  (no audio engine yet)
+  float opacity = 100;                                    // % (video)
+  int xfBlend = 0, xfBehaviour = 0, xfCurve = 0;          // crossfader: blend / behaviour / curve indices (no crossfader yet)
+  float posX = 0, posY = 0, scale = 100, rotation = 0;    // canvas px, %, degrees
+  float anchorX = 0, anchorY = 0;                         // canvas px from the canvas centre
+};
 // Files dropped from the OS (Explorer/Finder) onto the window. The GLFW callback only records them; the UI code
 // that owns the drop targets (Browser panel, deck clip cells, timeline lanes) consumes them the same frame, by
 // testing `pos` against its own rects, and sets `handled` so main can tell the user when a drop hit nothing.
@@ -143,6 +170,8 @@ struct CtxMenu { bool open = false; ImVec2 pos; std::vector<ui::MenuItem> items;
 struct App {
   int screen = 0;  // 0 deck, 1 mapping, 2 sensor
   int canvasW = 1920, canvasH = 1080;  // A1: virtual composition canvas, independent of any projector
+  CompProps comp;                      // Properties > Comp (master/speed/opacity/transform are live; audio + crossfader are stored only)
+  void setCanvasSize(int w, int h);    // change the canvas resolution; every slice's input rect keeps covering the same part of it
   int outMonitor = 0;                  // F2: which physical display the projector window goes to
   bool quantize = false;                // "Sync": triggers wait for the next beat instead of firing immediately
   int autoStartCol = -1;                // Setting: fire this column automatically when the project is opened. -1 = off (default).
@@ -222,6 +251,7 @@ struct App {
   std::vector<std::string> mediaList; bool mediaStale = true;   // Browser "Media" list cache (rescanned on demand, never per frame)
   std::vector<std::string> mediaExtra;                          // files imported by drag & drop, referenced in place (machine setting, not per project)
   OsDrop osDrop;
+  void setLayerColor(int li, int color);   // recolours the layer AND the clips that still have the layer's old colour   // Deck tools menu
   void dropFilesOnCell(int li, int ci, const std::vector<std::string>& paths);   // first file -> this cell, the rest -> following empty cells of the layer
   // deck selection / drag & drop
   int selMode = 2;  // 0 layer, 1 clip, 2 column
@@ -315,6 +345,7 @@ struct App {
   std::string uid(const char* p) { return std::string(p) + "-" + std::to_string(++idCounter); }
 };
 extern App A;
+extern float gTestInspScroll;   // test aid (--inspscroll): scrolls the Properties panel so a headless screenshot can show its lower half (global: NewProject() rebuilds App)
 
 struct ScrollArea {
   ImVec2 origin;
@@ -339,6 +370,8 @@ void SetSettingsPersistence(bool on);         // off in headless --shot/--roundt
 void RebuildMediaList();                    // A.mediaList = ListMedia() + drag & drop imports that still exist
 int ImportMedia(const std::vector<std::string>& paths);   // remember dropped files in the Browser; returns how many were new
 void PreloadMedia(const std::string& path);   // upload the texture now instead of on first draw
+void ClipEffectivePos(const Clip& c, float base, float& px, float& py);   // clip position with its anchor folded in (art units at `base` width)
+bool MediaImageSize(const std::string& path, int& w, int& h);   // pixel size of a loaded image clip source
 std::vector<ProjectFile> ListProjects();
 bool SaveProject(const std::string& path, std::string& err);
 bool LoadProject(const std::string& path, std::string& err);

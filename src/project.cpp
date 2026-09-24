@@ -64,6 +64,9 @@ JsonValue ClipJ(const Clip& c) {
   o.set("playMode", c.playMode); o.set("speed", c.speed); o.set("dir", c.dir);
   o.set("posX", c.posX); o.set("posY", c.posY); o.set("scale", c.scale); o.set("rotation", c.rotation); o.set("opacity", c.opacity);
   o.set("flipH", c.flipH); o.set("flipV", c.flipV);
+  o.set("inPt", c.inPt); o.set("outPt", c.outPt); o.set("blend", c.blend); o.set("chan", c.chan);
+  o.set("anchorX", c.anchorX); o.set("anchorY", c.anchorY); o.set("tMode", c.tMode); o.set("autoAction", c.autoAction); o.set("autoLoops", c.autoLoops);
+  o.set("width", c.width); o.set("height", c.height); o.set("volume", c.volume); o.set("pan", c.pan);
   JsonValue fx = JsonValue::array(); for (auto& f : c.fx) fx.push(FxJ(f));
   o.set("fx", fx);
   return o;
@@ -77,8 +80,30 @@ Clip ReadClip(const JsonValue& o) {
   c.speed = F(o, "speed", 100); c.dir = o["dir"].asInt(1) < 0 ? -1 : 1;
   c.posX = F(o, "posX", 0); c.posY = F(o, "posY", 0); c.scale = F(o, "scale", 1); c.rotation = F(o, "rotation", 0); c.opacity = F(o, "opacity", 100);
   c.flipH = o["flipH"].asBool(); c.flipV = o["flipV"].asBool();
+  c.inPt = std::clamp(F(o, "inPt", 0), 0.f, 99.f); c.outPt = std::clamp(F(o, "outPt", 100), c.inPt + 1.f, 100.f);
+  c.blend = std::clamp(o["blend"].asInt(0), 0, BLEND_COUNT); c.chan = std::clamp(o["chan"].asInt(7), 0, 7);
+  c.anchorX = std::clamp(F(o, "anchorX", 0), -16384.f, 16384.f); c.anchorY = std::clamp(F(o, "anchorY", 0), -16384.f, 16384.f);
+  c.tMode = std::clamp(o["tMode"].asInt(0), 0, 1); c.autoAction = std::clamp(o["autoAction"].asInt(0), 0, 4); c.autoLoops = std::clamp(o["autoLoops"].asInt(1), 1, 999);
+  c.width = std::clamp(o["width"].asInt(0), 0, 16384); c.height = std::clamp(o["height"].asInt(0), 0, 16384);
+  c.volume = std::clamp(F(o, "volume", 0), -60.f, 12.f); c.pan = std::clamp(F(o, "pan", 0), -100.f, 100.f);
   if (o["fx"].isArray()) for (auto& f : o["fx"].arrayItems()) c.fx.push_back(ReadFx(f));
   return c;
+}
+
+// Properties > Layer extras (master/pan/size/transition/transform), shared by every place a layer is written or read.
+void LayerPropsJ(JsonValue& lo, const Layer& l) {
+  lo.set("master", l.master); lo.set("pan", l.pan); lo.set("width", l.width); lo.set("height", l.height);
+  lo.set("autoSize", l.autoSize); lo.set("transBlend", l.transBlend); lo.set("color", l.color);
+  lo.set("posX", l.posX); lo.set("posY", l.posY); lo.set("scale", l.scale); lo.set("rotation", l.rotation);
+  lo.set("anchorX", l.anchorX); lo.set("anchorY", l.anchorY);
+}
+void ReadLayerProps(const JsonValue& lo, Layer& l) {
+  l.master = std::clamp(F(lo, "master", 100), 0.f, 100.f); l.pan = std::clamp(F(lo, "pan", 0), -100.f, 100.f);
+  l.width = std::clamp(lo["width"].asInt(0), 0, 16384); l.height = std::clamp(lo["height"].asInt(0), 0, 16384);
+  l.autoSize = std::clamp(lo["autoSize"].asInt(0), 0, 3); l.transBlend = std::clamp(lo["transBlend"].asInt(0), 0, 3); l.color = std::clamp(lo["color"].asInt(0), 0, 5);
+  l.posX = std::clamp(F(lo, "posX", 0), -16384.f, 16384.f); l.posY = std::clamp(F(lo, "posY", 0), -16384.f, 16384.f);
+  l.scale = std::clamp(F(lo, "scale", 100), 1.f, 1000.f); l.rotation = std::clamp(F(lo, "rotation", 0), -360.f, 360.f);
+  l.anchorX = std::clamp(F(lo, "anchorX", 0), -16384.f, 16384.f); l.anchorY = std::clamp(F(lo, "anchorY", 0), -16384.f, 16384.f);
 }
 
 JsonValue FloatsJ(const std::vector<float>& v) { JsonValue a = JsonValue::array(); for (float x : v) a.push(x); return a; }
@@ -173,7 +198,7 @@ static void WriteDeckContent(JsonValue& obj, const std::vector<Group>& groups, c
   for (auto& l : layers) {
     JsonValue lo = JsonValue::object();
     lo.set("id", l.id); lo.set("name", l.name); lo.set("group", l.group); lo.set("blend", l.blend); lo.set("blendTime", l.blendTime);
-    lo.set("opacity", l.opacity); lo.set("audio", l.audio);
+    lo.set("opacity", l.opacity); lo.set("audio", l.audio); LayerPropsJ(lo, l);
     lo.set("solo", l.solo); lo.set("muted", l.muted); lo.set("bypassed", l.bypassed); lo.set("collapsed", l.collapsed);
     JsonValue cs = JsonValue::array(); for (auto& c : l.clips) cs.push(ClipJ(c));
     lo.set("clips", cs);
@@ -188,6 +213,14 @@ JsonValue Serialize(const App& a) {
   root.set("app", "MikMap");
   JsonValue comp = JsonValue::object();
   comp.set("canvasW", a.canvasW); comp.set("canvasH", a.canvasH); comp.set("bpm", a.bpm); comp.set("quantize", a.quantize); comp.set("autoStartCol", a.autoStartCol);
+  {   // Properties > Comp
+    JsonValue cp = JsonValue::object(); const CompProps& k = a.comp;
+    cp.set("master", k.master); cp.set("speed", k.speed); cp.set("volume", k.volume); cp.set("pan", k.pan); cp.set("opacity", k.opacity);
+    cp.set("xfBlend", k.xfBlend); cp.set("xfBehaviour", k.xfBehaviour); cp.set("xfCurve", k.xfCurve);
+    cp.set("posX", k.posX); cp.set("posY", k.posY); cp.set("scale", k.scale); cp.set("rotation", k.rotation);
+    cp.set("anchorX", k.anchorX); cp.set("anchorY", k.anchorY);
+    comp.set("props", cp);
+  }
   WriteDeckContent(comp, a.groups, a.layers, a.colNames);   // current deck, flat — kept for backward/tool compatibility
   root.set("composition", comp);
 
@@ -246,7 +279,7 @@ static bool ReadDeckContent(const JsonValue& dj, Deck& d) {
   for (auto& lo : dj["layers"].arrayItems()) {
     Layer l; l.id = lo["id"].asString(); l.name = lo["name"].asString("Layer"); l.group = lo["group"].asString(); l.blend = lo["blend"].asString("Normal");
     if (BlendIndex(l.blend) == 0) l.blend = "Normal";
-    l.blendTime = std::max(0.f, F(lo, "blendTime", 0)); l.opacity = std::clamp(F(lo, "opacity", 100), 0.f, 100.f); l.audio = std::clamp(F(lo, "audio", 0), 0.f, 100.f);
+    l.blendTime = std::max(0.f, F(lo, "blendTime", 0)); l.opacity = std::clamp(F(lo, "opacity", 100), 0.f, 100.f); l.audio = std::clamp(F(lo, "audio", 0), 0.f, 100.f); ReadLayerProps(lo, l);
     l.solo = lo["solo"].asBool(); l.muted = lo["muted"].asBool(); l.bypassed = lo["bypassed"].asBool(); l.collapsed = lo["collapsed"].asBool();
     if (lo["clips"].isArray()) for (auto& co : lo["clips"].arrayItems()) l.clips.push_back(ReadClip(co));
     cols = std::max(cols, l.clips.size());
@@ -273,6 +306,17 @@ bool Deserialize(const JsonValue& root, App& out, std::string& err) {
   const JsonValue& comp = root["composition"];
   if (!comp["layers"].isArray() || comp["layers"].size() == 0) { err = "no layers in file"; return false; }
   out.canvasW = std::clamp(comp["canvasW"].asInt(1920), 64, 16384); out.canvasH = std::clamp(comp["canvasH"].asInt(1080), 64, 16384);
+  {
+    const JsonValue& cp = comp["props"]; CompProps k;
+    k.master = std::clamp(F(cp, "master", 100), 0.f, 100.f); k.speed = std::clamp(F(cp, "speed", 100), 0.f, 400.f);
+    k.volume = std::clamp(F(cp, "volume", 0), -60.f, 12.f); k.pan = std::clamp(F(cp, "pan", 0), -100.f, 100.f);
+    k.opacity = std::clamp(F(cp, "opacity", 100), 0.f, 100.f);
+    k.xfBlend = std::clamp(cp["xfBlend"].asInt(0), 0, 3); k.xfBehaviour = std::clamp(cp["xfBehaviour"].asInt(0), 0, 2); k.xfCurve = std::clamp(cp["xfCurve"].asInt(0), 0, 2);
+    k.posX = std::clamp(F(cp, "posX", 0), -16384.f, 16384.f); k.posY = std::clamp(F(cp, "posY", 0), -16384.f, 16384.f);
+    k.scale = std::clamp(F(cp, "scale", 100), 1.f, 1000.f); k.rotation = std::clamp(F(cp, "rotation", 0), -360.f, 360.f);
+    k.anchorX = std::clamp(F(cp, "anchorX", 0), -16384.f, 16384.f); k.anchorY = std::clamp(F(cp, "anchorY", 0), -16384.f, 16384.f);
+    out.comp = k;
+  }
   out.bpm = std::clamp(F(comp, "bpm", 128.f), 40.f, 240.f); out.quantize = comp["quantize"].asBool(false);
   out.autoStartCol = comp["autoStartCol"].asInt(-1);   // clamped against real column count once `cols` is known below
   out.groups.clear();
@@ -285,7 +329,7 @@ bool Deserialize(const JsonValue& root, App& out, std::string& err) {
   for (auto& lo : comp["layers"].arrayItems()) {
     Layer l; l.id = lo["id"].asString(); l.name = lo["name"].asString("Layer"); l.group = lo["group"].asString(); l.blend = lo["blend"].asString("Normal");
     if (BlendIndex(l.blend) == 0) l.blend = "Normal";
-    l.blendTime = std::max(0.f, F(lo, "blendTime", 0)); l.opacity = std::clamp(F(lo, "opacity", 100), 0.f, 100.f); l.audio = std::clamp(F(lo, "audio", 0), 0.f, 100.f);
+    l.blendTime = std::max(0.f, F(lo, "blendTime", 0)); l.opacity = std::clamp(F(lo, "opacity", 100), 0.f, 100.f); l.audio = std::clamp(F(lo, "audio", 0), 0.f, 100.f); ReadLayerProps(lo, l);
     l.solo = lo["solo"].asBool(); l.muted = lo["muted"].asBool(); l.bypassed = lo["bypassed"].asBool(); l.collapsed = lo["collapsed"].asBool();
     if (lo["clips"].isArray()) for (auto& co : lo["clips"].arrayItems()) l.clips.push_back(ReadClip(co));
     cols = std::max(cols, l.clips.size());
@@ -590,7 +634,7 @@ static bool UndoApply(const std::string& snap) {
       if (n.st != Clip::Empty && n.name == o.name) { n.st = o.st; n.progress = o.progress; }
     }
   for (auto& l : tmp.layers) { l.live = false; for (auto& c : l.clips) if (c.isLive()) l.live = true; }
-  A.canvasW = tmp.canvasW; A.canvasH = tmp.canvasH; A.groups = tmp.groups; A.layers = tmp.layers; A.colNames = tmp.colNames;
+  A.canvasW = tmp.canvasW; A.canvasH = tmp.canvasH; A.comp = tmp.comp; A.groups = tmp.groups; A.layers = tmp.layers; A.colNames = tmp.colNames;
   A.decks = tmp.decks; A.curDeckIdx = std::clamp(tmp.curDeckIdx, 0, (int)A.decks.size() - 1); A.deckMode = tmp.deckMode;   // undo also covers deck add/delete/switch
   A.screens = tmp.screens; A.calib = tmp.calib; for (int i = 0; i < 4; ++i) A.roi[i] = tmp.roi[i];
   A.noise = tmp.noise; A.blobSize = tmp.blobSize; A.routes = tmp.routes; A.devices = tmp.devices;

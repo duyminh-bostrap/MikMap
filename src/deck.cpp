@@ -1,5 +1,6 @@
 ﻿// Composition screen: browser · monitors · properties · layer/clip deck.
 #include "app.h"
+#include <numeric>
 #include <array>
 #include <cmath>
 #include <cstring>
@@ -10,6 +11,7 @@
 using namespace ui;
 
 
+float gTestInspScroll = 0;
 // ───────────────────────── scroll helper ─────────────────────────
 bool ScrollArea::Begin(const char* id, ImRect r, bool horizontal) {
   prev = g.dl;
@@ -179,6 +181,7 @@ void App::trigger(int li, int ci) {
   StartDissolve(l, ci);
   for (auto& c : l.clips) if (c.isLive()) c.st = Clip::Loaded;
   l.clips[ci].st = Clip::Live;
+  l.clips[ci].paused = false;   // triggering a clip resumes it
   l.live = true;
   selLi = li; selCi = ci; selLayer = li; activeCol = ci; selectedCells = {{li, ci}};
 }
@@ -200,6 +203,7 @@ void App::fireColumn(int ci) {
     StartDissolve(l, ci);
     for (auto& c : l.clips) if (c.isLive()) c.st = Clip::Loaded;
     l.clips[ci].st = Clip::Live;
+    l.clips[ci].paused = false;
     l.live = true;
   }
   selMode = 2;
@@ -366,6 +370,15 @@ void App::loadClip(int li, int ci, const std::string& name, const std::string& d
   Clip c; c.st = Clip::Loaded; c.name = name; c.media = media; if (MediaKindOf(media) == MEDIA_IMAGE) PreloadMedia(media); c.dur = dur.empty() ? "\xE2\x88\x9E" : dur;
   layers[li].clips[ci] = c;
   selLayer = li; selLi = li; selCi = ci; selectedCells = {{li, ci}}; selMode = 1;
+}
+void App::setLayerColor(int li, int color) {
+  if (li < 0 || li >= (int)layers.size()) return;
+  color = std::clamp(color, 0, 5);
+  Layer& l = layers[li];
+  int old = l.color;
+  if (old == color) return;
+  for (auto& c : l.clips) if (c.color == old) c.color = color;   // a clip the user coloured differently keeps its own colour
+  l.color = color;
 }
 // Files dropped from the OS onto a clip cell: the first goes into that cell, each further file into the next
 // empty cell of the same layer (so dropping a folder's worth of stills fills a row); files with no free cell
@@ -615,10 +628,11 @@ static void LayerRow(ImRect r, int li, ScrollArea&) {
   Fill(r, selected ? K(pal::g18) : K(pal::g12));
   HLine(r.Min.x, r.Max.x, r.Max.y - 1, K(pal::g2a));
   if (grp) VLine(r.Min.x, r.Min.y, r.Max.y - 1, K(RoleHex(grp->role)));
+  const uint32_t acc = CLIP_COLORS[std::clamp(l.color, 0, 5)];   // Properties > Layer > Color
   if (selected) {
-    for (int k = 3; k >= 1; --k) g.dl->AddRectFilled(ImVec2(r.Min.x - k, r.Min.y), ImVec2(r.Min.x + 3 + k, r.Max.y), Ca(K(pal::coral, 0.08f)));
-    Fill(Rc(r.Min.x, r.Min.y, 3, r.GetHeight()), K(pal::coral));
-  }
+    for (int k = 3; k >= 1; --k) g.dl->AddRectFilled(ImVec2(r.Min.x - k, r.Min.y), ImVec2(r.Min.x + 3 + k, r.Max.y), Ca(K(acc, 0.08f)));
+    Fill(Rc(r.Min.x, r.Min.y, 3, r.GetHeight()), K(acc));
+  } else Fill(Rc(r.Min.x, r.Min.y, 3, r.GetHeight()), K(acc, 0.35f));   // faint, so a layer's colour reads even when it isn't selected
   float padL = 6 + indent * 8 + r.Min.x, padR = r.Max.x - 6;
   float top = r.Min.y + 6;
   float headCy = collapsed ? (r.Min.y + r.Max.y - 1) * 0.5f : top + 8;
@@ -628,7 +642,7 @@ static void LayerRow(ImRect r, int li, ScrollArea&) {
   ImRect chev(padL, headCy - 7, padL + 14, headCy + 7);
   if (HitR(chev).click) { l.collapsed = !l.collapsed; consumed = true; }
   Icon(collapsed ? "chevron-right" : "chevron-down", ImVec2(chev.Min.x + 7, headCy), 10,
-       l.bypassed ? K(pal::t66) : l.live ? K(pal::coral) : K(pal::t88));
+       l.bypassed ? K(pal::t66) : l.live ? K(acc) : K(pal::t88));
 
   // layer options button
   ImRect ob(padR - 16, headCy - 8, padR, headCy + 8);
@@ -674,7 +688,7 @@ static void LayerRow(ImRect r, int li, ScrollArea&) {
       TextR(padR, cy2, MONO_M, 10, K(pal::tcc), b);
       y += 10 + 4;
     };
-    sliderRow("V", pal::coral, l.opacity, 0x1000 + li * 4);
+    sliderRow("V", acc, l.opacity, 0x1000 + li * 4);
     sliderRow("A", pal::mint, l.audio, 0x1001 + li * 4);
     float fy = y;
     float timeW = 38 + 6 + 8 + 10 + 2;
@@ -826,6 +840,7 @@ static void Inspector(ImRect r) {
   ImRect body(x0, ty + 52, r.Max.x, r.Max.y);
   static ScrollArea sa;
   sa.Begin("##inspector", body);
+  if (gTestInspScroll > 0.f) ImGui::SetScrollY(gTestInspScroll);
   float ox = sa.origin.x, oy = sa.origin.y, W = body.GetWidth() - (ImGui::GetCurrentWindow()->ScrollbarY ? 8.f : 0.f);
   float y = 0;
   auto rowsOf = [&](std::vector<std::array<std::string, 4>>& rows) {
@@ -841,38 +856,143 @@ static void Inspector(ImRect r) {
   bool cellLive = cell.isLive();
   char b1[64];
 
-  if (A.tab == 1) {
-    // opacity
-    y += 8;
-    Text(ox + 8, oy + y + 5, UI_B, 9, K(pal::coral), "VISUAL OPACITY (V)", 0.14f);
-    snprintf(b1, sizeof b1, "%d%%", (int)sl.opacity);
-    TextR(ox + W - 8, oy + y + 5, MONO_B, 10, K(pal::tf3), b1);
-    y += 10 + 6;
-    Layer& ml = A.layers[A.selLayer];
-    Slider(0x2001, Rc(ox + 8, oy + y + 4, W - 16, 6), ml.opacity, pal::coral);
-    y += 14 + 6;
-    Text(ox + 8, oy + y + 5, UI_B, 9, K(pal::mint), "AUDIO VOLUME (A)", 0.14f);
-    snprintf(b1, sizeof b1, "%d%%", (int)sl.audio);
-    TextR(ox + W - 8, oy + y + 5, MONO_B, 10, K(pal::tf3), b1);
-    y += 10 + 6;
-    Slider(0x2002, Rc(ox + 8, oy + y + 4, W - 16, 6), ml.audio, pal::mint);
-    y += 14 + 6;
-    Text(ox + 8, oy + y + 5, UI_B, 9, K(pal::t88), "BLEND MODE", 0.14f);
+  int sid = 0, sidBase = 0x2100;   // shared by the Comp and Layer tabs' slider rows (each tab restarts sid)
+  auto section = [&](const char* title, uint32_t hex, const char* note) {
+    HLine(ox, ox + W, oy + y, K(pal::g2a)); y += 1 + 8;
+    Text(ox + 8, oy + y + 5, UI_B, 9, K(hex), title, 0.14f);
+    if (note) TextR(ox + W - 8, oy + y + 5, MONO_R, 8, K(pal::t66), note);
     y += 9 + 6;
-    const char** modes = BLEND_NAMES;   // same 8 names as the layer-row dropdown, so the chip always matches what is rendered
-    float bw = (W - 16 - 4) / 2.f;
-    for (int i = 0; i < BLEND_COUNT; ++i) {
-      ImRect br(ox + 8 + (i % 2) * (bw + 4), oy + y + (i / 2) * 28, ox + 8 + (i % 2) * (bw + 4) + bw, oy + y + (i / 2) * 28 + 24);
-      bool on = (ml.blend.empty() ? std::string("Normal") : ml.blend) == modes[i];
-      Hit h = HitR(br);
-      if (on) { Glow(br, pal::coral, 0.3f, 12, 3); Fill(br, K(pal::g16), 3); }
-      Box(br, on ? K(pal::coral, 0.15f) : K(pal::g1c), on ? K(pal::coral) : K(pal::g22), 3);
-      std::string u = Upper(modes[i]);
-      TextC((br.Min.x + br.Max.x) * 0.5f, (br.Min.y + br.Max.y) * 0.5f, UI_B, 10, K(on ? pal::coral : pal::t88), u.c_str(), 0.09f);
-      if (h.hover) CursorHand();
-      if (h.click) ml.blend = modes[i];
+  };
+  auto sliderRow = [&](const char* label, const char* val, float& v, float mn, float mx, uint32_t hex) -> bool {
+    Text(ox + 8, oy + y + 5, UI_S, 10, K(pal::t88), label);
+    TextR(ox + W - 8, oy + y + 5, MONO_B, 10, K(pal::tf3), val);
+    y += 10 + 4;
+    bool ch = Slider(sidBase + sid++, Rc(ox + 8, oy + y + 4, W - 16, 6), v, hex, mn, mx);
+    y += 14 + 4;
+    return ch;
+  };
+  auto dropRow = [&](const char* label, std::vector<const char*> opts, int& idx) {
+    Text(ox + 8, oy + y + 5, UI_S, 10, K(pal::t88), label);
+    y += 10 + 4;
+    ImRect dr(ox + 8, oy + y, ox + W - 8, oy + y + 24);
+    Hit dh = HitR(dr);
+    Box(dr, dh.hover ? K(pal::ctrlHover) : K(pal::g1c), K(pal::g22), 3);
+    TextEll(dr.Min.x + 8, (dr.Min.y + dr.Max.y) * 0.5f, dr.GetWidth() - 30, UI_S, 10, K(pal::tf3), opts[std::clamp(idx, 0, (int)opts.size() - 1)]);
+    Icon("chevron-down", ImVec2(dr.Max.x - 12, (dr.Min.y + dr.Max.y) * 0.5f), 10, K(pal::t66));
+    if (dh.hover) CursorHand();
+    if (dh.click) {
+      int* target = &idx;   // A is a global whose address never changes, so this stays valid until the menu item runs
+      std::vector<MenuItem> mi;
+      for (int i = 0; i < (int)opts.size(); ++i) {
+        MenuItem it; it.label = opts[i]; it.toneHex = i == idx ? pal::cyan : 0; it.run = [target, i] { *target = i; };
+        mi.push_back(it);
+      }
+      A.openCtx(ImVec2(dr.Min.x, dr.Max.y + 4), mi);
     }
-    y += (BLEND_COUNT / 2) * 28 - 4 + 8;
+    y += 24 + 6;
+  };
+  if (A.tab == 1) {
+    // Layer properties, laid out like Resolume's Layer panel. LIVE: Master, Audio volume (the strip's A bar), Blend Mode,
+    // Opacity, Transition duration and the Transform. Stored only: Pan, Size/Auto Size, Transition blend mode.
+    Layer& ml = A.layers[A.selLayer];
+    sid = 0; sidBase = 0x2200;
+    {
+      // Layer name, editable right here (double-click on the layer strip still works too). Applies as you type, but
+      // never to an empty/blank name — that keeps the old one, same rule as the rename popup (App::commitRename).
+      y += 6;
+      Text(ox + 8, oy + y + 5, UI_S, 10, K(pal::t88), "Name");
+      y += 10 + 4;
+      static std::string nameEdit;
+      ImGuiID idN = ImGui::GetID("##lyname");
+      if (ImGui::GetActiveID() != idN) nameEdit = ml.name;
+      if (TextField("##lyname", Rc(ox + 8, oy + y, W - 16, 26), nameEdit)) {
+        size_t n0 = nameEdit.find_first_not_of(" \t"), n1 = nameEdit.find_last_not_of(" \t");
+        if (n0 != std::string::npos) ml.name = nameEdit.substr(n0, n1 - n0 + 1);
+      }
+      y += 26 + 8;
+    }
+    section("LAYER", pal::coral, nullptr);
+    snprintf(b1, sizeof b1, "%d %%", (int)std::round(ml.master));            sliderRow("Master", b1, ml.master, 0, 100, pal::coral);
+    // ── AUDIO ──
+    section("AUDIO", pal::mint, "NO AUDIO ENGINE YET");
+    {
+      // The layer strip's A bar stores a 0..100 % gain; the panel shows and edits the same value in dB (100 % = 0 dB).
+      float db = ml.audio <= 0.001f ? -60.f : std::clamp(20.f * std::log10(ml.audio / 100.f), -60.f, 0.f);
+      if (db <= -59.5f) snprintf(b1, sizeof b1, "-inf dB"); else snprintf(b1, sizeof b1, "%d dB", (int)std::round(db));
+      if (sliderRow("Volume", b1, db, -60, 0, pal::mint)) ml.audio = db <= -59.5f ? 0.f : 100.f * std::pow(10.f, db / 20.f);
+    }
+    snprintf(b1, sizeof b1, "%d", (int)std::round(ml.pan));                  sliderRow("Pan", b1, ml.pan, -100, 100, pal::mint);
+    // ── VIDEO ──
+    section("VIDEO", pal::cyan, nullptr);
+    {
+      int bi = std::max(0, BlendIndex(ml.blend));
+      std::vector<const char*> names(BLEND_NAMES, BLEND_NAMES + BLEND_COUNT);
+      Text(ox + 8, oy + y + 5, UI_S, 10, K(pal::t88), "Blend Mode");
+      y += 10 + 4;
+      ImRect dr(ox + 8, oy + y, ox + W - 8, oy + y + 24);
+      Hit dh = HitR(dr);
+      Box(dr, dh.hover ? K(pal::ctrlHover) : K(pal::g1c), K(pal::g22), 3);
+      TextEll(dr.Min.x + 8, (dr.Min.y + dr.Max.y) * 0.5f, dr.GetWidth() - 30, UI_S, 10, K(pal::tf3), names[bi]);
+      Icon("chevron-down", ImVec2(dr.Max.x - 12, (dr.Min.y + dr.Max.y) * 0.5f), 10, K(pal::t66));
+      if (dh.hover) CursorHand();
+      if (dh.click) {
+        int li = A.selLayer; std::vector<MenuItem> mi;
+        for (int i = 0; i < BLEND_COUNT; ++i) {
+          MenuItem it; it.label = BLEND_NAMES[i]; it.toneHex = i == bi ? pal::cyan : 0;
+          it.run = [li, i] { if (li < (int)A.layers.size()) A.layers[li].blend = BLEND_NAMES[i]; };   // same 8 names as the layer-row dropdown, so it always matches what is rendered
+          mi.push_back(it);
+        }
+        A.openCtx(ImVec2(dr.Min.x, dr.Max.y + 4), mi);
+      }
+      y += 24 + 6;
+    }
+    snprintf(b1, sizeof b1, "%d %%", (int)std::round(ml.opacity));           sliderRow("Opacity", b1, ml.opacity, 0, 100, pal::coral);
+    {
+      Text(ox + 8, oy + y + 5, UI_S, 10, K(pal::t88), "Size (W \xC3\x97 H)");
+      TextR(ox + W - 8, oy + y + 5, MONO_R, 8, K(pal::t66), "NOT ACTIVE YET");
+      y += 10 + 4;
+      static int lw = 0, lh = 0;   // applied on focus loss, like the composition resolution
+      ImGuiID idW = ImGui::GetID("##lyw"), idH = ImGui::GetID("##lyh");
+      if (ImGui::GetActiveID() != idW) lw = ml.width > 0 ? ml.width : A.canvasW;
+      if (ImGui::GetActiveID() != idH) lh = ml.height > 0 ? ml.height : A.canvasH;
+      float fw = (W - 16 - 22) / 2.f;
+      IntField("##lyw", Rc(ox + 8, oy + y, fw, 24), lw);
+      if (ImGui::IsItemDeactivatedAfterEdit()) ml.width = std::clamp(lw, 1, 16384);
+      TextC(ox + 8 + fw + 11, oy + y + 12, MONO_B, 11, K(pal::t66), "\xC3\x97");
+      IntField("##lyh", Rc(ox + 8 + fw + 22, oy + y, fw, 24), lh);
+      if (ImGui::IsItemDeactivatedAfterEdit()) ml.height = std::clamp(lh, 1, 16384);
+      y += 24 + 6;
+    }
+    dropRow("Auto Size", {"Off", "Fit", "Fill", "Stretch"}, ml.autoSize);
+    // ── TRANSITION ──
+    section("TRANSITION", pal::yellow, "BLEND MODE NOT ACTIVE");
+    dropRow("Blend Mode", {"Alpha", "Add", "Multiply", "Screen"}, ml.transBlend);
+    {
+      float t10 = std::round(ml.blendTime * 10.f);   // the slider is integer-stepped: tenths of a second
+      snprintf(b1, sizeof b1, "%.1f s", ml.blendTime);
+      if (sliderRow("Duration", b1, t10, 0, 50, pal::yellow)) ml.blendTime = t10 / 10.f;
+    }
+    // ── TRANSFORM: applies to this layer's clips ──
+    HLine(ox, ox + W, oy + y, K(pal::g2a)); y += 1 + 8;
+    Text(ox + 8, oy + y + 5, UI_B, 9, K(pal::t88), "TRANSFORM", 0.14f);
+    {
+      ImRect rb(ox + W - 8 - 40, oy + y - 3, ox + W - 8, oy + y + 13);
+      Hit hh = HitR(rb);
+      Box(rb, hh.hover ? K(pal::ctrlHover) : K(pal::g1c), K(pal::g22), 3);
+      TextC((rb.Min.x + rb.Max.x) * 0.5f, (rb.Min.y + rb.Max.y) * 0.5f, MONO_B, 9, K(hh.hover ? pal::white : pal::t88), "RESET", 0.09f);
+      if (hh.hover) CursorHand();
+      if (hh.click) { ml.posX = ml.posY = ml.rotation = ml.anchorX = ml.anchorY = 0; ml.scale = 100; }
+    }
+    y += 9 + 6;
+    float hw = (float)A.canvasW, hh2 = (float)A.canvasH;
+    snprintf(b1, sizeof b1, "%d px", (int)std::round(ml.posX));              sliderRow("Position X", b1, ml.posX, -hw, hw, pal::cyan);
+    snprintf(b1, sizeof b1, "%d px", (int)std::round(ml.posY));              sliderRow("Position Y", b1, ml.posY, -hh2, hh2, pal::cyan);
+    snprintf(b1, sizeof b1, "%d %%", (int)std::round(ml.scale));             sliderRow("Scale", b1, ml.scale, 1, 400, pal::coral);
+    snprintf(b1, sizeof b1, "%d\xC2\xB0", (int)std::round(ml.rotation));     sliderRow("Rotation", b1, ml.rotation, -180, 180, pal::yellow);
+    snprintf(b1, sizeof b1, "%d px", (int)std::round(ml.anchorX));           sliderRow("Anchor X", b1, ml.anchorX, -hw * 0.5f, hw * 0.5f, pal::t88);
+    snprintf(b1, sizeof b1, "%d px", (int)std::round(ml.anchorY));           sliderRow("Anchor Y", b1, ml.anchorY, -hh2 * 0.5f, hh2 * 0.5f, pal::t88);
+    // ── ROUTING ──
+    HLine(ox, ox + W, oy + y, K(pal::g2a)); y += 1 + 8;
     Text(ox + 8, oy + y + 5, UI_B, 9, K(pal::t88), "ROUTING", 0.14f);
     y += 9 + 6;
     float sw = (W - 16 - 8) / 3.f;
@@ -889,143 +1009,346 @@ static void Inspector(ImRect r) {
       if (h.click) *sws[i].v = !*sws[i].v;
     }
     y += 26 + 8;
-    HLine(ox, ox + W, oy + y, K(pal::g2a));
-    Group* gp = sl.group.empty() ? nullptr : A.group(sl.group);
-    char bt[16]; snprintf(bt, sizeof bt, "%.1f", sl.blendTime);
-    std::vector<std::array<std::string, 4>> rows = {
-        {"Layer", sl.name, "", ""}, {"Group", gp ? gp->name : "No group", "", ""},
-        {"Play mode", PlayModeName(cell.playMode), "", ""}, {"Blend time", bt, "s", "preview"},
-        {"Solo", sl.solo ? "On" : "Off", "", ""}, {"Mute", sl.muted ? "On" : "Off", "", ""},
-        {"Bypass", sl.bypassed ? "On" : "Off", "", ""}, {"State", sl.live ? "Live" : "Idle", "", sl.live ? "live" : ""}};
-    rowsOf(rows);
+    // ── COLOR: the layer's accent. Changing it recolours the clips that still have the layer's OLD colour, so the layer and
+    //    its clips stay one colour; a clip the user coloured differently keeps its own. Swatches are the six fixed colours at
+    //    full brightness, no outline; the current one carries a small dot.
+    HLine(ox, ox + W, oy + y, K(pal::g2a)); y += 1 + 8;
+    Text(ox + 8, oy + y + 5, UI_B, 9, K(pal::t88), "COLOR", 0.14f);
+    y += 9 + 8;
+    {
+      float sw = (W - 16 - 5 * 4) / 6.f;
+      for (int k = 0; k < 6; ++k) {
+        ImRect sr(ox + 8 + k * (sw + 4), oy + y, ox + 8 + k * (sw + 4) + sw, oy + y + 22);
+        Hit sh = HitR(sr);
+        Fill(sr, MixHex(CLIP_COLORS[k], 0xffffff, sh.hover ? 0.22f : 0.f), 3);
+        if (ml.color == k) g.dl->AddCircleFilled(ImVec2((sr.Min.x + sr.Max.x) * 0.5f, (sr.Min.y + sr.Max.y) * 0.5f), 3.f, Ca(K(0xffffff, 0.9f)));
+        if (sh.hover) CursorHand();
+        if (sh.click) A.setLayerColor(A.selLayer, k);
+      }
+      y += 22 + 8;
+    }
   } else if (A.tab == 0) {
-    char fb2[16]; snprintf(fb2, sizeof fb2, "%.1f", PerfFps());
-    char pb2[16]; snprintf(pb2, sizeof pb2, "%.1f", PerfP99());
-    std::vector<std::array<std::string, 4>> rows = {
-        {"Composition", A.projectName, "", ""}, {"Canvas", std::to_string(A.canvasW) + "\xC3\x97" + std::to_string(A.canvasH), "", ""},
-        {"Layers", std::to_string(A.layers.size()), "", ""},
-        {"Groups", std::to_string(A.groups.size()), "", ""}, {"Columns", std::to_string(A.colCount()), "", ""}, {"BPM", BpmStr(), "", "audio"},
-        {"Beat sync", "1/4", "", "audio"}, {"Rate", fb2, "fps", ""}, {"Latency", pb2, "ms", PerfP99() > 20.f ? "alert" : "audio"},
-        {"Output", A.blackout ? "Blackout" : "Live", "", A.blackout ? "alert" : "live"}};
-    rowsOf(rows);
-  } else {
-    y += 6;
-    ImRect th(ox + 6, oy + y, ox + W - 6, oy + y + 76);
-    g.dl->PushClipRect(th.Min, th.Max, true);
-    Fill(th, K(0x050505));
-    DrawClipContent(th, cell, (float)g.time * 1.2f, 300.f, 1.f, 0.4f);
-    g.dl->AddRectFilledMultiColor(th.Min, th.Max, Ca(K(0x050505, 0.15f)), Ca(K(0x050505, 0.15f)), Ca(K(0x050505, 0.82f)), Ca(K(0x050505, 0.82f)));
-    g.dl->PopClipRect();
-    Text(th.Min.x + 6, th.Min.y + 10, MONO_M, 10, K(pal::tcc), "TUNNEL_04.MOV", 0.09f);
-    Text(th.Min.x + 6, th.Max.y - 10, UI_B, 11, K(pal::white), cell.name.empty() ? "Empty slot" : cell.name.c_str());
-    TextR(th.Max.x - 6, th.Max.y - 10, MONO_B, 9, K(cellLive ? pal::coral : pal::cyan), cellLive ? "LIVE" : "CUED");
-    Border(th, K(pal::g2a), 3);
-    y += 76 + 6;
-    Text(ox + 6, oy + y + 5, UI_B, 9, K(pal::t88), "PLAYHEAD", 0.14f);
-    int h1 = (int)(A.topProgress() / 100 * 212), sec = h1;
-    char tc[32]; snprintf(tc, sizeof tc, "00:%02d:%02d:%02d", sec / 60, sec % 60, (int)(fmodf(A.topProgress() / 100 * 212, 1.f) * 25));
-    TextR(ox + W - 6, oy + y + 5, MONO_B, 10, K(pal::coral), tc);
-    y += 10 + 4;
-    ImRect bar(ox + 6, oy + y, ox + W - 6, oy + y + 6);
-    Box(bar, K(pal::meterTrack), K(pal::g22), 999);
-    float fw = (bar.GetWidth() - 2) * std::clamp(A.topProgress() / 100.f, 0.f, 1.f);
-    if (fw > 1) { Fill(ImRect(bar.Min.x + 1, bar.Min.y + 1, bar.Min.x + 1 + fw, bar.Max.y - 1), K(pal::coral), 999); }
-    y += 6 + 6;
-    Text(ox + 6, oy + y + 5, UI_B, 9, K(pal::t88), "PLAY MODE", 0.14f);
-    y += 9 + 4;
-    Clip& mc = A.layers[std::clamp(A.selLi, 0, (int)A.layers.size() - 1)]
-                   .clips[std::clamp(A.selCi, 0, A.colCount() - 1)];
-    bool editable = mc.st != Clip::Empty;
-    float pw = (W - 12 - 12) / 4.f;
-    for (int i = 0; i < 4; ++i) {
-      ImRect br(ox + 6 + i * (pw + 4), oy + y, ox + 6 + i * (pw + 4) + pw, oy + y + 22);
-      bool on = mc.playMode == i;
-      Hit h = HitR(br);
-      if (on) { Glow(br, pal::coral, 0.3f, 12, 3); Fill(br, K(pal::g16), 3); }
-      Box(br, on ? K(pal::coral, 0.15f) : K(pal::g1c), on ? K(pal::coral) : K(pal::g22), 3);
-      TextC((br.Min.x + br.Max.x) * 0.5f, (br.Min.y + br.Max.y) * 0.5f, MONO_B, 9, K(on ? pal::coral : pal::t77), PlayModeName(i), 0.09f);
-      if (h.hover) CursorHand();
-      if (h.click && editable) { mc.playMode = i; mc.dir = 1; }
-    }
-    y += 22 + 6;
-    // C5 speed + C4 direction
-    Text(ox + 6, oy + y + 5, UI_B, 9, K(pal::cyan), "SPEED", 0.14f);
-    snprintf(b1, sizeof b1, "%.2f\xC3\x97", mc.speed / 100.f);
-    TextR(ox + W - 6, oy + y + 5, MONO_B, 10, K(pal::tf3), b1);
-    y += 10 + 4;
+    // Composition properties. Resolution, Master, Speed, Video opacity and Transform are LIVE (they change what is
+    // rendered / how fast clips play); Audio and CrossFader are stored with the project but nothing consumes them yet.
+    CompProps& k = A.comp;
+    sid = 0; sidBase = 0x2100;
+    PropertyRow(Rc(ox, oy + y, W, 22), "Composition", A.projectName.c_str(), "", pal::tcc); y += 22;   // name first, then the controls
+    // ── COMPOSITION: resolution / master / speed ──
+    section("COMPOSITION", pal::cyan, nullptr);
     {
-      float sv = mc.speed * 0.5f;  // 0..200% mapped onto the 0..100 slider
-      if (Slider(0x2003, Rc(ox + 6, oy + y + 4, W - 40, 6), sv, pal::cyan) && editable) mc.speed = sv * 2.f;
-      ImRect rv(ox + W - 6 - 28, oy + y, ox + W - 6, oy + y + 16);
-      bool rev = mc.dir < 0;
-      Hit rh = HitR(rv);
-      Box(rv, rev ? K(pal::yellow, 0.2f) : K(pal::g1c), rev ? K(pal::yellow) : K(pal::g22), 3);
-      TextC((rv.Min.x + rv.Max.x) * 0.5f, (rv.Min.y + rv.Max.y) * 0.5f, MONO_B, 9, K(rev ? pal::yellow : pal::t77), "REV", 0.09f);
-      if (rh.hover) CursorHand();
-      if (rh.click && editable) mc.dir = -mc.dir;
+      Text(ox + 8, oy + y + 5, UI_S, 10, K(pal::t88), "Resolution");
+      int gd = std::gcd(A.canvasW, A.canvasH); char ar[48];
+      if (gd > 0 && A.canvasW / gd <= 32 && A.canvasH / gd <= 32) snprintf(ar, sizeof ar, "%d:%d \xC2\xB7 %.1f MP", A.canvasW / gd, A.canvasH / gd, A.canvasW * (double)A.canvasH / 1e6);
+      else snprintf(ar, sizeof ar, "%.2f:1 \xC2\xB7 %.1f MP", A.canvasW / (double)std::max(1, A.canvasH), A.canvasW * (double)A.canvasH / 1e6);
+      TextR(ox + W - 8, oy + y + 5, MONO_R, 9, K(pal::t66), ar);
+      y += 10 + 4;
+      // Typed values apply when the field loses focus (Enter / Tab / click away), not per keystroke: "3840" passes
+      // through 3, 38, 384 and each of those would otherwise resize the canvas and rescale every slice.
+      static int pw = 0, ph = 0;
+      ImGuiID idW = ImGui::GetID("##compw"), idH = ImGui::GetID("##comph");
+      if (ImGui::GetActiveID() != idW) pw = A.canvasW;
+      if (ImGui::GetActiveID() != idH) ph = A.canvasH;
+      float fw = (W - 16 - 22) / 2.f;
+      IntField("##compw", Rc(ox + 8, oy + y, fw, 24), pw);
+      bool doneW = ImGui::IsItemDeactivatedAfterEdit();
+      TextC(ox + 8 + fw + 11, oy + y + 12, MONO_B, 11, K(pal::t66), "\xC3\x97");
+      IntField("##comph", Rc(ox + 8 + fw + 22, oy + y, fw, 24), ph);
+      bool doneH = ImGui::IsItemDeactivatedAfterEdit();
+      if (doneW || doneH) A.setCanvasSize(pw, ph);
+      y += 24 + 6;
+      struct Pre { const char* n; int w, h; } pres[4] = {{"720p", 1280, 720}, {"1080p", 1920, 1080}, {"1440p", 2560, 1440}, {"4K", 3840, 2160}};
+      float pwid = (W - 16 - 3 * 4) / 4.f;
+      for (int i = 0; i < 4; ++i) {
+        ImRect br(ox + 8 + i * (pwid + 4), oy + y, ox + 8 + i * (pwid + 4) + pwid, oy + y + 20);
+        bool on = A.canvasW == pres[i].w && A.canvasH == pres[i].h;
+        Hit h = HitR(br);
+        if (on) { Glow(br, pal::cyan, 0.3f, 10, 3); Fill(br, K(pal::g16), 3); }
+        Box(br, on ? K(pal::cyan, 0.15f) : K(pal::g1c), on ? K(pal::cyan) : K(pal::g22), 3);
+        TextC((br.Min.x + br.Max.x) * 0.5f, (br.Min.y + br.Max.y) * 0.5f, MONO_B, 9, K(on ? pal::cyan : pal::t77), pres[i].n, 0.09f);
+        if (h.hover) CursorHand();
+        if (h.click) A.setCanvasSize(pres[i].w, pres[i].h);
+      }
+      y += 20 + 8;
     }
-    y += 16 + 8;
-    // ── D1/D2/D3/D5/D6 transform ──
-    HLine(ox, ox + W, oy + y, K(pal::g2a)); y += 1 + 6;
-    Text(ox + 6, oy + y + 5, UI_B, 9, K(pal::t88), "TRANSFORM", 0.14f);
+    snprintf(b1, sizeof b1, "%d %%", (int)std::round(k.master));           sliderRow("Master", b1, k.master, 0, 100, pal::coral);
+    snprintf(b1, sizeof b1, "%.2f\xC3\x97", k.speed / 100.f);              sliderRow("Speed", b1, k.speed, 0, 400, pal::cyan);
+    // ── AUDIO (stored only) ──
+    section("AUDIO", pal::mint, "NO AUDIO ENGINE YET");
+    snprintf(b1, sizeof b1, "%d dB", (int)std::round(k.volume));           sliderRow("Volume", b1, k.volume, -60, 12, pal::mint);
+    snprintf(b1, sizeof b1, "%d", (int)std::round(k.pan));                 sliderRow("Pan", b1, k.pan, -100, 100, pal::mint);
+    // ── VIDEO ──
+    section("VIDEO", pal::coral, nullptr);
+    snprintf(b1, sizeof b1, "%d %%", (int)std::round(k.opacity));          sliderRow("Opacity", b1, k.opacity, 0, 100, pal::coral);
+    // ── CROSSFADER (stored only) ──
+    section("CROSSFADER", pal::yellow, "NOT IMPLEMENTED YET");
+    dropRow("Blend Mode", {"Alpha", "Add", "Multiply", "Screen"}, k.xfBlend);
+    dropRow("Behaviour", {"Cut", "Fade", "Wipe"}, k.xfBehaviour);
+    dropRow("Curve", {"Linear", "Ease in", "Ease out"}, k.xfCurve);
+    // ── TRANSFORM: applies to the whole composite ──
+    HLine(ox, ox + W, oy + y, K(pal::g2a)); y += 1 + 8;
+    Text(ox + 8, oy + y + 5, UI_B, 9, K(pal::t88), "TRANSFORM", 0.14f);
     {
-      ImRect rb(ox + W - 6 - 40, oy + y - 3, ox + W - 6, oy + y + 13);
+      ImRect rb(ox + W - 8 - 40, oy + y - 3, ox + W - 8, oy + y + 13);
       Hit hh = HitR(rb);
       Box(rb, hh.hover ? K(pal::ctrlHover) : K(pal::g1c), K(pal::g22), 3);
       TextC((rb.Min.x + rb.Max.x) * 0.5f, (rb.Min.y + rb.Max.y) * 0.5f, MONO_B, 9, K(hh.hover ? pal::white : pal::t88), "RESET", 0.09f);
       if (hh.hover) CursorHand();
-      if (hh.click && editable) { mc.posX = mc.posY = mc.rotation = 0; mc.scale = 1; mc.opacity = 100; mc.flipH = mc.flipV = false; }
+      if (hh.click) { k.posX = k.posY = k.rotation = k.anchorX = k.anchorY = 0; k.scale = 100; }
     }
-    y += 10 + 6;
-    struct TR { const char* lab; float* v; float mn, mx; const char* unit; uint32_t hex; };
-    TR trs[5] = {{"Position X", &mc.posX, -480, 480, "px", pal::cyan}, {"Position Y", &mc.posY, -270, 270, "px", pal::cyan},
-                 {"Scale", &mc.scale, 0.1f, 3.f, "\xC3\x97", pal::coral}, {"Rotation", &mc.rotation, -180, 180, "\xC2\xB0", pal::yellow},
-                 {"Opacity", &mc.opacity, 0, 100, "%", pal::coral}};
-    for (int i = 0; i < 5; ++i) {
-      TR& tr = trs[i];
-      Text(ox + 6, oy + y + 5, UI_S, 10, K(pal::t88), tr.lab);
-      char vb[24];
-      if (i == 2) snprintf(vb, sizeof vb, "%.2f%s", *tr.v, tr.unit);
-      else snprintf(vb, sizeof vb, "%d%s", (int)std::round(*tr.v), tr.unit);
-      TextR(ox + W - 6, oy + y + 5, MONO_B, 10, K(pal::tf3), vb);
-      y += 10 + 4;
-      float norm = (*tr.v - tr.mn) / (tr.mx - tr.mn) * 100.f;
-      if (Slider(0x2010 + i, Rc(ox + 6, oy + y + 4, W - 12, 6), norm, tr.hex) && editable)
-        *tr.v = tr.mn + norm / 100.f * (tr.mx - tr.mn);
-      y += 14 + 4;
+    y += 9 + 6;
+    float hw = (float)A.canvasW, hh2 = (float)A.canvasH;
+    snprintf(b1, sizeof b1, "%d px", (int)std::round(k.posX));             sliderRow("Position X", b1, k.posX, -hw, hw, pal::cyan);
+    snprintf(b1, sizeof b1, "%d px", (int)std::round(k.posY));             sliderRow("Position Y", b1, k.posY, -hh2, hh2, pal::cyan);
+    snprintf(b1, sizeof b1, "%d %%", (int)std::round(k.scale));            sliderRow("Scale", b1, k.scale, 1, 400, pal::coral);
+    snprintf(b1, sizeof b1, "%d\xC2\xB0", (int)std::round(k.rotation));    sliderRow("Rotation", b1, k.rotation, -180, 180, pal::yellow);
+    snprintf(b1, sizeof b1, "%d px", (int)std::round(k.anchorX));          sliderRow("Anchor X", b1, k.anchorX, -hw * 0.5f, hw * 0.5f, pal::t88);
+    snprintf(b1, sizeof b1, "%d px", (int)std::round(k.anchorY));          sliderRow("Anchor Y", b1, k.anchorY, -hh2 * 0.5f, hh2 * 0.5f, pal::t88);
+    y += 8;   // (the Layers/Groups/Columns/BPM/Rate/Latency/Output readout that used to sit here duplicated the deck and status bar)
+  } else {
+    // Clip properties, laid out like Resolume's Clip panel: Name / preview / Transport / Autopilot / Audio / Video /
+    // Transform, then ONE section per effect on the clip (an effect dragged in gets its own parameters here).
+    // LIVE: name, transport (play/pause/reverse, in/out range, scrub, play mode, speed, duration), R/G/B channels,
+    // opacity, blend mode, transform incl. anchor, every effect parameter. Stored only (panel says so): transport mode,
+    // autopilot, audio volume/pan, video size.
+    Clip& mc = A.layers[std::clamp(A.selLi, 0, (int)A.layers.size() - 1)].clips[std::clamp(A.selCi, 0, A.colCount() - 1)];
+    const bool editable = mc.st != Clip::Empty && mc.st != Clip::Armed;
+    sid = 0; sidBase = 0x2300;
+    const MediaKind mk = MediaKindOf(mc.media);
+    auto chip = [&](ImRect br, const char* lab, bool on, uint32_t hex, bool enabled = true) -> bool {
+      Hit h = enabled ? HitR(br) : Hit();
+      if (on) { Glow(br, hex, 0.28f, 10, 3); Fill(br, K(pal::g16), 3); }
+      Box(br, on ? K(hex, 0.18f) : K(pal::g1c), on ? K(hex) : K(pal::g22), 3);
+      TextC((br.Min.x + br.Max.x) * 0.5f, (br.Min.y + br.Max.y) * 0.5f, MONO_B, 9, K(on ? hex : enabled ? pal::t88 : pal::g33), lab, 0.09f);
+      if (h.hover) CursorHand();
+      return h.click;
+    };
+    y += 6;
+    // ── name ──
+    Text(ox + 8, oy + y + 5, UI_S, 10, K(pal::t88), "Name");
+    y += 10 + 4;
+    if (editable) {
+      static std::string clipNameEdit;
+      ImGuiID idC = ImGui::GetID("##clipname");
+      if (ImGui::GetActiveID() != idC) clipNameEdit = mc.name;
+      if (TextField("##clipname", Rc(ox + 8, oy + y, W - 16, 26), clipNameEdit)) {
+        size_t n0 = clipNameEdit.find_first_not_of(" \t"), n1 = clipNameEdit.find_last_not_of(" \t");
+        if (n0 != std::string::npos) {
+          if (mc.style < 0) mc.style = ClipStyleOf(mc.name);   // pin the look before the name (its source of truth) changes
+          mc.name = clipNameEdit.substr(n0, n1 - n0 + 1);
+        }
+      }
+    } else {
+      ImRect nr(ox + 8, oy + y, ox + W - 8, oy + y + 26);
+      Box(nr, K(pal::g050), K(pal::g22), 3);
+      Text(nr.Min.x + 8, (nr.Min.y + nr.Max.y) * 0.5f, UI_S, 10, K(pal::t66), "Empty slot");
+    }
+    y += 26 + 8;
+    // ── preview ──
+    {
+      ImRect th(ox + 8, oy + y, ox + W - 8, oy + y + 76);
+      g.dl->PushClipRect(th.Min, th.Max, true);
+      Fill(th, K(0x050505));
+      DrawClipContent(th, cell, (float)g.time * 1.2f, 300.f, 1.f, 0.4f);
+      g.dl->AddRectFilledMultiColor(th.Min, th.Max, Ca(K(0x050505, 0.15f)), Ca(K(0x050505, 0.15f)), Ca(K(0x050505, 0.82f)), Ca(K(0x050505, 0.82f)));
+      g.dl->PopClipRect();
+      std::string srcLab = mc.media.empty() ? std::string("GENERATOR") : Upper(std::filesystem::path(mc.media).filename().string());
+      if (editable) TextEll(th.Min.x + 6, th.Min.y + 10, th.GetWidth() - 12, MONO_M, 10, K(pal::tcc), srcLab.c_str(), 0.09f);
+      Text(th.Min.x + 6, th.Max.y - 10, UI_B, 11, K(pal::white), editable ? mc.name.c_str() : "Empty slot");
+      if (editable) TextR(th.Max.x - 6, th.Max.y - 10, MONO_B, 9, K(cellLive ? pal::coral : pal::cyan), cellLive ? "LIVE" : "CUED");
+      Border(th, K(pal::g2a), 3);
+      y += 76 + 8;
+    }
+    if (!editable) {
+      Text(ox + 8, oy + y + 7, UI_S, 10, K(pal::t66), "Drag a source from the Browser, or drop a file here.", 0.01f);
+      y += 22;
+    } else {
+    // ── TRANSPORT ──
+    HLine(ox, ox + W, oy + y, K(pal::g2a)); y += 1 + 8;
+    Text(ox + 8, oy + y + 5, UI_B, 9, K(pal::cyan), "TRANSPORT", 0.14f);
+    {
+      const char* tm = mc.tMode == 1 ? "BPM Sync (inactive)" : "Timeline";
+      float cw = TextW(UI_S, 10, tm) + 30;
+      ImRect cr(ox + W - 8 - cw, oy + y - 4, ox + W - 8, oy + y + 16);
+      Hit ch = HitR(cr);
+      Box(cr, ch.hover ? K(pal::ctrlHover) : K(pal::g1c), K(pal::g22), 3);
+      Text(cr.Min.x + 8, (cr.Min.y + cr.Max.y) * 0.5f, UI_S, 10, K(pal::tf3), tm);
+      Icon("chevron-down", ImVec2(cr.Max.x - 10, (cr.Min.y + cr.Max.y) * 0.5f), 9, K(pal::t66));
+      if (ch.hover) CursorHand();
+      if (ch.click) {
+        int* target = &mc.tMode; std::vector<MenuItem> mi;
+        const char* nm2[2] = {"Timeline", "BPM Sync (not active yet)"};
+        for (int i = 0; i < 2; ++i) { MenuItem it; it.label = nm2[i]; it.toneHex = i == mc.tMode ? pal::cyan : 0; it.run = [target, i] { *target = i; }; mi.push_back(it); }
+        A.openCtx(ImVec2(cr.Min.x - 60, cr.Max.y + 4), mi);
+      }
+    }
+    y += 9 + 8;
+    {
+      // timeline track: dimmed outside the in/out range, playhead + green in/out markers. Drag the playhead to scrub,
+      // the markers to set the playback range. No waveform: there is no audio decoder yet.
+      float total = ClipSeconds(mc);
+      char tt[24]; snprintf(tt, sizeof tt, "%06.3f", mc.progress / 100.f * total);
+      TextR(ox + W - 8, oy + y + 5, MONO_B, 10, K(pal::tf3), tt);
+      y += 10 + 6;
+      ImRect tr(ox + 14, oy + y, ox + W - 14, oy + y + 22);
+      Box(tr, K(pal::g050), K(pal::g22), 3);
+      auto px = [&](float pct) { return tr.Min.x + tr.GetWidth() * std::clamp(pct, 0.f, 100.f) / 100.f; };
+      Fill(ImRect(px(mc.inPt), tr.Min.y + 1, px(mc.outPt), tr.Max.y - 1), K(pal::cyan, 0.16f), 2);
+      Fill(ImRect(px(mc.progress) - 1, tr.Min.y - 2, px(mc.progress) + 1, tr.Max.y + 2), K(pal::coral));
+      g.dl->AddTriangleFilled(ImVec2(px(mc.progress) - 4, tr.Min.y - 5), ImVec2(px(mc.progress) + 4, tr.Min.y - 5), ImVec2(px(mc.progress), tr.Min.y + 1), Ca(K(pal::coral)));
+      g.dl->AddTriangleFilled(ImVec2(px(mc.inPt), tr.Max.y + 1), ImVec2(px(mc.inPt) + 7, tr.Max.y + 8), ImVec2(px(mc.inPt) - 1, tr.Max.y + 8), Ca(K(pal::mint)));
+      g.dl->AddTriangleFilled(ImVec2(px(mc.outPt), tr.Max.y + 1), ImVec2(px(mc.outPt) - 7, tr.Max.y + 8), ImVec2(px(mc.outPt) + 1, tr.Max.y + 8), Ca(K(pal::mint)));
+      ImRect grab(tr.Min.x - 8, tr.Min.y - 6, tr.Max.x + 8, tr.Max.y + 10);
+      static int dragK = 0;   // 1 playhead, 2 in, 3 out
+      Hit gh = HitR(grab);
+      if (gh.hover) ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+      float mxp = ImGui::GetIO().MousePos.x;
+      if (gh.click) {
+        bool lower = ImGui::GetIO().MousePos.y > tr.Max.y - 2;
+        if (lower && std::fabs(mxp - px(mc.inPt)) <= 9) dragK = 2;
+        else if (lower && std::fabs(mxp - px(mc.outPt)) <= 9) dragK = 3;
+        else dragK = 1;
+        g.active = 0x2390;
+      }
+      if (dragK && g.active == 0x2390) {
+        if (ImGui::IsMouseDown(0)) {
+          float pct = std::clamp((mxp - tr.Min.x) / std::max(1.f, tr.GetWidth()) * 100.f, 0.f, 100.f);
+          if (dragK == 1) mc.progress = pct;
+          else if (dragK == 2) mc.inPt = std::clamp(pct, 0.f, mc.outPt - 1.f);
+          else mc.outPt = std::clamp(pct, mc.inPt + 1.f, 100.f);
+        } else { dragK = 0; g.active = 0; }
+      }
+      y += 22 + 12;
     }
     {
-      float bw2 = (W - 12 - 4) / 2.f;
-      const char* fl[2] = {"FLIP H", "FLIP V"};
-      bool* fv[2] = {&mc.flipH, &mc.flipV};
-      for (int i = 0; i < 2; ++i) {
-        ImRect br(ox + 6 + i * (bw2 + 4), oy + y, ox + 6 + i * (bw2 + 4) + bw2, oy + y + 22);
-        bool on = *fv[i];
-        Hit h = HitR(br);
-        if (on) { Glow(br, pal::cyan, 0.3f, 10, 3); Fill(br, K(pal::g16), 3); }
-        Box(br, on ? K(pal::cyan, 0.15f) : K(pal::g1c), on ? K(pal::cyan) : K(pal::g22), 3);
-        TextC((br.Min.x + br.Max.x) * 0.5f, (br.Min.y + br.Max.y) * 0.5f, MONO_B, 9, K(on ? pal::cyan : pal::t77), fl[i], 0.09f);
-        if (h.hover) CursorHand();
-        if (h.click && editable) *fv[i] = !*fv[i];
+      // ◀ reverse-play · ❚❚ pause · ▶ play (this clip's own transport), then the loop mode
+      bool rev = !mc.paused && mc.dir < 0, fwd = !mc.paused && mc.dir >= 0;
+      if (chip(ImRect(ox + 8, oy + y, ox + 8 + 28, oy + y + 24), "<", rev, pal::mint)) { mc.dir = -1; mc.paused = false; }
+      if (chip(ImRect(ox + 8 + 32, oy + y, ox + 8 + 60, oy + y + 24), "||", mc.paused, pal::yellow)) mc.paused = true;
+      if (chip(ImRect(ox + 8 + 64, oy + y, ox + 8 + 92, oy + y + 24), ">", fwd, pal::mint)) { mc.dir = 1; mc.paused = false; }
+      static const char* pmNames[4] = {"Loop", "Bounce", "Hold", "Once"};
+      ImRect dr(ox + 8 + 100, oy + y, ox + W - 8, oy + y + 24);
+      Hit dh = HitR(dr);
+      Box(dr, dh.hover ? K(pal::ctrlHover) : K(pal::g1c), K(pal::g22), 3);
+      Icon("repeat", ImVec2(dr.Min.x + 12, (dr.Min.y + dr.Max.y) * 0.5f), 10, K(pal::cyan));
+      Text(dr.Min.x + 24, (dr.Min.y + dr.Max.y) * 0.5f, UI_S, 10, K(pal::tf3), pmNames[std::clamp(mc.playMode, 0, 3)]);
+      Icon("chevron-down", ImVec2(dr.Max.x - 10, (dr.Min.y + dr.Max.y) * 0.5f), 9, K(pal::t66));
+      if (dh.hover) CursorHand();
+      if (dh.click) {
+        Clip* target = &mc; std::vector<MenuItem> mi;
+        for (int i = 0; i < 4; ++i) { MenuItem it; it.label = pmNames[i]; it.toneHex = i == mc.playMode ? pal::cyan : 0; it.run = [target, i] { target->playMode = i; target->dir = 1; }; mi.push_back(it); }
+        A.openCtx(ImVec2(dr.Min.x, dr.Max.y + 4), mi);
       }
+      y += 24 + 8;
+    }
+    snprintf(b1, sizeof b1, "%.2f\xC3\x97", mc.speed / 100.f);   sliderRow("Speed", b1, mc.speed, 0, 400, pal::cyan);
+    {
+      float sec = ClipSeconds(mc);
+      Text(ox + 8, oy + y + 6, UI_S, 10, K(pal::t88), "Duration");
+      float xr = ox + W - 8;
+      auto half = [&](const char* lab, float k) {
+        ImRect br(xr - 28, oy + y, xr, oy + y + 18);
+        if (chip(br, lab, false, pal::cyan)) {
+          float ns = std::clamp(sec * k, 0.5f, 3600.f);
+          char d[16]; snprintf(d, sizeof d, "%gs", std::round(ns * 100.f) / 100.f); mc.dur = d;
+        }
+        xr -= 32;
+      };
+      half("\xC3\x97" "2", 2.f);
+      half("/2", 0.5f);
+      float dv = 0; bool finite = std::sscanf(mc.dur.c_str(), "%f", &dv) == 1 && dv > 0.f;   // generators and images have an infinity duration
+      char ds[24]; if (!finite) snprintf(ds, sizeof ds, "\xE2\x88\x9E"); else snprintf(ds, sizeof ds, "%g s", sec);
+      TextR(xr - 4, oy + y + 9, MONO_B, 10, K(pal::tf3), ds);
+      y += 18 + 8;
+    }
+    // ── AUTOPILOT (stored only) ──
+    section("AUTOPILOT", pal::yellow, "NOT ACTIVE YET");
+    dropRow("Action", {"Layer Determined", "None", "Play next clip", "Play previous clip", "Play random clip"}, mc.autoAction);
+    { float lp = (float)mc.autoLoops; snprintf(b1, sizeof b1, "%d", mc.autoLoops); if (sliderRow("Loops", b1, lp, 1, 16, pal::yellow)) mc.autoLoops = (int)lp; }
+    // ── AUDIO (only for audio/video files; stored only) ──
+    if (mk == MEDIA_VIDEO || mk == MEDIA_AUDIO) {
+      section("AUDIO", pal::mint, "NO AUDIO ENGINE YET");
+      TextEll(ox + 8, oy + y + 6, W - 16, UI_B, 10, K(pal::tcc), std::filesystem::path(mc.media).filename().string().c_str());
+      Text(ox + 8, oy + y + 20, MONO_R, 9, K(pal::t66), "audio decoder not available yet");
+      y += 30;
+      snprintf(b1, sizeof b1, "%d dB", (int)std::round(mc.volume));   sliderRow("Volume", b1, mc.volume, -60, 12, pal::mint);
+      snprintf(b1, sizeof b1, "%d", (int)std::round(mc.pan));         sliderRow("Pan", b1, mc.pan, -100, 100, pal::mint);
+    }
+    // ── VIDEO ──
+    section("VIDEO", pal::coral, nullptr);
+    {
+      int iw = 0, ih = 0; bool isImg = mk == MEDIA_IMAGE && MediaImageSize(mc.media, iw, ih);
+      std::string nm = mc.media.empty() ? mc.name : std::filesystem::path(mc.media).filename().string();
+      TextEll(ox + 8, oy + y + 6, W - 16, UI_B, 10, K(pal::tcc), nm.c_str());
+      char info[96];
+      if (isImg) snprintf(info, sizeof info, "Image, %dx%d", iw, ih);
+      else if (mk == MEDIA_VIDEO) snprintf(info, sizeof info, "Video file \xC2\xB7 decoder not available yet");
+      else snprintf(info, sizeof info, "Procedural generator, %dx%d", A.canvasW, A.canvasH);
+      Text(ox + 8, oy + y + 20, MONO_R, 9, K(pal::t66), info);
+      char du[32]; int ts = (int)std::round(ClipSeconds(mc)); snprintf(du, sizeof du, "00:%02d:%02d", ts / 60, ts % 60);
+      Text(ox + 8, oy + y + 32, MONO_R, 9, K(pal::t66), du);
+      y += 44;
+      // R G B render channels (real); A is greyed — clips have no alpha channel to switch
+      Text(ox + 8, oy + y + 9, UI_S, 10, K(pal::t88), "Channels");
+      const char* cl[4] = {"R", "G", "B", "A"}; uint32_t chx[4] = {pal::red, pal::mint, pal::cyan, pal::t66};
+      for (int i = 0; i < 4; ++i) {
+        ImRect br(ox + W - 8 - (4 - i) * 30 + 2, oy + y, ox + W - 8 - (4 - i) * 30 + 28, oy + y + 18);
+        if (chip(br, cl[i], i < 3 ? (mc.chan >> i & 1) != 0 : false, chx[i], i < 3)) mc.chan ^= 1 << i;
+      }
+      y += 18 + 8;
+    }
+    snprintf(b1, sizeof b1, "%d %%", (int)std::round(mc.opacity));   sliderRow("Opacity", b1, mc.opacity, 0, 100, pal::coral);
+    {
+      Text(ox + 8, oy + y + 5, UI_S, 10, K(pal::t88), "Size (W \xC3\x97 H)");
+      TextR(ox + W - 8, oy + y + 5, MONO_R, 8, K(pal::t66), "NOT ACTIVE YET");
+      y += 10 + 4;
+      static int cwid = 0, chei = 0;
+      ImGuiID idW = ImGui::GetID("##clw"), idH = ImGui::GetID("##clh");
+      int iw = 0, ih = 0; bool isImg = mk == MEDIA_IMAGE && MediaImageSize(mc.media, iw, ih);
+      if (ImGui::GetActiveID() != idW) cwid = mc.width > 0 ? mc.width : isImg ? iw : A.canvasW;
+      if (ImGui::GetActiveID() != idH) chei = mc.height > 0 ? mc.height : isImg ? ih : A.canvasH;
+      float fw = (W - 16 - 22) / 2.f;
+      IntField("##clw", Rc(ox + 8, oy + y, fw, 24), cwid);
+      if (ImGui::IsItemDeactivatedAfterEdit()) mc.width = std::clamp(cwid, 1, 16384);
+      TextC(ox + 8 + fw + 11, oy + y + 12, MONO_B, 11, K(pal::t66), "\xC3\x97");
+      IntField("##clh", Rc(ox + 8 + fw + 22, oy + y, fw, 24), chei);
+      if (ImGui::IsItemDeactivatedAfterEdit()) mc.height = std::clamp(chei, 1, 16384);
+      y += 24 + 6;
+    }
+    dropRow("Blend Mode", {"Layer Determined", "Normal", "Add", "Screen", "Multiply", "Overlay", "Difference", "Lighten", "Darken"}, mc.blend);
+    // ── TRANSFORM ──
+    HLine(ox, ox + W, oy + y, K(pal::g2a)); y += 1 + 8;
+    Text(ox + 8, oy + y + 5, UI_B, 9, K(pal::t88), "TRANSFORM", 0.14f);
+    {
+      ImRect rb(ox + W - 8 - 40, oy + y - 3, ox + W - 8, oy + y + 13);
+      Hit hh = HitR(rb);
+      Box(rb, hh.hover ? K(pal::ctrlHover) : K(pal::g1c), K(pal::g22), 3);
+      TextC((rb.Min.x + rb.Max.x) * 0.5f, (rb.Min.y + rb.Max.y) * 0.5f, MONO_B, 9, K(hh.hover ? pal::white : pal::t88), "RESET", 0.09f);
+      if (hh.hover) CursorHand();
+      if (hh.click) { mc.posX = mc.posY = mc.rotation = mc.anchorX = mc.anchorY = 0; mc.scale = 1; mc.flipH = mc.flipV = false; }
+    }
+    y += 9 + 6;
+    {
+      // Position is stored in art units (the composite is 960 wide) but shown in canvas pixels like the rest of the panel.
+      float kx = A.canvasW / 960.f, ky = A.canvasH / 540.f, hw = (float)A.canvasW, hh2 = (float)A.canvasH;
+      float px = mc.posX * kx, py = mc.posY * ky, scp = mc.scale * 100.f;
+      snprintf(b1, sizeof b1, "%d px", (int)std::round(px));   if (sliderRow("Position X", b1, px, -hw * 0.5f, hw * 0.5f, pal::cyan)) mc.posX = px / kx;
+      snprintf(b1, sizeof b1, "%d px", (int)std::round(py));   if (sliderRow("Position Y", b1, py, -hh2 * 0.5f, hh2 * 0.5f, pal::cyan)) mc.posY = py / ky;
+      snprintf(b1, sizeof b1, "%d %%", (int)std::round(scp));  if (sliderRow("Scale", b1, scp, 10, 400, pal::coral)) mc.scale = scp / 100.f;
+      snprintf(b1, sizeof b1, "%d\xC2\xB0", (int)std::round(mc.rotation)); sliderRow("Rotation", b1, mc.rotation, -180, 180, pal::yellow);
+      snprintf(b1, sizeof b1, "%d px", (int)std::round(mc.anchorX)); sliderRow("Anchor X", b1, mc.anchorX, -hw * 0.5f, hw * 0.5f, pal::t88);
+      snprintf(b1, sizeof b1, "%d px", (int)std::round(mc.anchorY)); sliderRow("Anchor Y", b1, mc.anchorY, -hh2 * 0.5f, hh2 * 0.5f, pal::t88);
+      float bw2 = (W - 16 - 4) / 2.f;
+      if (chip(ImRect(ox + 8, oy + y, ox + 8 + bw2, oy + y + 22), "FLIP H", mc.flipH, pal::cyan)) mc.flipH = !mc.flipH;
+      if (chip(ImRect(ox + 8 + bw2 + 4, oy + y, ox + W - 8, oy + y + 22), "FLIP V", mc.flipV, pal::cyan)) mc.flipV = !mc.flipV;
       y += 22 + 8;
     }
-    char pr[16]; snprintf(pr, sizeof pr, "%d", (int)std::round(A.topProgress()));
-    char spd[16]; snprintf(spd, sizeof spd, "%.2f", mc.speed / 100.f);
-    std::vector<std::array<std::string, 4>> rows = {
-        {"Clip", cell.name.empty() ? "\xE2\x80\x94" : cell.name, "", ""}, {"Source", "generator", "", ""},
-        {"Duration", cell.dur.empty() ? "\xE2\x80\x94" : cell.dur, "", ""}, {"Play mode", PlayModeName(mc.playMode), "", ""},
-        {"Speed", spd, "\xC3\x97", ""}, {"Playhead", pr, "%", "live"}, {"Resolution", "1920\xC3\x97" "1080", "", ""},
-        {"Codec", "procedural", "", ""}, {"Beat sync", "1/4", "", "audio"}, {"State", cellLive ? "Live" : "Cued", "", cellLive ? "live" : "preview"}};
-    rowsOf(rows);
-    // ── FX chain (matches HTML fxRows / fxParams / fxMix / fxToggles / fxMeta) ──
+    // ── EFFECTS: one section per effect on this clip ──
     {
-      std::vector<Fx>& chain = A.fxChain();
-      A.fxSel = chain.empty() ? 0 : std::clamp(A.fxSel, 0, (int)chain.size() - 1);
-      y += 4; HLine(ox, ox + W, oy + y, K(pal::g2a)); y += 1 + 6;
+      std::vector<Fx>& chain = mc.fx;
+      HLine(ox, ox + W, oy + y, K(pal::g2a)); y += 1 + 8;
       float addW = TextW(MONO_B, 9, "ADD", 0.09f) + 11 + 4 + 12;
-      TextEll(ox + 6, oy + y + 9, W - 12 - addW - 6, UI_B, 9, K(pal::t88), ("FX CHAIN \xC2\xB7 " + Upper(cell.name.empty() ? std::string("EMPTY SLOT") : cell.name)).c_str(), 0.14f);
-      ImRect addB(ox + W - 6 - addW, oy + y, ox + W - 6, oy + y + 20);
+      Text(ox + 8, oy + y + 9, UI_B, 9, K(pal::t88), "EFFECTS", 0.14f);
+      ImRect addB(ox + W - 8 - addW, oy + y, ox + W - 8, oy + y + 20);
       Hit ah = HitR(addB);
       Box(addB, K(pal::g1c), ah.hover ? K(pal::cyan) : K(pal::g22), 3);
       Icon("plus", ImVec2(addB.Min.x + 6 + 5.5f, oy + y + 10), 11, K(ah.hover ? pal::cyan : pal::tcc));
@@ -1033,135 +1356,80 @@ static void Inspector(ImRect r) {
       if (ah.hover) CursorHand();
       if (ah.click) {
         std::vector<ui::MenuItem> items;
-        for (int k = 0; k < FX_COUNT; ++k) { ui::MenuItem m; m.label = FX_LIB[k].name; m.icon = FX_LIB[k].icon; int kk = k; m.run = [kk] { A.addFx(kk); }; items.push_back(std::move(m)); }
+        for (int k2 = 0; k2 < FX_COUNT; ++k2) { ui::MenuItem m; m.label = FX_LIB[k2].name; m.icon = FX_LIB[k2].icon; int kk = k2; m.run = [kk] { A.addFx(kk); }; items.push_back(std::move(m)); }
         A.openCtx(ImGui::GetIO().MousePos, std::move(items));
       }
       y += 20 + 6;
       if (chain.empty()) {
-        Text(ox + 6, oy + y + 7, UI_S, 10, K(pal::t66), "No effects on this layer. Use ADD.", 0.01f);
+        Text(ox + 8, oy + y + 7, UI_S, 10, K(pal::t66), "Drag an effect here from the Browser, or use ADD.", 0.01f);
         y += 15 + 6;
-      } else {
-        for (int i = 0; i < (int)chain.size(); ++i) {
-          Fx& f = chain[i];
-          const FxDef& d = FX_LIB[std::clamp(f.kind, 0, FX_COUNT - 1)];
-          uint32_t tn = FxTone(d.tone);
-          bool on = A.fxSel == i;
-          ImRect fr(ox + 6, oy + y, ox + W - 6, oy + y + 24);
-          Hit fh = HitR(fr);
-          if (on) { Glow(fr, tn, 0.30f, 12, 3); Fill(fr, K(pal::g16), 3); }
-          Box(fr, on ? K(tn, 0.15f) : K(pal::g1c), on ? K(tn) : K(pal::g22), 3);
-          float prev = g.alpha; if (!f.on) g.alpha *= 0.45f;
-          float cy = oy + y + 12;
-          char nn[8]; snprintf(nn, sizeof nn, "%02d", i + 1);
-          Text(fr.Min.x + 5, cy, MONO_B, 9, K(pal::t66), nn);
-          Icon(d.icon, ImVec2(fr.Min.x + 5 + TextW(MONO_B, 9, nn) + 4 + 5.5f, cy), 11, K(on ? tn : pal::tcc));
-          char mx[16]; snprintf(mx, sizeof mx, "%d%%", (int)std::round(f.mix));
-          float mxW = TextW(MONO_B, 9, mx);
-          ImRect by(fr.Max.x - 5 - 10, cy - 8, fr.Max.x - 5, cy + 8);
-          Icon(f.on ? "eye" : "eye-off", ImVec2((by.Min.x + by.Max.x) * 0.5f, cy), 10, K(pal::t88));
-          TextR(by.Min.x - 4, cy, MONO_B, 9, K(pal::t77), mx);
-          TextEll(fr.Min.x + 5 + TextW(MONO_B, 9, nn) + 4 + 11 + 4, cy, by.Min.x - 4 - mxW - 4 - (fr.Min.x + 5 + TextW(MONO_B, 9, nn) + 4 + 11 + 4), UI_B, 10, K(on ? tn : pal::tcc), d.name);
-          g.alpha = prev;
-          if (fh.hover) CursorHand();
-          if (fh.click) A.fxSel = i;
-          if (fh.rclick) {
-            int ii = i;
-            std::vector<ui::MenuItem> items;
-            auto mk = [&](const char* l, const char* ic, bool dis, bool dg, std::function<void()> fn) { ui::MenuItem m; m.label = l; m.icon = ic; m.disabled = dis; m.danger = dg; m.run = fn; items.push_back(std::move(m)); };
-            mk(f.on ? "Bypass effect" : "Enable effect", f.on ? "eye-off" : "eye", false, false, [ii] { auto& c = A.fxChain(); if (ii < (int)c.size()) c[ii].on = !c[ii].on; });
-            mk("Move up", "arrow-up", ii <= 0, false, [ii] { A.moveFx(ii, -1); });
-            mk("Move down", "arrow-down", ii >= (int)A.fxChain().size() - 1, false, [ii] { A.moveFx(ii, 1); });
-            mk("Duplicate", "copy", false, false, [ii] { A.dupFx(ii); });
-            mk("Reset parameters", "rotate-ccw", false, false, [ii] { A.resetFx(ii); });
-            mk("Remove effect", "trash-2", false, true, [ii] { A.removeFx(ii); });
-            A.openCtx(ImGui::GetIO().MousePos, std::move(items));
-          }
-          // bypass toggle on click of eye icon
-          if (HitR(by).click) f.on = !f.on;
-          y += 24 + 2;
-        }
-        y += 4;
-        // selected FX editor
-        Fx& cur = chain[A.fxSel];
-        const FxDef& dd = FX_LIB[std::clamp(cur.kind, 0, FX_COUNT - 1)];
-        uint32_t tn = FxTone(dd.tone);
+      }
+      int removeIdx = -1;
+      for (int i = 0; i < (int)chain.size(); ++i) {
+        Fx& f = chain[i];
+        const FxDef& d = FX_LIB[std::clamp(f.kind, 0, FX_COUNT - 1)];
+        uint32_t tn = FxTone(d.tone);
         HLine(ox, ox + W, oy + y, K(pal::g2a)); y += 1 + 6;
-        float rsW = TextW(MONO_B, 9, "RESET", 0.09f) + 10 + 4 + 12;
-        Icon(dd.icon, ImVec2(ox + 6 + 6, oy + y + 9), 12, K(tn));
-        TextEll(ox + 6 + 12 + 4, oy + y + 9, W - 12 - 12 - 4 - rsW - 6, UI_B, 9, K(tn), Upper(dd.name).c_str(), 0.14f);
-        ImRect rsB(ox + W - 6 - rsW, oy + y, ox + W - 6, oy + y + 18);
-        Hit rh = HitR(rsB);
-        Box(rsB, K(pal::g1c), rh.hover ? K(pal::yellow) : K(pal::g22), 3);
-        Icon("rotate-ccw", ImVec2(rsB.Min.x + 5 + 5, oy + y + 9), 10, K(rh.hover ? pal::yellow : pal::t88));
-        Text(rsB.Min.x + 5 + 10 + 4, oy + y + 9, MONO_B, 9, K(rh.hover ? pal::yellow : pal::t88), "RESET", 0.09f);
-        if (rh.hover) CursorHand();
-        if (rh.click) A.resetFx(A.fxSel);
-        y += 18 + 6;
-        for (int pi = 0; pi < dd.nparams; ++pi) {
-          std::string lb = Upper(dd.pl[pi] ? dd.pl[pi] : "");
-          std::string vl = FxFmt(cur.kind, pi, cur.p[pi]);
-          Text(ox + 6, oy + y + 5, UI_B, 9, K(pal::t88), lb.c_str(), 0.09f);
-          TextR(ox + W - 6, oy + y + 5, MONO_B, 10, K(pal::tf3), vl.c_str());
-          y += 10 + 4;
-          Slider(0x3000 + A.fxSel * 8 + pi, Rc(ox + 6, oy + y + 4, W - 12, 6), cur.p[pi], tn);
-          y += 14 + 6;
+        // header: icon + name, then bypass (eye) and remove (x); right-click for the full menu
+        ImRect hr(ox + 8, oy + y, ox + W - 8, oy + y + 22);
+        Hit hh = HitR(hr);
+        float cy2 = oy + y + 11;
+        float prevA = g.alpha; if (!f.on) g.alpha *= 0.45f;
+        char nn[8]; snprintf(nn, sizeof nn, "%02d", i + 1);
+        Text(hr.Min.x, cy2, MONO_B, 9, K(pal::t66), nn);
+        Icon(d.icon, ImVec2(hr.Min.x + 22 + 6, cy2), 12, K(tn));
+        Text(hr.Min.x + 22 + 16, cy2, UI_B, 10, K(tn), Upper(d.name).c_str(), 0.14f);
+        g.alpha = prevA;
+        ImRect xr(hr.Max.x - 16, cy2 - 8, hr.Max.x, cy2 + 8), er(hr.Max.x - 36, cy2 - 8, hr.Max.x - 20, cy2 + 8);
+        Hit xh = HitR(xr), eh = HitR(er);
+        Icon("x", ImVec2((xr.Min.x + xr.Max.x) * 0.5f, cy2), 10, K(xh.hover ? pal::red : pal::t66));
+        Icon(f.on ? "eye" : "eye-off", ImVec2((er.Min.x + er.Max.x) * 0.5f, cy2), 11, K(eh.hover ? pal::white : pal::t88));
+        if (xh.hover || eh.hover) CursorHand();
+        if (xh.click) removeIdx = i;
+        else if (eh.click) f.on = !f.on;
+        else if (hh.rclick) {
+          int ii = i;
+          std::vector<ui::MenuItem> items;
+          auto mkI = [&](const char* l, const char* ic, bool dis, bool dg, std::function<void()> fn) { ui::MenuItem m; m.label = l; m.icon = ic; m.disabled = dis; m.danger = dg; m.run = fn; items.push_back(std::move(m)); };
+          mkI(f.on ? "Bypass effect" : "Enable effect", f.on ? "eye-off" : "eye", false, false, [ii] { auto& c = A.fxChain(); if (ii < (int)c.size()) c[ii].on = !c[ii].on; });
+          mkI("Move up", "arrow-up", ii <= 0, false, [ii] { A.moveFx(ii, -1); });
+          mkI("Move down", "arrow-down", ii >= (int)chain.size() - 1, false, [ii] { A.moveFx(ii, 1); });
+          mkI("Duplicate", "copy", false, false, [ii] { A.dupFx(ii); });
+          mkI("Reset parameters", "rotate-ccw", false, false, [ii] { A.resetFx(ii); });
+          mkI("Remove effect", "trash-2", false, true, [ii] { A.removeFx(ii); });
+          A.openCtx(ImGui::GetIO().MousePos, std::move(items));
         }
-        if (dd.enumLabel) {
-          Text(ox + 6, oy + y + 5, UI_B, 9, K(pal::t88), Upper(dd.enumLabel).c_str(), 0.09f);
-          y += 9 + 4;
-          float ew = (W - 12 - 8) / 3.f;
-          for (int oi = 0; oi < 3 && dd.opts[oi]; ++oi) {
-            ImRect er(ox + 6 + oi * (ew + 4), oy + y, ox + 6 + oi * (ew + 4) + ew, oy + y + 22);
-            bool on = cur.en == oi;
-            Hit eh = HitR(er);
-            if (on) { Glow(er, tn, 0.28f, 10, 3); Fill(er, K(pal::g16), 3); }
-            Box(er, on ? K(tn, 0.18f) : K(pal::g1c), on ? K(tn) : K(pal::g22), 3);
-            TextC((er.Min.x + er.Max.x) * 0.5f, (er.Min.y + er.Max.y) * 0.5f, MONO_B, 9, K(on ? tn : pal::t88), dd.opts[oi], 0.09f);
-            if (eh.hover) CursorHand();
-            if (eh.click) cur.en = oi;
-          }
+        y += 22 + 4;
+        for (int pi = 0; pi < d.nparams; ++pi) {
+          std::string vl = FxFmt(f.kind, pi, f.p[pi]);
+          Text(ox + 8, oy + y + 5, UI_S, 10, K(pal::t88), d.pl[pi] ? d.pl[pi] : "");
+          TextR(ox + W - 8, oy + y + 5, MONO_B, 10, K(pal::tf3), vl.c_str());
+          y += 10 + 4;
+          Slider(0x3000 + i * 8 + pi, Rc(ox + 8, oy + y + 4, W - 16, 6), f.p[pi], tn);
+          y += 14 + 4;
+        }
+        if (d.enumLabel) {
+          Text(ox + 8, oy + y + 5, UI_S, 10, K(pal::t88), d.enumLabel);
+          y += 10 + 4;
+          float ew = (W - 16 - 8) / 3.f;
+          for (int oi = 0; oi < 3 && d.opts[oi]; ++oi)
+            if (chip(ImRect(ox + 8 + oi * (ew + 4), oy + y, ox + 8 + oi * (ew + 4) + ew, oy + y + 22), d.opts[oi], f.en == oi, tn)) f.en = oi;
           y += 22 + 6;
         }
-        {
-          char ml2[16]; snprintf(ml2, sizeof ml2, "%d %%", (int)std::round(cur.mix));
-          Text(ox + 6, oy + y + 5, UI_B, 9, K(pal::coral), "DRY / WET MIX", 0.09f);
-          TextR(ox + W - 6, oy + y + 5, MONO_B, 10, K(pal::tf3), ml2);
-          y += 10 + 4;
-          Slider(0x3800 + A.fxSel, Rc(ox + 6, oy + y + 4, W - 12, 6), cur.mix, pal::coral);
-          y += 14 + 6;
-        }
-        {
-          struct TG { const char* n; bool on; uint32_t hx; std::function<void()> fn; };
-          int ii = A.fxSel;
-          TG tgs[3] = {{"B", !cur.on, pal::red, [ii] { auto& c = A.fxChain(); if (ii < (int)c.size()) c[ii].on = !c[ii].on; }},
-                       {"BEAT", cur.beat, pal::yellow, [ii] { auto& c = A.fxChain(); if (ii < (int)c.size()) c[ii].beat = !c[ii].beat; }},
-                       {"AUDIO", cur.react, pal::mint, [ii] { auto& c = A.fxChain(); if (ii < (int)c.size()) c[ii].react = !c[ii].react; }}};
-          float tw3 = (W - 12 - 8) / 3.f;
-          for (int ti = 0; ti < 3; ++ti) {
-            ImRect tr(ox + 6 + ti * (tw3 + 4), oy + y, ox + 6 + ti * (tw3 + 4) + tw3, oy + y + 22);
-            Hit th = HitR(tr);
-            if (tgs[ti].on) { Glow(tr, tgs[ti].hx, 0.28f, 10, 3); Fill(tr, K(pal::g16), 3); }
-            Box(tr, tgs[ti].on ? K(tgs[ti].hx, 0.18f) : K(pal::g1c), tgs[ti].on ? K(tgs[ti].hx) : K(pal::g22), 3);
-            TextC((tr.Min.x + tr.Max.x) * 0.5f, (tr.Min.y + tr.Max.y) * 0.5f, MONO_B, 9, K(tgs[ti].on ? tgs[ti].hx : pal::t88), tgs[ti].n, 0.09f);
-            if (th.hover) CursorHand();
-            if (th.click) tgs[ti].fn();
-          }
-          y += 22 + 6;
-        }
+        snprintf(b1, sizeof b1, "%d %%", (int)std::round(f.mix));
+        Text(ox + 8, oy + y + 5, UI_S, 10, K(pal::t88), "Dry / Wet");
+        TextR(ox + W - 8, oy + y + 5, MONO_B, 10, K(pal::tf3), b1);
+        y += 10 + 4;
+        Slider(0x3800 + i, Rc(ox + 8, oy + y + 4, W - 16, 6), f.mix, pal::coral);
+        y += 14 + 4;
+        float tw3 = (W - 16 - 4) / 2.f;
+        if (chip(ImRect(ox + 8, oy + y, ox + 8 + tw3, oy + y + 22), "BEAT", f.beat, pal::yellow)) f.beat = !f.beat;
+        if (chip(ImRect(ox + 8 + tw3 + 4, oy + y, ox + W - 8, oy + y + 22), "AUDIO", f.react, pal::mint)) f.react = !f.react;
+        y += 22 + 8;
       }
-      // fx meta rows
-      {
-        int act = 0; std::string names;
-        for (auto& f : chain) { if (f.on) act++; const FxDef& d = FX_LIB[std::clamp(f.kind, 0, FX_COUNT - 1)]; if (!names.empty()) names += " \xE2\x80\xBA "; names += d.name; }
-        if (names.empty()) names = "none";
-        char gpu[16], lat[16]; snprintf(gpu, sizeof gpu, "%d", 4 + act * 7); snprintf(lat, sizeof lat, "%d", act ? act * 2 : 0);
-        std::vector<std::array<std::string, 4>> mrows = {
-            {"Chain", names, "", ""}, {"GPU load", gpu, "%", "audio"},
-            {"Render", "per-layer, pre-mask", "", ""}, {"Latency", lat, "ms", ""}};
-        HLine(ox, ox + W, oy + y, K(pal::g2a));
-        rowsOf(mrows);
-      }
+      if (removeIdx >= 0) A.removeFx(removeIdx);
     }
+    }   // editable
   }
   sa.End(W, y + 4);
 }

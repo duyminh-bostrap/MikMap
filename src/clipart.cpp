@@ -135,20 +135,26 @@ float ClipSeconds(const Clip& c) {
 }
 
 void AdvanceClip(Clip& c, float dt) {
-  if (c.st == Clip::Empty || c.st == Clip::Armed) return;
+  if (c.st == Clip::Empty || c.st == Clip::Armed || c.paused) return;
+  // playback range [lo, hi] (the in/out markers, % of the clip); the default 0..100 is the whole clip
+  float lo = std::clamp(c.inPt, 0.f, 99.f), hi = std::clamp(c.outPt, lo + 1.f, 100.f), span = hi - lo;
   float d = dt * (100.f / ClipSeconds(c)) * (c.speed / 100.f) * (c.dir < 0 ? -1.f : 1.f);
   float p = c.progress + d;
   switch (c.playMode) {
     case PM_BOUN:
-      if (p > 100.f) { p = 200.f - p; c.dir = -1; }
-      else if (p < 0.f) { p = -p; c.dir = 1; }
+      if (p > hi) { p = 2.f * hi - p; c.dir = -1; }
+      else if (p < lo) { p = 2.f * lo - p; c.dir = 1; }
+      p = std::clamp(p, lo, hi);
       break;
-    case PM_HOLD: p = std::clamp(p, 0.f, 100.f); break;
+    case PM_HOLD: p = std::clamp(p, lo, hi); break;
     case PM_ONCE:
-      if (p >= 100.f) { p = 100.f; if (c.st == Clip::Live) c.st = Clip::Loaded; else if (c.st == Clip::LiveSel) c.st = Clip::Selected; }
-      p = std::clamp(p, 0.f, 100.f);
+      if (p >= hi) { p = hi; if (c.st == Clip::Live) c.st = Clip::Loaded; else if (c.st == Clip::LiveSel) c.st = Clip::Selected; }
+      p = std::clamp(p, lo, hi);
       break;
-    default: p = p < 0 ? p + 100.f : std::fmod(p, 100.f); break;  // PM_LOOP
+    default:   // PM_LOOP
+      if (p > hi) p = lo + std::fmod(p - lo, span);
+      else if (p < lo) p = hi - std::fmod(lo - p, span);
+      break;
   }
   c.progress = p;
 }
@@ -181,6 +187,21 @@ std::string SliceSourceName(const Slice& s) {
   return "Composition";
 }
 
+// Properties > Comp > Transform, applied to the whole composite by folding it into each clip's own transform:
+// composite = R(rot)·S(scale) about the anchor, then translated. Clips are centred art (rotate/scale about their own
+// centre), so composing the two transforms gives exactly what transforming the finished picture would.
+static bool XfActive(float px, float py, float scalePct, float rot, float ax, float ay) {
+  return px != 0 || py != 0 || scalePct != 100 || rot != 0 || ax != 0 || ay != 0;
+}
+static void ApplyXf(Clip& c, float px, float py, float scalePct, float rotDeg, float axPx, float ayPx) {
+  float sc = std::max(0.01f, scalePct / 100.f), rot = rotDeg * 3.14159265f / 180.f, cs = std::cos(rot), sn = std::sin(rot);
+  float kx = 960.f / std::max(1, A.canvasW), ky = 540.f / std::max(1, A.canvasH);   // canvas px -> art units (DrawSliceSource draws at base 960)
+  float ax = axPx * kx, ay = ayPx * ky;
+  float dx = (c.posX - ax) * sc, dy = (c.posY - ay) * sc;
+  c.posX = dx * cs - dy * sn + ax + px * kx; c.posY = dx * sn + dy * cs + ay + py * ky;
+  c.scale *= sc; c.rotation += rotDeg;
+}
+
 void DrawSliceSource(const Slice& s, ImRect canvas, float t, float alpha) {
   int kind = SliceSourceValid(s) ? s.srcKind : (int)Slice::SrcComp;
   auto member = [&](const Layer& l) {
@@ -190,21 +211,33 @@ void DrawSliceSource(const Slice& s, ImRect canvas, float t, float alpha) {
   // layer to a slice keeps working while the operator solos something else on the main output.
   bool anySolo = false;
   for (auto& l : A.layers) if (l.solo && member(l)) anySolo = true;
+  const float compA = std::clamp(A.comp.master / 100.f, 0.f, 1.f) * std::clamp(A.comp.opacity / 100.f, 0.f, 1.f);   // Comp > Master x Video opacity
+  const CompProps& ck = A.comp;
+  const bool xf = XfActive(ck.posX, ck.posY, ck.scale, ck.rotation, ck.anchorX, ck.anchorY);
+  // a layer's own transform applies first, then the composition's on top
+  auto draw = [&](const Layer& ly, const Clip& cl, float a2) {
+    bool lx = XfActive(ly.posX, ly.posY, ly.scale, ly.rotation, ly.anchorX, ly.anchorY);
+    if (!xf && !lx) { DrawClipContent(canvas, cl, t, 960.f, a2); return; }
+    Clip tc = cl;
+    if (lx) ApplyXf(tc, ly.posX, ly.posY, ly.scale, ly.rotation, ly.anchorX, ly.anchorY);
+    if (xf) ApplyXf(tc, ck.posX, ck.posY, ck.scale, ck.rotation, ck.anchorX, ck.anchorY);
+    DrawClipContent(canvas, tc, t, 960.f, a2);
+  };
   for (int li = (int)A.layers.size() - 1; li >= 0; --li) {   // bottom layer first, top layer draws last
     const Layer& l = A.layers[li];
     if (!member(l) || l.bypassed || l.muted || (anySolo && !l.solo)) continue;
     const Clip* lc = nullptr;
     for (auto& c : l.clips) if (c.isLive()) { lc = &c; break; }
     if (!lc) continue;
-    int bm = BlendIndex(l.blend);
+    int bm = lc->blend > 0 ? lc->blend - 1 : BlendIndex(l.blend);   // the clip's own blend mode wins over its layer's
     if (bm) SetBlendMode(bm);
-    float la = std::clamp(l.opacity / 100.f, 0.f, 1.f) * alpha;
+    float la = std::clamp(l.opacity / 100.f, 0.f, 1.f) * std::clamp(l.master / 100.f, 0.f, 1.f) * alpha * compA;
     if (!l.group.empty()) if (const Group* gp = A.group(l.group)) la *= std::clamp(gp->opacity / 100.f, 0.f, 1.f);
     if (l.fadeT < 1.f) {   // A10: cross-dissolve from the previous clip
-      DrawClipContent(canvas, l.fadeFrom, t, 960.f, la * (1.f - l.fadeT));
+      draw(l, l.fadeFrom, la * (1.f - l.fadeT));
       la *= l.fadeT;
     }
-    DrawClipContent(canvas, *lc, t, 960.f, la);
+    draw(l, *lc, la);
     if (bm) SetBlendMode(0);
   }
 }
@@ -230,7 +263,8 @@ static const MediaTex* GetMedia(const std::string& path) {
   m.tex = t; gMedia[path] = m;
   return &gMedia[path];
 }
-void PreloadMedia(const std::string& path) { GetMedia(path); }   // do the disk read + upload at load time, not mid-frame
+void PreloadMedia(const std::string& path) { GetMedia(path); }
+bool MediaImageSize(const std::string& path, int& w, int& h) { const MediaTex* m = GetMedia(path); if (!m) return false; w = m->w; h = m->h; return true; }   // do the disk read + upload at load time, not mid-frame
 
 // ── A4: cached clip thumbnails ──
 // Rendering the real generator art into every deck cell every frame cost ~16s/frame (S_STARS worst case, ~40
@@ -322,8 +356,27 @@ static uint32_t HueSat(uint32_t hex, float hueDeg, float satMul) {
 
 static void DrawClipCore(ImRect a, const Clip& c, float t, float base, float alpha, float lod);
 
-void DrawClipContent(ImRect a, const Clip& c, float t, float base, float alpha, float lod) {
-  if (c.st == Clip::Empty || c.st == Clip::Armed) return;
+// T(v) = R·S·(v - A) + A + pos = R·S·v + (A - R·S·A + pos): the anchor is just an extra translation.
+void ClipEffectivePos(const Clip& c, float base, float& px, float& py) {
+  px = c.posX; py = c.posY;
+  if (c.anchorX == 0.f && c.anchorY == 0.f) return;
+  float kx = base / std::max(1, A.canvasW), ky = base * 9.f / 16.f / std::max(1, A.canvasH);   // canvas px -> art units
+  float ax = c.anchorX * kx, ay = c.anchorY * ky, sc = std::max(0.01f, c.scale), rot = c.rotation * 3.14159265f / 180.f;
+  float rx = (ax * sc) * std::cos(rot) - (ay * sc) * std::sin(rot), ry = (ax * sc) * std::sin(rot) + (ay * sc) * std::cos(rot);
+  px += ax - rx; py += ay - ry;
+}
+
+void DrawClipContent(ImRect a, const Clip& c0, float t, float base, float alpha, float lod) {
+  if (c0.st == Clip::Empty || c0.st == Clip::Armed) return;
+  // Anchor: scale/rotation pivot, folded into the position (see ClipEffectivePos).
+  Clip anchored;
+  const Clip* pc = &c0;
+  if (c0.anchorX != 0.f || c0.anchorY != 0.f) {
+    anchored = c0;
+    ClipEffectivePos(c0, base, anchored.posX, anchored.posY);
+    pc = &anchored;
+  }
+  const Clip& c = *pc;
   const Fx* mirror = nullptr;
   for (const Fx& f : c.fx) {
     if (!f.on) continue;
@@ -378,7 +431,8 @@ static void DrawClipCore(ImRect a, const Clip& c, float t, float base, float alp
     return r * sc * k;
   };
   auto Ctr = [&]() { return P(0, 0); };
-  auto Col = [&](uint32_t hex, float al) { return Ca(K(hex, al * alpha)); };
+  const uint32_t chanMask = (c.chan & 1 ? 0xFF0000u : 0u) | (c.chan & 2 ? 0x00FF00u : 0u) | (c.chan & 4 ? 0x0000FFu : 0u);   // Clip > R G B toggles
+  auto Col = [&](uint32_t hex, float al) { return Ca(K(hex & chanMask, al * alpha)); };
   auto N = [&](int n) { return std::max(3, (int)(n * lod)); };
   dl->PushClipRect(a.Min, a.Max, true);
 
