@@ -1,5 +1,8 @@
 # UX hiện tại của MikMap (`src/`, nhánh `new_UI`)
 
+> **Cập nhật 2026-09-24:** kéo được hai khe dọc hai bên monitor để đổi bề rộng
+> Browser/Properties (mục 2.7); toàn bộ chữ lớn hơn 20% (`ui::kTextScale`, mục 0).
+>
 > **Cập nhật 2026-09-22:** ô clip tách bar/body theo yêu cầu người dùng — xem mục 2.1.
 >
 > **Cập nhật 2026-09-21 (lần 2):** đã sửa các mục X1–X4, X6–X8, X10 (xem mục 7) — nội dung dưới đã khớp code hiện tại.
@@ -32,6 +35,10 @@
   lưu riêng ở thư mục config của hệ điều hành và tự lưu khi đổi. Thay đổi chưa lưu
   hiện dấu `*` ở tiêu đề, và app cảnh báo trước khi bỏ/thoát (bấm lại lần nữa để xác nhận).
 - Cỡ chữ giao diện chỉnh được 4 mức trong Cài đặt (scale toàn bộ workspace).
+- **Chữ lớn hơn bản thiết kế 20%** (từ 2026-09-24): mọi cỡ chữ trong code vẫn ghi
+  đúng số px của bản thiết kế, `ui::kTextScale = 1.2` nhân lúc vẽ (`ui::Text`/`TextW`,
+  ô nhập liệu qua `ui::TextPx`). Chỉ chữ to lên, khung/hàng/icon giữ nguyên — chỗ
+  chật tự cắt bằng "…" (vd tên nhóm dài trên dải ghim: "STAGE …").
 
 ---
 
@@ -180,7 +187,7 @@ thành 7 nút: ⏮ (về 0%) · ◀ (lùi 1 bar, −6.25%) · ▶/⏸ · ■ (d�
 (tiến 1 bar, +6.25%) · ⏭ (tới cuối, 99.9%). Playhead/vòng lặp **không lưu vào
 dự án** (chỉ trạng thái runtime, reset khi mở lại).
 
-### 2.4 Browser (trái, mặc định 200px — chỉnh được, xem §5 tab Layout)
+### 2.4 Browser (trái, mặc định 200px — kéo khe bên phải để đổi, xem §2.7; hoặc §5 tab Layout)
 Cây thư mục: **Media** (✅ ảnh thật trong `~/Documents/MikMap/media`, bấm thư mục để quét lại) · Sources · Generators · Effects · Composition — bốn thư mục sau vẫn là **dữ liệu mẫu cố
 định**. Kéo ảnh vào ô để tạo clip ảnh (căn vừa canvas, có alpha, đi qua warp).
 - Bấm thư mục: mở/đóng. Bấm mục: chọn. ✅
@@ -203,7 +210,7 @@ Cây thư mục: **Media** (✅ ảnh thật trong `~/Documents/MikMap/media`, b
   này lẫn 5 nút transport bên dưới, nhường chỗ cho hai monitor to hơn. ✅
 - 5 nút transport (ẩn cùng thanh nếu Cao thanh timeline = 0): **▶ Play** (tiếp tục chạy playhead của mọi clip đang chọn/live ✅) · **⏸ Pause** (dừng toàn bộ playhead, không đổi trạng thái Live ✅) · **■ Stop** (dừng chạy + tua playhead về 0 ✅) · **⏮/⏭** (nhảy sang cột trước/sau **và bắn luôn cột đó** — như bấm header cột, có dừng layer nào trống ở cột mới, có theo Sync/quantize nếu bật ✅; khác phím `←`/`→` chỉ di chuyển lựa chọn, không phát).
 
-### 2.6 Properties (phải, mặc định 236px — chỉnh được, xem §5 tab Layout) — 3 tab **Comp / Layer / Clip**
+### 2.6 Properties (phải, mặc định 236px — kéo khe bên trái để đổi, xem §2.7; hoặc §5 tab Layout) — 3 tab **Comp / Layer / Clip**
 - **Comp**: bảng chỉ đọc (canvas, số layer/nhóm/cột, BPM, FPS, độ trễ, output).
 - **Layer**: slider opacity/audio, 8 chip **blend mode** (cùng danh sách với dropdown hàng layer), công tắc Solo/Mute/Bypass,
   bảng thông tin.
@@ -214,6 +221,15 @@ Cây thư mục: **Media** (✅ ảnh thật trong `~/Documents/MikMap/media`, b
 
 ### 2.7 Kích thước
 Kéo **thanh ngang giữa dải trên và Deck** để đổi chiều cao (tối thiểu 180px). ✅
+
+Kéo **khe dọc 4px giữa Browser và monitor** để đổi bề rộng Browser (140–320px),
+**khe giữa monitor và Properties** để đổi bề rộng Properties (180–360px). Cụm hai
+monitor không bao giờ hẹp hơn 560px (hẹp hơn thì tiêu đề Preview Cue tự đè lên
+nhau), nên trên cửa sổ nhỏ giới hạn trên có thể thấp hơn 320/360. Rê chuột lên khe
+→ con trỏ ↔, khe tô coral như thanh ngang; giữa khe có vạch nắm 34px. Giá trị ghi
+thẳng vào `prefs.browserW`/`inspectorW` — slider trong Cài đặt → Layout đổi theo
+và tự lưu `settings.json`. (`ColumnSplittersInput`/`ColumnSplittersDraw`,
+`deck.cpp`) ✅
 
 ---
 
@@ -290,8 +306,8 @@ lưu vào `settings.json` (mô tả *máy này*, không phải dự án, đúng 
 tách máy/buổi diễn):
 | Slider | Field | Khoảng | Ghi chú |
 |---|---|---|---|
-| Browser width | `prefs.browserW` | 140–320px | Bề rộng cây Browser bên trái (§2.4) |
-| Properties width | `prefs.inspectorW` | 180–360px | Bề rộng panel Properties bên phải (§2.6) |
+| Browser width | `prefs.browserW` | 140–320px | Bề rộng cây Browser bên trái (§2.4) — kéo khe dọc bên phải Browser cũng đổi giá trị này (§2.7) |
+| Properties width | `prefs.inspectorW` | 180–360px | Bề rộng panel Properties bên phải (§2.6) — kéo khe dọc bên trái Properties cũng đổi giá trị này (§2.7) |
 | Top band height | `prefs.bandPct` | 25–70% | % chiều cao cửa sổ dành cho dải trên (Browser/Monitor/Properties) — kéo tay bằng resize handle (đáy dải) cũng cập nhật lại giá trị % này, hai cách chỉnh đồng bộ hai chiều |
 | Timeline height | `prefs.timelineH` | 0–96px | Cao thanh SYSTEM TIME/TIMELINE + nút transport (§2.5) — **0 = ẩn hẳn thanh này** |
 
