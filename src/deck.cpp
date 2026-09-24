@@ -2231,6 +2231,55 @@ static void TimelineView(ImRect r) {
   }
 }
 
+// Column splitters: the 4px gaps either side of the monitors resize the Browser / Properties columns by dragging.
+// Same prefs and limits as Settings > Layout (140–320 / 180–360px), saved to settings.json the same way; the monitors
+// never get narrower than kMinMonitorsW — below that the Preview Cue header (title, resolution, zoom, hand tool)
+// starts overlapping itself. The grab zone is the gap plus the panel's own 1px border line — never further
+// in, where the Browser/Properties scroll areas (and their scrollbars) start.
+static constexpr float kMinMonitorsW = 560.f;
+
+static ImRect ColumnGap(int side, float x0, float x1, float y0, float bandH) {
+  if (side == 1) { float bx = x0 + A.prefs.browserW; return ImRect(bx - 1, y0, bx + 4, y0 + bandH); }
+  float ix = x1 - A.prefs.inspectorW;
+  return ImRect(ix - 4, y0, ix + 1, y0 + bandH);
+}
+
+// Runs before the panels are laid out, so a drag moves them this frame rather than the next.
+static void ColumnSplittersInput(float x0, float x1, float y0, float bandH) {
+  bool idle = A.resizingCol == 0 && !A.resizingDeck && !A.dragSrc.active;
+  for (int side = 1; side <= 2; ++side) {
+    Hit h = HitR(ColumnGap(side, x0, x1, y0, bandH));
+    if (idle && h.hover) ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+    if (idle && h.click) A.resizingCol = side;
+  }
+  if (A.resizingCol == 0) return;
+  if (!ImGui::IsMouseDown(0)) { A.resizingCol = 0; return; }
+  ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+  float mx = ImGui::GetIO().MousePos.x, W = x1 - x0;
+  if (A.resizingCol == 1) {
+    int hi = std::max(140, std::min(320, (int)(W - A.prefs.inspectorW - 8 - kMinMonitorsW)));
+    A.prefs.browserW = std::clamp((int)std::round(mx - x0 - 2), 140, hi);   // pointer stays on the middle of the gap
+  } else {
+    int hi = std::max(180, std::min(360, (int)(W - A.prefs.browserW - 8 - kMinMonitorsW)));
+    A.prefs.inspectorW = std::clamp((int)std::round(x1 - mx - 2), 180, hi);
+  }
+}
+
+// Drawn after the panels, over their border lines — the same look as the deck/band handle below.
+static void ColumnSplittersDraw(float x0, float x1, float y0, float bandH) {
+  for (int side = 1; side <= 2; ++side) {
+    ImRect z = ColumnGap(side, x0, x1, y0, bandH);
+    bool hot = A.resizingCol == side || (A.resizingCol == 0 && !A.resizingDeck && !A.dragSrc.active && Hover(z));
+    if (hot) {
+      Fill(z, K(0xff7f50, 0.15f));
+      VLine(z.Min.x, z.Min.y, z.Max.y, K(pal::coral));
+      VLine(z.Max.x - 1, z.Min.y, z.Max.y, K(pal::coral));
+    }
+    float gx = side == 1 ? z.Min.x + 3 : z.Max.x - 3;   // middle of the 4px gap
+    Fill(Rc(gx - 0.5f, (z.Min.y + z.Max.y) * 0.5f - 17, 1, 34), K(pal::t66));
+  }
+}
+
 void DrawDeck(ImRect body) {
   ResetThumbBudget(3);   // A4: at most 3 deck-cell thumbnails redraw (FBO round-trip) per frame — see ClipCell
   float H = ImGui::GetIO().DisplaySize.y;
@@ -2246,6 +2295,7 @@ void DrawDeck(ImRect body) {
     if (std::hypot(m.x - A.browserPressPos.x, m.y - A.browserPressPos.y) > 5.f) { A.dragSrc = A.dragSrcCand; A.dragSrc.active = true; }
   }
   if (!ImGui::IsMouseDown(0)) A.browserPress = false;
+  ColumnSplittersInput(x0, x1, y0, bandH);
   Browser(ImRect(x0, y0, x0 + A.prefs.browserW, y0 + bandH));
   Inspector(ImRect(x1 - A.prefs.inspectorW, y0, x1, y0 + bandH));
 
@@ -2317,6 +2367,8 @@ void DrawDeck(ImRect body) {
       }
     }
   }
+
+  ColumnSplittersDraw(x0, x1, y0, bandH);
 
   // resize handle
   {

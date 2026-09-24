@@ -188,6 +188,7 @@ struct App {
   int tab = 0;  // 0 comp, 1 layer, 2 clip
   float topBandPx = 0;
   bool resizingDeck = false;
+  int resizingCol = 0;   // Composition column splitter being dragged: 1 = Browser|monitors, 2 = monitors|Properties
   int activeCol = 1, selLi = 0, selCi = 2, selLayer = 0;
   std::vector<std::pair<int, int>> selectedCells;
   std::vector<Group> groups;
