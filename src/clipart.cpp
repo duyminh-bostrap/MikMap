@@ -408,7 +408,9 @@ static void DrawClipCore(ImRect a, const Clip& c, float t, float base, float alp
   alpha *= std::clamp(c.opacity / 100.f, 0.f, 1.f);
   if (alpha <= 0.004f) return;
   ImDrawList* dl = g.dl;
-  uint32_t col = CLIP_COLORS[std::clamp(c.color, 0, 5)];
+  // The generator's picture is NOT tinted by Clip::color: that colour only marks the clip's cell in the deck. (Real tinting is
+  // the Hue/Saturation effect below.) Fixed to the default palette entry so recolouring a cell never changes what is projected.
+  uint32_t col = CLIP_COLORS[0];
   for (const Fx& f : c.fx) if (f.on && f.kind == 7)   // hue shift (p0 = hue, 0..100 -> 0..360 deg; p1 = saturation, 50 = unchanged)
     col = HueSat(col, f.p[0] * 3.6f * (f.mix / 100.f), 1.f + (f.p[1] - 50.f) / 50.f * (f.mix / 100.f));
   float W = a.GetWidth(), k = W / base;
