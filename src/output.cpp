@@ -1,5 +1,6 @@
 // F2 / I1: the projector output — a separate borderless window that shows only the warped slices,
 // with no editing overlay. The control window keeps the whole UI; this one is what the audience sees.
+#include <cctype>
 #include "app.h"
 
 #include <GLFW/glfw3.h>
@@ -91,6 +92,24 @@ void ToggleOutput(GLFWwindow* share, int monitorIdx) {
 }
 
 int MonitorCount() { int c = 0; glfwGetMonitors(&c); return c; }
+// A screen's Output device is either one of the physical displays (its stored name is MonitorName(i), or the older "Display N ..."
+// form) or a virtual output. A physical display fixes the screen's resolution; only a virtual output lets it be typed in.
+const char* const kVirtualDevices[3] = {"NDI Output", "Spout Output", "Virtual Output"};
+bool IsVirtualDevice(const std::string& dev) { return dev.rfind("NDI", 0) == 0 || dev.rfind("Spout", 0) == 0 || dev.rfind("Virtual", 0) == 0; }
+int DeviceMonitor(const std::string& dev) {
+  if (dev.empty() || IsVirtualDevice(dev)) return -1;
+  int idx = -1, n = 0;
+  if (dev.rfind("Display ", 0) == 0 && std::sscanf(dev.c_str() + 8, "%d", &n) == 1) idx = n - 1;   // "Display 2 (HDMI ...)"
+  else if (std::isdigit((unsigned char)dev[0]) && std::sscanf(dev.c_str(), "%d:", &n) == 1) idx = n - 1;   // "2: LG (1920x1080@60)"
+  return idx >= 0 && idx < MonitorCount() ? idx : -1;
+}
+bool DeviceResolution(const std::string& dev, int& w, int& h) {
+  int i = DeviceMonitor(dev); if (i < 0) return false;
+  int c = 0; GLFWmonitor** m = glfwGetMonitors(&c); if (i >= c) return false;
+  const GLFWvidmode* vm = glfwGetVideoMode(m[i]); if (!vm) return false;
+  w = vm->width; h = vm->height; return true;
+}
+void SyncScreenResolutions() { for (auto& sc : A.screens) { int w, h; if (DeviceResolution(sc.outDev, w, h)) { sc.w = w; sc.h = h; } } }
 std::string MonitorName(int i) {
   int c = 0;
   GLFWmonitor** m = glfwGetMonitors(&c);

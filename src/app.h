@@ -523,6 +523,11 @@ void RenderOutput();
 struct GLFWwindow* glfwWin();   // the control window, for opening the output on a shared context
 int MonitorCount();
 std::string MonitorName(int i);
+extern const char* const kVirtualDevices[3];   // NDI / Spout / Virtual output: no display, so the resolution is typed in
+bool IsVirtualDevice(const std::string& dev);
+int DeviceMonitor(const std::string& dev);      // the physical display a screen's device name refers to, or -1
+bool DeviceResolution(const std::string& dev, int& w, int& h);   // that display's real resolution
+void SyncScreenResolutions();                   // screens on a physical display take its real resolution (once per frame)
 void SetOutputCapture(const char* path);
 void LoadAllFonts(ImGuiIO& io, const std::string& assets);
 void FitAffine(float out[9], float* rms);

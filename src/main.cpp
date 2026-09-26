@@ -1528,6 +1528,7 @@ int main(int argc, char** argv) {
       }
     }
     ImGui::NewFrame();
+    SyncScreenResolutions();
     UpdateTestPattern();   // Show TestCard: paint its texture before anything samples it this frame
     {
       static Prefs lastPrefs = A.prefs; static int lastMon = A.outMonitor; static std::string lastTitle;
@@ -1611,7 +1612,10 @@ int main(int argc, char** argv) {
       StatusBar(ImRect(0, disp.y - 22, disp.x, disp.y));
       DrawOverlays(disp);
     }
-    if (ImGui::IsKeyPressed(ImGuiKey_F11, false)) ToggleOutput(win, A.outMonitor);
+    if (ImGui::IsKeyPressed(ImGuiKey_F11, false)) {
+      if (A.curScreen() && IsVirtualDevice(A.curScreen()->outDev)) A.notify("Virtual output has no display window");
+      else ToggleOutput(win, A.outMonitor);
+    }
     ImGui::End();
 
     if (A.osDrop.pending) {   // every drop target has had its chance this frame

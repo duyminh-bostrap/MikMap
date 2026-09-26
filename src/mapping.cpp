@@ -2108,8 +2108,8 @@ static void PropsPanel(ImRect r) {
       Label(x, oy + y, "Output device"); y += 9 + 4;
       ImRect dr2(x, oy + y, x + w, oy + y + 26);
       Hit dh2 = HitR(dr2);
-      bool haveMon = MonitorCount() > 0;
-      std::string cur = haveMon ? MonitorName(A.outMonitor) : sc->outDev;
+      int devMon = DeviceMonitor(sc->outDev);
+      std::string cur = devMon >= 0 ? MonitorName(devMon) : sc->outDev;   // a physical display shows its live name and resolution
       Box(dr2, dh2.hover ? K(pal::ctrlHover) : K(pal::g1c), K(pal::g22), 3);
       Icon("monitor", ImVec2(dr2.Min.x + 14, (dr2.Min.y + dr2.Max.y) * 0.5f), 11, K(pal::cyan));
       TextEll(dr2.Min.x + 28, (dr2.Min.y + dr2.Max.y) * 0.5f, dr2.GetWidth() - 50, UI_S, 10, K(pal::tf3), cur.c_str());
@@ -2119,16 +2119,23 @@ static void PropsPanel(ImRect r) {
         std::string scId = sc->id;
         std::vector<MenuItem> mi;
         for (int i = 0; i < MonitorCount(); ++i) {
-          MenuItem it; it.label = MonitorName(i); it.icon = "monitor"; it.toneHex = (i == A.outMonitor) ? pal::cyan : 0;
+          MenuItem it; it.label = MonitorName(i); it.icon = "monitor"; it.toneHex = (i == devMon) ? pal::cyan : 0;
           it.run = [i, scId] {
             A.pushHist();
-            for (auto& S : A.screens) if (S.id == scId) S.outDev = MonitorName(i);
+            for (auto& S : A.screens) if (S.id == scId) { S.outDev = MonitorName(i); int rw, rh; if (DeviceResolution(S.outDev, rw, rh)) { S.w = rw; S.h = rh; } }
             A.outMonitor = i;
             if (OutputOpen()) OpenOutput(glfwWin(), A.outMonitor);
           };
           mi.push_back(it);
         }
         if (mi.empty()) { MenuItem it; it.label = "No display detected"; it.disabled = true; mi.push_back(it); }
+        { MenuItem d; d.label = ""; d.disabled = true; d.divider = true; mi.push_back(d); }
+        for (int k = 0; k < 3; ++k) {   // virtual outputs: no display window, and the only case where the resolution can be typed
+          MenuItem it; it.label = kVirtualDevices[k]; it.icon = k == 0 ? "video" : k == 1 ? "layers" : "square"; it.divider = false;
+          it.toneHex = sc->outDev == kVirtualDevices[k] ? pal::cyan : 0;
+          it.run = [k, scId] { A.pushHist(); for (auto& S : A.screens) if (S.id == scId) S.outDev = kVirtualDevices[k]; if (OutputOpen() && A.curScreen() && A.curScreen()->id == scId) CloseOutput(); };
+          mi.push_back(it);
+        }
         A.openCtx(ImVec2(dr2.Min.x, dr2.Max.y + 4), mi);
       }
       y += 26 + 6;
@@ -2136,9 +2143,18 @@ static void PropsPanel(ImRect r) {
     {   // display size (the tree label) and the colour block: the same slider rows the Clip transform panel uses
       float vals[2] = {(float)sc->w, (float)sc->h}, fw = (w - 6) / 2.f;
       const char* fl[2] = {"Width", "Height"};
+      int rw, rh; const bool locked = DeviceResolution(sc->outDev, rw, rh);   // a physical display: its real resolution, not editable
       for (int i = 0; i < 2; ++i) {
         char id[16]; snprintf(id, sizeof id, "##scwh%d", i);
-        if (NumCell(x + i * (fw + 6), oy + y, fw, fl[i], id, vals[i], 0)) (i ? sc->h : sc->w) = std::clamp((int)std::lround(vals[i]), 16, 16384);
+        float fx = x + i * (fw + 6);
+        if (locked) {
+          Text(fx, oy + y + 4.5f, MONO_R, 9, K(pal::t66), fl[i]);
+          ImRect fr(fx, oy + y + 11, fx + fw, oy + y + 35);
+          Box(fr, K(pal::g12), K(pal::g22), 3);
+          char vb[16]; snprintf(vb, sizeof vb, "%d", i ? sc->h : sc->w);
+          Text(fr.Min.x + 8, (fr.Min.y + fr.Max.y) * 0.5f, MONO_R, 11, K(pal::t88), vb);
+          TextR(fr.Max.x - 8, (fr.Min.y + fr.Max.y) * 0.5f, MONO_R, 8, K(pal::t66), "DISPLAY", 0.09f);
+        } else if (NumCell(fx, oy + y, fw, fl[i], id, vals[i], 0)) (i ? sc->h : sc->w) = std::clamp((int)std::lround(vals[i]), 16, 16384);
       }
       y += 35 + 8;
     }
@@ -2172,15 +2188,19 @@ static void PropsPanel(ImRect r) {
     HLine(ox, ox + W, oy + y, K(pal::g2a)); y += 1 + 8;
     {
       ImRect ob(x, oy + y, x + w, oy + y + 30);
+      const bool virt = IsVirtualDevice(sc->outDev);   // NDI / Spout / Virtual have no display window (and no sender yet)
       Hit oh = HitR(ob);
-      bool on = OutputOpen();
+      bool on = OutputOpen() && !virt;
+      float prevA = g.alpha; if (virt) g.alpha *= 0.4f;
       if (on) Glow(ob, pal::coral, 0.35f, 12, 3);
       Box(ob, on ? K(pal::coral, 0.2f) : K(pal::g1c), on ? K(pal::coral) : K(pal::g22), 3);
       const char* lb = on ? "\xC4\x90\xC3\x93NG OUTPUT (F11)" : "M\xE1\xBB\x9E OUTPUT (F11)";
       TextC((ob.Min.x + ob.Max.x) * 0.5f, (ob.Min.y + ob.Max.y) * 0.5f, UI_B, 10, K(on ? pal::coral : pal::tcc), lb, 0.09f);
-      if (oh.hover) CursorHand();
-      if (oh.click) ToggleOutput(glfwWin(), A.outMonitor);
+      g.alpha = prevA;
+      if (oh.hover && !virt) CursorHand();
+      if (oh.click && !virt) ToggleOutput(glfwWin(), A.outMonitor);
       y += 30 + 8;
+      if (virt) { Text(x, oy + y + 2, UI_S, 9, K(pal::t66), "Virtual output: no display window. NDI / Spout sender is not built yet.", 0.01f); y += 16; }
     }
     // F8: save/load this screen (device/resolution/slices/masks) as its own file, independent of the project.
     HLine(ox, ox + W, oy + y, K(pal::g2a)); y += 1 + 8;

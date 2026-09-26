@@ -336,7 +336,8 @@ các hàng thanh trượt kiểu panel Clip transform (nhãn trái, giá trị m
   (−100…100, 0 = giữ nguyên) làm bằng các lớp phủ blend GL (nhân / gain `dst·(1+c)` / cộng / trừ, `DrawColorAdjust` trong `clipart.cpp`) chỉ trong
   đường viền từng slice — vùng đen ngoài slice vẫn đen. Contrast xoay quanh xám 50%; RGB nhân kênh đó; Brightness dịch tất cả. Slice **chồng nhau**
   bị chỉnh màu 2 lần ở vùng chồng. Tác động cửa sổ máy chiếu và thumbnail slice trên trang Output routing, **không** đổi Live Output/Preview trong workspace.
-- **Width/Height** là độ phân giải khai báo của thiết bị (hiện ở cây và ở Screen), **chưa** đổi hệ toạ độ output (stage vẫn là 1920×1080 kéo giãn ra máy chiếu).
+- **Output device + độ phân giải (2026-09-26):** dropdown liệt kê các màn hình thật (`1: Built-in Display (1920x1200@60)`…) rồi **NDI Output / Spout Output / Virtual Output**. Chọn **màn hình thật** → Width/Height **không sửa được**, tự đặt đúng độ phân giải thực tế của màn hình đó (`SyncScreenResolutions`, mỗi khung hình — cắm màn khác thì số đổi theo; ô hiện nhãn `DISPLAY`). Chỉ khi chọn **NDI / Spout / Virtual** mới gõ được Width/Height, và khi đó nút *Mở output* (`F11`) bị khoá vì không có cửa sổ hiển thị (chưa có bộ gửi NDI/Spout thật — chỉ là lựa chọn thiết bị). Tên thiết bị lưu ở `Screen::outDev`, độ phân giải ảo lưu ở `w/h`.
+- **Width/Height** hiện ở cây và ở Screen, **chưa** đổi hệ toạ độ output (stage vẫn là 1920×1080 kéo giãn ra máy chiếu).
 - Kiểm bằng ảnh chụp cửa sổ output (`--outshot`): Opacity 0 → đen hẳn; Brightness +100 → trung bình sáng ~126/255; Contrast −100 → phẳng xám ~50%; Red +100 → các cột đỏ rực hơn rõ rệt. ✅
 
 ---
