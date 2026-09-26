@@ -1890,13 +1890,22 @@ static void PropsPanel(ImRect r) {
         if (ih.hover) CursorHand();
         if (ih.click) v = !v;
       };
-      auto section = [&](const char* title, const char* note = nullptr, bool* on = nullptr, uint32_t hex = pal::mint) {
-        HLine(ox, ox + W, oy + y, K(pal::g2a)); y += 1 + 4;
-        Text(x, oy + y + 9, MONO_R, 9, K(pal::t88), Upper(title).c_str(), 0.09f);
+      // Three collapsible groups (Picture / Soft edge / Black level). Open state is a view setting: kept while the app runs, not in the project.
+      static bool secOpen[3] = {true, true, true};
+      auto section = [&](int idx, const char* title, const char* note = nullptr, bool* on = nullptr, uint32_t hex = pal::mint) -> bool {
+        HLine(ox, ox + W, oy + y, K(pal::g2a)); y += 1 + 3;
         float rx = x + w;
-        if (on) { checkBox(ImRect(rx - 14, oy + y + 2, rx, oy + y + 16), *on, hex); rx -= 22; }
-        if (note) TextR(rx, oy + y + 9, MONO_R, 8, K(pal::t66), note);
-        y += 18 + 2;
+        if (on) rx -= 22;
+        ImRect hr(x, oy + y, on ? x + w - 22 : x + w, oy + y + 20);
+        Hit hh = HitR(hr);
+        if (hh.hover) { Fill(ImRect(hr.Min.x - 4, hr.Min.y, hr.Max.x, hr.Max.y), K(pal::g1c), 2); CursorHand(); }
+        if (hh.click) secOpen[idx] = !secOpen[idx];
+        Icon(secOpen[idx] ? "chevron-down" : "chevron-right", ImVec2(x + 6, oy + y + 10), 11, K(hh.hover ? pal::white : pal::t88));
+        Text(x + 18, oy + y + 10, MONO_R, 9, K(pal::t88), Upper(title).c_str(), 0.09f);
+        if (on) checkBox(ImRect(x + w - 14, oy + y + 3, x + w, oy + y + 17), *on, hex);
+        if (note && secOpen[idx]) TextR(rx, oy + y + 10, MONO_R, 8, K(pal::t66), note);
+        y += 20 + 2;
+        return secOpen[idx];
       };
       auto slider = [&](const char* label, const char* val, uint32_t id, float& v, float lo, float hi, uint32_t hex, bool dim) -> bool {
         float prev = g.alpha; if (dim) g.alpha *= 0.5f;
@@ -1913,7 +1922,7 @@ static void PropsPanel(ImRect r) {
         char vb[24]; snprintf(vb, sizeof vb, "%.2f", v);
         slider(label, vb, id, v, lo, hi, hex, dim);
       };
-      HLine(ox, ox + W, oy + y, K(pal::g2a)); y += 1 + 4;
+      if (section(0, "Picture")) {
       {   // Flip: 0 none, 1 mirror X, 2 mirror Y, 3 both — label and the four choices on one line
         Text(x, oy + y + 12, UI_S, 10, K(pal::t88), "Flip");
         const char* fl4[4] = {"NONE", "X", "Y", "X+Y"}; float bw = (w - kLab - 3 * 3) / 4.f;
@@ -1943,19 +1952,22 @@ static void PropsPanel(ImRect r) {
       intRow("Green", sl->green, -100, 100, 0x3204, pal::mint);
       intRow("Blue", sl->blue, -100, 100, 0x3205, pal::cyan);
       y += 4;
-      section("Soft edge", "NOT RENDERED YET", &sl->softEdge, pal::mint);
-      fltRow("Gamma red", sl->seGammaR, 0.1f, 4.f, 0x3211, pal::red, !sl->softEdge);
-      fltRow("Gamma green", sl->seGammaG, 0.1f, 4.f, 0x3212, pal::mint, !sl->softEdge);
-      fltRow("Gamma blue", sl->seGammaB, 0.1f, 4.f, 0x3213, pal::cyan, !sl->softEdge);
-      fltRow("Gamma", sl->seGamma, 0.1f, 4.f, 0x3214, pal::yellow, !sl->softEdge);
-      fltRow("Luminance", sl->seLum, 0.f, 1.f, 0x3215, pal::yellow, !sl->softEdge);
-      fltRow("Power", sl->sePower, 0.1f, 8.f, 0x3216, pal::yellow, !sl->softEdge);
-      y += 4;
-      section("Black level compensation", "NOT RENDERED YET");
-      intRow("Red", sl->blR, 0, 100, 0x3221, pal::red);
-      intRow("Green", sl->blG, 0, 100, 0x3222, pal::mint);
-      intRow("Blue", sl->blB, 0, 100, 0x3223, pal::cyan);
-      y += 4;
+      }
+      if (section(1, "Soft edge", "NOT RENDERED YET", &sl->softEdge, pal::mint)) {
+        fltRow("Gamma red", sl->seGammaR, 0.1f, 4.f, 0x3211, pal::red, !sl->softEdge);
+        fltRow("Gamma green", sl->seGammaG, 0.1f, 4.f, 0x3212, pal::mint, !sl->softEdge);
+        fltRow("Gamma blue", sl->seGammaB, 0.1f, 4.f, 0x3213, pal::cyan, !sl->softEdge);
+        fltRow("Gamma", sl->seGamma, 0.1f, 4.f, 0x3214, pal::yellow, !sl->softEdge);
+        fltRow("Luminance", sl->seLum, 0.f, 1.f, 0x3215, pal::yellow, !sl->softEdge);
+        fltRow("Power", sl->sePower, 0.1f, 8.f, 0x3216, pal::yellow, !sl->softEdge);
+        y += 4;
+      }
+      if (section(2, "Black level compensation", "NOT RENDERED YET")) {
+        intRow("Red", sl->blR, 0, 100, 0x3221, pal::red);
+        intRow("Green", sl->blG, 0, 100, 0x3222, pal::mint);
+        intRow("Blue", sl->blB, 0, 100, 0x3223, pal::cyan);
+        y += 4;
+      }
     }
     if (output && sl->warp != 0) {
       HLine(ox, ox + W, oy + y, K(pal::g2a)); y += 1 + 6;
