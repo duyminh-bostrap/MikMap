@@ -586,7 +586,7 @@ ImVec2 WarpMap::Map(float canvasX, float canvasY) const {
 void App::addScreen() {
   pushHist();
   int n = (int)screens.size() + 1;
-  Screen sc; sc.id = uid("screen"); sc.name = "Screen " + std::to_string(n); sc.outDev = "Projector / Display " + std::to_string(n);
+  Screen sc; sc.id = uid("screen"); sc.name = "Screen " + std::to_string(n); sc.outDev = n - 1 < MonitorCount() ? MonitorName(n - 1) : "Display " + std::to_string(n);   // the next display, if there is one
   sc.role = 2;
   Slice sl; sl.id = uid("slice"); sl.name = "Slice 1"; QuadOf(sl, 100, 100, 1720, 880);
   sc.slices.push_back(sl);
@@ -2041,7 +2041,33 @@ static void Stage(ImRect r) {
           }
         }
         if (clickPending && !frameTookClick && !A.maskPen && PointInPoly(m, sp4, 4)) { A.selKind = 1; A.selMk.clear(); frameTookClick = true; }
-      } else frame(RectOfSlice(*sl), pal::cyan, 0, -1);
+      } else {
+        // The selected slice's masks show as dashed yellow outlines (Input selection), so it is clear what will be cut before a mask is
+        // picked. A click right on one of the outlines picks that mask (before the input frame gets the click).
+        const bool pen = A.maskPen;
+        int hitMask = -1;
+        for (size_t mi = 0; mi < sl->masks.size(); ++mi) {
+          const Mask& M = sl->masks[mi];
+          std::vector<ImVec2> op = MaskOutline(M); for (auto& q : op) q = toPx(q);
+          if (op.size() < 3) continue;
+          DashedPoly(op.data(), (int)op.size(), K(pal::yellow, M.visible ? 0.75f : 0.3f), 1.5f, 8, 6);
+          if (!pen && hitMask < 0 && inArea && dragKind == 0 && !A.mapHand) for (size_t i = 0; i < op.size(); ++i) {
+            ImVec2 a = op[i], b = op[(i + 1) % op.size()], ab(b.x - a.x, b.y - a.y);
+            float l2 = ab.x * ab.x + ab.y * ab.y; if (l2 < 1.f) continue;
+            float t = std::clamp(((m.x - a.x) * ab.x + (m.y - a.y) * ab.y) / l2, 0.f, 1.f);
+            if (std::hypot(a.x + ab.x * t - m.x, a.y + ab.y * t - m.y) <= 4.5f) { hitMask = (int)mi; break; }
+          }
+        }
+        if (hitMask >= 0) {
+          CursorHand();
+          if (clickPending && !frameTookClick) {
+            if (MultiMod()) A.mapToggle(2, {sc->id, sl->id, sl->masks[hitMask].id});
+            else { A.mapMulti.clear(); A.selSc = sc->id; A.selSl = sl->id; A.selMk = sl->masks[hitMask].id; A.selKind = 2; }
+            frameTookClick = true;
+          }
+        }
+        frame(RectOfSlice(*sl), pal::cyan, 0, -1);
+      }
     }
     if (A.maskPen && scVis) {   // the shape being drawn, plus a rubber-band segment to the cursor
       std::vector<ImVec2> pp(A.penPts.size()); for (size_t i = 0; i < pp.size(); ++i) pp[i] = toPx(A.penPts[i]);
@@ -2735,8 +2761,7 @@ static void PropsPanel(ImRect r) {
           it.run = [i, scId] {
             A.pushHist();
             for (auto& S : A.screens) if (S.id == scId) { S.outDev = MonitorName(i); int rw, rh; if (DeviceResolution(S.outDev, rw, rh)) { S.w = rw; S.h = rh; } }
-            A.outMonitor = i;
-            if (OutputOpen()) OpenOutput(glfwWin(), A.outMonitor);
+            A.outMonitor = i;   // (an open output moves to the new display on its own)
           };
           mi.push_back(it);
         }
@@ -2745,7 +2770,7 @@ static void PropsPanel(ImRect r) {
         for (int k = 0; k < 3; ++k) {   // virtual outputs: no display window, and the only case where the resolution can be typed
           MenuItem it; it.label = kVirtualDevices[k]; it.icon = k == 0 ? "video" : k == 1 ? "layers" : "square"; it.divider = false;
           it.toneHex = sc->outDev == kVirtualDevices[k] ? pal::cyan : 0;
-          it.run = [k, scId] { A.pushHist(); for (auto& S : A.screens) if (S.id == scId) S.outDev = kVirtualDevices[k]; if (OutputOpen() && A.curScreen() && A.curScreen()->id == scId) CloseOutput(); };
+          it.run = [k, scId] { A.pushHist(); for (auto& S : A.screens) if (S.id == scId) S.outDev = kVirtualDevices[k]; };   // (the outputs follow on their own: this screen's window closes)
           mi.push_back(it);
         }
         A.openCtx(ImVec2(dr2.Min.x, dr2.Max.y + 4), mi);
@@ -2800,19 +2825,26 @@ static void PropsPanel(ImRect r) {
     HLine(ox, ox + W, oy + y, K(pal::g2a)); y += 1 + 8;
     {
       ImRect ob(x, oy + y, x + w, oy + y + 30);
+      // F17: the button switches ALL outputs; every screen routed to a display gets its own window. Below: where THIS screen goes.
       const bool virt = IsVirtualDevice(sc->outDev);   // NDI / Spout / Virtual have no display window (and no sender yet)
       Hit oh = HitR(ob);
-      bool on = OutputOpen() && !virt;
-      float prevA = g.alpha; if (virt) g.alpha *= 0.4f;
+      bool on = OutputOpen();
       if (on) Glow(ob, pal::coral, 0.35f, 12, 3);
       Box(ob, on ? K(pal::coral, 0.2f) : K(pal::g1c), on ? K(pal::coral) : K(pal::g22), 3);
       const char* lb = on ? "\xC4\x90\xC3\x93NG OUTPUT (F11)" : "M\xE1\xBB\x9E OUTPUT (F11)";
       TextC((ob.Min.x + ob.Max.x) * 0.5f, (ob.Min.y + ob.Max.y) * 0.5f, UI_B, 10, K(on ? pal::coral : pal::tcc), lb, 0.09f);
-      g.alpha = prevA;
-      if (oh.hover && !virt) CursorHand();
-      if (oh.click && !virt) ToggleOutput(glfwWin(), A.outMonitor);
+      if (oh.hover) CursorHand();
+      if (oh.click) ToggleOutput(glfwWin(), A.outMonitor);
       y += 30 + 8;
-      if (virt) { Text(x, oy + y + 2, UI_S, 9, K(pal::t66), "Virtual output: no display window. NDI / Spout sender is not built yet.", 0.01f); y += 16; }
+      std::string st; uint32_t sth = pal::t66;
+      int dm = DeviceMonitor(sc->outDev), onMon = OutputMonitorOf(sc->id);
+      std::string owner; if (dm >= 0) for (auto& o : A.screens) { if (DeviceMonitor(o.outDev) == dm) { owner = o.id == sc->id ? "" : o.name; break; } }
+      if (virt) st = "Virtual output: no display window (NDI / Spout sender not built yet).";
+      else if (dm < 0) st = "No display found for this device.";
+      else if (!owner.empty()) { st = "Display already used by " + owner + " \xE2\x80\x94 this screen is not shown."; sth = pal::red; }
+      else if (onMon >= 0) { st = "Showing on " + MonitorName(onMon) + "."; sth = pal::mint; }
+      else st = "Goes to " + MonitorName(dm) + " when the outputs are open.";
+      TextEll(x, oy + y + 2, w, UI_S, 9, K(sth), st.c_str(), 0.01f); y += 16;
     }
     // F8: save/load this screen (device/resolution/slices/masks) as its own file, independent of the project.
     HLine(ox, ox + W, oy + y, K(pal::g2a)); y += 1 + 8;

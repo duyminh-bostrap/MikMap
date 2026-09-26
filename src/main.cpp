@@ -173,7 +173,7 @@ static void StatusBar(ImRect r) {
       if (bh.hover && ImGui::GetIO().MouseWheel != 0.f) A.bpm = std::clamp(std::round((A.bpm + ImGui::GetIO().MouseWheel) * 10.f) / 10.f, 40.f, 240.f);
       Text(x, cy, MONO_M, 10, K(bh.hover ? pal::coral : pal::t66), bp); x += bw + 4;
     }
-    char out[64]; snprintf(out, sizeof out, "OUTPUT %s", OutputOpen() ? "OPEN" : "CLOSED");
+    char out[64]; if (OutputOpen()) snprintf(out, sizeof out, "OUTPUT %d OPEN", OutputWindowCount()); else snprintf(out, sizeof out, "OUTPUT CLOSED");
     Text(x, cy, MONO_M, 10, K(OutputOpen() ? pal::mint : pal::t66), out); x += TextW(MONO_M, 10, out) + 8;
   }
   // G9: real frame statistics instead of the mock timecode
@@ -1631,8 +1631,8 @@ int main(int argc, char** argv) {
       DrawOverlays(disp);
     }
     if (ImGui::IsKeyPressed(ImGuiKey_F11, false)) {
-      if (A.curScreen() && IsVirtualDevice(A.curScreen()->outDev)) A.notify("Virtual output has no display window");
-      else ToggleOutput(win, A.outMonitor);
+      ToggleOutput(win, A.outMonitor);   // F17: every screen routed to a display opens on it
+      if (OutputOpen() && OutputWindowCount() == 0) A.notify("No screen is routed to a display");
     }
     ImGui::End();
 

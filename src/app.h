@@ -533,7 +533,9 @@ bool SliceSourceValid(const Slice& s);
 std::string SliceSourceName(const Slice& s);
 void EnsureLayerIds(std::vector<Layer>& layers);            // give every layer a unique id (new, loaded or duplicated)
 // projector output window (F2/I1)
-bool OutputOpen();
+bool OutputOpen();                          // outputs switched on (F11)
+int OutputWindowCount();                    // projector windows actually open (one per screen on a physical display)
+int OutputMonitorOf(const std::string& screenId);   // the display a screen's window is on, or -1
 void OpenOutput(struct GLFWwindow* share, int monitorIdx);
 void CloseOutput();
 void ToggleOutput(struct GLFWwindow* share, int monitorIdx);

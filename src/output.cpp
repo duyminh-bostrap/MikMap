@@ -26,69 +26,101 @@ using namespace ui;
 
 #include "stb_image_write.h"
 
-static GLFWwindow* gOut = nullptr;
+// F17: one projector window per screen that is routed to a physical display. Outputs are switched on and off together (F11 / the
+// Screen panel's button); while on, the windows follow the screens every frame — a screen moved to another display moves its window,
+// a screen set to a virtual device loses it. One display shows one screen: the first screen in the list that asks for it.
+struct OutWin { std::string sc; int mon = -1; GLFWwindow* w = nullptr; };
+static std::vector<OutWin> gOuts;
+static bool gOutputsOn = false;
 static GLFWwindow* gMain = nullptr;
-static std::string gCapture;   // one-shot screenshot of the projector window (headless checks)
+static std::string gCapture;   // one-shot screenshot of the (first) projector window (headless checks)
 
 void SetOutputCapture(const char* path) { gCapture = path ? path : ""; }
-bool OutputOpen() { return gOut != nullptr; }
+bool OutputOpen() { return gOutputsOn; }
+int OutputWindowCount() { return (int)gOuts.size(); }
+int OutputMonitorOf(const std::string& screenId) { for (auto& o : gOuts) if (o.sc == screenId) return o.mon; return -1; }
 
 bool OutputKeyCloses(int key, int action, int mods) {
   if (action != GLFW_PRESS) return false;
   if (key == GLFW_KEY_ESCAPE || key == GLFW_KEY_F11) return true;
   return key == GLFW_KEY_W && (mods & (GLFW_MOD_CONTROL | GLFW_MOD_SUPER)) != 0;
 }
-// The output window is a bare GLFW window (no ImGui input), so it gets its own key callback: closing is just flagging it,
-// RenderOutput() then tears it down on the next frame like the window's own close button.
+// An output window is a bare GLFW window (no ImGui input), so it gets its own key callback: closing is just flagging it,
+// RenderOutput() then turns the outputs off on the next frame like the window's own close button.
 static void OutputKeyCb(GLFWwindow* w, int key, int, int action, int mods) {
   if (OutputKeyCloses(key, action, mods)) glfwSetWindowShouldClose(w, GLFW_TRUE);
 }
 
 bool OutputKeyWiringOk() {
-  if (!gOut) return false;
-  GLFWkeyfun cb = glfwSetKeyCallback(gOut, OutputKeyCb);   // returns the callback that was installed by OpenOutput
+  if (gOuts.empty() || !gOuts[0].w) return false;
+  GLFWwindow* w = gOuts[0].w;
+  GLFWkeyfun cb = glfwSetKeyCallback(w, OutputKeyCb);   // returns the callback that was installed when the window was made
   if (!cb) return false;
-  cb(gOut, GLFW_KEY_ESCAPE, 0, GLFW_PRESS, 0);
-  bool flagged = glfwWindowShouldClose(gOut) != 0;
-  glfwSetWindowShouldClose(gOut, GLFW_FALSE);
+  cb(w, GLFW_KEY_ESCAPE, 0, GLFW_PRESS, 0);
+  bool flagged = glfwWindowShouldClose(w) != 0;
+  glfwSetWindowShouldClose(w, GLFW_FALSE);
   return flagged;
 }
 
-void CloseOutput() {
-  if (!gOut) return;
-  GLFWwindow* w = gOut;
-  gOut = nullptr;
-  glfwDestroyWindow(w);
-  if (gMain) glfwMakeContextCurrent(gMain);
-}
-
-// Opens borderless on the given monitor (index into glfwGetMonitors). Falls back to a window on the primary.
-void OpenOutput(GLFWwindow* share, int monitorIdx) {
-  gMain = share;
-  CloseOutput();
+static GLFWwindow* MakeOutWindow(int monitorIdx, bool first) {   // borderless, covering that display
   int count = 0;
   GLFWmonitor** mons = glfwGetMonitors(&count);
-  if (count <= 0) return;
-  GLFWmonitor* mon = mons[std::clamp(monitorIdx, 0, count - 1)];
+  if (monitorIdx < 0 || monitorIdx >= count) return nullptr;
+  GLFWmonitor* mon = mons[monitorIdx];
   const GLFWvidmode* vm = glfwGetVideoMode(mon);
   int mx = 0, my = 0;
   glfwGetMonitorPos(mon, &mx, &my);
   glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);
   glfwWindowHint(GLFW_FOCUS_ON_SHOW, GLFW_FALSE);
   glfwWindowHint(GLFW_VISIBLE, GLFW_TRUE);
-  gOut = glfwCreateWindow(vm->width, vm->height, "MikMap Output", nullptr, share);
+  GLFWwindow* w = glfwCreateWindow(vm->width, vm->height, "MikMap Output", nullptr, gMain);
   glfwWindowHint(GLFW_DECORATED, GLFW_TRUE);
   glfwWindowHint(GLFW_FOCUS_ON_SHOW, GLFW_TRUE);
-  if (!gOut) return;
-  glfwSetWindowPos(gOut, mx, my);
-  glfwSetKeyCallback(gOut, OutputKeyCb);
-  glfwMakeContextCurrent(gOut);
-  glfwSwapInterval(1);
+  if (!w) return nullptr;
+  glfwSetWindowPos(w, mx, my);
+  glfwSetKeyCallback(w, OutputKeyCb);
+  glfwMakeContextCurrent(w);
+  glfwSwapInterval(first ? 1 : 0);   // only one window waits for vsync, or every extra display would halve the frame rate
+  if (gMain) glfwMakeContextCurrent(gMain);
+  return w;
+}
+static void SyncOutputWindows() {
+  std::vector<std::pair<std::string, int>> want;   // screen -> display, each display once
+  if (gOutputsOn) for (auto& sc : A.screens) {
+    int m = DeviceMonitor(sc.outDev);
+    bool taken = false; for (auto& w : want) if (w.second == m) taken = true;
+    if (m >= 0 && !taken) want.push_back({sc.id, m});
+  }
+  for (size_t i = 0; i < gOuts.size();) {   // windows no longer wanted, or wanted on another display
+    bool keep = false; for (auto& w : want) if (w.first == gOuts[i].sc && w.second == gOuts[i].mon) keep = true;
+    if (keep) { ++i; continue; }
+    glfwDestroyWindow(gOuts[i].w); gOuts.erase(gOuts.begin() + i);
+  }
+  for (auto& w : want) {
+    bool have = false; for (auto& o : gOuts) if (o.sc == w.first) have = true;
+    if (have) continue;
+    if (GLFWwindow* win = MakeOutWindow(w.second, gOuts.empty())) gOuts.push_back({w.first, w.second, win});
+  }
   if (gMain) glfwMakeContextCurrent(gMain);
 }
 
+void CloseOutput() {
+  gOutputsOn = false;
+  for (auto& o : gOuts) glfwDestroyWindow(o.w);
+  gOuts.clear();
+  if (gMain) glfwMakeContextCurrent(gMain);
+}
+
+// Switches the outputs on: every screen routed to a physical display gets its window (monitorIdx is kept for old callers: unused).
+void OpenOutput(GLFWwindow* share, int monitorIdx) {
+  (void)monitorIdx;
+  gMain = share;
+  gOutputsOn = true;
+  SyncOutputWindows();
+}
+
 void ToggleOutput(GLFWwindow* share, int monitorIdx) {
-  if (gOut) CloseOutput(); else OpenOutput(share, monitorIdx);
+  if (gOutputsOn) CloseOutput(); else OpenOutput(share, monitorIdx);
 }
 
 int MonitorCount() { int c = 0; glfwGetMonitors(&c); return c; }
@@ -99,7 +131,8 @@ bool IsVirtualDevice(const std::string& dev) { return dev.rfind("NDI", 0) == 0 |
 int DeviceMonitor(const std::string& dev) {
   if (dev.empty() || IsVirtualDevice(dev)) return -1;
   int idx = -1, n = 0;
-  if (dev.rfind("Display ", 0) == 0 && std::sscanf(dev.c_str() + 8, "%d", &n) == 1) idx = n - 1;   // "Display 2 (HDMI ...)"
+  size_t at = dev.find("Display ");
+  if (at != std::string::npos && std::sscanf(dev.c_str() + at + 8, "%d", &n) == 1) idx = n - 1;   // "Display 2 (HDMI ...)", "Projector / Display 2"
   else if (std::isdigit((unsigned char)dev[0]) && std::sscanf(dev.c_str(), "%d:", &n) == 1) idx = n - 1;   // "2: LG (1920x1080@60)"
   return idx >= 0 && idx < MonitorCount() ? idx : -1;
 }
@@ -215,17 +248,27 @@ void DrawSliceOutput(const Screen& sc, const Slice& sl, float ox, float oy, floa
   dl->PopClipRect();
 }
 
-// Renders the current screen's slices into the output window. Call once per frame, after the UI frame.
+// Renders every open output window with its own screen. Call once per frame, after the UI frame.
+static void RenderOneOutput(OutWin& ow, bool capture);
 void RenderOutput() {
-  if (!gOut) return;
-  if (glfwWindowShouldClose(gOut)) { CloseOutput(); return; }
+  if (!gOutputsOn) return;
+  for (auto& o : gOuts) if (glfwWindowShouldClose(o.w)) { CloseOutput(); return; }   // Esc / F11 / Ctrl+W on any output: all off
+  SyncOutputWindows();
+  if (gOuts.empty()) return;
+  // the slice sources are drawn into textures in the MAIN context (framebuffers are per context); the projectors then only sample them
+  const float t = (float)g.time * 1.2f;
+  for (auto& o : gOuts) for (auto& ps : A.screens) if (ps.id == o.sc) for (auto& sl : ps.slices) if (sl.visible) SliceSourceTexture(sl, t);
+  SliceSourcesRenderable(false);
+  for (size_t i = 0; i < gOuts.size(); ++i) RenderOneOutput(gOuts[i], i == 0);
+  if (gMain) glfwMakeContextCurrent(gMain);
+  SliceSourcesRenderable(true);
+}
 
+static void RenderOneOutput(OutWin& ow, bool capture) {
+  GLFWwindow* gOut = ow.w;
   int fw = 0, fh = 0;
   glfwGetFramebufferSize(gOut, &fw, &fh);
   if (fw <= 0 || fh <= 0) return;
-  // the slice sources are drawn into textures in the MAIN context (framebuffers are per context); the projector then only samples them
-  if (Screen* ps = A.curScreen()) for (auto& sl : ps->slices) if (sl.visible) SliceSourceTexture(sl, (float)g.time * 1.2f);
-  SliceSourcesRenderable(false);
   glfwMakeContextCurrent(gOut);
   glViewport(0, 0, fw, fh);
   glClearColor(0, 0, 0, 1);
@@ -241,7 +284,7 @@ void RenderOutput() {
   g.dl = &dl;
   g.alpha = 1.f;
 
-  Screen* sc = A.curScreen();
+  Screen* sc = nullptr; for (auto& ps : A.screens) if (ps.id == ow.sc) sc = &ps;
   if (sc && sc->visible && !A.blackout) {
     // the screen's 1920x1080 output space stretches to fill the projector
     float sx = fw / 1920.f, sy = fh / 1080.f;
@@ -283,7 +326,7 @@ void RenderOutput() {
   dd.AddDrawList(&dl);
   ImGui_ImplOpenGL3_RenderDrawData(&dd);
 
-  if (!gCapture.empty()) {
+  if (capture && !gCapture.empty()) {
     std::vector<unsigned char> px((size_t)fw * fh * 4), flip((size_t)fw * fh * 4);
     glReadPixels(0, 0, fw, fh, GL_RGBA, GL_UNSIGNED_BYTE, px.data());
     for (int y = 0; y < fh; ++y) memcpy(&flip[(size_t)y * fw * 4], &px[(size_t)(fh - 1 - y) * fw * 4], (size_t)fw * 4);
@@ -292,6 +335,4 @@ void RenderOutput() {
     gCapture.clear();
   }
   glfwSwapBuffers(gOut);
-  if (gMain) glfwMakeContextCurrent(gMain);
-  SliceSourcesRenderable(true);
 }
