@@ -497,10 +497,10 @@ void UpdateTestPattern();   // repaint the Show TestCard texture at the comp's r
 unsigned LogoTexture();   // GL texture of the MikMap mark (0 until the assets are loaded)
 void DrawSliceOutput(const Screen& sc, const Slice& sl, float ox, float oy, float sx, float sy, float t);   // the slice as the projector shows it (output.cpp), also used by the Output stage's thumbnails
 std::vector<ImVec2> SliceOutline(const Slice& s);   // output-space outline of a slice as the audience sees it (quad, or the mesh border)
-// Masks: everything drawn between MaskBegin and MaskEnd is limited to the union of `keep` polygons (the whole `bounds` when there
-// are none) minus the `holes`. Polygons are in window px. Done with the stencil buffer through draw-list callbacks; SetBlendMode(0)
+// Everything drawn between MaskBegin and MaskEnd is limited to the slice's `outline`, then to the union of the `keep` mask polygons (when
+// there are any), minus the `holes`. Polygons are in window px. Done with the stencil buffer through draw-list callbacks; SetBlendMode(0)
 // re-arms the stencil test after the backend's ResetRenderState (which disables it). No feathering yet.
-void MaskBegin(const std::vector<std::vector<ImVec2>>& keep, const std::vector<std::vector<ImVec2>>& holes, ImRect bounds);
+void MaskBegin(const std::vector<ImVec2>& outline, const std::vector<std::vector<ImVec2>>& keep, const std::vector<std::vector<ImVec2>>& holes);
 void MaskEnd();
 void MaskRebuild(Mask& m);                                        // regenerate pts from shape/u + the rect (call after changing any of them)
 void MaskFromPolygon(Mask& m, const std::vector<ImVec2>& poly);   // make m a free outline that fits a canvas-px polygon

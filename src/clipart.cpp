@@ -124,37 +124,55 @@ static void ApplyBlendGL(int mode) {
   }
 }
 
-// ── slice masks via the stencil buffer ──
+// ── slice outline + masks via the stencil buffer ──
+// Stencil values: 1 = inside the slice's outline, 2 = also inside a "keep" mask; the picture is drawn where the stencil equals the
+// reference the current mask needs (1 with no keep masks, 2 otherwise). Holes reset the value to 0.
 static bool gStencilOn = false;   // a mask is active in the draw list being built
+static int gStencilRef = 1;
 static void CbStencilClear(const ImDrawList*, const ImDrawCmd*) {
   glDisable(GL_SCISSOR_TEST); glStencilMask(0xFF); glClearStencil(0); glClear(GL_STENCIL_BUFFER_BIT); glEnable(GL_SCISSOR_TEST);
 }
-static void CbStencilWrite(const ImDrawList*, const ImDrawCmd* cmd) {   // following fills only write the stencil: ref 1 = allowed, 0 = cut
+static void CbStencilWrite(const ImDrawList*, const ImDrawCmd* cmd) {   // following fills only write the stencil: ALWAYS -> ref
   glEnable(GL_STENCIL_TEST); glStencilMask(0xFF); glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
   glStencilFunc(GL_ALWAYS, (GLint)(intptr_t)cmd->UserCallbackData, 0xFF); glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
 }
-static void CbStencilUse(const ImDrawList*, const ImDrawCmd*) {   // draw only where the stencil is 1
+static void CbStencilRaise(const ImDrawList*, const ImDrawCmd*) {   // following fills turn 1 into 2 (only where the outline already is)
+  glEnable(GL_STENCIL_TEST); glStencilMask(0xFF); glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+  glStencilFunc(GL_EQUAL, 1, 0xFF); glStencilOp(GL_KEEP, GL_KEEP, GL_INCR);
+}
+static void CbStencilClearWhere(const ImDrawList*, const ImDrawCmd* cmd) {   // following fills set the value back to 0 where it equals the reference
+  glEnable(GL_STENCIL_TEST); glStencilMask(0xFF); glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+  glStencilFunc(GL_EQUAL, (GLint)(intptr_t)cmd->UserCallbackData, 0xFF); glStencilOp(GL_KEEP, GL_KEEP, GL_ZERO);
+}
+static void CbStencilUse(const ImDrawList*, const ImDrawCmd* cmd) {   // draw only where the stencil equals the reference
   glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE); glEnable(GL_STENCIL_TEST);
-  glStencilFunc(GL_EQUAL, 1, 0xFF); glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP); glStencilMask(0);
+  glStencilFunc(GL_EQUAL, (GLint)(intptr_t)cmd->UserCallbackData, 0xFF); glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP); glStencilMask(0);
 }
 static void CbStencilOff(const ImDrawList*, const ImDrawCmd*) { glDisable(GL_STENCIL_TEST); glStencilMask(0xFF); glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE); }
-void MaskBegin(const std::vector<std::vector<ImVec2>>& keep, const std::vector<std::vector<ImVec2>>& holes, ImRect bounds) {
+void MaskBegin(const std::vector<ImVec2>& outline, const std::vector<std::vector<ImVec2>>& keep, const std::vector<std::vector<ImVec2>>& holes) {
   ImDrawList* dl = g.dl;
   dl->AddCallback(CbStencilClear, nullptr);
   dl->AddCallback(CbStencilWrite, (void*)(intptr_t)1);
-  if (keep.empty()) dl->AddRectFilled(bounds.Min, bounds.Max, IM_COL32_WHITE);
-  for (auto& p : keep) if (p.size() >= 3) dl->AddConcavePolyFilled(p.data(), (int)p.size(), IM_COL32_WHITE);
-  dl->AddCallback(CbStencilWrite, (void*)(intptr_t)0);
-  for (auto& p : holes) if (p.size() >= 3) dl->AddConcavePolyFilled(p.data(), (int)p.size(), IM_COL32_WHITE);
-  dl->AddCallback(CbStencilUse, nullptr);
-  gStencilOn = true;
+  if (outline.size() >= 3) dl->AddConcavePolyFilled(outline.data(), (int)outline.size(), IM_COL32_WHITE);
+  int ref = 1;
+  if (!keep.empty()) {
+    dl->AddCallback(CbStencilRaise, nullptr);
+    for (auto& p : keep) if (p.size() >= 3) dl->AddConcavePolyFilled(p.data(), (int)p.size(), IM_COL32_WHITE);
+    ref = 2;
+  }
+  if (!holes.empty()) {
+    dl->AddCallback(CbStencilClearWhere, (void*)(intptr_t)ref);
+    for (auto& p : holes) if (p.size() >= 3) dl->AddConcavePolyFilled(p.data(), (int)p.size(), IM_COL32_WHITE);
+  }
+  dl->AddCallback(CbStencilUse, (void*)(intptr_t)ref);
+  gStencilOn = true; gStencilRef = ref;
 }
 void MaskEnd() { g.dl->AddCallback(CbStencilOff, nullptr); gStencilOn = false; }
 
 void SetBlendMode(int mode) {
   if (mode <= 0) {
     g.dl->AddCallback(ImDrawCallback_ResetRenderState, nullptr);
-    if (gStencilOn) g.dl->AddCallback(CbStencilUse, nullptr);   // the reset above switched the stencil test off
+    if (gStencilOn) g.dl->AddCallback(CbStencilUse, (void*)(intptr_t)gStencilRef);   // the reset above switched the stencil test off
     return;
   }
   // ImDrawList callbacks take a void* payload; the mode rides in the pointer value.
