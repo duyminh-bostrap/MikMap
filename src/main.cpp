@@ -628,7 +628,7 @@ int main(int argc, char** argv) {
   std::string compTest, clipTest, pvTest; std::vector<std::string> layerTest, clipColors;
   OsDrop dropTest;   // --drop: injected at frame 8 of a --shot run, standing in for a real Explorer drag
   bool openOut = false; std::string outShot;
-  bool outKeyTest = false, scriptCtrl = false, startSnap = false, startHand = false, startCard = false;
+  bool outKeyTest = false, scriptCtrl = false, startSnap = false, startHand = false, startCard = false; int startTool = -1, startInTool = -1;
   std::string roundtrip; std::vector<int> fxTest;
   std::string shot; int startScreen = 0, frames = 12, W = 1440, H = 900, tab = -1, page = -1;
   bool sel = false, scaleGiven = false; int selLi = 0, selCi = 0, ctxTest = 0, cliScale = 100;
@@ -661,7 +661,9 @@ int main(int argc, char** argv) {
       script.push_back(sc);
     }
     else if (a == "--ctx") ctxTest = 1;
-    else if (a == "--testcard") startCard = true;   // test aid: Show TestCard on from the first frame
+    else if (a == "--testcard") startCard = true;
+    else if (a == "--tool" && i + 1 < argc) startTool = atoi(argv[++i]);     // test aid: Output tool, 0 Edit Points / 1 Transform
+    else if (a == "--intool" && i + 1 < argc) startInTool = atoi(argv[++i]); // test aid: Input (mask) tool   // test aid: Show TestCard on from the first frame
     else if ((a == "--click" || a == "--rclick" || a == "--drag") && i + 1 < argc) {
       // scripted input for headless checks: x,y  (drag: x0,y0,x1,y1)
       Script s; s.kind = a == "--click" ? 0 : a == "--rclick" ? 1 : 2;
@@ -1176,6 +1178,17 @@ int main(int argc, char** argv) {
       if (!closeTo(os.q[1], ImVec2(1000, 0), 1e-3f)) return fail("old mesh corners were not adopted as the keystone");
       if (!closeTo(SliceMapUV(os, 0.5f, 0.5f), ImVec2(520, 480), 0.05f) || !closeTo(SliceMapUV(os, 0.5f, 0.f), ImVec2(500, 0), 0.05f)) return fail("old absolute mesh changed shape on load");
     }
+    { std::string why; if (!MappingSelfTest(why)) return fail(why.c_str()); }
+    {   // an old project with a corner-pin-only slice (warp 0, the old 4 x 3 default) loads as a plain 1 x 1 grid and looks the same
+      std::string oldPath = roundtrip + ".oldpin";
+      { std::FILE* f = std::fopen(oldPath.c_str(), "wb"); if (f) { std::fputs(
+          "{\"format\":1,\"screen\":{\"id\":\"s\",\"name\":\"S\",\"slices\":[{\"id\":\"a\",\"name\":\"A\",\"warp\":0,\"meshCols\":4,\"meshRows\":3,"
+          "\"q\":[[100,100],[900,160],[880,700],[120,650]]}]}}", f); std::fclose(f); } }
+      Screen old; std::string e2;
+      if (!LoadOutputPreset(oldPath, old, e2) || old.slices.size() != 1) return fail("old corner-pin preset did not load");
+      const Slice& os = old.slices[0];
+      if (os.warp != 1 || os.meshCols != 1 || os.meshRows != 1 || !os.meshLocal.empty()) return fail("old corner-pin slice was not turned into a 1 x 1 grid");
+    }
     // F22: slice input source = composition / one layer / one group, routed by stable ids
     {
       NewProject();
@@ -1404,7 +1417,8 @@ int main(int argc, char** argv) {
 
   NewProject();
   A.screen = startScreen;
-  A.mapSnap = startSnap; A.mapHand = startHand; A.testCard = startCard;   // (NewProject just reset the app state)
+  A.mapSnap = startSnap; A.mapHand = startHand; A.testCard = startCard;
+  if (startTool >= 0) A.outTool = startTool; if (startInTool >= 0) A.inTool = startInTool;   // (NewProject just reset the app state)
   if (tab >= 0) A.tab = tab;
   if (page >= 0) A.mpage = page;
   if (outKeyTest) {   // headless check that the output window's own key callback is really installed and closes it

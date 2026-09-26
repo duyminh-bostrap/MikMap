@@ -94,7 +94,8 @@ không phải lệch. Chỗ nào đưa cỡ chữ thẳng cho ImGui (`ImGui::Pus
 | Chuột phải **bar** ô clip | Popover (Trigger/Cue/Loop/Rename/Clear/màu) |
 | Bấm **body** ô clip (vùng gradient, phía dưới) | Phát ngay clip đó (cue + trigger) — không cần bấm đúp; không kéo-thả, không chuột phải ở vùng này |
 | Bấm **header cột** | Chọn cột + bắn ngay mọi clip không rỗng trong cột (mỗi layer 1 clip) — không cần bấm đúp |
-| Kéo điểm ở ĐƯỜNG RA | Keystone / mesh warp |
+| Output > **Edit Points**: kéo ô vuông lớn / nhỏ | Góc phối cảnh (keystone) / điểm warp của lưới (cả 4 góc lưới) |
+| Output > **Transform**: kéo hộp bao slice | Di chuyển / co giãn / xoay cả slice, warp giữ nguyên hình (Shift: khoá trục, giữ tỉ lệ, 45°) |
 | Kéo khung ở VÙNG LẤY | Đổi phần canvas mà slice lấy |
 
 > **Đã đổi khỏi bản tham khảo (2026-09-22):** bản gốc dùng bấm-đơn=chọn/bấm-đúp=phát

@@ -290,7 +290,10 @@ Ba vùng: **cây Screen/Slice/Mask** (trái) | **Stage canvas** (giữa) | **Pro
   **nguồn mà slice đang chọn nhận** (*Input source*: Composition / Layer / Group — cùng `DrawSliceSource` với
   cửa sổ output, nên solo/bypass/opacity/transform khớp), chạy động cùng nhịp Live Output; đổi Input source là nền đổi theo.
   Chưa chọn slice thì hiện Composition. (Dòng chú thích tên nguồn trên thanh stage đã bỏ ngày 2026-09-26; nguồn xem ở ô Input source bên phải.) Nguồn không có clip đang live thì nền chỉ còn lưới. ✅
-- **Chế độ warp**: nút Corner-pin (khung) ⇄ Mesh (lưới).
+- **Hai công cụ kiểu Resolume (2026-09-26, thay nút Corner-pin ⇄ Mesh):** **＋ EDIT POINTS** · **⛶ TRANSFORM**, cạnh tab trang.
+  Trang Output luôn có; trang Input chỉ hiện khi đang chọn một **mask**. Là cài đặt xem trong phiên (không lưu), mặc định Transform.
+  Mọi slice giờ luôn có **4 góc phối cảnh lớn + lưới điểm warp bên trong** (như Resolume: góc lớn = perspective, điểm nhỏ = linear warp);
+  Subdivisions 0×0 = chỉ 4 điểm nhỏ ở góc lưới. Không còn phân biệt "4-key" và "Mesh" trong dữ liệu (file cũ `warp: 0` được đổi thành lưới 1×1 khi mở, nhìn y hệt).
 - **Undo / Redo** (nút trên thanh này và `Ctrl/Cmd+Z`) — dùng chung lịch sử toàn app.
 - **Zoom (thu gọn 2026-09-26)**: `−` · số % · `+` · bật/tắt chế độ tập trung. Bấm số % = vừa toàn bộ (thay nút "phóng tối đa"); zoom vào slice đã có chip 🔍 cạnh tên slice trên stage. Mọi icon thanh công cụ lớn hơn (nút 28px, icon 16px). Đã **bỏ dòng chữ** bên phải thanh công cụ (tên thiết bị output / nguồn nội dung). **Lăn chuột**
   = **zoom theo con trỏ** (2026-09-26; một nấc = 15%, trackpad mượt); `Shift`+lăn = cuộn dọc, **lăn ngang** = cuộn ngang.
@@ -300,35 +303,35 @@ Ba vùng: **cây Screen/Slice/Mask** (trái) | **Stage canvas** (giữa) | **Pro
   gần nhất, cùng viền khung 1920×1080 (Output) hoặc canvas (Input) và điểm giữa; **chỉ đúng cạnh đã hít sáng trắng** (cạnh của khung/box hoặc đoạn đường giữa trong khung — không kẻ dài ra ngoài stage) hoặc vòng tròn ở điểm đã hít. Ngưỡng 8px màn hình. Giữ **Alt**
   để đặt tự do. Áp cho kéo góc corner pin, điểm mesh, nhóm điểm, co giãn/di chuyển khung input và khung mask (khi di chuyển thì mép/tâm khung hít vào các đường). Cả hai công tắc
   chỉ trong phiên (không lưu). ✅
-- **Kéo thả chọn vùng (marquee, 2026-09-26):** kéo chuột trên vùng trống của stage vẽ khung nét đứt. **Trang Output:** chọn mọi **điểm** (góc corner pin của mọi slice
-  đang hiện + điểm mesh của slice đang chọn) nằm trong khung — điểm được chọn hiện đĩa trắng viền coral; **kéo một điểm đã chọn = kéo cả nhóm** cùng một độ dời (nam châm
+- **Kéo thả chọn vùng (marquee, 2026-09-26):** kéo chuột trên vùng trống của stage vẽ khung nét đứt. **Trang Output + Edit Points:** chọn mọi **điểm** (góc phối cảnh của mọi slice
+  đang hiện + mọi điểm warp của slice đang chọn, kể cả 4 góc lưới) nằm trong khung — điểm được chọn hiện ô vuông trắng; **Output + Transform:** chọn các slice mà khung kéo chạm vào; **kéo một điểm đã chọn = kéo cả nhóm** cùng một độ dời (nam châm
   áp cho điểm cầm, không hít vào chính các điểm đang di chuyển); phím mũi tên cũng dịch cả nhóm; bấm vào chỗ trống thả nhóm. **Trang Input:** chọn mọi slice mà khung input chạm vào
   khung kéo (chọn nhiều slice). Ctrl/Cmd/Shift + kéo = thêm vào vùng chọn hiện có. ✅
-- Menu **Reset** (theo trang đang xem): Input → Whole area; Output → Reset 4 corner pins · Match output to input · Reset mesh warp · Reset all warping.
+- Menu **Reset** (theo trang đang xem): Input → Whole area; Output → Reset perspective corners · Match output to input · Reset warp points · Reset all warping (về slice mới: toàn màn, lưới 1×1).
 
 **Trang Input**: kéo **4 góc** của khung cyan để đổi vùng lấy (tối thiểu 20px). Khung input **được kéo/di chuyển ra ngoài canvas** kể cả khi rotation = 0 (phần ngoài canvas là trống; tâm khung vẫn giữ trong canvas khi di chuyển; kéo tới ±4000..8000px) — riêng mask thẳng vẫn giữ trong canvas. ✅
 
 **Trang Output**:
 | Mã | Thao tác | |
 |---|---|---|
-| M6 | Kéo **góc slice** (vùng bấm ~16px) → keystone | ✅ |
-| M7 | Kéo **điểm mesh** (viền vàng = biên, coral = trong) | ✅ |
-| M7b | **Chế độ 4-key** (không mesh) chỉ chỉnh như một **hình chữ nhật**, y hệt khung Input và Preview Cue (2026-09-26): kéo ô vuông góc/cạnh = co giãn (góc/cạnh đối diện đứng yên, theo hướng khung), vòng tròn ở góc = xoay (`Shift` = 15°), kéo trong slice = di chuyển; nam châm hít cho cả ba. Slice cũ đang méo (keystone) sẽ thành hình chữ nhật xấp xỉ ngay lần chỉnh đầu. **Kéo từng góc tự do và từng điểm lưới chỉ có ở chế độ Mesh.** | ✅ |
-| M7c | **Chuột phải** trong một slice ở Output = chọn slice đó + menu như Input: Center X/Y, Mirror X/Y, Left/Top/Right/Bottom Half, Whole Area (theo khung 1920×1080), Match Input Shape, Swap Input Output Shape, Bring Forward/Send Backwards, Duplicate/Copy/Cut/Paste. | ✅ |
-| M8 | **Khung chỉnh mask** như khung input: di chuyển / co giãn / xoay; chỉ mask đang chọn hiện — làm ở trang **Input** | ✅ |
+| M6 | **Edit Points** — kéo **ô vuông lớn** ở 4 góc = góc phối cảnh (keystone/homography); cả lưới đi theo | ✅ |
+| M7 | **Edit Points** — kéo **ô vuông nhỏ** = điểm warp (linear, không đổi phối cảnh), **kể cả 4 góc của lưới** (trước đây góc lưới dính cứng vào góc phối cảnh). Khi góc nhỏ nằm đè góc lớn: bấm giữa là điểm nhỏ, bấm viền ô lớn là góc phối cảnh. Mũi tên dịch điểm đã chọn | ✅ |
+| M7b | **Transform** — **hộp bao quanh tất cả điểm** của slice (hộp có hướng, xoay theo `Slice::orot`): kéo trong hộp = di chuyển, ô vuông góc/cạnh = co giãn, vòng ở góc = xoay. Cả slice (góc phối cảnh + lưới) biến đổi theo **một phép affine** nên **warp giữ nguyên hình** (không còn ép thành hình chữ nhật như bản trước). `Shift` (theo Resolume): kéo = khoá một trục, kéo góc = giữ tỉ lệ, xoay = bước **45°**. Nam châm hít cho cả ba | ✅ |
+| M7c | **Chuột phải** trong một slice ở Output = chọn slice đó + menu như Input: Center X/Y, Mirror X/Y, Left/Top/Right/Bottom Half, Whole Area (đặt **hộp Transform** vào vùng đó, giữ nguyên warp), Match Input Shape, Swap Input Output Shape, Bring Forward/Send Backwards, Duplicate/Copy/Cut/Paste. | ✅ |
+| M8 | **Mask** (trang **Input**, chỉ mask đang chọn hiện): **Transform** = khung như khung input (di chuyển / co giãn / xoay); **Edit Points** = ô vuông vàng ở từng điểm viền — kéo từng điểm, **bấm đúp điểm = xoá** (giữ ≥3), **bấm đúp lên viền = thêm điểm** (như Resolume); mask thành hình tự do, giữ nguyên góc xoay | ✅ |
 | M9 | Bấm trong slice → chọn slice trên cùng; bấm vào mask → chọn mask | ✅ |
-| M10 | Chế độ mesh: bấm vào slice để đánh dấu chấm vàng "điểm cắt". Bấm **+ Add col / + Add row** (nút sáng vàng): một **đường xem trước** (vàng, kèm nhãn `COL 58%` / `ROW 40%`) chạy theo chuột và uốn theo lưới; bấm để đặt đường đó — kể cả khi bấm ngay sát một điểm/đường có sẵn (lúc đang chờ đặt thì không nắm điểm). Vị trí tính qua lưới đã méo (`MeshParamAt`), không chỉ theo keystone. Chấm chỉ hiện với slice đã đặt nó và tắt khi đổi số Subdivisions / Flatten / Uniform | ✅ |
+| M10 | **Edit Points**: bấm vào slice để đánh dấu chấm vàng "điểm cắt". Bấm **+ Add col / + Add row** (nút sáng vàng): một **đường xem trước** (vàng, kèm nhãn `COL 58%` / `ROW 40%`) chạy theo chuột và uốn theo lưới; bấm để đặt đường đó — kể cả khi bấm ngay sát một điểm/đường có sẵn (lúc đang chờ đặt thì không nắm điểm). Vị trí tính qua lưới đã méo (`MeshParamAt`), không chỉ theo keystone. Chấm chỉ hiện với slice đã đặt nó và tắt khi đổi số Subdivisions / Flatten / Uniform. Thêm cột/hàng **lấy mẫu lại lưới từ bề mặt hiện tại** nên hình không đổi (trước đây lưới bị làm phẳng) | ✅ |
 | M11 | Chip 🔍 cạnh tên slice → zoom vào slice | ✅ |
 | M12 | **Thumbnail output của từng slice** (2026-09-26): mỗi slice hiện đúng hình nó gửi ra máy chiếu — sau vùng lấy, keystone/mesh, **mask cắt**, Opacity/màu của Screen — vẽ bằng chính `DrawSliceOutput` (`output.cpp`) mà cửa sổ máy chiếu dùng, cắt theo khung 1920×1080; **không tô nền**: slice đang chọn chỉ có viền coral, slice khác chỉ có viền nét đứt (2026-09-26). Tôn trọng ẩn/Solo. | ✅ |
 
 ### 3.3 Properties (phải)
-Slice, **trang Output** (2026-09-26, thông tin theo panel slice của Resolume, widget/màu giữ của MikMap; **Input source chỉ chọn ở trang Input**, không hiện ở Output) — hai bộ tuỳ theo chế độ warp:
-- **4-key (Transform):** **Output rectangle** (X/Y/Left/Top/Width/Height/Rotation — chính là hình chữ nhật kéo trên stage) · Flip · Is key · Black BG ·
+Slice, **trang Output** (2026-09-26, thông tin theo panel slice của Resolume, widget/màu giữ của MikMap; **Input source chỉ chọn ở trang Input**, không hiện ở Output) — hai bộ tuỳ theo **công cụ** đang chọn trên thanh stage:
+- **Transform:** **Output rectangle** (X/Y/Left/Top/Width/Height/Rotation — chính là hộp Transform trên stage; sửa số là biến đổi cả slice, warp giữ hình) · Flip · Is key · Black BG ·
   Brightness/Contrast/Red/Green/Blue · Soft edge · Black level compensation. **Không có** Warping.
-- **Mesh (Edit Points):** Flip · Is key · Black BG · màu · Soft edge · Black level compensation · **Warping**: *Point mode* (chỉ Linear) + **Subdivisions X / Y**
-  (số đường chia thêm giữa hai biên, 0…15, −/+; đổi số thì lưới về đều) + công cụ lưới riêng của MikMap (Flatten / Uniform / + Add col / + Add row) (**không còn** ô gõ toạ độ 4 góc — chỉ kéo chuột). **Không có** khối X/Y/Width… và **không có Input mask** (khối *Input rectangle* và các nút Input mask chỉ ở trang Input; cả hai chế độ Output đều không hiện chúng).
+- **Edit Points:** Flip · Is key · Black BG · màu · Soft edge · Black level compensation · **Warping**: *Point mode* (chỉ Linear) + **Subdivisions X / Y**
+  (số đường chia thêm giữa hai biên, 0…15, −/+; đổi số thì các đường về cách đều nhưng điểm mới lấy từ bề mặt đang warp nên hình giữ nguyên) + công cụ lưới riêng của MikMap (Flatten / Uniform / + Add col / + Add row) (**không còn** ô gõ toạ độ 4 góc — chỉ kéo chuột). **Không có** khối X/Y/Width… và **không có Input mask** (khối *Input rectangle* và các nút Input mask chỉ ở trang Input; cả hai chế độ Output đều không hiện chúng).
 - **3 nhóm thu gọn / mở rộng** (bấm cả dòng tiêu đề, mũi tên ▾/▸): **Picture** (Flip · Is key · Black BG · Brightness…Blue), **Soft edge** (ô bật nằm ở tiêu đề), **Black level compensation**. Trạng thái mở/đóng chỉ là cài đặt xem — giữ trong lúc app chạy, không lưu vào dự án.
-- **Gọn (2026-09-26):** mỗi thuộc tính một dòng 22px (nhãn · thanh trượt · giá trị); Flip và bốn lựa chọn cùng một dòng; *Is key* / *Black BG* cạnh nhau; Soft edge có ô bật ngay trên tiêu đề mục; Output rectangle dùng ô số có nhãn bên trái (4 dòng thay vì 7). Panel 4-key vừa gần đủ một màn hình 900px.
+- **Gọn (2026-09-26):** mỗi thuộc tính một dòng 22px (nhãn · thanh trượt · giá trị); Flip và bốn lựa chọn cùng một dòng; *Is key* / *Black BG* cạnh nhau; Soft edge có ô bật ngay trên tiêu đề mục; Output rectangle dùng ô số có nhãn bên trái (4 dòng thay vì 7). Panel Transform vừa gần đủ một màn hình 900px.
 - Flip (NONE / X / Y / X+Y) cộng hợp với mirror của khung input. Black BG = nền đen đặc sau hình (nằm trong mask). Màu của slice chồng lên màu của Screen.
 - Thật sự chạy trên hình: Flip, Black BG, màu slice. **Lưu nhưng chưa vẽ** (nhãn "NOT RENDERED YET"): Is key, Soft edge và Black level compensation.
 Trang Input có các hàng X/Y/Left/Top/Width/Height/Rotation + Input Mask (§3.2); công tắc Soft Edge đã dời sang Output. Mask: đảo, độ mờ, danh sách điểm (≤8 điểm), xoá.

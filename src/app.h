@@ -95,8 +95,12 @@ struct Slice {
   std::string id, name;
   bool visible = true;
   bool solo = false;   // F16: while any slice of a screen is solo, only solo slices reach the output
-  int warp = 0;  // 0 cornerPin, 1 mesh
-  int meshCols = 4, meshRows = 3;
+  // Resolume's model: every slice has 4 big perspective corners (q) AND a grid of warp points inside them (meshLocal, keystone-local).
+  // Subdivisions 0 x 0 = just the grid's own 4 corners. `warp` only survives for old files: 0 there meant "corner pin only" and is
+  // turned into a plain 1 x 1 grid on load, so it is always 1 now.
+  int warp = 1;
+  int meshCols = 1, meshRows = 1;   // patches across / down (Subdivisions X / Y + 1)
+  float orot = 0;   // Output Transformation > Transform: the turn of the box drawn around the slice (degrees)
   std::vector<float> meshU, meshV;                 // custom column/row split positions (0..1)
   // Mesh vertices (rows x cols) in the keystone's own unit space, not output pixels: output = keystone(local).
   // That is what makes the warp ride along when a corner pin moves. Empty (or wrong size) = undeformed grid.
@@ -361,6 +365,8 @@ struct App {
   // Pen: click points on the Output stage, click the first point (or Enter / double-click) to close, Esc cancels. Runtime only.
   // Stage tools (Input and Output selection): hand = left-drag pans the view instead of editing; magnet = drags snap to points and edges.
   bool mapHand = false, mapSnap = false;
+  // Advanced Output tools (Resolume): 0 = Edit Points, 1 = Transform. outTool = Output Transformation; inTool = Input Selection masks.
+  int outTool = 1, inTool = 1;
   // Output points picked together (marquee drag, Ctrl/Cmd/Shift-click): idx 0..3 = a slice's corner pin, 1000 + row*100 + col = a mesh point.
   // Dragging any of them, or the arrow keys, moves the whole group. Runtime only.
   struct PtRef { std::string sl; int idx; };
@@ -502,7 +508,10 @@ std::vector<ImVec2> SliceOutline(const Slice& s);   // output-space outline of a
 // re-arms the stencil test after the backend's ResetRenderState (which disables it). No feathering yet.
 void MaskBegin(const std::vector<ImVec2>& outline, const std::vector<std::vector<ImVec2>>& keep, const std::vector<std::vector<ImVec2>>& holes);
 void MaskEnd();
-void MaskRebuild(Mask& m);                                        // regenerate pts from shape/u + the rect (call after changing any of them)
+void MaskRebuild(Mask& m);
+void MaskSetPoints(Mask& m, const std::vector<ImVec2>& pts);   // a free outline through these canvas points; keeps the mask's turn
+void NormalizeWarp(Slice& s);
+bool MappingSelfTest(std::string& why);   // --roundtrip: Transform box, subdivision resampling, old-file normalising, mask point edits   // old corner-pin-only slices (warp 0) become a plain 1 x 1 grid                                        // regenerate pts from shape/u + the rect (call after changing any of them)
 void MaskFromPolygon(Mask& m, const std::vector<ImVec2>& poly);   // make m a free outline that fits a canvas-px polygon
 // Brightness/contrast/RGB (each -1..1) on what is already drawn inside `poly` (window px): contrast pivots on mid-grey, RGB scale
 // that channel, brightness shifts all. Done with GL multiply / gain (dst*(1+c)) / add / subtract passes, so it needs no shader.

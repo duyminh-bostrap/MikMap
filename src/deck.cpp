@@ -91,7 +91,9 @@ void App::init() {
     Mask m; m.id = id; m.name = n; m.inverted = inv; m.feather = f; MaskFromPolygon(m, {a, b, c, d}); return m;
   };
   auto slice = [&](const char* id, const char* n, int warp, int ix, int iy, int iw, int ih) {
-    Slice s; s.id = id; s.name = n; s.warp = warp; s.ix = ix; s.iy = iy; s.iw = iw; s.ih = ih; quad(s, (float)ix, (float)iy, (float)iw, (float)ih); return s;
+    Slice s; s.id = id; s.name = n; s.ix = ix; s.iy = iy; s.iw = iw; s.ih = ih; quad(s, (float)ix, (float)iy, (float)iw, (float)ih);
+    if (warp) { s.meshCols = 4; s.meshRows = 3; }   // the demo's one subdivided slice (3 x 2 subdivisions)
+    return s;
   };
   Screen s1; s1.id = "screen1"; s1.name = "Main Projector 1"; s1.outDev = "Display 1 (HDMI 1920x1080@60Hz)"; s1.w = 1920; s1.h = 1080; s1.role = 0;
   Slice a = slice("slice1", "Center Stage Wall", 0, 100, 50, 1720, 980);

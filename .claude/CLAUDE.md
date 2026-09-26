@@ -133,8 +133,8 @@ ngoài". Định nghĩa ở `engine/core/model/IWarp.h`; mọi `IWarp` mới ph�
 
 ## `src/` — tình trạng THẬT (theo `features.md`, không theo vẻ ngoài)
 
-53 mục `[x]` (hành vi thật) · 18 mục `[~]` (chỉ UI/một phần — đọc "Ghi chú
-kiểm tra" cuối `features.md` để biết chính xác cái gì còn giả) · 64 mục `[ ]`,
+54 mục `[x]` (hành vi thật) · 18 mục `[~]` (chỉ UI/một phần — đọc "Ghi chú
+kiểm tra" cuối `features.md` để biết chính xác cái gì còn giả) · 63 mục `[ ]`,
 trên 135 mục Resolume-parity (đếm lại 2026-09-26 từ các dòng bảng).
 
 **Đợt 2026-09-23:** F8/G8/A4 chuyển `[~]` → `[x]`. F8/G8: preset output
@@ -156,6 +156,10 @@ output tuyệt đối như `meshPts` cũ — nhờ vậy kéo góc thì cả lư
 có `meshPts` được `MigrateAbsoluteMesh` đổi khi mở. Stage là pan/zoom tự do
 (20–600%), điểm ngoài khung 1920×1080 vẫn vẽ/nắm được. Chi tiết: "Ghi chú kiểm tra"
 cuối `features.md`, mục "kéo thả keystone/warp kiểu Resolume".
+**Advanced Output theo Resolume (2026-09-26):** không còn hai loại slice "4-key"/"Mesh" — mỗi slice luôn có 4 góc phối cảnh
+(`q`) + lưới warp (`meshLocal`, mặc định 1×1; `warp` luôn = 1, file cũ `warp: 0` được `NormalizeWarp` đổi khi mở). Trang Output có
+hai **công cụ** Edit Points / Transform (`App::outTool`); Transform = hộp có hướng bao mọi điểm (`OutputBox`/`ApplyBox`, `Slice::orot`),
+biến đổi affine nên warp giữ hình. Kiểm: `MappingSelfTest` trong `--roundtrip`.
 F22: mỗi slice có nguồn input (`Slice::srcKind/srcRef`: Composition / Layer / Group),
 trỏ bằng `Layer::id` (id ổn định, `EnsureLayerIds`) chứ không bằng tên; output vẽ
 qua `DrawSliceSource`.

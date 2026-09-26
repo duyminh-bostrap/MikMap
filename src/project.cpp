@@ -124,7 +124,7 @@ JsonValue SliceJ(const Slice& s) {
   o.set("srcKind", s.srcKind); o.set("srcRef", s.srcRef);
   o.set("ix", s.ix); o.set("iy", s.iy); o.set("iw", s.iw); o.set("ih", s.ih);
   o.set("maskSpace", 1);   // masks are in composition canvas px (files without this stored output px)
-  o.set("irot", (double)s.irot); o.set("iflipX", s.iflipX); o.set("iflipY", s.iflipY); o.set("softEdge", s.softEdge);
+  o.set("irot", (double)s.irot); o.set("iflipX", s.iflipX); o.set("iflipY", s.iflipY); o.set("softEdge", s.softEdge); o.set("orot", (double)s.orot);
   o.set("oflip", s.oflip); o.set("isKey", s.isKey); o.set("blackBg", s.blackBg);
   o.set("sBri", s.brightness); o.set("sCon", s.contrast); o.set("sRed", s.red); o.set("sGrn", s.green); o.set("sBlu", s.blue);
   o.set("seGR", (double)s.seGammaR); o.set("seGG", (double)s.seGammaG); o.set("seGB", (double)s.seGammaB);
@@ -150,7 +150,7 @@ Slice ReadSlice(const JsonValue& o) {
   Slice s;
   s.id = o["id"].asString(); s.name = o["name"].asString(); s.visible = o["visible"].asBool(true); s.solo = o["solo"].asBool(false);
   s.warp = std::clamp(o["warp"].asInt(0), 0, 1);
-  s.meshCols = std::clamp(o["meshCols"].asInt(4), 1, 64); s.meshRows = std::clamp(o["meshRows"].asInt(3), 1, 64);
+  s.meshCols = std::clamp(o["meshCols"].asInt(4), 1, 64); s.meshRows = std::clamp(o["meshRows"].asInt(3), 1, 64);   // (old files: 4 x 3 was the default)
   s.meshU = ReadFloats(o["meshU"]); s.meshV = ReadFloats(o["meshV"]);
   auto readGrid = [](const JsonValue& a) {
     std::vector<std::vector<ImVec2>> g;
@@ -163,6 +163,7 @@ Slice ReadSlice(const JsonValue& o) {
   s.srcKind = std::clamp(o["srcKind"].asInt(0), 0, 2); s.srcRef = o["srcRef"].asString();
   s.ix = o["ix"].asInt(0); s.iy = o["iy"].asInt(0); s.iw = std::max(20, o["iw"].asInt(1920)); s.ih = std::max(20, o["ih"].asInt(1080));
   s.irot = std::clamp((float)o["irot"].asNumber(0.0), -180.f, 180.f); s.iflipX = o["iflipX"].asBool(false); s.iflipY = o["iflipY"].asBool(false); s.softEdge = o["softEdge"].asBool(false);
+  s.orot = std::clamp((float)o["orot"].asNumber(0.0), -180.f, 180.f);
   s.oflip = std::clamp(o["oflip"].asInt(0), 0, 3); s.isKey = o["isKey"].asBool(false); s.blackBg = o["blackBg"].asBool(false);
   s.brightness = std::clamp(o["sBri"].asInt(0), -100, 100); s.contrast = std::clamp(o["sCon"].asInt(0), -100, 100);
   s.red = std::clamp(o["sRed"].asInt(0), -100, 100); s.green = std::clamp(o["sGrn"].asInt(0), -100, 100); s.blue = std::clamp(o["sBlu"].asInt(0), -100, 100);
@@ -198,6 +199,7 @@ Slice ReadSlice(const JsonValue& o) {
   }
   // files/presets from before meshLocal: absolute output-pixel mesh, converted once here (needs q, so after reading it)
   if (!o["meshLocal"].isArray() && o["meshPts"].isArray()) MigrateAbsoluteMesh(s, readGrid(o["meshPts"]));
+  NormalizeWarp(s);   // a corner-pin-only slice (warp 0) is a plain 1 x 1 grid now
   return s;
 }
 

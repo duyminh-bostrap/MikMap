@@ -129,13 +129,13 @@
 | [ ] | **F10** | **Bezier warping** (bề mặt cong, tượng) | L | 🟠 P1 |
 | [x] | **F11** | Điều chỉnh mật độ lưới warp (subdivision) | S | 🟠 P1 |
 | [~] | **F12** | **Bezier mask per-slice** | L | 🟠 P1 |
-| [~] | **F13** | Slice transform (position/scale/rotate/flip) | S | 🟠 P1 |
+| [x] | **F13** | Slice transform (position/scale/rotate/flip) | S | 🟠 P1 |
 | [x] | **F14** | Test card / lưới calibration overlay | S | 🟠 P1 |
 | [~] | **F15** | Nhập toạ độ bằng số (không chỉ kéo chuột) | S | 🟠 P1 |
 | [x] | **F16** | Slice enable / disable / solo | S | 🟠 P1 |
 | [~] | **F17** | Multi-screen (nhiều máy chiếu) | M | 🟠 P1 |
 | [ ] | **F18** | Polygon slice (không chỉ hình chữ nhật) | L | 🟡 P2 |
-| [ ] | **F19** | Color correction per-slice (brightness/gamma/RGB) | M | 🟡 P2 |
+| [~] | **F19** | Color correction per-slice (brightness/gamma/RGB) | M | 🟡 P2 |
 | [~] | **F20** | **Soft edge blending** (ghép nhiều máy chiếu) | L | 🟡 P2 |
 | [~] | **F21** | Snapping / đường gióng khi kéo | M | 🟡 P2 |
 | [x] | **F22** | Slice input từ Layer / Group cụ thể | M | 🟡 P2 |
@@ -668,3 +668,7 @@ Nay khung input sửa giống khung transform của Preview Cue: **kéo trong kh
 - **Panel slice Output tách theo chế độ (2026-09-26):** 4-key = Output rectangle + thuộc tính chung, không Warping; Mesh = thuộc tính chung + Warping (Point mode Linear, Subdivisions X/Y, công cụ lưới, 4 góc gõ số), không khối chữ nhật. `Uni()` giờ trả 0 đường chia khi n ≤ 1 nên lưới 1 patch biểu diễn được (file cũ `meshCols` ≥ 2 không đổi; kẹp khi nạp đổi 2→1). Đã chụp cả hai panel và đổi chế độ bằng nút trên thanh công cụ. Chưa bấm thử −/+ của Subdivisions.
 - **F15 `[x]` → `[~]` (2026-09-26, theo yêu cầu bỏ khối Corner pins khỏi panel Mesh):** còn nhập được bằng số ở **Output rectangle** (4-key) và **Input rectangle**, nhưng **toạ độ từng góc corner-pin ở chế độ Mesh không còn ô số** (chỉ kéo chuột). Đếm mới 53/18/64 → thực tế theo bảng: 53 `[x]` · 18 `[~]` · 64 `[ ]`.
 - **Mesh + Add col/row có đường xem trước (2026-09-26):** khi nút được bật, `Stage` vẽ một đường (`SliceMapUV` lấy mẫu 33 điểm nên uốn theo lưới méo) đi theo chuột kèm nhãn phần trăm; con trỏ đổi mũi tên ngang/dọc. Bấm đặt đường qua `MeshParamAt` (Newton trên lưới thay vì chỉ nghịch đảo keystone) và, khi đang chờ đặt, không còn nắm điểm mesh/góc nên bấm sát một điểm vẫn đặt được (trước đây kéo điểm thay vì tạo đường, chấm vàng không cập nhật). Chấm vàng gắn với slice (`meshPickSl`) và tắt khi lưới đổi cấu trúc. Đã chụp xem trước cột và hàng; đã kiểm bấm sát điểm có sẵn thì hàng mới được thêm và chấm hiện đúng chỗ.
+- **Advanced Output theo Resolume (2026-09-26, sau khi research tài liệu Resolume):** Resolume không có "4-key" và "Mesh" là hai loại slice — mỗi slice luôn có **4 góc phối cảnh lớn** + **lưới điểm warp nhỏ** bên trong, và thanh công cụ có hai **công cụ** *Edit Points* / *Transform*. `src/` đổi theo: `Slice::warp` luôn = 1 (file cũ `warp: 0` → lưới 1×1 bằng `NormalizeWarp`, nhìn y hệt), slice mới mặc định lưới 1×1; `App::outTool`/`inTool` (0 Edit Points, 1 Transform). **Transform** = hộp có hướng bao mọi điểm (`OutputBox`, `Slice::orot` lưu trong dự án), biến đổi là một phép affine áp lên 4 góc phối cảnh (`ApplyBox`) — lưới nằm trong không gian keystone nên theo đúng hoàn toàn (affine∘homography = homography qua 4 góc mới); bản trước ép slice thành hình chữ nhật, nay giữ nguyên warp. **Edit Points** = ô vuông lớn (góc phối cảnh) + ô vuông nhỏ (mọi điểm lưới, **cả 4 góc lưới** — trước đây dính cứng vào góc phối cảnh). Thêm cột/hàng và đổi Subdivisions **lấy mẫu lại** lưới từ bề mặt hiện tại (`ResampleMesh`), không làm phẳng nữa. Mask ở trang Input có Edit Points (kéo từng điểm, bấm đúp điểm = xoá, bấm đúp viền = thêm; `MaskSetPoints` giữ góc xoay). `Shift` theo Resolume: khoá trục khi kéo, giữ tỉ lệ khi kéo góc, xoay bước 45° (trước là 15°). Kiểm tự động trong `--roundtrip` (`MappingSelfTest` + file cũ `warp: 0`); đã chụp: kéo góc lưới nhỏ ở Edit Points, đổi sang Transform thấy hộp bao đúng, xoay hộp thì slice méo xoay theo nguyên hình, panel Rotation −8.1, mask Edit Points kéo một điểm.
+- **F13 `[~]` → `[x]`:** output giờ có position/scale/rotate (hộp Transform, bằng tay + số + menu) và Flip (vẽ thật) — đúng điều còn thiếu ghi ở ghi chú F13 trước.
+- **F19 `[ ]` → `[~]`:** Brightness/Contrast/Red/Green/Blue riêng từng slice vẽ thật (`DrawSliceOutput`, 2026-09-26) nhưng **chưa có gamma**. Đếm mới: 54 `[x]` · 18 `[~]` · 63 `[ ]`.
+- **Chưa làm so với Resolume:** Point Mode **Bezier** (F10 vẫn `[ ]`), polygon slice (F18), bấm đúp thêm/xoá điểm trên lưới output (lưới là N×M nên chỉ thêm cột/hàng), Alt+kéo = nhân bản.
