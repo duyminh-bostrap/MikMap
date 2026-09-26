@@ -255,6 +255,11 @@ Ba vùng: **cây Screen/Slice/Mask** (trái) | **Stage canvas** (giữa) | **Pro
 ### 3.2 Stage canvas (giữa)
 - **Hai trang** (tab đầu canvas): **Input selection** (chọn vùng lấy từ canvas) và
   **Output routing** (bố trí đầu ra/warp).
+- **Nền trang Input = nội dung thật của nguồn (2026-09-26):** khung canvas hiện hình đang phát của đúng
+  **nguồn mà slice đang chọn nhận** (*Input source*: Composition / Layer / Group — cùng `DrawSliceSource` với
+  cửa sổ output, nên solo/bypass/opacity/transform khớp), chạy động cùng nhịp Live Output; đổi Input source là nền đổi theo.
+  Chưa chọn slice thì hiện Composition. Chú thích trên thanh stage ghi tên nguồn
+  (`Source Content: Layer · Layer 3 · 1920x1080`). Nguồn không có clip đang live thì nền chỉ còn lưới. ✅
 - **Chế độ warp**: nút Corner-pin (khung) ⇄ Mesh (lưới).
 - **Undo / Redo** (nút trên thanh này và `Ctrl/Cmd+Z`) — dùng chung lịch sử toàn app.
 - **Zoom**: 5 nút icon (phóng to, thu nhỏ, tìm/vừa vùng, phóng tối đa, bật/tắt chế độ tập trung — tên chính xác chưa kiểm chứng). **Alt + lăn chuột**

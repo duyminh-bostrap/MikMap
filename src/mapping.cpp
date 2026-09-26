@@ -725,7 +725,7 @@ static void Stage(ImRect r) {
       A.openCtx(ImVec2(rb.Min.x - 60, rb.Max.y + 4), mi);
     }
     xr = hg.Min.x - 6;
-    std::string ro = A.mpage == 0 ? "Source Content: " + std::to_string(A.canvasW) + "x" + std::to_string(A.canvasH) : (sc ? sc->name + " (" + sc->outDev + ")" : "");
+    std::string ro = A.mpage == 0 ? "Source Content: " + (sl ? SliceSourceName(*sl) + " \xC2\xB7 " : std::string()) + std::to_string(A.canvasW) + "x" + std::to_string(A.canvasH) : (sc ? sc->name + " (" + sc->outDev + ")" : "");
     float lim = leftEnd + 8;
     float rw = std::min(TextW(MONO_R, 10, ro.c_str()), std::max(0.f, xr - lim));
     TextEll(xr - rw, cy, rw, MONO_R, 10, K(pal::t88), ro.c_str());
@@ -788,6 +788,12 @@ static void Stage(ImRect r) {
   g.dl->PushClipRect(area.Min, area.Max, true);
   Box(cv, K(0x0d0d0d), 0, 3);
   g.dl->PushClipRect(cv.Min, cv.Max, true);
+  if (A.mpage == 0) {
+    // Input selection shows what the selected slice actually takes: the live content of its source (the whole composition,
+    // or the one layer / group it is routed to). With no slice selected there is nothing to route, so show the composition.
+    Slice comp;
+    DrawSliceSource(sl ? *sl : comp, cv, (float)g.time * 1.2f, 1.f);   // same time base as the Live Output monitor
+  }
   for (float x = cv.Min.x + 39; x < cv.Max.x; x += 40) VLine(std::floor(x), cv.Min.y, cv.Max.y, K(0xffffff, 0.045f));
   for (float y = cv.Min.y + 39; y < cv.Max.y; y += 40) HLine(cv.Min.x, cv.Max.x, std::floor(y), K(0xffffff, 0.045f));
   g.dl->PopClipRect();   // everything below draws across the whole stage: a point outside the output box stays visible
