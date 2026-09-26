@@ -262,6 +262,11 @@ static std::vector<ImVec2> MaskUnitPts(int shape) {
       break;
     default: p = {{0.f, 0.f}, {1.f, 0.f}, {1.f, 1.f}, {0.f, 1.f}}; break;
   }
+  // Fit the outline to the unit square exactly, so every shape touches all four sides of its frame (a hexagon or a heart drawn from a
+  // formula would otherwise stop short of the top and bottom).
+  ImVec2 mn = p[0], mx = p[0];
+  for (auto& q : p) { mn.x = std::min(mn.x, q.x); mn.y = std::min(mn.y, q.y); mx.x = std::max(mx.x, q.x); mx.y = std::max(mx.y, q.y); }
+  for (auto& q : p) q = ImVec2((q.x - mn.x) / std::max(1e-6f, mx.x - mn.x), (q.y - mn.y) / std::max(1e-6f, mx.y - mn.y));
   return p;
 }
 // A mask's polygon = its unit outline placed by the rotated rectangle (the same placement the input rect uses).
@@ -1118,22 +1123,21 @@ static void Stage(ImRect r) {
         ImVec2 sc4[4], sp4[4]; InputCorners(*sl, sc4); for (int i = 0; i < 4; ++i) sp4[i] = toPx(sc4[i]);
         g.dl->AddPolyline(sp4, 4, Ca(K(pal::cyan, 0.8f)), ImDrawFlags_Closed, 1.5f);
         std::vector<ImVec2> pp(mk->pts.size()); for (size_t i = 0; i < pp.size(); ++i) pp[i] = toPx(mk->pts[i]);
-        uint32_t hx = mk->inverted ? pal::red : pal::mint;   // red = cuts a hole, mint = keeps only the inside
-        g.dl->AddConcavePolyFilled(pp.data(), (int)pp.size(), Ca(K(hx, 0.28f)));
-        DashedPoly(pp.data(), (int)pp.size(), K(hx), 2.f, 9, 7);
-        frame(RectOfMask(*mk), pal::mint, true);
+        g.dl->AddConcavePolyFilled(pp.data(), (int)pp.size(), Ca(K(pal::yellow, 0.30f)));   // the mask tone of the design: yellow
+        DashedPoly(pp.data(), (int)pp.size(), K(pal::yellow), 2.f, 9, 7);
+        frame(RectOfMask(*mk), pal::yellow, true);
         if (clickPending && !frameTookClick && !A.maskPen && PointInPoly(m, sp4, 4)) { A.selKind = 1; A.selMk.clear(); frameTookClick = true; }
       } else frame(RectOfSlice(*sl), pal::cyan, false);
     }
     if (A.maskPen && scVis) {   // the shape being drawn, plus a rubber-band segment to the cursor
       std::vector<ImVec2> pp(A.penPts.size()); for (size_t i = 0; i < pp.size(); ++i) pp[i] = toPx(A.penPts[i]);
-      for (size_t i = 0; i + 1 < pp.size(); ++i) g.dl->AddLine(pp[i], pp[i + 1], Ca(K(pal::mint)), 2.f);
-      if (!pp.empty()) g.dl->AddLine(pp.back(), m, Ca(K(pal::mint, 0.6f)), 1.5f);
+      for (size_t i = 0; i + 1 < pp.size(); ++i) g.dl->AddLine(pp[i], pp[i + 1], Ca(K(pal::yellow)), 2.f);
+      if (!pp.empty()) g.dl->AddLine(pp.back(), m, Ca(K(pal::yellow, 0.6f)), 1.5f);
       for (size_t i = 0; i < pp.size(); ++i) {
         bool first = i == 0 && pp.size() >= 3 && std::hypot(m.x - pp[0].x, m.y - pp[0].y) <= 10.f;
-        g.dl->AddCircleFilled(pp[i], first ? 8.f : 5.f, Ca(K(first ? pal::white : pal::mint)), 20);
+        g.dl->AddCircleFilled(pp[i], first ? 8.f : 5.f, Ca(K(first ? pal::white : pal::yellow)), 20);
       }
-      TextC((area.Min.x + area.Max.x) * 0.5f, area.Min.y + 16, MONO_R, 10, K(pal::mint), "PEN \xC2\xB7 click points \xC2\xB7 click the first point / Enter / double-click to close \xC2\xB7 Esc cancels");
+      TextC((area.Min.x + area.Max.x) * 0.5f, area.Min.y + 16, MONO_R, 10, K(pal::yellow), "PEN \xC2\xB7 click points \xC2\xB7 click the first point / Enter / double-click to close \xC2\xB7 Esc cancels");
     }
     // Clicking inside another slice's dashed outline selects it (the topmost one when they overlap).
     if (scVis && inArea && dragKind == 0 && !frameTookClick) {
@@ -1299,56 +1303,24 @@ static void Label(float x, float y, const char* t, uint32_t hex = pal::t88) {
   Text(x, y + 4.5f, MONO_R, 9, K(hex), Upper(t).c_str(), 0.09f);
 }
 
-// Resolume-style number row: LABEL | value | - | +. Shift steps by 10. Returns true when the value changed (already clamped).
-static bool StepRow(float x, float y, float w, float labelW, const char* label, const char* id, float& v, float lo, float hi,
-                    float step, int decimals, float valW = 84.f, const char* unit = nullptr, float* endX = nullptr) {
-  (void)w;
-  const float H = 24.f, bh = 22.f;
-  Text(x, y + H * 0.5f, UI_S, 10, K(pal::t88), label);
-  float fx = x + labelW;
-  bool ch = FloatField(id, Rc(fx, y, valW, H), v, decimals);
-  float ux = fx + valW + 4;
-  if (unit) { Text(ux, y + H * 0.5f, MONO_R, 10, K(pal::t66), unit); ux += TextW(MONO_R, 10, unit) + 6; }
-  const bool big = ImGui::GetIO().KeyShift;
-  for (int i = 0; i < 2; ++i) {
-    ImRect b(ux + i * (bh + 4), y + 1, ux + i * (bh + 4) + bh, y + H - 1);
-    Hit h = HitR(b);
-    Box(b, h.hover ? K(pal::ctrlHover) : K(pal::g1c), h.hover ? K(pal::g33) : K(pal::g22), 3);
-    TextC((b.Min.x + b.Max.x) * 0.5f, (b.Min.y + b.Max.y) * 0.5f, MONO_B, 11, K(h.hover ? pal::white : pal::tcc), i ? "+" : "\xE2\x88\x92");
-    if (h.hover) CursorHand();
-    if (h.click) { v += (i ? step : -step) * (big ? 10.f : 1.f); ch = true; }
-  }
-  if (endX) *endX = ux + 2 * bh + 4;
-  if (ch) v = std::clamp(v, lo, hi);
-  return ch;
+// A number cell in the app's own property style: small mono label above a field (the "Input rectangle" grid look).
+static bool NumCell(float x, float y, float w, const char* label, const char* id, float& v, int decimals) {
+  Text(x, y + 4.5f, MONO_R, 9, K(pal::t66), label);
+  return FloatField(id, Rc(x, y + 11, w, 24), v, decimals);
 }
-// A thin bar with a marker at the value (Resolume's colour sliders); dragging sets the value, rounded to a whole number.
-static bool MarkerSlider(uint32_t id, ImRect tr, float& v, float mn, float mx, uint32_t hex) {
-  static uint32_t act = 0;
-  Box(tr, K(pal::g050), K(pal::g22), 2);
-  if (mn < 0.f) VLine(std::floor((tr.Min.x + tr.Max.x) * 0.5f), tr.Min.y + 2, tr.Max.y - 2, K(pal::g33));
-  Hit h = HitR(ImRect(tr.Min.x - 3, tr.Min.y - 4, tr.Max.x + 3, tr.Max.y + 4));
-  if (h.hover) CursorHand();
-  if (h.click) act = id;
-  bool ch = false;
-  if (act == id) {
-    if (ImGui::IsMouseDown(0)) {
-      float nv = std::round(mn + std::clamp((ImGui::GetIO().MousePos.x - tr.Min.x) / std::max(1.f, tr.GetWidth()), 0.f, 1.f) * (mx - mn));
-      if (nv != v) { v = nv; ch = true; }
-    } else act = 0;
-  }
-  float px = tr.Min.x + std::clamp((v - mn) / (mx - mn), 0.f, 1.f) * tr.GetWidth();
-  Fill(ImRect(std::clamp(px - 1.5f, tr.Min.x, tr.Max.x - 3.f), tr.Min.y + 1, std::clamp(px + 1.5f, tr.Min.x + 3.f, tr.Max.x), tr.Max.y - 1), K(hex));
-  return ch;
+// A slider row like the Clip transform panel: label left, toned mono value right, the slider underneath. Returns the height used.
+static float SliderRow(float x, float y, float w, const char* label, const char* val, uint32_t id, float& v, float mn, float mx, uint32_t hex, bool* changed = nullptr) {
+  Text(x, y + 5, UI_S, 10, K(pal::t88), label);
+  TextR(x + w, y + 5, MONO_B, 10, K(hex), val);
+  bool c = Slider(id, Rc(x, y + 10 + 6 + 4, w, 6), v, hex, mn, mx);
+  if (changed) *changed = c;
+  return 10 + 6 + 14 + 8;
 }
-
-// The INPUT MASK bar with the 6 shape buttons (heart, square, circle, triangle, hexagon, pen). With a slice selected they ADD a mask;
-// with a mask selected (forMask) they RE-SHAPE it (the pen redraws its outline). Returns the y below the bar.
+// The INPUT MASK shape buttons (heart, square, circle, triangle, hexagon, pen). With a slice selected they ADD a mask; with a mask
+// selected (forMask) they RE-SHAPE it (the pen redraws its outline). Returns the y below the buttons.
 static float InputMaskBar(float ox, float oy, float W, float x, float w, float y, bool forMask) {
-  Fill(ImRect(ox, oy + y, ox + W, oy + y + 22), K(pal::g18));
-  HLine(ox, ox + W, oy + y, K(pal::g2a)); HLine(ox, ox + W, oy + y + 21, K(pal::g2a));
-  Text(x, oy + y + 11, UI_B, 9, K(pal::t88), "INPUT MASK", 0.14f);
-  y += 22 + 8;
+  HLine(ox, ox + W, oy + y, K(pal::g2a)); y += 1 + 6;
+  Label(x, oy + y, forMask ? "Mask shape" : "Input mask"); y += 9 + 4;
   const int shapes[5] = {App::MS_HEART, App::MS_SQUARE, App::MS_CIRCLE, App::MS_TRIANGLE, App::MS_HEXAGON};
   const Mask* cur = forMask ? A.curMask() : nullptr;
   const float bw = 34.f, gap = (w - 6 * bw) / 5.f;
@@ -1356,9 +1328,9 @@ static float InputMaskBar(float ox, float oy, float W, float x, float w, float y
     ImRect br(x + i * (bw + gap), oy + y, x + i * (bw + gap) + bw, oy + y + 30);
     Hit h = HitR(br);
     bool on = i == 5 ? (A.maskPen || (cur && cur->shape < 0)) : (cur && cur->shape == shapes[i]);
-    Box(br, h.hover ? K(pal::ctrlHover) : K(pal::g1c), on ? K(pal::mint) : h.hover ? K(pal::g33) : K(pal::g22), 3);
+    Box(br, h.hover ? K(pal::ctrlHover) : K(pal::g1c), on ? K(pal::yellow) : h.hover ? K(pal::g33) : K(pal::g22), 3);
     ImVec2 c((br.Min.x + br.Max.x) * 0.5f, (br.Min.y + br.Max.y) * 0.5f);
-    ImU32 col = Ca(K(on ? pal::mint : h.hover ? pal::white : pal::tcc));
+    ImU32 col = Ca(K(on ? pal::yellow : h.hover ? pal::white : pal::tcc));
     if (i == 5) Icon("pencil", c, 15, col);
     else { auto gp = MaskShapePts(shapes[i], c, 7.f, 7.f); g.dl->AddPolyline(gp.data(), (int)gp.size(), col, ImDrawFlags_Closed, 1.6f); }
     if (h.hover) CursorHand();
@@ -1490,74 +1462,89 @@ static void PropsPanel(ImRect r) {
       }
       y += 4;
     } else {
-      HLine(ox + 8, ox + 8 + w, oy + y, K(pal::g2a)); y += 1 + 8;
-      // Resolume's slice rows. X/Y are the rect's centre, Left/Top its unrotated top-left corner (what the stage frame edits).
-      const float LWd = 62.f;
-      auto row = [&](const char* label, const char* id, float& v, float lo, float hi, int dec) {
-        bool c = StepRow(x, oy + y, w, LWd, label, id, v, lo, hi, 1.f, dec); y += 24 + 4; return c;
-      };
-      float vx = (float)(sl->ix + sl->iw / 2), vy = (float)(sl->iy + sl->ih / 2);
-      if (row("X", "##sp_x", vx, -16384, 16384, 0)) sl->ix = (int)std::lround(vx) - sl->iw / 2;
-      if (row("Y", "##sp_y", vy, -16384, 16384, 0)) sl->iy = (int)std::lround(vy) - sl->ih / 2;
-      float vl = (float)sl->ix, vt = (float)sl->iy, vw = (float)sl->iw, vh = (float)sl->ih;
-      if (row("Left", "##sp_l", vl, -16384, 16384, 0)) sl->ix = (int)std::lround(vl);
-      if (row("Top", "##sp_t", vt, -16384, 16384, 0)) sl->iy = (int)std::lround(vt);
-      if (row("Width", "##sp_w", vw, 20, 16384, 0)) sl->iw = (int)std::lround(vw);
-      if (row("Height", "##sp_h", vh, 20, 16384, 0)) sl->ih = (int)std::lround(vh);
-      float vr = sl->irot;
-      if (row("Rotation", "##sp_r", vr, -180, 180, 1)) sl->irot = std::fabs(vr) < 0.05f ? 0.f : vr;
-      y += 4;
+      HLine(ox + 8, ox + 8 + w, oy + y, K(pal::g2a)); y += 1 + 6;
+      Label(x, oy + y, "Input rectangle (px)"); y += 9 + 4;
+      // X/Y are the rect's centre, Left/Top its unrotated top-left corner (what the stage frame edits)
+      float vals[7] = {(float)(sl->ix + sl->iw / 2), (float)(sl->iy + sl->ih / 2), (float)sl->ix, (float)sl->iy, (float)sl->iw, (float)sl->ih, sl->irot};
+      const char* fl[7] = {"X", "Y", "Left", "Top", "Width", "Height", "Rotation"};
+      float fw = (w - 6) / 2.f;
+      for (int i = 0; i < 7; ++i) {
+        float fx = x + (i % 2) * (fw + 6), fy = y + (i / 2) * (35 + 6);
+        char id[24]; snprintf(id, sizeof id, "##sp%d", i);
+        if (!NumCell(fx, oy + fy, fw, fl[i], id, vals[i], i == 6 ? 1 : 0)) continue;
+        int iv = (int)std::lround(vals[i]);
+        if (i == 0) sl->ix = iv - sl->iw / 2; else if (i == 1) sl->iy = iv - sl->ih / 2;
+        else if (i == 2) sl->ix = iv; else if (i == 3) sl->iy = iv;
+        else if (i == 4) sl->iw = std::clamp(iv, 20, 16384); else if (i == 5) sl->ih = std::clamp(iv, 20, 16384);
+        else sl->irot = std::fabs(vals[6]) < 0.05f ? 0.f : std::clamp(vals[6], -180.f, 180.f);
+      }
+      y += 41 * 4 + 2;
     }
     // Soft Edge: a saved per-slice switch. The projector output does not feather slice edges yet (see features.md F20).
     {
       HLine(ox, ox + W, oy + y, K(pal::g2a)); y += 1 + 4;
-      ImRect se(x, oy + y, x + w, oy + y + 26);
-      Hit sh = HitR(se);
-      ImRect cb(x, oy + y + 6, x + 14, oy + y + 20);
-      Box(cb, sl->softEdge ? K(pal::mint) : K(pal::g050), sl->softEdge ? K(pal::mint) : K(pal::g22), 2);
-      if (sl->softEdge) Check(ImVec2((cb.Min.x + cb.Max.x) * 0.5f, (cb.Min.y + cb.Max.y) * 0.5f), 12, K(0x0f0f0f));
-      Text(x + 24, oy + y + 13, UI_S, 10, K(pal::te0), "Soft Edge");
-      if (sh.hover) CursorHand();
-      if (sh.click) sl->softEdge = !sl->softEdge;
-      y += 26 + 4;
+      ImRect er(x, oy + y, x + w, oy + y + 22);
+      Hit eh = HitR(er);
+      Text(x, er.Min.y + 11, UI_S, 10, K(pal::t88), "Soft edge");
+      const char* el = sl->softEdge ? "ENABLED" : "DISABLED";
+      float bw2 = TextW(MONO_B, 9, el, 0.09f) + 12 + 2;
+      ImRect bb(er.Max.x - bw2, er.Min.y + 2, er.Max.x, er.Min.y + 20);
+      Box(bb, sl->softEdge ? K(pal::mint, 0.2f) : K(pal::g1c), sl->softEdge ? K(pal::mint, 0.4f) : K(pal::g22), 3);
+      Text(bb.Min.x + 7, (bb.Min.y + bb.Max.y) * 0.5f, MONO_B, 9, K(sl->softEdge ? pal::mint : pal::t66), el, 0.09f);
+      if (eh.hover) CursorHand();
+      if (eh.click) sl->softEdge = !sl->softEdge;
+      y += 22 + 6;
     }
     // Input Mask: pick a shape to add a mask to this slice (pen = draw your own outline). Masks are edited on this Input stage.
     y = InputMaskBar(ox, oy, W, x, w, y, false);
-    Text(x, oy + y + 6, UI_S, 9, K(pal::t66), "Pick a shape to add a mask; it cuts the picture sent to output.", 0.01f);
+    Text(x, oy + y + 6, UI_S, 9, K(pal::t66), "Add a mask that cuts the picture.", 0.01f);
     y += 16 + 6;
   }
-  if (kind == 2) {   // Resolume's mask panel: name, the same rows as the input rect, Invert, and the shape buttons (they RE-SHAPE this mask)
+  if (kind == 2) {
+    Label(x, oy + y, "Mask name"); y += 9 + 6;
     TextField("##maskname", Rc(x, oy + y, w, 28), mk->name);
-    y += 28 + 8;
-    HLine(ox + 8, ox + 8 + w, oy + y, K(pal::g2a)); y += 1 + 8;
-    const float LWd = 62.f;
-    auto row = [&](const char* label, const char* id, float& v, float lo, float hi) {
-      bool c = StepRow(x, oy + y, w, LWd, label, id, v, lo, hi, 1.f, 2); y += 24 + 4; return c;
-    };
-    float vx = mk->x + mk->w * 0.5f, vy = mk->y + mk->h * 0.5f, vl = mk->x, vt = mk->y, vw = mk->w, vh = mk->h, vr = mk->rot;
-    bool ch = false;
-    if (row("X", "##mk_x", vx, -16384, 16384)) { mk->x = vx - mk->w * 0.5f; ch = true; }
-    if (row("Y", "##mk_y", vy, -16384, 16384)) { mk->y = vy - mk->h * 0.5f; ch = true; }
-    if (row("Left", "##mk_l", vl, -16384, 16384)) { mk->x = vl; ch = true; }
-    if (row("Top", "##mk_t", vt, -16384, 16384)) { mk->y = vt; ch = true; }
-    if (row("Width", "##mk_w", vw, 4, 16384)) { float cx = mk->x + mk->w * 0.5f; mk->w = vw; mk->x = cx - vw * 0.5f; ch = true; }
-    if (row("Height", "##mk_h", vh, 4, 16384)) { float cy = mk->y + mk->h * 0.5f; mk->h = vh; mk->y = cy - vh * 0.5f; ch = true; }
-    if (row("Rotation", "##mk_r", vr, -180, 180)) { mk->rot = std::fabs(vr) < 0.005f ? 0.f : vr; ch = true; }
-    if (ch) MaskRebuild(*mk);
+    y += 28 + 6;
+    HLine(x, x + w, oy + y, K(pal::g2a)); y += 1 + 4;
     {   // Invert: on = cut a hole (the default), off = keep only the inside
-      ImRect ir(x, oy + y, x + w, oy + y + 26);
+      ImRect ir(x, oy + y, x + w, oy + y + 24);
       Hit ih = HitR(ir);
-      Text(x, ir.Min.y + 13, UI_S, 10, K(pal::te0), "Invert");
-      ImRect cb(x + LWd, ir.Min.y + 6, x + LWd + 14, ir.Min.y + 20);
-      Box(cb, mk->inverted ? K(pal::mint) : K(pal::g050), mk->inverted ? K(pal::mint) : K(pal::g22), 2);
+      Text(x, ir.Min.y + 12, UI_S, 10, K(pal::te0), "Invert (cut hole)");
+      ImRect cb(ir.Max.x - 14, ir.Min.y + 5, ir.Max.x, ir.Min.y + 19);
+      Box(cb, mk->inverted ? K(pal::yellow) : K(pal::g050), mk->inverted ? K(pal::yellow) : K(pal::g22), 2);
       if (mk->inverted) Check(ImVec2((cb.Min.x + cb.Max.x) * 0.5f, (cb.Min.y + cb.Max.y) * 0.5f), 12, K(0x0f0f0f));
-      Text(cb.Max.x + 10, ir.Min.y + 13, UI_S, 9, K(pal::t66), mk->inverted ? "cuts a hole" : "keeps only the inside", 0.01f);
       if (ih.hover) CursorHand();
       if (ih.click) mk->inverted = !mk->inverted;
-      y += 26 + 4;
+      y += 24 + 6;
+    }
+    Text(x, oy + y + 5, UI_S, 10, K(pal::t88), "Feather");
+    char fb[16]; snprintf(fb, sizeof fb, "%dpx", mk->feather);
+    TextR(x + w, oy + y + 5, MONO_B, 10, K(pal::yellow), fb);
+    y += 10 + 6;
+    float fv = mk->feather / 40.f * 100.f;
+    if (Slider(0x3001, Rc(x, oy + y + 4, w, 6), fv, pal::yellow)) mk->feather = (int)std::round(fv / 100.f * 40.f);
+    y += 14 + 6;
+    HLine(x, x + w, oy + y, K(pal::g2a)); y += 1 + 6;
+    Label(x, oy + y, "Mask rectangle (px)"); y += 9 + 4;
+    {   // same fields as the slice's input rectangle: X/Y = centre, Left/Top = unrotated corner
+      float vals[7] = {mk->x + mk->w * 0.5f, mk->y + mk->h * 0.5f, mk->x, mk->y, mk->w, mk->h, mk->rot};
+      const char* fl[7] = {"X", "Y", "Left", "Top", "Width", "Height", "Rotation"};
+      float fw = (w - 6) / 2.f; bool ch = false;
+      for (int i = 0; i < 7; ++i) {
+        float fx = x + (i % 2) * (fw + 6), fy = y + (i / 2) * (35 + 6);
+        char id[24]; snprintf(id, sizeof id, "##mk%d", i);
+        if (!NumCell(fx, oy + fy, fw, fl[i], id, vals[i], 1)) continue;
+        ch = true;
+        if (i == 0) mk->x = vals[0] - mk->w * 0.5f; else if (i == 1) mk->y = vals[1] - mk->h * 0.5f;
+        else if (i == 2) mk->x = vals[2]; else if (i == 3) mk->y = vals[3];
+        else if (i == 4) { float cx = mk->x + mk->w * 0.5f; mk->w = std::clamp(vals[4], 4.f, 16384.f); mk->x = cx - mk->w * 0.5f; }
+        else if (i == 5) { float cy = mk->y + mk->h * 0.5f; mk->h = std::clamp(vals[5], 4.f, 16384.f); mk->y = cy - mk->h * 0.5f; }
+        else mk->rot = std::fabs(vals[6]) < 0.005f ? 0.f : std::clamp(vals[6], -180.f, 180.f);
+      }
+      if (ch) MaskRebuild(*mk);
+      y += 41 * 4 + 2;
     }
     y = InputMaskBar(ox, oy, W, x, w, y, true);
-    y += 6;
+    y += 2;
     ImRect dr(x, oy + y, x + w, oy + y + 28);
     Hit dh = HitR(dr);
     Box(dr, K(pal::red, 0.14f), K(pal::red, 0.5f), 3);
@@ -1577,10 +1564,9 @@ static void PropsPanel(ImRect r) {
     // The colour values reach the projector window (output.cpp); width/height describe the display and the tree label.
     Label(x, oy + y, "Screen name"); y += 9 + 4;
     TextField("##scname", Rc(x, oy + y, w, 28), sc->name); y += 28 + 8;
-    const float LWd = 62.f;
     {   // F2/I1: the physical display this screen is sent to. This one dropdown IS the projector output choice.
-      Text(x, oy + y + 13, UI_S, 10, K(pal::t88), "Device");
-      ImRect dr2(x + LWd, oy + y, x + w, oy + y + 26);
+      Label(x, oy + y, "Output device"); y += 9 + 4;
+      ImRect dr2(x, oy + y, x + w, oy + y + 26);
       Hit dh2 = HitR(dr2);
       bool haveMon = MonitorCount() > 0;
       std::string cur = haveMon ? MonitorName(A.outMonitor) : sc->outDev;
@@ -1607,26 +1593,27 @@ static void PropsPanel(ImRect r) {
       }
       y += 26 + 6;
     }
-    auto intRow = [&](const char* label, const char* id, int& v, int lo, int hi, const char* unit, bool bar, uint32_t hex, uint32_t barId) {
-      float fv = (float)v, endX = 0;
-      bool ch = StepRow(x, oy + y, w, LWd, label, id, fv, (float)lo, (float)hi, 1.f, 0, bar ? 44.f : 84.f, unit, &endX);
-      if (bar) {
-        float bv = (float)v;
-        ImRect tr(endX + 6, oy + y + 7, x + w, oy + y + 17);
-        if (MarkerSlider(barId, tr, bv, (float)lo, (float)hi, hex)) { fv = bv; ch = true; }
+    {   // display size (the tree label) and the colour block: the same slider rows the Clip transform panel uses
+      float vals[2] = {(float)sc->w, (float)sc->h}, fw = (w - 6) / 2.f;
+      const char* fl[2] = {"Width", "Height"};
+      for (int i = 0; i < 2; ++i) {
+        char id[16]; snprintf(id, sizeof id, "##scwh%d", i);
+        if (NumCell(x + i * (fw + 6), oy + y, fw, fl[i], id, vals[i], 0)) (i ? sc->h : sc->w) = std::clamp((int)std::lround(vals[i]), 16, 16384);
       }
+      y += 35 + 8;
+    }
+    auto colorRow = [&](const char* label, int& v, int lo, int hi, const char* unit, uint32_t id, uint32_t hex) {
+      float fv = (float)v; char vb[24]; snprintf(vb, sizeof vb, "%d%s", v, unit);
+      bool ch = false;
+      y += SliderRow(x, oy + y, w, label, vb, id, fv, (float)lo, (float)hi, hex, &ch);
       if (ch) v = (int)std::lround(std::clamp(fv, (float)lo, (float)hi));
-      y += 24 + 4;
     };
-    intRow("Width", "##sc_w", sc->w, 16, 16384, nullptr, false, 0, 0);
-    intRow("Height", "##sc_h", sc->h, 16, 16384, nullptr, false, 0, 0);
-    intRow("Opacity", "##sc_op", sc->opacity, 0, 100, "%", true, pal::mint, 0x3101);
-    intRow("Brightness", "##sc_br", sc->brightness, -100, 100, nullptr, true, pal::mint, 0x3102);
-    intRow("Contrast", "##sc_co", sc->contrast, -100, 100, nullptr, true, pal::mint, 0x3103);
-    intRow("Red", "##sc_r", sc->red, -100, 100, nullptr, true, pal::red, 0x3104);
-    intRow("Green", "##sc_g", sc->green, -100, 100, nullptr, true, pal::mint, 0x3105);
-    intRow("Blue", "##sc_b", sc->blue, -100, 100, nullptr, true, pal::cyan, 0x3106);
-    y += 2;
+    colorRow("Opacity", sc->opacity, 0, 100, "%", 0x3101, pal::coral);
+    colorRow("Brightness", sc->brightness, -100, 100, "", 0x3102, pal::yellow);
+    colorRow("Contrast", sc->contrast, -100, 100, "", 0x3103, pal::yellow);
+    colorRow("Red", sc->red, -100, 100, "", 0x3104, pal::red);
+    colorRow("Green", sc->green, -100, 100, "", 0x3105, pal::mint);
+    colorRow("Blue", sc->blue, -100, 100, "", 0x3106, pal::cyan);
     HLine(x, x + w, oy + y, K(pal::g2a)); y += 1 + 4;
     {
       ImRect er(x, oy + y, x + w, oy + y + 22);

@@ -268,14 +268,14 @@ Ba vùng: **cây Screen/Slice/Mask** (trái) | **Stage canvas** (giữa) | **Pro
   nguồn bên dưới vẫn rõ; các slice **khác cùng screen** (đang hiện) chỉ vẽ **viền nét đứt** (không tên, không tay nắm) phần input của chúng, để biết
   vùng nào của nguồn đã được lấy khi chuyển sang slice khác. Slice ẩn (👁 tắt) không vẽ. **Bấm vào bên trong khung nét đứt = chọn slice đó** (nhiều khung chồng nhau thì lấy khung trên cùng; khung của slice đang chọn được ưu tiên trước — kéo/xoay/co giãn vẫn như cũ). Con trỏ hiện bàn tay khi rê vào. ✅
 - **Không còn lưới nền** (ô 40px mờ) ở cả trang Input lẫn Output routing (2026-09-26) — khung canvas chỉ còn nền tối phẳng.
-- **Slice Properties theo mẫu Resolume (2026-09-26):** từ trên xuống — tên slice · **Input source** · các hàng
-  `X · Y` (tâm khung) · `Left · Top` (góc trên-trái chưa xoay) · `Width · Height` · `Rotation` (1 số lẻ), mỗi hàng có ô gõ số và nút **− / +**
-  (giữ `Shift` = bước ×10) · ô tick **Soft Edge** · thanh **INPUT MASK** với 6 nút: **tim · vuông · tròn · tam giác · lục giác · bút**.
+- **Slice Properties — thông tin theo mẫu Resolume, giao diện giữ nguyên thiết kế MikMap (2026-09-26):** từ trên xuống — tên slice · **Input source** ·
+  lưới ô số **Input rectangle (px)**: `X · Y` (tâm khung), `Left · Top` (góc trên-trái chưa xoay), `Width · Height`, `Rotation` (1 số lẻ) — nhãn mono nhỏ phía trên
+  mỗi ô như trước đây · công tắc **Soft edge** (nút ENABLED/DISABLED cùng kiểu Edge blending) · mục **INPUT MASK** với 6 nút hình: **tim · vuông · tròn · tam giác · lục giác · bút**.
   Bấm một hình = thêm mask cỡ nửa **khung input** của slice, ngay giữa khung, và chọn mask vừa tạo.
   **Mask nằm trong không gian composition canvas (như khung input), sửa ở trang Input và cắt hình gửi ra output thật** (2026-09-26):
   - **Mask chỉnh y hệt khung input** (khung kiểu Preview Cue): kéo **trong khung** = di chuyển, **ô vuông ở góc / giữa cạnh** = co giãn, **vòng tròn quanh 4 góc** = xoay (giữ `Shift` = nhảy 15°). Mọi mask — hình có sẵn hay bút — đều là một đường viền đơn vị đặt bằng một hình chữ nhật xoay (`Mask::x/y/w/h/rot` + `shape` hoặc `u`), nên cùng một bộ điều khiển.
   - **Chỉ mask đang được chọn mới hiện** (kèm khung); các mask khác ẩn cho tới khi chọn ở cây bên trái (bấm mask ở cây tự nhảy sang trang Input). Đang sửa mask thì khung slice chỉ còn viền; bấm vào khung slice (ngoài khung mask) = quay về chọn slice.
-  - **Panel Mask** (theo mẫu Resolume): ô tên · `X · Y · Left · Top · Width · Height · Rotation` (ô gõ số 2 số lẻ + nút −/+, Shift ×10) · **Invert** (bật = khoét lỗ, tắt = chỉ giữ phần bên trong) · thanh **INPUT MASK** — **bấm một hình = đổi shape của mask đang chọn** (giữ nguyên khung/góc xoay; hình hiện tại được tô sáng), nút **bút** = vẽ lại đường viền mask đang chọn (bấm từng điểm, bấm lại điểm đầu / `Enter` / bấm đúp để đóng, `Esc` huỷ; khung tự vừa với nét vẽ) · **Delete mask**. Độ mờ viền (Feather) đã bỏ khỏi panel vì output chưa làm mờ viền (dữ liệu vẫn lưu). Khi chọn **slice** (không phải mask), cùng thanh INPUT MASK ở panel slice **thêm** mask mới (nửa khung input, ở giữa khung).
+  - **Panel Mask** (thông tin theo mẫu Resolume, giao diện MikMap): ô tên · **Invert (cut hole)** (bật = khoét lỗ, tắt = chỉ giữ phần bên trong) · Feather · lưới ô số **Mask rectangle (px)** `X · Y · Left · Top · Width · Height · Rotation` (1 số lẻ) · mục **Mask shape** — **bấm một hình = đổi shape của mask đang chọn** (giữ nguyên khung/góc xoay; hình hiện tại được tô sáng), nút **bút** = vẽ lại đường viền mask đang chọn (bấm từng điểm, bấm lại điểm đầu / `Enter` / bấm đúp để đóng, `Esc` huỷ; khung tự vừa với nét vẽ) · **Delete mask**. Feather vẫn ở panel như thiết kế cũ nhưng **mới chỉ lưu, output chưa làm mờ viền**. Khi chọn **slice** (không phải mask), cùng thanh INPUT MASK ở panel slice **thêm** mask mới (nửa khung input, ở giữa khung).
   - Nhiều mask cùng slice: phần được giữ là hợp các mask "chỉ giữ trong" (không có thì cả hình) trừ đi các lỗ.
   - **Ảnh hưởng output:** `output.cpp` đưa từng điểm mask qua cùng phép ánh xạ khung input → keystone/mesh với hình rồi dùng stencil buffer (`MaskBegin/MaskEnd`, `clipart.cpp`) để giới hạn mọi thứ slice đó vẽ (kể cả chỉnh màu của Screen). Đã xem trên cửa sổ output: mask tim khoét lỗ hình tim; đổi sang tam giác và xoay 15° thì lỗ đổi theo. Chỉ có ở cửa sổ máy chiếu, không có ở Live Output trong workspace.
   - File cũ lưu mask theo px output 1920×1080: tự quy đổi sang px canvas khi mở (đúng theo tỉ lệ canvas/1920×1080; ở canvas mặc định số giữ nguyên).
@@ -309,9 +309,9 @@ Ba vùng: **cây Screen/Slice/Mask** (trái) | **Stage canvas** (giữa) | **Pro
 Slice: **toạ độ 4 góc nhập được bằng số** (trang Output, đồng bộ với kéo chuột), số cột/hàng mesh (+/−), reset lưới, thêm cột/hàng ở vị trí đã chọn;
 trang Input có các hàng X/Y/Left/Top/Width/Height/Rotation + Soft Edge + Input Mask (§3.2). Mask: đảo, độ mờ, danh sách điểm (≤8 điểm), xoá.
 
-**Screen (theo mẫu Resolume, 2026-09-26):** tên · **Device** (dropdown chọn màn hình xuất) · **Width / Height** · **Opacity** · **Brightness** ·
-**Contrast** · **Red / Green / Blue** — mỗi hàng có ô gõ số, nút **−/+** (Shift ×10) và (từ Opacity trở xuống) thanh có vạch đánh dấu kéo được;
-sau đó Edge blending (công tắc), nút **mở/đóng cửa sổ output** (`F11`), Save/Load preset.
+**Screen (thông tin theo mẫu Resolume, giao diện giữ theo thiết kế MikMap, 2026-09-26):** tên · **Output device** (dropdown chọn màn hình xuất) · ô số **Width / Height** ·
+các hàng thanh trượt kiểu panel Clip transform (nhãn trái, giá trị mono có màu bên phải, thanh bên dưới): **Opacity** (coral) · **Brightness / Contrast** (vàng) ·
+**Red** (đỏ) · **Green** (mint) · **Blue** (cyan); sau đó Edge blending (công tắc), nút **mở/đóng cửa sổ output** (`F11`), Save/Load preset.
 - **Màu chỉnh thật trên cửa sổ máy chiếu** (`output.cpp`): *Opacity* nhân vào toàn bộ hình của screen; *Brightness/Contrast/Red/Green/Blue*
   (−100…100, 0 = giữ nguyên) làm bằng các lớp phủ blend GL (nhân / gain `dst·(1+c)` / cộng / trừ, `DrawColorAdjust` trong `clipart.cpp`) chỉ trong
   đường viền từng slice — vùng đen ngoài slice vẫn đen. Contrast xoay quanh xám 50%; RGB nhân kênh đó; Brightness dịch tất cả. Slice **chồng nhau**

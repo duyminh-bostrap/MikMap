@@ -931,6 +931,12 @@ int main(int argc, char** argv) {
       if (ls.masks.size() != nm || !ls.softEdge) return fail("masks / soft edge did not round-trip");
       bool found = false; for (auto& m : ls.masks) if (m.id == penId) { found = m.pts.size() == 5 && m.pts[3].x == 90.f; }
       if (!found) return fail("a 5-point mask did not round-trip its points");
+      // every preset outline must touch all four sides of its rect (the hexagon used to stop short of top and bottom)
+      for (auto& m : A.curSlice()->masks) if (m.shape >= 0 && m.rot == 0.f) {
+        float lo = m.pts[0].y, hi = lo, l2 = m.pts[0].x, h2 = l2;
+        for (auto& p : m.pts) { lo = std::min(lo, p.y); hi = std::max(hi, p.y); l2 = std::min(l2, p.x); h2 = std::max(h2, p.x); }
+        if (std::fabs(lo - m.y) > 0.5f || std::fabs(hi - (m.y + m.h)) > 0.5f || std::fabs(l2 - m.x) > 0.5f || std::fabs(h2 - (m.x + m.w)) > 0.5f) return fail("a preset mask shape must fill its whole rect");
+      }
       // preset shapes persist as shape + rect and are rebuilt from them; the pen mask stays a free outline
       int nShape = 0; for (auto& m : ls.masks) if (m.shape >= 0) { ++nShape; std::vector<ImVec2> before = m.pts; MaskRebuild(m); if (before.size() != m.pts.size() || before[0].x != m.pts[0].x) return fail("a shape mask's pts must equal its rect rebuilt"); }
       if (nShape != 5) return fail("the five preset shapes must keep their shape id across save/load");
