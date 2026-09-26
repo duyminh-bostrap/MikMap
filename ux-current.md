@@ -157,19 +157,27 @@ Trước đây chỉ có 2 kiểu (trống/nâu ấm hoặc cam thuần khi đư
   (cuộn nửa cột: tên nhóm còn nguyên, ô Cue bị cắt gọn; bấm lên dải ghim chỉ
   trúng điều khiển của layer). ✅
 
-### 2.3 Deck tabs + Run mode (mới, 2026-09-22)
-| Hàng | Nội dung |
-|---|---|
-| Tab deck (26px) | Danh sách deck (✅ bấm=chuyển, bấm đúp=đổi tên). **Không còn nút + DECK riêng (đổi 2026-09-22)** — chuột phải vào bất kỳ tab nào mở menu *Deck*: **Add deck** (thêm deck mới, 3 layer trống, tên "Deck B"/"C"...) · Rename deck · Duplicate deck · **Move left/right** (đổi thứ tự tab, mờ khi ở đầu/cuối) · Delete deck (chặn khi chỉ còn 1 deck). |
-| Run mode (34px) | Segmented **GRID**/**TIMELINE** (✅ chuyển đổi kiểu hiển thị vùng diễn; độ rộng mỗi nút tự tính theo chữ, không còn tràn chữ "TIMELINE" ra ngoài). Bên phải: ở Grid hiện `Layer`/`Group`/`Column`/`Sync` (xem dưới); ở Timeline hiện nút `LOOP ON/OFF`. |
+### 2.3 Deck tabs + Run mode (mới, 2026-09-22; dời vị trí 2026-09-24)
+> **Vị trí hiện tại:** tab deck nằm ở **hàng 2 của khối trái thanh transport** (dưới hai monitor, cạnh
+> đồng hồ SYSTEM TIME — xem §2.5), vẽ kiểu thanh nav trên cùng. Nếu thanh transport thấp hơn 44px hoặc
+> quá hẹp thì `Deck()` tự vẽ lại hàng đồng hồ + hàng tab phía trên lưới (dự phòng, để menu deck không biến mất).
+> Công tắc **GRID | TIMELINE** nằm góc trên-trái lưới deck.
+
+- **Tab deck:** ✅ bấm = chuyển, bấm đúp = đổi tên. **Không có nút + DECK riêng** — chuột phải vào tab (hoặc
+  mũi tên nhỏ của tab đang chọn) mở menu *Deck*: **Add deck** (deck mới, 3 layer trống, tên "Deck B"/"C"...) ·
+  Rename · Duplicate · **Move left/right** (đổi thứ tự tab, mờ ở đầu/cuối) · Delete (chặn khi chỉ còn 1 deck) ·
+  và 4 thao tác cấu trúc lưới: **Add layer** · **New group from selected layer** · **Add column** ·
+  **Sync to beat ON/OFF**.
+- **GRID | TIMELINE:** ✅ chuyển kiểu hiển thị vùng diễn; độ rộng mỗi nút tự tính theo chữ. Ở Timeline mode có
+  thêm một hàng mảnh phía trên lưới chứa nút `LOOP ON/OFF` (Grid mode không còn hàng nào phía trên lưới).
+- Cụm 4 nút `Layer / Group / Column / Sync` cũ (góc phải hàng Run mode) và nút **DECK TOOLS ⌄** trung gian
+  đã bỏ — cả 4 chức năng giờ nằm trong menu *Deck* ở trên, không mất chức năng nào.
 
 Mỗi deck có layer/nhóm/cột **riêng biệt hoàn toàn** — chuyển deck là đổi hẳn sang một
 bộ layer khác, không ảnh hưởng deck kia. Lưu trong dự án (`decks[]`, `curDeckIdx`).
 Undo/redo cũng phủ hành động thêm/xoá/chuyển deck.
 
-Thanh công cụ Grid (góc phải hàng Run mode):
-`Layer` ✅ thêm layer mới (8 ô trống) · `Group` ✅ đưa layer đang chọn vào nhóm mới ·
-`Column` ✅ thêm cột trống ở cuối · `Sync` ✅ **quantize theo nhịp**: khi bật (mặc định tắt), trigger clip/cột chờ tới nhịp kế tiếp của BPM mới phát; tắt hoặc đang pause thì phát ngay. Trạng thái lưu trong dự án.
+Ý nghĩa **Sync to beat**: khi bật (mặc định tắt), trigger clip/cột chờ tới nhịp kế tiếp của BPM mới phát; tắt hoặc đang pause thì phát ngay. Trạng thái lưu trong dự án.
 
 ### 2.3b Timeline run mode (mới, 2026-09-22)
 Một cách hiển thị **khác của cùng dữ liệu lưới** — không phải dữ liệu riêng. Mỗi
@@ -198,16 +206,13 @@ Cây thư mục: **Media** (✅ ảnh thật trong `~/Documents/MikMap/media`, b
 ### 2.5 Hai monitor + Timeline (giữa)
 - **Preview Cue** (cyan) và **Live Output** (coral, có nhãn COMPOSITE): xem hình
   clip đã cue / toàn bộ composite. Live có TestCard khi bật.
-- **Đổi 2026-09-22:** thanh dưới hai monitor không còn là "Timeline" (nhãn +
-  timecode) ở góc trái nữa — góc trái nay là **SYSTEM TIME** (giờ hệ thống
-  thật, `HH:MM:SS`, cập nhật mỗi khung hình qua `localtime_r`/`localtime_s`).
-  Nhãn **TIMELINE** + timecode (vd `00:00:03:12 / 00:00:16:00`, theo clip trên
-  cùng đang chọn) dời sang **góc phải**, cỡ chữ nhỏ hơn — chỉ còn là thông tin
-  tham khảo. **Bỏ hẳn thanh kéo (scrub bar)** ở đáy — không còn bấm/kéo để đổi
-  playhead trực tiếp trên thanh này (X6 cũ coi như quay lại trạng thái chưa
-  scrub được, xem mục 7). Cao của cả thanh này chỉnh được trong Cài đặt → tab
-  **Layout** (`Cao thanh timeline`, 0–96px) — **kéo về 0 sẽ ẩn hẳn** cả thanh
-  này lẫn 5 nút transport bên dưới, nhường chỗ cho hai monitor to hơn. ✅
+- **Thanh dưới hai monitor** (bố cục hiện tại, sau các lần chỉnh 2026-09-22 → 09-24): **khối trái 2 hàng** —
+  hàng 1 = **SYSTEM TIME** + giờ hệ thống thật `HH:MM:SS` (cập nhật mỗi khung hình, `localtime_r`/`localtime_s`),
+  hàng 2 = **tab deck** (§2.3); **giữa** = cụm nút transport; **khối phải** = nhãn **TIMELINE** + timecode
+  (vd `00:00:03:12 / 00:00:16:00`, theo clip trên cùng đang chọn). **Không còn thanh kéo (scrub bar)** ở Grid mode
+  — kéo tua playhead chỉ còn ở Timeline run mode (§2.3b, `scrubZone`). Cao của cả thanh chỉnh được trong Cài đặt →
+  **Layout** (`Cao thanh timeline`, 0–96px); **0 = ẩn hẳn** thanh và 5 nút transport, nhường chỗ cho hai
+  monitor (tab deck khi đó tự chuyển lên phía trên lưới). ✅ Nhánh dự phòng "thanh thấp" **chưa chụp** thật.
 - 5 nút transport (ẩn cùng thanh nếu Cao thanh timeline = 0): **▶ Play** (tiếp tục chạy playhead của mọi clip đang chọn/live ✅) · **⏸ Pause** (dừng toàn bộ playhead, không đổi trạng thái Live ✅) · **■ Stop** (dừng chạy + tua playhead về 0 ✅) · **⏮/⏭** (nhảy sang cột trước/sau **và bắn luôn cột đó** — như bấm header cột, có dừng layer nào trống ở cột mới, có theo Sync/quantize nếu bật ✅; khác phím `←`/`→` chỉ di chuyển lựa chọn, không phát).
 
 ### 2.6 Properties (phải, mặc định 236px — kéo khe bên trái để đổi, xem §2.7; hoặc §5 tab Layout) — 3 tab **Comp / Layer / Clip**
@@ -348,7 +353,7 @@ Trạng thái sau đợt sửa 2026-09-21 (✅ đã sửa · ⛔ còn tồn tạ
 | X3 | Rename layer/cột, Loop trong popover không làm gì | ✅ Đã sửa |
 | X4 | Chip blend mode có tên khác dropdown, chọn Alpha/Additive rơi về Normal | ✅ Đã sửa (đã xác nhận đúng là lỗi thật) |
 | X5 | Không phím tắt thật; không undo cho Composition | ✅ Đã có phím tắt (mục 6) và undo/redo toàn app |
-| X6 | Timeline không scrub được | ✅ Đã sửa (2026-09-21: tổng thời lượng/tốc độ playhead theo thời lượng thật của clip) — **2026-09-22: bỏ hẳn thanh kéo (scrub bar)** theo yêu cầu thiết kế mới (xem §2.5); không còn cách kéo tay đổi playhead từ thanh này nữa, chỉ còn đọc timecode + 5 nút transport |
+| X6 | Timeline không scrub được | ✅ Đã sửa (2026-09-21: tổng thời lượng/tốc độ playhead theo thời lượng thật của clip) — **2026-09-22: bỏ thanh kéo (scrub bar) ở Grid mode** theo yêu cầu thiết kế mới (§2.5); kéo tua playhead vẫn còn ở Timeline run mode (§2.3b) |
 | X7 | Edit ROI không kéo được; radar chỉ giả lập 1 điểm chạm | ✅ ROI kéo được — ⛔ radar vẫn chỉ giả lập |
 | X8 | Thanh trạng thái hiện MIDI/Art-Net/NDI giả | ✅ Đã thay bằng số thiết bị và trạng thái output thật |
 | X9 | Tên dự án không cập nhật tiêu đề | ✅ Đã sửa |

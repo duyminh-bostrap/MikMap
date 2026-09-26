@@ -188,8 +188,8 @@ không phải cấu trúc riêng, `App::tlLayout`/`App::tlSync`). Cả hai đề
 dự án (trừ playhead/loop của Timeline, chỉ runtime).
 
 **Vẫn còn giả/thiếu — dễ bị đánh giá cao hơn thực tế:** `B3` generator vẽ bằng CPU, chưa
-phải shader GLSL; `A4` thumbnail là gradient tĩnh (cố ý — thumbnail động làm
-deck tụt còn ~16s/khung); chưa có nguồn video/ảnh thật (`B1`), chưa có thread sensor thật (`G1`).
+phải shader GLSL; chưa có nguồn video/ảnh thật (`B1`), chưa có thread sensor thật (`G1`).
+(`A4` thumbnail động đã `[x]` từ 2026-09-23 — giới hạn ≤3 ô vẽ lại/khung, xem đầu mục này.)
 `I2` (lưu/mở dự án) **đã chạy** qua `src/project.cpp` (đọc/ghi `.mikmap` bằng schema
 JSON tự viết riêng của `src/`) nhưng **vẫn chưa gọi `engine/core/model/ProjectIO`** —
 `ProjectIO` định nghĩa MỘT schema khác, chưa được `src/` dùng tới, dù tài liệu của nó
