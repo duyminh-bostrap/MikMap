@@ -922,7 +922,7 @@ static ImVec2 dragAnchor;               // input rect drags: the fixed corner/ed
 static float dragAng0 = 0.f, dragRot0 = 0.f;   // input rect rotate: pointer angle and rect rotation when the drag began
 
 // ── magnet: drags snap to other points, to edges, and to the canvas / output box ──
-struct SnapSet { std::vector<float> xs, ys; std::vector<ImVec2> pts; std::vector<std::pair<ImVec2, ImVec2>> segs; };
+struct SnapSet { std::vector<float> xs, ys; std::vector<ImVec2> pts; std::vector<std::pair<ImVec2, ImVec2>> segs; ImVec2 boxMin{0, 0}, boxMax{0, 0}; };
 static std::vector<std::pair<ImVec2, ImVec2>> gGuideLines;   // stage-space lines/segments the last snap locked onto (drawn by Stage)
 static std::vector<ImVec2> gGuideDots;
 static void AddRectTargets(SnapSet& S, const RectXf& R) {
@@ -932,7 +932,7 @@ static void AddRectTargets(SnapSet& S, const RectXf& R) {
 static SnapSet BuildSnap(const Screen* sc, const Slice* sl, const Mask* mk, bool onMask, int skipQ) {
   SnapSet S;
   if (A.mpage == 1) {   // Output: the screen's 1920x1080 box, and every visible slice's corners and edges
-    S.xs = {0.f, 960.f, 1920.f}; S.ys = {0.f, 540.f, 1080.f};
+    S.xs = {0.f, 960.f, 1920.f}; S.ys = {0.f, 540.f, 1080.f}; S.boxMax = ImVec2(1920.f, 1080.f);
     if (sc) for (auto& o : sc->slices) {
       if (!o.visible) continue;
       bool own = sl && o.id == sl->id;
@@ -944,7 +944,7 @@ static SnapSet BuildSnap(const Screen* sc, const Slice* sl, const Mask* mk, bool
     }
   } else {              // Input: the composition canvas, other slices' input rects (and the slice's own rect when editing its mask)
     float W = (float)A.canvasW, H = (float)A.canvasH;
-    S.xs = {0.f, W * 0.5f, W}; S.ys = {0.f, H * 0.5f, H};
+    S.xs = {0.f, W * 0.5f, W}; S.ys = {0.f, H * 0.5f, H}; S.boxMax = ImVec2(W, H);
     if (sc) for (auto& o : sc->slices) {
       if (!o.visible) continue;
       if (sl && o.id == sl->id && !onMask) continue;   // the rect being edited is not a target for itself
@@ -954,18 +954,33 @@ static SnapSet BuildSnap(const Screen* sc, const Slice* sl, const Mask* mk, bool
   }
   return S;
 }
+// The magnet locked onto x (vertical) or y (horizontal) = v: light up only the edge it locked onto — a side of a box that has
+// exactly that coordinate, or the centre line drawn across the frame — never a line running off to the edges of the stage.
+static void GuideAxis(const SnapSet& S, bool vertical, float v, const ImVec2* src) {
+  int n = 0;
+  for (auto& sg : S.segs) {
+    float a = vertical ? sg.first.x : sg.first.y, b = vertical ? sg.second.x : sg.second.y;
+    if (std::fabs(a - v) < 0.5f && std::fabs(b - v) < 0.5f) { gGuideLines.push_back(sg); ++n; }
+  }
+  for (float c : vertical ? S.xs : S.ys) if (std::fabs(c - v) < 0.5f) {
+    gGuideLines.push_back(vertical ? std::make_pair(ImVec2(v, S.boxMin.y), ImVec2(v, S.boxMax.y)) : std::make_pair(ImVec2(S.boxMin.x, v), ImVec2(S.boxMax.x, v)));
+    ++n; break;
+  }
+  if (!n && src) gGuideDots.push_back(*src);   // a corner of a turned box: no straight side to light, mark the corner itself
+}
 // Snap a point: an existing point wins, then a shared x / y line, then the nearest spot on an edge. thr is in stage px.
 static ImVec2 SnapPoint(ImVec2 p, const SnapSet& S, float thr) {
   float best = thr; const ImVec2* bp = nullptr;
   for (auto& q : S.pts) { float d = std::hypot(q.x - p.x, q.y - p.y); if (d < best) { best = d; bp = &q; } }
   if (bp) { gGuideDots.push_back(*bp); return *bp; }
   ImVec2 r = p; bool sx = false, sy = false; float bx = thr, by = thr;
-  auto tryX = [&](float x) { float d = std::fabs(p.x - x); if (d < bx) { bx = d; r.x = x; sx = true; } };
-  auto tryY = [&](float y) { float d = std::fabs(p.y - y); if (d < by) { by = d; r.y = y; sy = true; } };
-  for (float x : S.xs) tryX(x); for (float y : S.ys) tryY(y);
-  for (auto& q : S.pts) { tryX(q.x); tryY(q.y); }
-  if (sx) gGuideLines.push_back({ImVec2(r.x, -4000.f), ImVec2(r.x, 8000.f)});
-  if (sy) gGuideLines.push_back({ImVec2(-4000.f, r.y), ImVec2(8000.f, r.y)});
+  const ImVec2 *srcX = nullptr, *srcY = nullptr;
+  auto tryX = [&](float x, const ImVec2* q) { float d = std::fabs(p.x - x); if (d < bx) { bx = d; r.x = x; sx = true; srcX = q; } };
+  auto tryY = [&](float y, const ImVec2* q) { float d = std::fabs(p.y - y); if (d < by) { by = d; r.y = y; sy = true; srcY = q; } };
+  for (float x : S.xs) tryX(x, nullptr); for (float y : S.ys) tryY(y, nullptr);
+  for (auto& q : S.pts) { tryX(q.x, &q); tryY(q.y, &q); }
+  if (sx) GuideAxis(S, true, r.x, srcX);
+  if (sy) GuideAxis(S, false, r.y, srcY);
   if (!sx && !sy) {   // no shared line: slide onto the nearest edge
     float bd = thr; const std::pair<ImVec2, ImVec2>* bs = nullptr; ImVec2 bpnt = p;
     for (auto& sg : S.segs) {
@@ -986,13 +1001,14 @@ static void SnapRectMove(RectXf& R, const SnapSet& S, float thr) {
   for (auto& q : c) { mnx = std::min(mnx, q.x); mxx = std::max(mxx, q.x); mny = std::min(mny, q.y); mxy = std::max(mxy, q.y); }
   const float cxs[3] = {mnx, (mnx + mxx) * 0.5f, mxx}, cys[3] = {mny, (mny + mxy) * 0.5f, mxy};
   float bdx = thr, bdy = thr, dx = 0, dy = 0, gx = 0, gy = 0; bool sx = false, sy = false;
-  auto tx = [&](float t) { for (float cnd : cxs) { float d = t - cnd; if (std::fabs(d) < bdx) { bdx = std::fabs(d); dx = d; gx = t; sx = true; } } };
-  auto ty = [&](float t) { for (float cnd : cys) { float d = t - cnd; if (std::fabs(d) < bdy) { bdy = std::fabs(d); dy = d; gy = t; sy = true; } } };
-  for (float x : S.xs) tx(x); for (float y : S.ys) ty(y);
-  for (auto& q : S.pts) { tx(q.x); ty(q.y); }
+  const ImVec2 *srcX = nullptr, *srcY = nullptr;
+  auto tx = [&](float t, const ImVec2* q) { for (float cnd : cxs) { float d = t - cnd; if (std::fabs(d) < bdx) { bdx = std::fabs(d); dx = d; gx = t; sx = true; srcX = q; } } };
+  auto ty = [&](float t, const ImVec2* q) { for (float cnd : cys) { float d = t - cnd; if (std::fabs(d) < bdy) { bdy = std::fabs(d); dy = d; gy = t; sy = true; srcY = q; } } };
+  for (float x : S.xs) tx(x, nullptr); for (float y : S.ys) ty(y, nullptr);
+  for (auto& q : S.pts) { tx(q.x, &q); ty(q.y, &q); }
   R.x += dx; R.y += dy;
-  if (sx) gGuideLines.push_back({ImVec2(gx, -4000.f), ImVec2(gx, 8000.f)});
-  if (sy) gGuideLines.push_back({ImVec2(-4000.f, gy), ImVec2(8000.f, gy)});
+  if (sx) GuideAxis(S, true, gx, srcX);
+  if (sy) GuideAxis(S, false, gy, srcY);
 }
 
 // ── stage view ──
@@ -1693,7 +1709,7 @@ static void Stage(ImRect r) {
       }
     }
   }
-  for (auto& gl : gGuideLines) g.dl->AddLine(toPx(gl.first), toPx(gl.second), Ca(K(pal::white, 0.55f)), 1.f);   // what the magnet locked onto
+  for (auto& gl : gGuideLines) g.dl->AddLine(toPx(gl.first), toPx(gl.second), Ca(K(pal::white, 0.9f)), 2.f);   // what the magnet locked onto
   for (auto& gd : gGuideDots) g.dl->AddCircle(toPx(gd), 7.f, Ca(K(pal::white, 0.9f)), 16, 1.5f);
   Border(cv, K(pal::g2a), 3);
   // position indicators: a thumb per axis whenever part of the content (output box or any point) is outside the view

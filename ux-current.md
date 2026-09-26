@@ -298,7 +298,7 @@ Ba vùng: **cây Screen/Slice/Mask** (trái) | **Stage canvas** (giữa) | **Pro
   **Kéo chuột phải** = pan.
 - **Hai nút công cụ (2026-09-26, cả Input lẫn Output, nằm cạnh nhóm Undo/Redo):** 🖐 **Bàn tay** — bật thì **kéo chuột trái = pan** khu vực làm việc, mọi thao tác sửa
   (kéo điểm, chọn, marquee, bút) tạm tắt; ⧉ **Nam châm** — bật thì mọi lần kéo **hít vào điểm và cạnh**: điểm của slice khác/của chính slice, đường x/y trùng nhau, rồi tới cạnh
-  gần nhất, cùng viền khung 1920×1080 (Output) hoặc canvas (Input) và điểm giữa; nét trắng mảnh/vòng tròn cho thấy nó đang hít vào đâu. Ngưỡng 8px màn hình. Giữ **Alt**
+  gần nhất, cùng viền khung 1920×1080 (Output) hoặc canvas (Input) và điểm giữa; **chỉ đúng cạnh đã hít sáng trắng** (cạnh của khung/box hoặc đoạn đường giữa trong khung — không kẻ dài ra ngoài stage) hoặc vòng tròn ở điểm đã hít. Ngưỡng 8px màn hình. Giữ **Alt**
   để đặt tự do. Áp cho kéo góc corner pin, điểm mesh, nhóm điểm, co giãn/di chuyển khung input và khung mask (khi di chuyển thì mép/tâm khung hít vào các đường). Cả hai công tắc
   chỉ trong phiên (không lưu). ✅
 - **Kéo thả chọn vùng (marquee, 2026-09-26):** kéo chuột trên vùng trống của stage vẽ khung nét đứt. **Trang Output:** chọn mọi **điểm** (góc corner pin của mọi slice
