@@ -265,6 +265,23 @@ static void ApplyBox(Slice& s, const RectXf& from, const RectXf& to) {
 }
 // Place the slice's box at an upright rectangle (the Output right-click presets), keeping its warp.
 static void FitBox(Slice& s, float x, float y, float w, float h) { ApplyBox(s, OutputBox(s), {x, y, w, h, 0.f}); }
+// The four corners the audience sees: the warp grid's own corners through the perspective (they may sit inside the big corners).
+static void VisibleCorners(const Slice& s, ImVec2 out[4]) {
+  auto g = MeshGrid(s); int R = (int)g.size(), C = (int)g[0].size();
+  out[0] = g[0][0]; out[1] = g[0][C - 1]; out[2] = g[R - 1][C - 1]; out[3] = g[R - 1][0];
+}
+// Put the visible corners exactly on `target` (Match Input Shape / Swap): solve the perspective corners through the grid's own corners,
+// so every point inside keeps its place relative to them. If the grid's corners make no usable quad, fall back to a flat grid.
+static void SetVisibleCorners(Slice& s, const ImVec2 target[4]) {
+  auto lg = LocalGrid(s); int R = (int)lg.size(), C = (int)lg[0].size();
+  const ImVec2 lc[4] = {lg[0][0], lg[0][C - 1], lg[R - 1][C - 1], lg[R - 1][0]};
+  const ImVec2 unit[4] = {{0, 0}, {1, 0}, {1, 1}, {0, 1}};
+  Keystone kl(lc), kt(target);
+  ImVec2 nq[4]; bool ok = kl.proj && kt.proj;
+  for (int i = 0; i < 4 && ok; ++i) { ImVec2 l; ok = kl.Inv(unit[i], l); if (ok) nq[i] = kt.Fwd(l); }
+  if (!ok) { for (int i = 0; i < 4; ++i) s.q[i] = target[i]; s.meshLocal.clear(); return; }
+  for (int i = 0; i < 4; ++i) s.q[i] = ImVec2(std::clamp(nq[i].x, -4000.f, 8000.f), std::clamp(nq[i].y, -4000.f, 8000.f));
+}
 
 // --roundtrip checks for the Resolume-style tools (the helpers are private to this file).
 bool MappingSelfTest(std::string& why) {
@@ -297,6 +314,12 @@ bool MappingSelfTest(std::string& why) {
   // an old corner-pin-only slice becomes a 1 x 1 grid that looks the same
   Slice o = s; o.warp = 0; ImVec2 keyAt = SliceMapUV(o, 0.3f, 0.7f); NormalizeWarp(o);
   if (o.warp != 1 || o.meshCols != 1 || o.meshRows != 1 || !near2(SliceMapUV(o, 0.3f, 0.7f), keyAt, 0.01f)) { why = "old corner-pin slice changed when normalised"; return false; }
+  // Match Input Shape with moved grid corners: the corners the audience sees land exactly on the target
+  Slice mv = s; const ImVec2 tgt[4] = {{300, 200}, {1400, 260}, {1350, 950}, {250, 880}};
+  SetVisibleCorners(mv, tgt);
+  ImVec2 vc[4]; VisibleCorners(mv, vc);
+  for (int i = 0; i < 4; ++i) if (!near2(vc[i], tgt[i], 0.1f)) { why = "Match Input Shape missed a visible corner (grid corners moved inside the perspective ones)"; return false; }
+  if (!near2(SliceMapUV(mv, 0.f, 0.f), tgt[0], 0.1f)) { why = "the picture's corner does not follow the visible corner"; return false; }
   // Input > Edit Points on a turned mask: the outline goes exactly through the given points and the turn is kept
   Mask m; m.shape = App::MS_SQUARE; m.x = 300; m.y = 200; m.w = 400; m.h = 200; m.rot = 30; MaskRebuild(m);
   std::vector<ImVec2> np = m.pts; np[1] = ImVec2(np[1].x + 80, np[1].y - 40);
@@ -486,7 +509,7 @@ void App::resetAllWarping() {
 // Kept as its own action so "reset" always means "back to fullscreen default", never "copy the crop".
 void App::matchOutputToInput() {
   pushHist();
-  if (Slice* s = curSlice()) { ImVec2 q[4]; InputAsOutputQuad(*s, q); for (int i = 0; i < 4; ++i) s->q[i] = q[i]; s->orot = s->irot; }   // keeps the input's rotation (and the Transform box turns with it)
+  if (Slice* s = curSlice()) { ImVec2 q[4]; InputAsOutputQuad(*s, q); SetVisibleCorners(*s, q); s->orot = s->irot; }   // the visible corners land on the input's shape (rotation kept, the Transform box turns with it)
 }
 // Resolume calls this "Whole area": the input rect snaps back to covering the entire composition canvas —
 // matches a brand-new slice's own default (Slice struct defaults / NewBlankProject), so an operator who cropped
@@ -1074,6 +1097,11 @@ static SnapSet BuildSnap(const Screen* sc, const Slice* sl, const Mask* mk, bool
         S.pts.push_back(o.q[i]);
         if (!(own && (i == skipQ || (i + 1) % 4 == skipQ))) S.segs.push_back({o.q[i], o.q[(i + 1) % 4]});
       }
+      if (!own) {   // another slice: also its visible corners and edges (the warp grid's border, which can sit inside the big corners)
+        auto ol = SliceOutline(o);
+        ImVec2 vc[4]; VisibleCorners(o, vc); for (auto& p : vc) S.pts.push_back(p);
+        for (size_t i = 0; i < ol.size(); ++i) S.segs.push_back({ol[i], ol[(i + 1) % ol.size()]});
+      }
     }
   } else {              // Input: the composition canvas, other slices' input rects (and the slice's own rect when editing its mask)
     float W = (float)A.canvasW, H = (float)A.canvasH;
@@ -1231,12 +1259,12 @@ static void InputRectMenu(ImVec2 at, bool output = false) {
   add("Right Half", edit([setRect](Slice& s) { setRect(s, A.canvasW / 2, 0, A.canvasW - A.canvasW / 2, A.canvasH); }));
   add("Bottom Half", edit([setRect](Slice& s) { setRect(s, 0, A.canvasH / 2, A.canvasW, A.canvasH - A.canvasH / 2); }));
   add("Whole Area", [] { A.resetInputRect(); });
-  add("Match Output Shape", edit([](Slice& s) { SetInputFromQuad(s, s.q); }), true);
+  add("Match Output Shape", edit([](Slice& s) { ImVec2 vc[4]; VisibleCorners(s, vc); SetInputFromQuad(s, vc); }), true);   // the shape the audience sees, not the perspective corners
   }
   add("Swap Input Output Shape", edit([](Slice& s) {
-    ImVec2 outQ[4], inQ[4]; for (int i = 0; i < 4; ++i) outQ[i] = s.q[i];
+    ImVec2 outQ[4], inQ[4]; VisibleCorners(s, outQ);
     InputAsOutputQuad(s, inQ);
-    for (int i = 0; i < 4; ++i) s.q[i] = inQ[i];
+    SetVisibleCorners(s, inQ);
     SetInputFromQuad(s, outQ);
   }));
   add("Bring Forward", [] { A.moveSliceZ(1); }, true, idx >= n - 1);
@@ -1479,7 +1507,9 @@ static void Stage(ImRect r) {
       ImVec2 tp = inOutput(to);
       if (snapOn) {
         SnapSet S = BuildSnap(sc, sl, nullptr, false, -1);
-        auto moving = [&](ImVec2 q) { for (auto& p : gGroup) if (std::fabs(p.out.x - q.x) < 0.01f && std::fabs(p.out.y - q.y) < 0.01f) return true; return false; };
+        std::vector<ImVec2> now;   // where the moving points are NOW (last frame) — comparing with their start positions let them snap onto themselves
+        for (auto& p : gGroup) if (Slice* ps = SliceById(*sc, p.sl)) { ImVec2 c; if (PointPos(*ps, p.idx, c)) now.push_back(c); }
+        auto moving = [&](ImVec2 q) { for (auto& c : now) if (std::fabs(c.x - q.x) < 0.01f && std::fabs(c.y - q.y) < 0.01f) return true; return false; };
         S.pts.erase(std::remove_if(S.pts.begin(), S.pts.end(), moving), S.pts.end());
         S.segs.erase(std::remove_if(S.segs.begin(), S.segs.end(), [&](const std::pair<ImVec2, ImVec2>& g2) { return moving(g2.first) || moving(g2.second); }), S.segs.end());
         tp = inOutput(SnapPoint(tp, S, snapThr));
