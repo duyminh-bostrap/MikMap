@@ -1409,9 +1409,19 @@ static void Stage(ImRect r) {
         for (int i = 0; i < 4 && !hot; ++i) if (dist(m, cpx[i]) <= kSqR) { hot = 2; hotIdx = i; }
         for (int i = 0; i < 4 && !hot; ++i) if (dist(m, mpx[i]) <= kSqR) { hot = 2; hotIdx = 10 + i; }
         for (int i = 0; i < 4 && !hot; ++i) if (dist(m, cpx[i]) <= kRingR) { hot = 6; hotIdx = i; }
+        // the whole side is a handle too, not just its middle square: grab anywhere along an edge to resize that side
+        for (int i = 0; i < 4 && !hot; ++i) {
+          ImVec2 a = cpx[i], b = cpx[(i + 1) % 4], ab(b.x - a.x, b.y - a.y);
+          float l2 = ab.x * ab.x + ab.y * ab.y; if (l2 < 1.f) continue;
+          float t = std::clamp(((m.x - a.x) * ab.x + (m.y - a.y) * ab.y) / l2, 0.f, 1.f);
+          if (std::hypot(a.x + ab.x * t - m.x, a.y + ab.y * t - m.y) <= 6.f) { hot = 2; hotIdx = 10 + i; }
+        }
         if (!hot && PointInPoly(m, cpx, 4)) hot = 5;
       }
-      if (hot) ImGui::SetMouseCursor(hot == 5 ? ImGuiMouseCursor_Hand : ImGuiMouseCursor_ResizeAll);
+      if (hot) {
+        bool edge = hot == 2 && hotIdx >= 10 && R.rot == 0.f;   // an upright rect's sides only go one way
+        ImGui::SetMouseCursor(hot == 5 ? ImGuiMouseCursor_Hand : edge ? ((hotIdx % 10) % 2 == 0 ? ImGuiMouseCursor_ResizeNS : ImGuiMouseCursor_ResizeEW) : ImGuiMouseCursor_ResizeAll);
+      }
       if (hot && clickPending) {
         frameTookClick = true;
         A.pushHist(); dragKind = hot; dragIdx = hotIdx; dragOnMask = onMask;
