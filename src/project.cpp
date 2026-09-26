@@ -173,6 +173,8 @@ JsonValue ScreenJ(const Screen& s) {
   JsonValue so = JsonValue::object();
   so.set("id", s.id); so.set("name", s.name); so.set("outDev", s.outDev); so.set("w", s.w); so.set("h", s.h); so.set("fps", s.fps);
   so.set("edgeBlend", s.edgeBlend); so.set("visible", s.visible); so.set("role", s.role);
+  so.set("opacity", s.opacity); so.set("brightness", s.brightness); so.set("contrast", s.contrast);
+  so.set("red", s.red); so.set("green", s.green); so.set("blue", s.blue);
   JsonValue sl = JsonValue::array(); for (auto& x : s.slices) sl.push(SliceJ(x));
   so.set("slices", sl);
   return so;
@@ -181,6 +183,9 @@ Screen ReadScreen(const JsonValue& so) {
   Screen s; s.id = so["id"].asString(); s.name = so["name"].asString(); s.outDev = so["outDev"].asString();
   s.w = std::max(16, so["w"].asInt(1920)); s.h = std::max(16, so["h"].asInt(1080)); s.fps = so["fps"].asInt(60);
   s.edgeBlend = so["edgeBlend"].asBool(); s.visible = so["visible"].asBool(true); s.role = std::clamp(so["role"].asInt(0), 0, 2);
+  s.opacity = std::clamp(so["opacity"].asInt(100), 0, 100);
+  s.brightness = std::clamp(so["brightness"].asInt(0), -100, 100); s.contrast = std::clamp(so["contrast"].asInt(0), -100, 100);
+  s.red = std::clamp(so["red"].asInt(0), -100, 100); s.green = std::clamp(so["green"].asInt(0), -100, 100); s.blue = std::clamp(so["blue"].asInt(0), -100, 100);
   if (so["slices"].isArray()) for (auto& x : so["slices"].arrayItems()) s.slices.push_back(ReadSlice(x));
   return s;
 }

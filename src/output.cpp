@@ -136,9 +136,19 @@ void RenderOutput() {
       dl.PushClipRect(bb.Min, bb.Max, true);
       g.warp = &wm;
       if (A.testCard) OutputTestCard(bb);
-      else DrawSliceSource(sl, bb, t, 1.f);   // F22: composition, or just the layer/group this slice is routed to
+      else DrawSliceSource(sl, bb, t, std::clamp(sc->opacity / 100.f, 0.f, 1.f));   // F22: composition, or just the layer/group this slice is routed to; Screen > Opacity scales it
       g.warp = nullptr;
       dl.PopClipRect();
+    }
+    // Screen > Brightness / Contrast / Red / Green / Blue: passes over the picture, limited to each slice's outline so the
+    // black around the slices stays black (slices that overlap get the correction once per slice).
+    if (sc->brightness || sc->contrast || sc->red || sc->green || sc->blue) {
+      for (auto& sl : sc->slices) {
+        if (!sl.visible || (anySolo && !sl.solo)) continue;
+        std::vector<ImVec2> o = SliceOutline(sl);
+        for (auto& p : o) p = ImVec2(p.x * sx, p.y * sy);
+        DrawColorAdjust(o.data(), (int)o.size(), sc->contrast / 100.f, sc->brightness / 100.f, sc->red / 100.f, sc->green / 100.f, sc->blue / 100.f);
+      }
     }
   }
 

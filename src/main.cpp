@@ -930,6 +930,16 @@ int main(int argc, char** argv) {
       bool found = false; for (auto& m : ls.masks) if (m.id == penId) { found = m.pts.size() == 5 && m.pts[3].x == 90.f; }
       if (!found) return fail("a 5-point mask did not round-trip its points");
     }
+    NewProject(); {   // Screen properties: opacity / brightness / contrast / RGB persist, default is "untouched"
+      Screen& sc0 = A.screens[0];
+      if (sc0.colorActive()) return fail("a fresh screen must have no colour adjustment");
+      sc0.opacity = 40; sc0.brightness = -25; sc0.contrast = 60; sc0.red = 100; sc0.green = -100; sc0.blue = 7; sc0.w = 800; sc0.h = 600;
+      if (!sc0.colorActive()) return fail("colorActive must notice an adjustment");
+      if (!SaveProject(roundtrip, err) || !LoadProject(roundtrip, err)) return fail(err.c_str());
+      Screen& ls = A.screens[0];
+      if (ls.opacity != 40 || ls.brightness != -25 || ls.contrast != 60 || ls.red != 100 || ls.green != -100 || ls.blue != 7 || ls.w != 800 || ls.h != 600)
+        return fail("screen colour / size did not round-trip");
+    }
     // Timeline: tlLayout lays clips back-to-back by real duration; tlSync flips exactly the clip under the playhead live.
     NewProject();
     auto lay = A.tlLayout();

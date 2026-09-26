@@ -115,6 +115,11 @@ static void ApplyBlendGL(int mode) {
             else glBlendFunc(GL_SRC_ALPHA, GL_ONE); break;                     // Lighten
     case 7: if (p_glBlendEquation) { p_glBlendEquation(GL_MIN); glBlendFunc(GL_ONE, GL_ONE); }
             else glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); break;     // Darken
+    // 8..11 are not layer blend modes (the UI lists BLEND_COUNT of them): colour-correction passes, RGB of the vertex colour only
+    case 8: glBlendFunc(GL_DST_COLOR, GL_ZERO); break;                         // multiply by the colour
+    case 9: glBlendFunc(GL_DST_COLOR, GL_ONE); break;                          // gain: dst * (1 + colour)
+    case 10: glBlendFunc(GL_ONE, GL_ONE); break;                               // add the colour
+    case 11: if (p_glBlendEquation) p_glBlendEquation(GL_FUNC_REVERSE_SUBTRACT); glBlendFunc(GL_ONE, GL_ONE); break;   // subtract it
     default: glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); break;         // Normal
   }
 }
@@ -126,6 +131,28 @@ void SetBlendMode(int mode) {
                     (void*)(intptr_t)mode);
 }
 void SetAdditive(bool on) { SetBlendMode(on ? 1 : 0); }
+
+void DrawColorAdjust(const ImVec2* poly, int n, float contrast, float brightness, float r, float gch, float b) {
+  if (n < 3) return;
+  const float ch[3] = {r, gch, b}, kc = 1.f + contrast;
+  float K[3], B[3]; bool mul = false, gain = false, add = false, sub = false;
+  for (int i = 0; i < 3; ++i) {   // x' = x*K + B per channel: contrast about mid-grey, then the channel scale, then brightness
+    float gc = 1.f + ch[i];
+    K[i] = std::clamp(kc * gc, 0.f, 2.f);
+    B[i] = 0.5f * (1.f - kc) * gc + 0.5f * brightness;
+    mul |= K[i] < 0.998f; gain |= K[i] > 1.002f; add |= B[i] > 0.002f; sub |= B[i] < -0.002f;
+  }
+  auto col = [](float a, float b2, float c2) {
+    auto q = [](float v) { return (int)std::lround(std::clamp(v, 0.f, 1.f) * 255.f); };
+    return IM_COL32(q(a), q(b2), q(c2), 255);
+  };
+  auto pass = [&](int mode, ImU32 c) { SetBlendMode(mode); g.dl->AddConcavePolyFilled(poly, n, c); };
+  if (mul) pass(8, col(std::min(K[0], 1.f), std::min(K[1], 1.f), std::min(K[2], 1.f)));
+  if (gain) pass(9, col(std::max(K[0] - 1.f, 0.f), std::max(K[1] - 1.f, 0.f), std::max(K[2] - 1.f, 0.f)));
+  if (add) pass(10, col(std::max(B[0], 0.f), std::max(B[1], 0.f), std::max(B[2], 0.f)));
+  if (sub) pass(11, col(std::max(-B[0], 0.f), std::max(-B[1], 0.f), std::max(-B[2], 0.f)));
+  SetBlendMode(0);
+}
 
 // ── playback (C1/C2/C4/C5) ──
 float ClipSeconds(const Clip& c) {

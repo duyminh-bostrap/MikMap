@@ -153,7 +153,7 @@ static std::vector<std::vector<ImVec2>> MeshGrid(const Slice& s) {
   return g;
 }
 // output-space outline of the slice as the audience sees it (quad, or the mesh border once warped)
-static std::vector<ImVec2> SliceOutline(const Slice& s) {
+std::vector<ImVec2> SliceOutline(const Slice& s) {
   if (s.warp == 0) return {s.q[0], s.q[1], s.q[2], s.q[3]};
   auto g = MeshGrid(s);
   int R = (int)g.size(), C = (int)g[0].size();
@@ -1252,7 +1252,7 @@ static void Label(float x, float y, const char* t, uint32_t hex = pal::t88) {
 
 // Resolume-style number row: LABEL | value | - | +. Shift steps by 10. Returns true when the value changed (already clamped).
 static bool StepRow(float x, float y, float w, float labelW, const char* label, const char* id, float& v, float lo, float hi,
-                    float step, int decimals, float valW = 84.f, const char* unit = nullptr) {
+                    float step, int decimals, float valW = 84.f, const char* unit = nullptr, float* endX = nullptr) {
   (void)w;
   const float H = 24.f, bh = 22.f;
   Text(x, y + H * 0.5f, UI_S, 10, K(pal::t88), label);
@@ -1269,6 +1269,7 @@ static bool StepRow(float x, float y, float w, float labelW, const char* label, 
     if (h.hover) CursorHand();
     if (h.click) { v += (i ? step : -step) * (big ? 10.f : 1.f); ch = true; }
   }
+  if (endX) *endX = ux + 2 * bh + 4;
   if (ch) v = std::clamp(v, lo, hi);
   return ch;
 }
@@ -1526,24 +1527,20 @@ static void PropsPanel(ImRect r) {
     Text(x, oy + y + 5, MONO_R, 9, K(pal::t66), "OUTPUT TARGET", 0.09f);
     TextR(x + w, oy + y + 5, MONO_R, 9, K(pal::mint), sc->name.c_str());
     y += 10 + 6;
-    float bx = y;
-    ImRect box(x, oy + bx, x + w, oy + bx + 6 + 9 + 2 + 26 + 6 + 9 + 2 + 26 + 6 + 9 + 6 + 4 + 22 + 6);
-    Box(box, K(pal::g18), K(pal::g2a), 3);
-    float ix = x + 6, iw = w - 12, yy = bx + 6;
-    Text(ix, oy + yy + 4.5f, MONO_R, 9, K(pal::t66), "SCREEN NAME", 0.09f); yy += 9 + 2;
-    TextField("##scname", Rc(ix, oy + yy, iw, 26), sc->name); yy += 26 + 6;
-    Text(ix, oy + yy + 4.5f, MONO_R, 9, K(pal::t66), "OUTPUT DEVICE", 0.09f); yy += 9 + 2;
-    // F2/I1: the physical display this screen is sent to. This one dropdown IS the projector output choice — it
-    // used to be a free-text field here plus a separate click-to-cycle "PROJECTOR OUTPUT" box below, two controls
-    // for the same thing that could disagree with each other.
-    {
-      ImRect dr2(ix, oy + yy, ix + iw, oy + yy + 26);
+    // Resolume's screen rows: device, size, and the colour block (opacity + brightness/contrast/RGB, each with a marker bar).
+    // The colour values reach the projector window (output.cpp); width/height describe the display and the tree label.
+    Label(x, oy + y, "Screen name"); y += 9 + 4;
+    TextField("##scname", Rc(x, oy + y, w, 28), sc->name); y += 28 + 8;
+    const float LWd = 62.f;
+    {   // F2/I1: the physical display this screen is sent to. This one dropdown IS the projector output choice.
+      Text(x, oy + y + 13, UI_S, 10, K(pal::t88), "Device");
+      ImRect dr2(x + LWd, oy + y, x + w, oy + y + 26);
       Hit dh2 = HitR(dr2);
       bool haveMon = MonitorCount() > 0;
       std::string cur = haveMon ? MonitorName(A.outMonitor) : sc->outDev;
       Box(dr2, dh2.hover ? K(pal::ctrlHover) : K(pal::g1c), K(pal::g22), 3);
       Icon("monitor", ImVec2(dr2.Min.x + 14, (dr2.Min.y + dr2.Max.y) * 0.5f), 11, K(pal::cyan));
-      TextEll(dr2.Min.x + 28, (dr2.Min.y + dr2.Max.y) * 0.5f, iw - 50, UI_S, 10, K(pal::tf3), cur.c_str());
+      TextEll(dr2.Min.x + 28, (dr2.Min.y + dr2.Max.y) * 0.5f, dr2.GetWidth() - 50, UI_S, 10, K(pal::tf3), cur.c_str());
       Icon("chevron-down", ImVec2(dr2.Max.x - 12, (dr2.Min.y + dr2.Max.y) * 0.5f), 10, K(pal::t66));
       if (dh2.hover) CursorHand();
       if (dh2.click) {
@@ -1562,22 +1559,42 @@ static void PropsPanel(ImRect r) {
         if (mi.empty()) { MenuItem it; it.label = "No display detected"; it.disabled = true; mi.push_back(it); }
         A.openCtx(ImVec2(dr2.Min.x, dr2.Max.y + 4), mi);
       }
-      yy += 26 + 6;
+      y += 26 + 6;
     }
-    char rl[64]; snprintf(rl, sizeof rl, "RES: %d x %d @ %dHz", sc->w, sc->h, sc->fps);
-    Text(ix, oy + yy + 4.5f, MONO_R, 9, K(pal::tcc), rl); yy += 9 + 6;
-    HLine(ix, ix + iw, oy + yy, K(pal::g2a)); yy += 1 + 4;
-    ImRect er(ix, oy + yy, ix + iw, oy + yy + 22);
-    Hit eh = HitR(er);
-    Text(ix, er.Min.y + 11, UI_S, 10, K(pal::t88), "Edge blending");
-    const char* el = sc->edgeBlend ? "ENABLED" : "DISABLED";
-    float bw2 = TextW(MONO_B, 9, el, 0.09f) + 12 + 2;
-    ImRect bb(er.Max.x - bw2, er.Min.y + 2, er.Max.x, er.Min.y + 20);
-    Box(bb, sc->edgeBlend ? K(pal::mint, 0.2f) : K(pal::g1c), sc->edgeBlend ? K(pal::mint, 0.4f) : K(pal::g22), 3);
-    Text(bb.Min.x + 7, (bb.Min.y + bb.Max.y) * 0.5f, MONO_B, 9, K(sc->edgeBlend ? pal::mint : pal::t66), el, 0.09f);
-    if (eh.hover) CursorHand();
-    if (eh.click) sc->edgeBlend = !sc->edgeBlend;
-    y = bx + box.GetHeight() + 8;
+    auto intRow = [&](const char* label, const char* id, int& v, int lo, int hi, const char* unit, bool bar, uint32_t hex, uint32_t barId) {
+      float fv = (float)v, endX = 0;
+      bool ch = StepRow(x, oy + y, w, LWd, label, id, fv, (float)lo, (float)hi, 1.f, 0, bar ? 44.f : 84.f, unit, &endX);
+      if (bar) {
+        float bv = (float)v;
+        ImRect tr(endX + 6, oy + y + 7, x + w, oy + y + 17);
+        if (MarkerSlider(barId, tr, bv, (float)lo, (float)hi, hex)) { fv = bv; ch = true; }
+      }
+      if (ch) v = (int)std::lround(std::clamp(fv, (float)lo, (float)hi));
+      y += 24 + 4;
+    };
+    intRow("Width", "##sc_w", sc->w, 16, 16384, nullptr, false, 0, 0);
+    intRow("Height", "##sc_h", sc->h, 16, 16384, nullptr, false, 0, 0);
+    intRow("Opacity", "##sc_op", sc->opacity, 0, 100, "%", true, pal::mint, 0x3101);
+    intRow("Brightness", "##sc_br", sc->brightness, -100, 100, nullptr, true, pal::mint, 0x3102);
+    intRow("Contrast", "##sc_co", sc->contrast, -100, 100, nullptr, true, pal::mint, 0x3103);
+    intRow("Red", "##sc_r", sc->red, -100, 100, nullptr, true, pal::red, 0x3104);
+    intRow("Green", "##sc_g", sc->green, -100, 100, nullptr, true, pal::mint, 0x3105);
+    intRow("Blue", "##sc_b", sc->blue, -100, 100, nullptr, true, pal::cyan, 0x3106);
+    y += 2;
+    HLine(x, x + w, oy + y, K(pal::g2a)); y += 1 + 4;
+    {
+      ImRect er(x, oy + y, x + w, oy + y + 22);
+      Hit eh = HitR(er);
+      Text(x, er.Min.y + 11, UI_S, 10, K(pal::t88), "Edge blending");
+      const char* el = sc->edgeBlend ? "ENABLED" : "DISABLED";
+      float bw2 = TextW(MONO_B, 9, el, 0.09f) + 12 + 2;
+      ImRect bb(er.Max.x - bw2, er.Min.y + 2, er.Max.x, er.Min.y + 20);
+      Box(bb, sc->edgeBlend ? K(pal::mint, 0.2f) : K(pal::g1c), sc->edgeBlend ? K(pal::mint, 0.4f) : K(pal::g22), 3);
+      Text(bb.Min.x + 7, (bb.Min.y + bb.Max.y) * 0.5f, MONO_B, 9, K(sc->edgeBlend ? pal::mint : pal::t66), el, 0.09f);
+      if (eh.hover) CursorHand();
+      if (eh.click) sc->edgeBlend = !sc->edgeBlend;
+      y += 22 + 8;
+    }
     // ── F2/I1: open / close the output window on the display chosen in OUTPUT DEVICE above ──
     HLine(ox, ox + W, oy + y, K(pal::g2a)); y += 1 + 8;
     {

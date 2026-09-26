@@ -301,9 +301,18 @@ Ba vùng: **cây Screen/Slice/Mask** (trái) | **Stage canvas** (giữa) | **Pro
 | M11 | Chip 🔍 cạnh tên slice → zoom vào slice | ✅ |
 
 ### 3.3 Properties (phải)
-Slice: **toạ độ 4 góc nhập được bằng số** (X/Y, đồng bộ với kéo chuột), số cột/hàng mesh (+/−), reset lưới, thêm cột/hàng ở vị trí đã chọn. Mask:
-đảo, độ mờ, xoá. Screen: **Edge blend** (công tắc), chọn **màn hình xuất** (bấm
-xoay vòng qua các display), nút **mở/đóng cửa sổ output** (`F11`).
+Slice: **toạ độ 4 góc nhập được bằng số** (trang Output, đồng bộ với kéo chuột), số cột/hàng mesh (+/−), reset lưới, thêm cột/hàng ở vị trí đã chọn;
+trang Input có các hàng X/Y/Left/Top/Width/Height/Rotation + Soft Edge + Input Mask (§3.2). Mask: đảo, độ mờ, danh sách điểm (≤8 điểm), xoá.
+
+**Screen (theo mẫu Resolume, 2026-09-26):** tên · **Device** (dropdown chọn màn hình xuất) · **Width / Height** · **Opacity** · **Brightness** ·
+**Contrast** · **Red / Green / Blue** — mỗi hàng có ô gõ số, nút **−/+** (Shift ×10) và (từ Opacity trở xuống) thanh có vạch đánh dấu kéo được;
+sau đó Edge blending (công tắc), nút **mở/đóng cửa sổ output** (`F11`), Save/Load preset.
+- **Màu chỉnh thật trên cửa sổ máy chiếu** (`output.cpp`): *Opacity* nhân vào toàn bộ hình của screen; *Brightness/Contrast/Red/Green/Blue*
+  (−100…100, 0 = giữ nguyên) làm bằng các lớp phủ blend GL (nhân / gain `dst·(1+c)` / cộng / trừ, `DrawColorAdjust` trong `clipart.cpp`) chỉ trong
+  đường viền từng slice — vùng đen ngoài slice vẫn đen. Contrast xoay quanh xám 50%; RGB nhân kênh đó; Brightness dịch tất cả. Slice **chồng nhau**
+  bị chỉnh màu 2 lần ở vùng chồng. Chỉ tác động cửa sổ máy chiếu, **không** đổi Live Output/Preview trong workspace.
+- **Width/Height** là độ phân giải khai báo của thiết bị (hiện ở cây và ở Screen), **chưa** đổi hệ toạ độ output (stage vẫn là 1920×1080 kéo giãn ra máy chiếu).
+- Kiểm bằng ảnh chụp cửa sổ output (`--outshot`): Opacity 0 → đen hẳn; Brightness +100 → trung bình sáng ~126/255; Contrast −100 → phẳng xám ~50%; Red +100 → các cột đỏ rực hơn rõ rệt. ✅
 
 ---
 

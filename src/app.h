@@ -114,6 +114,10 @@ struct Screen {
   int w = 1920, h = 1080, fps = 60;
   bool edgeBlend = false, visible = true;
   int role = 0;  // colour role, see RoleHex
+  // Screen properties > colour. Applied to what this screen sends to its projector window (output.cpp): opacity scales every
+  // slice, the rest are multiply/gain/add passes over each slice's outline (DrawColorAdjust). Percent / -100..100, 0 = untouched.
+  int opacity = 100, brightness = 0, contrast = 0, red = 0, green = 0, blue = 0;
+  bool colorActive() const { return opacity != 100 || brightness || contrast || red || green || blue; }
   std::vector<Slice> slices;
 };
 
@@ -445,6 +449,10 @@ void DrawComposite(ImRect canvas, float t, float alpha);   // all live clips, bo
 // F22: a slice's picture — the whole composition, one layer, or one group's layers (same blend/opacity/dissolve rules).
 // A source whose layer/group no longer exists falls back to the composition (SliceSourceValid tells the UI to warn).
 void DrawSliceSource(const Slice& s, ImRect canvas, float t, float alpha);
+std::vector<ImVec2> SliceOutline(const Slice& s);   // output-space outline of a slice as the audience sees it (quad, or the mesh border)
+// Brightness/contrast/RGB (each -1..1) on what is already drawn inside `poly` (window px): contrast pivots on mid-grey, RGB scale
+// that channel, brightness shifts all. Done with GL multiply / gain (dst*(1+c)) / add / subtract passes, so it needs no shader.
+void DrawColorAdjust(const ImVec2* poly, int n, float contrast, float brightness, float r, float gch, float b);
 bool SliceSourceValid(const Slice& s);
 std::string SliceSourceName(const Slice& s);
 void EnsureLayerIds(std::vector<Layer>& layers);            // give every layer a unique id (new, loaded or duplicated)
