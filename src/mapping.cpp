@@ -1329,6 +1329,13 @@ static void Stage(ImRect r) {
       }
       MovePointsTo(*sc, gGroup, ImVec2(tp.x - gGrabStart.x, tp.y - gGrabStart.y));
     }
+    else if (dragKind == 10) {   // 4-key output: turn the whole quad about its centre (Shift = steps of 15 degrees)
+      ImVec2 c(0, 0); for (int k = 0; k < 4; ++k) { c.x += dragQ0[k].x * 0.25f; c.y += dragQ0[k].y * 0.25f; }
+      float da = std::atan2(mo.y - c.y, mo.x - c.x) - dragAng0;
+      if (io.KeyShift) da = std::round(da / (15.f * kDegToRad)) * 15.f * kDegToRad;
+      float co = std::cos(da), si = std::sin(da);
+      for (int k = 0; k < 4; ++k) { float x = dragQ0[k].x - c.x, y = dragQ0[k].y - c.y; sl->q[k] = inOutput(ImVec2(c.x + x * co - y * si, c.y + x * si + y * co)); }
+    }
     else if (dragKind == 8 || dragKind == 9) {   // 4-key output: a whole side, or the whole quad, moves; the mesh follows (keystone-relative)
       const int ids[4] = {dragIdx, (dragIdx + 1) % 4, 0, 0}; const int nId = dragKind == 8 ? 2 : 4;
       const int all[4] = {0, 1, 2, 3};
@@ -1562,6 +1569,13 @@ static void Stage(ImRect r) {
     if (clickPending && haveZoom && zoomBtn.Contains(m)) { ZoomToSlice(area, *sl); consumed = true; }
     if (sl && sl->visible && clickPending && !consumed)
       for (int i = 0; i < 4 && !consumed; ++i) if (nearPt(sl->q[i], kCornerR + kGrabPad)) grab(1, i, sl->q[i]);
+    const float kRingHit = 20.f;   // the ring drawn around each corner turns the quad
+    if (clickPending && !consumed && sl && sl->visible && sl->warp == 0) {
+      for (int i = 0; i < 4 && !consumed; ++i) if (nearPt(sl->q[i], kRingHit)) {
+        ImVec2 c(0, 0); for (int k = 0; k < 4; ++k) { c.x += sl->q[k].x * 0.25f; c.y += sl->q[k].y * 0.25f; }
+        A.mapPts.clear(); A.pushHist(); dragKind = 10; dragIdx = i; dragAng0 = std::atan2(mo.y - c.y, mo.x - c.x); for (int k = 0; k < 4; ++k) dragQ0[k] = sl->q[k]; consumed = true;
+      }
+    }
     if ((clickPending || (!dragKind && inArea && !A.mapHand && !A.maskPen)) && !consumed && sl && sl->visible && sl->warp == 0) {   // 4-key: grab a whole side (anywhere along it) to move that side
       for (int i = 0; i < 4 && !consumed; ++i) {
         ImVec2 a = toPx(sl->q[i]), b = toPx(sl->q[(i + 1) % 4]), ab(b.x - a.x, b.y - a.y);
@@ -1675,7 +1689,18 @@ static void Stage(ImRect r) {
         Text(p.x - TextW(MONO_B, 10, lb) * 0.5f, p.y + 14 * s + 18, MONO_B, 10, K(pal::mint), lb);
       }
     }
-    if (sl && sl->visible) for (int i = 0; i < 4; ++i) {
+    if (sl && sl->visible && sl->warp == 0) {   // 4-key: the same handles as the Input frame — corner squares with a turning ring, and a square in the middle of every side
+      for (int i = 0; i < 4; ++i) {
+        ImVec2 p = toPx(sl->q[i]), mp = toPx(ImVec2((sl->q[i].x + sl->q[(i + 1) % 4].x) * 0.5f, (sl->q[i].y + sl->q[(i + 1) % 4].y) * 0.5f));
+        float d = std::hypot(m.x - p.x, m.y - p.y);
+        bool ringHot = dragKind == 10 || (!dragKind && overStage && d > kCornerR + kGrabPad && d <= kRingHit);
+        bool hot = (dragKind == 1 && dragIdx == i) || (!dragKind && overStage && d <= kCornerR + kGrabPad);
+        g.dl->AddCircle(p, 11.f, Ca(K(ringHot ? pal::white : pal::coral)), 24, 1.5f);
+        for (ImVec2 hp : {p, mp}) { ImRect hr(hp.x - 5, hp.y - 5, hp.x + 5, hp.y + 5); Box(hr, K(pal::white), K(pal::coral), 2); Border(hr, K(pal::coral), 2, 2); }
+        if (hot) CursorHand();
+        else if (ringHot && !dragKind) ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+      }
+    } else if (sl && sl->visible) for (int i = 0; i < 4; ++i) {
       ImVec2 p = toPx(sl->q[i]);
       bool hot = (dragKind == 1 && dragIdx == i) || (!dragKind && overStage && nearPt(sl->q[i], kCornerR + kGrabPad));
       g.dl->AddCircleFilled(p, kCornerR + (hot ? 2.f : 0.f), Ca(K(pal::coral)), 24); g.dl->AddCircle(p, kCornerR + (hot ? 2.f : 0.f), Ca(K(pal::white)), 24, 2.5f);

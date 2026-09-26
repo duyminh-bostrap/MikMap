@@ -314,7 +314,7 @@ Ba vùng: **cây Screen/Slice/Mask** (trái) | **Stage canvas** (giữa) | **Pro
 |---|---|---|
 | M6 | Kéo **góc slice** (vùng bấm ~16px) → keystone | ✅ |
 | M7 | Kéo **điểm mesh** (viền vàng = biên, coral = trong) | ✅ |
-| M7b | **Chế độ 4-key** (không mesh), giống khung Input (2026-09-26): kéo **bất kỳ đâu dọc một cạnh** của slice đang chọn = dời cạnh đó (hai góc của cạnh cùng đi), kéo **trong slice đang chọn** = dời cả tứ giác (mesh đi theo); kéo góc như cũ. Nam châm hít cho cả hai (điểm gần nhất thắng, chỉ hiện cạnh đã hít). Chưa có xoay. | ✅ |
+| M7b | **Chế độ 4-key** (không mesh), giống khung Input (2026-09-26): kéo **bất kỳ đâu dọc một cạnh** của slice đang chọn = dời cạnh đó (hai góc của cạnh cùng đi), kéo **trong slice đang chọn** = dời cả tứ giác (mesh đi theo); kéo góc như cũ. Nam châm hít cho cả hai (điểm gần nhất thắng, chỉ hiện cạnh đã hít). Tay cầm y như khung Input: ô vuông ở 4 góc kèm **vòng tròn xoay** (kéo vòng = xoay cả tứ giác quanh tâm, giữ `Shift` = nhảy 15°) và ô vuông giữa mỗi cạnh. | ✅ |
 | M8 | **Khung chỉnh mask** như khung input: di chuyển / co giãn / xoay; chỉ mask đang chọn hiện — làm ở trang **Input** | ✅ |
 | M9 | Bấm trong slice → chọn slice trên cùng; bấm vào mask → chọn mask | ✅ |
 | M10 | Với slice đang chọn ở chế độ mesh: bấm lại để đặt "điểm cắt", rồi dùng nút thêm cột/hàng | ✅ |
