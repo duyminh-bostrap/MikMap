@@ -210,9 +210,24 @@ void SliceOutputBounds(const Slice& s, ImVec2& mn, ImVec2& mx) {
   if (s.warp != 0) for (auto& row : MeshGrid(s)) for (auto& p : row) add(p);   // interior points may bulge past the quad
 }
 
+// Edit Points (Resolume): the four big perspective corners always surround the warp grid — the outermost grid points sit on their
+// edges. After grid points move, the corners are refit to the grid's bounding box in keystone space. Nothing on screen moves: the new
+// keystone is the old one composed with the map from the unit square onto that box, and the grid is re-expressed inside it.
+static void FitCornersToMesh(Slice& s) {
+  auto lg = LocalGrid(s);
+  float u0 = 1e9f, v0 = 1e9f, u1 = -1e9f, v1 = -1e9f;
+  for (auto& row : lg) for (auto& p : row) { u0 = std::min(u0, p.x); u1 = std::max(u1, p.x); v0 = std::min(v0, p.y); v1 = std::max(v1, p.y); }
+  if (u1 - u0 < 1e-3f || v1 - v0 < 1e-3f) return;   // a collapsed grid: leave the corners alone
+  if (std::fabs(u0) < 1e-5f && std::fabs(v0) < 1e-5f && std::fabs(u1 - 1.f) < 1e-5f && std::fabs(v1 - 1.f) < 1e-5f) return;
+  Keystone k(s.q);
+  const ImVec2 nq[4] = {k.Fwd(ImVec2(u0, v0)), k.Fwd(ImVec2(u1, v0)), k.Fwd(ImVec2(u1, v1)), k.Fwd(ImVec2(u0, v1))};
+  for (auto& row : lg) for (auto& p : row) p = ImVec2((p.x - u0) / (u1 - u0), (p.y - v0) / (v1 - v0));
+  for (int i = 0; i < 4; ++i) s.q[i] = ImVec2(std::clamp(nq[i].x, -4000.f, 8000.f), std::clamp(nq[i].y, -4000.f, 8000.f));
+  s.meshLocal = lg;
+}
 void NormalizeWarp(Slice& s) {
-  if (s.warp != 0) return;
-  s.meshCols = s.meshRows = 1; s.meshU.clear(); s.meshV.clear(); s.meshLocal.clear(); s.warp = 1;
+  if (s.warp == 0) { s.meshCols = s.meshRows = 1; s.meshU.clear(); s.meshV.clear(); s.meshLocal.clear(); s.warp = 1; }
+  FitCornersToMesh(s);   // older edits could leave grid points outside the big corners
 }
 // The warp grid's own position (keystone-local, before the perspective corners) at mesh parameter (u, v): bilinear inside its patch.
 static ImVec2 LocalAtUV(const Slice& s, float u, float v) {
@@ -236,6 +251,7 @@ static void ResampleMesh(Slice& s, std::vector<float> nu, std::vector<float> nv,
   s.meshU = customU ? nu : std::vector<float>(); s.meshV = customV ? nv : std::vector<float>();
   s.meshCols = (int)us.size() - 1; s.meshRows = (int)vs.size() - 1;
   s.meshLocal = g;
+  FitCornersToMesh(s);   // fewer lines can pull the grid in from the big corners' edges
 }
 
 // ── Output Transformation > Transform (Resolume): a box around every point of the slice as the audience sees it, turned by orot.
@@ -314,6 +330,14 @@ bool MappingSelfTest(std::string& why) {
   // an old corner-pin-only slice becomes a 1 x 1 grid that looks the same
   Slice o = s; o.warp = 0; ImVec2 keyAt = SliceMapUV(o, 0.3f, 0.7f); NormalizeWarp(o);
   if (o.warp != 1 || o.meshCols != 1 || o.meshRows != 1 || !near2(SliceMapUV(o, 0.3f, 0.7f), keyAt, 0.01f)) { why = "old corner-pin slice changed when normalised"; return false; }
+  // Edit Points: a grid point dragged outside the big corners grows them to surround the grid again; nothing on screen moves
+  Slice fc = s; fc.meshLocal[0][0] = {-0.2f, -0.15f}; fc.meshLocal[1][2] = {0.7f, 1.3f};
+  std::vector<ImVec2> before; for (float u : {0.f, 0.3f, 0.66f, 1.f}) for (float v : {0.f, 0.5f, 1.f}) before.push_back(SliceMapUV(fc, u, v));
+  FitCornersToMesh(fc);
+  float lu0 = 1e9f, lv0 = 1e9f, lu1 = -1e9f, lv1 = -1e9f;
+  for (auto& row : fc.meshLocal) for (auto& p : row) { lu0 = std::min(lu0, p.x); lu1 = std::max(lu1, p.x); lv0 = std::min(lv0, p.y); lv1 = std::max(lv1, p.y); }
+  if (std::fabs(lu0) > 1e-4f || std::fabs(lv0) > 1e-4f || std::fabs(lu1 - 1.f) > 1e-4f || std::fabs(lv1 - 1.f) > 1e-4f) { why = "the big corners do not surround the grid after a point left them"; return false; }
+  { size_t k = 0; for (float u : {0.f, 0.3f, 0.66f, 1.f}) for (float v : {0.f, 0.5f, 1.f}) if (!near2(SliceMapUV(fc, u, v), before[k++], 0.05f)) { why = "refitting the big corners moved the picture"; return false; } }
   // Match Input Shape with moved grid corners: the corners the audience sees land exactly on the target
   Slice mv = s; const ImVec2 tgt[4] = {{300, 200}, {1400, 260}, {1350, 950}, {250, 880}};
   SetVisibleCorners(mv, tgt);
@@ -552,6 +576,7 @@ static void MovePointsTo(Screen& sc, const std::vector<PtStart>& st, ImVec2 delt
       if (rr < (int)lg.size() && cc < (int)lg[rr].size() && k.Inv(clampOut(ImVec2(p.out.x + delta.x, p.out.y + delta.y)), loc)) lg[rr][cc] = loc;
     }
     s.meshLocal = lg;
+    FitCornersToMesh(s);   // the big corners keep surrounding the grid
   }
 }
 
@@ -1495,7 +1520,7 @@ static void Stage(ImRect r) {
       if (snapOn) tp = inOutput(SnapPoint(tp, BuildSnap(sc, sl, nullptr, false, -1), snapThr));
       if (Keystone(sl->q).Inv(tp, loc)) {
         auto lg = LocalGrid(*sl);
-        if (rr < (int)lg.size() && cc < (int)lg[rr].size()) { lg[rr][cc] = loc; sl->meshLocal = lg; }
+        if (rr < (int)lg.size() && cc < (int)lg[rr].size()) { lg[rr][cc] = loc; sl->meshLocal = lg; FitCornersToMesh(*sl); }   // the big corners keep surrounding the grid
       }
     }
     else if (dragKind == 8 && mk) {   // Input > Edit Points: one outline point of the selected mask
