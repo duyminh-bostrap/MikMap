@@ -122,7 +122,6 @@ void App::init() {
   curDeckIdx = 0;
 }
 
-static std::string BpmStr() { char b[16]; snprintf(b, sizeof b, "%.1f", A.bpm); return b; }
 void App::setTopProgress(float pct) {
   pct = std::clamp(pct, 0.f, 100.f);
   int best = -1, bc = 0;
@@ -1060,15 +1059,6 @@ static void Inspector(ImRect r) {
   if (gTestInspScroll > 0.f) ImGui::SetScrollY(gTestInspScroll);
   float ox = sa.origin.x, oy = sa.origin.y, W = body.GetWidth() - (ImGui::GetCurrentWindow()->ScrollbarY ? 8.f : 0.f);
   float y = 0;
-  auto rowsOf = [&](std::vector<std::array<std::string, 4>>& rows) {
-    for (auto& rw : rows) {
-      uint32_t hex = pal::tcc;
-      if (rw[3] == "preview") hex = pal::cyan; else if (rw[3] == "audio") hex = pal::mint; else if (rw[3] == "live") hex = pal::coral; else if (rw[3] == "alert") hex = pal::red;
-      PropertyRow(Rc(ox, oy + y, W, 22), rw[0].c_str(), rw[1].c_str(), rw[2].c_str(), hex);
-      y += 22;
-    }
-  };
-  const Layer& sl = A.layers[std::clamp(A.selLayer, 0, (int)A.layers.size() - 1)];
   const Clip& cell = A.layers[A.selLi].clips[A.selCi];
   bool cellLive = cell.isLive();
   char b1[64];

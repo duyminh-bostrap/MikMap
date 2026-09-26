@@ -307,7 +307,7 @@ Ba vùng: **cây Screen/Slice/Mask** (trái) | **Stage canvas** (giữa) | **Pro
   khung kéo (chọn nhiều slice). Ctrl/Cmd/Shift + kéo = thêm vào vùng chọn hiện có. ✅
 - Menu **Reset** (theo trang đang xem): Input → Whole area; Output → Reset 4 corner pins · Match output to input · Reset mesh warp · Reset all warping.
 
-**Trang Input**: kéo **4 góc** của khung cyan để đổi vùng lấy (tối thiểu 20px). ✅
+**Trang Input**: kéo **4 góc** của khung cyan để đổi vùng lấy (tối thiểu 20px). Khung input **được kéo/di chuyển ra ngoài canvas** kể cả khi rotation = 0 (phần ngoài canvas là trống; tâm khung vẫn giữ trong canvas khi di chuyển; kéo tới ±4000..8000px) — riêng mask thẳng vẫn giữ trong canvas. ✅
 
 **Trang Output**:
 | Mã | Thao tác | |

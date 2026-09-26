@@ -1324,8 +1324,9 @@ static void Stage(ImRect r) {
       const float minSz = onMask ? 8.f : 20.f;
       if (dragKind == 2) {   // resize: the opposite corner / edge middle stays put
         float co = std::cos(R.rot * kDegToRad), si = std::sin(R.rot * kDegToRad);
-        ImVec2 P = R.rot == 0.f ? mu : ImVec2(std::round(mo.x), std::round(mo.y));   // upright rects stay inside the canvas; rotated ones may reach past it
-        if (snapOn) { P = SnapPoint(P, BuildSnap(sc, sl, mk, onMask, -1), snapThr); if (R.rot == 0.f) P = inCanvas(P); }
+        // the slice's input rect may reach past the canvas (the part outside is simply empty); a mask has nothing to cut out there
+        ImVec2 P = onMask && R.rot == 0.f ? mu : inOutput(mo);
+        if (snapOn) { P = SnapPoint(P, BuildSnap(sc, sl, mk, onMask, -1), snapThr); P = onMask && R.rot == 0.f ? inCanvas(P) : inOutput(P); }
         float dx = P.x - dragAnchor.x, dy = P.y - dragAnchor.y;
         float lx = dx * co + dy * si, ly = -dx * si + dy * co;   // pointer relative to the anchor, in rect-local axes
         float w = R.w, h = R.h, hx = 0, hy = 0;                  // hx/hy: new centre offset from the anchor, local axes
@@ -1343,7 +1344,7 @@ static void Stage(ImRect r) {
         R.w = w; R.h = h; R.x = cx - w * 0.5f; R.y = cy - h * 0.5f;
       } else if (dragKind == 5) {   // move: an upright rect stays inside the canvas, a rotated one just keeps its centre on it
         float cx = to.x, cy = to.y;
-        if (R.rot == 0.f && R.w <= A.canvasW && R.h <= A.canvasH) {
+        if (onMask && R.rot == 0.f && R.w <= A.canvasW && R.h <= A.canvasH) {
           R.x = std::clamp(cx - R.w * 0.5f, 0.f, A.canvasW - R.w); R.y = std::clamp(cy - R.h * 0.5f, 0.f, A.canvasH - R.h);
         } else {
           R.x = std::clamp(cx, 0.f, (float)A.canvasW) - R.w * 0.5f; R.y = std::clamp(cy, 0.f, (float)A.canvasH) - R.h * 0.5f;
