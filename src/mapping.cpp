@@ -1826,17 +1826,16 @@ static void Stage(ImRect r) {
         bool wasOn = sl && it->id == sl->id;
         A.mapMulti.clear();
         A.selSc = sc->id; A.selSl = it->id; A.selMk.clear(); A.selKind = 1; consumed = true;
-        float pu0, pv0;   // where the click lands on the mesh = the split position for "+ add col / + add row"
-        if (editPts && MeshParamAt(*it, mo, pu0, pv0)) {   // Edit Points: any click inside a slice marks the spot (the yellow dot), also the one that selects it
+        float pu0, pv0;   // where the click lands on the mesh = where "+ add col / + add row" puts the new line (shown by the preview line)
+        if (editPts && A.meshArm && wasOn && MeshParamAt(*it, mo, pu0, pv0)) {   // a split is only ever placed in the slice that was already selected
           float u = std::clamp(pu0, 0.02f, 0.98f), v = std::clamp(pv0, 0.02f, 0.98f);
-          if (A.meshArm && wasOn) {   // a split is only ever placed in the slice that was already selected
+          {
             std::vector<float> us, vs; MeshUV(*it, us, vs);
             std::vector<float>& lst = A.meshArm == 'u' ? us : vs; float p = A.meshArm == 'u' ? u : v;
             bool dup = false; for (float x : lst) if (std::fabs(x - p) < 0.01f) dup = true;
             if (!dup) { A.pushHist(); lst.push_back(p); ResampleMesh(*it, us, vs, true, true); }   // the new line goes through the current surface: nothing moves
             A.meshArm = 0;
           }
-          A.meshPickOn = true; A.meshPickU = u; A.meshPickV = v; A.meshPickSl = it->id;
         }
       }
     }
@@ -1894,10 +1893,6 @@ static void Stage(ImRect r) {
           TextR(m.x - 12, m.y - 14, MONO_B, 9, K(pal::yellow), lb, 0.06f);
           ImGui::SetMouseCursor(col ? ImGuiMouseCursor_ResizeEW : ImGuiMouseCursor_ResizeNS);
         }
-      }
-      if (A.meshPickOn && A.meshPickSl == sl->id) {
-        ImVec2 mp = toPx(SliceMapUV(*sl, A.meshPickU, A.meshPickV));
-        g.dl->AddCircleFilled(mp, 6.f, Ca(K(pal::yellow)), 20); g.dl->AddCircle(mp, 6.f, Ca(K(0x050505)), 20, 2.f);
       }
     }
     if (sl && sl->visible && haveZoom) {
@@ -2244,7 +2239,7 @@ static void PropsPanel(ImRect r) {
         if (chg) {
           nv = std::clamp(nv, 0, 15);
           if (nv != sub[i]) {   // even lines again on that axis, but the new points are taken from the current surface: the warp keeps its shape
-            A.meshPickOn = false; A.pushHist();
+            A.pushHist();
             std::vector<float> uu2, vv2; MeshUV(*sl, uu2, vv2);
             if (i) ResampleMesh(*sl, uu2, Uni(nv + 1), !sl->meshU.empty(), false); else ResampleMesh(*sl, Uni(nv + 1), vv2, false, !sl->meshV.empty());
           }
@@ -2253,9 +2248,8 @@ static void PropsPanel(ImRect r) {
       }
       y += 4;
       {
-        const char* pl = A.meshArm ? (A.meshArm == 'u' ? "CLICK CANVAS TO PLACE COLUMN" : "CLICK CANVAS TO PLACE ROW") : A.meshPickOn ? "" : "PICK ADD COL / ADD ROW FIRST";
-        char pk[64]; if (!A.meshArm && A.meshPickOn) snprintf(pk, sizeof pk, "LAST POINT \xC2\xB7 U %d%% \xC2\xB7 V %d%%", (int)std::round(A.meshPickU * 100), (int)std::round(A.meshPickV * 100)); else snprintf(pk, sizeof pk, "%s", pl);
-        uint32_t ph = A.meshArm ? pal::yellow : A.meshPickOn ? pal::coral : pal::t66;
+        const char* pk = A.meshArm ? (A.meshArm == 'u' ? "CLICK TO PLACE COL" : "CLICK TO PLACE ROW") : "ADD, THEN CLICK";
+        uint32_t ph = A.meshArm ? pal::yellow : pal::t66;
         float bw1 = TextW(MONO_B, 9, "FLATTEN", 0.09f) + 12 + 2, bw2 = TextW(MONO_B, 9, "UNIFORM", 0.09f) + 12 + 2;
         ImRect ub(x + w - bw2, oy + y, x + w, oy + y + 20), fb(x + w - bw2 - 4 - bw1, oy + y, x + w - bw2 - 4, oy + y + 20);
         TextEll(x, oy + y + 10, fb.Min.x - 4 - x, MONO_R, 9, K(ph), pk, 0.09f);
@@ -2264,7 +2258,7 @@ static void PropsPanel(ImRect r) {
         Box(ub, K(pal::g1c), hu.hover ? K(pal::yellow) : K(pal::g22), 3); TextC((ub.Min.x + ub.Max.x) * 0.5f, oy + y + 10, MONO_B, 9, K(hu.hover ? pal::yellow : pal::t88), "UNIFORM", 0.09f);
         if (hf.hover || hu.hover) CursorHand();
         if (hf.click) { A.pushHist(); sl->meshLocal.clear(); }
-        if (hu.click) { A.meshPickOn = false; A.pushHist(); sl->meshU.clear(); sl->meshV.clear(); sl->meshLocal.clear(); }
+        if (hu.click) { A.pushHist(); sl->meshU.clear(); sl->meshV.clear(); sl->meshLocal.clear(); }
         y += 20 + 6;
       }
       {
