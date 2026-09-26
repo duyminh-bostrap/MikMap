@@ -210,10 +210,146 @@ void SliceOutputBounds(const Slice& s, ImVec2& mn, ImVec2& mx) {
   if (s.warp != 0) for (auto& row : MeshGrid(s)) for (auto& p : row) add(p);   // interior points may bulge past the quad
 }
 
-// Edit Points (Resolume): the four big perspective corners always surround the warp grid — the outermost grid points sit on their
-// edges. After grid points move, the corners are refit to the grid's bounding box in keystone space. Nothing on screen moves: the new
-// keystone is the old one composed with the map from the unit square onto that box, and the grid is re-expressed inside it.
+// ── the smallest quadrilateral around a set of points ──
+// Convex hull, then the minimum-area enclosing quad: every combination of 4 hull edge lines (supporting lines, so the quad always
+// contains every point) is tried, then each side is turned about the hull vertex it rests on while the area keeps shrinking — in an
+// optimal quad a side that is not flush with an edge touches the hull at its own midpoint, which the turning finds.
+namespace {
+struct D2 { double x, y; };
+double Cross3(D2 o, D2 a, D2 b) { return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x); }
+std::vector<D2> ConvexHull(std::vector<D2> p) {   // counter-clockwise (x right, y up), collinear points dropped
+  std::sort(p.begin(), p.end(), [](D2 a, D2 b) { return a.x < b.x || (a.x == b.x && a.y < b.y); });
+  p.erase(std::unique(p.begin(), p.end(), [](D2 a, D2 b) { return std::fabs(a.x - b.x) < 1e-6 && std::fabs(a.y - b.y) < 1e-6; }), p.end());
+  if (p.size() < 3) return p;
+  auto keep = [](D2 o, D2 a, D2 b) {   // a strict left turn, with a tolerance scaled to the segment lengths (float mesh points)
+    double la = std::hypot(a.x - o.x, a.y - o.y), lb = std::hypot(b.x - o.x, b.y - o.y);
+    return Cross3(o, a, b) > 1e-4 * la * lb;
+  };
+  std::vector<D2> h(2 * p.size());
+  size_t k = 0;
+  for (size_t i = 0; i < p.size(); ++i) { while (k >= 2 && !keep(h[k - 2], h[k - 1], p[i])) --k; h[k++] = p[i]; }
+  for (size_t i = p.size() - 1, t = k + 1; i-- > 0;) { while (k >= t && !keep(h[k - 2], h[k - 1], p[i])) --k; h[k++] = p[i]; }
+  h.resize(k - 1);
+  return h;
+}
+struct QuadFit {
+  const std::vector<D2>& hull;
+  D2 Touch(double ang) const {   // the hull vertex a supporting line with this direction rests on (hull on its left)
+    double dx = std::cos(ang), dy = std::sin(ang), best = 1e300; D2 bp{0, 0};
+    for (auto& v : hull) { double c = dx * v.y - dy * v.x; if (c < best) { best = c; bp = v; } }
+    return bp;
+  }
+  bool Corners(const double a[4], D2 out[4]) const {   // corner k = side k meets side k+1
+    for (int k = 0; k < 4; ++k) {
+      double a0 = a[k], a1 = a[(k + 1) % 4];
+      D2 p0 = Touch(a0), p1 = Touch(a1), d0{std::cos(a0), std::sin(a0)}, d1{std::cos(a1), std::sin(a1)};
+      double den = d0.x * d1.y - d0.y * d1.x;
+      if (den < 1e-9) return false;   // consecutive sides must turn left by less than 180 degrees
+      double t = ((p1.x - p0.x) * d1.y - (p1.y - p0.y) * d1.x) / den;
+      out[k] = {p0.x + t * d0.x, p0.y + t * d0.y};
+    }
+    return true;
+  }
+  double Area(const double a[4]) const {
+    D2 c[4]; if (!Corners(a, c)) return 1e300;
+    double s = 0; for (int k = 0; k < 4; ++k) s += c[k].x * c[(k + 1) % 4].y - c[(k + 1) % 4].x * c[k].y;
+    return s > 0 ? s * 0.5 : 1e300;
+  }
+};
+}  // namespace
+// pts: any points (window/output px). out: the quad's corners, counter-clockwise in x-right/y-up terms. False if the points span no area.
+static bool MinAreaQuad(const std::vector<ImVec2>& pts, ImVec2 out[4]) {
+  std::vector<D2> p; p.reserve(pts.size()); for (auto& v : pts) p.push_back({v.x, v.y});
+  std::vector<D2> hull = ConvexHull(p);
+  const int h = (int)hull.size();
+  if (h < 3) return false;
+  if (h == 4) { for (int i = 0; i < 4; ++i) out[i] = ImVec2((float)hull[i].x, (float)hull[i].y); return true; }
+  if (h == 3) {   // a triangle: split its longest side in the middle (a degenerate quad would break the perspective map), then fit that
+    int L = 0; double best = -1; for (int i = 0; i < 3; ++i) { double l = std::hypot(hull[(i + 1) % 3].x - hull[i].x, hull[(i + 1) % 3].y - hull[i].y); if (l > best) { best = l; L = i; } }
+    D2 m{(hull[L].x + hull[(L + 1) % 3].x) * 0.5, (hull[L].y + hull[(L + 1) % 3].y) * 0.5};
+    D2 A = hull[L], B = hull[(L + 1) % 3], C = hull[(L + 2) % 3];
+    double nx = -(B.y - A.y), ny = B.x - A.x, nl = std::hypot(nx, ny); nx /= nl; ny /= nl;   // push the midpoint out a hair so the quad is convex
+    m.x -= nx * 1e-3 * best; m.y -= ny * 1e-3 * best;
+    D2 q[4] = {A, m, B, C};
+    for (int i = 0; i < 4; ++i) out[i] = ImVec2((float)q[i].x, (float)q[i].y);
+    return true;
+  }
+  QuadFit F{hull};
+  // candidate sides: the hull's edge directions (the longest 16 when the hull is big — enough for a warped grid, and fast while dragging)
+  std::vector<std::pair<double, double>> edges;   // (length, angle)
+  for (int i = 0; i < h; ++i) { D2 a = hull[i], b = hull[(i + 1) % h]; edges.push_back({std::hypot(b.x - a.x, b.y - a.y), std::atan2(b.y - a.y, b.x - a.x)}); }
+  std::sort(edges.begin(), edges.end(), [](auto& x, auto& y) { return x.first > y.first; });
+  if (edges.size() > 16) edges.resize(16);
+  std::vector<double> ang; for (auto& e : edges) ang.push_back(e.second);
+  std::sort(ang.begin(), ang.end());
+  const double kPi = 3.14159265358979323846, kTwoPi = 2 * kPi;
+  double best = 1e300, ba[4] = {0, 0, 0, 0};
+  const int n = (int)ang.size();
+  for (int i = 0; i < n; ++i) for (int j = i + 1; j < n; ++j) for (int k = j + 1; k < n; ++k) for (int l = k + 1; l < n; ++l) {
+    double a[4] = {ang[i], ang[j], ang[k], ang[l]};
+    if (a[1] - a[0] >= kPi || a[2] - a[1] >= kPi || a[3] - a[2] >= kPi || a[0] + kTwoPi - a[3] >= kPi) continue;
+    double ar = F.Area(a); if (ar < best) { best = ar; for (int t = 0; t < 4; ++t) ba[t] = a[t]; }
+  }
+  if (best >= 1e299) return false;
+  // turn each side about its resting vertex while the area shrinks (golden-section search between its neighbours)
+  for (int round = 0; round < 8; ++round) {
+    bool improved = false;
+    for (int k = 0; k < 4; ++k) {
+      double prev = k == 0 ? ba[3] - kTwoPi : ba[k - 1], next = k == 3 ? ba[0] + kTwoPi : ba[k + 1];
+      double lo = std::max(prev, next - kPi) + 1e-7, hi = std::min(next, prev + kPi) - 1e-7;
+      if (hi <= lo) continue;
+      auto f = [&](double x) { double a[4] = {ba[0], ba[1], ba[2], ba[3]}; a[k] = x; return F.Area(a); };
+      const double g = 0.6180339887498949;
+      double x1 = hi - g * (hi - lo), x2 = lo + g * (hi - lo), f1 = f(x1), f2 = f(x2);
+      for (int it = 0; it < 48; ++it) {
+        if (f1 < f2) { hi = x2; x2 = x1; f2 = f1; x1 = hi - g * (hi - lo); f1 = f(x1); }
+        else { lo = x1; x1 = x2; f1 = f2; x2 = lo + g * (hi - lo); f2 = f(x2); }
+      }
+      double xm = (lo + hi) * 0.5, fm = f(xm);
+      if (fm < best * (1 - 1e-9)) { best = fm; ba[k] = xm; improved = true; }
+    }
+    if (!improved) break;
+  }
+  D2 c[4]; if (!F.Corners(ba, c)) return false;
+  for (int i = 0; i < 4; ++i) out[i] = ImVec2((float)c[i].x, (float)c[i].y);
+  return true;
+}
+
+// Edit Points: the four big perspective corners are always the SMALLEST quadrilateral around the warp grid (every grid point inside it,
+// its sides resting on the grid). Refit whenever the grid changes; the grid points keep their place on screen and are re-expressed
+// inside the new corners. The corners are matched to TL / TR / BR / BL by the grid's own corners, so the picture never turns or flips.
+static void FitCornersToMeshBox(Slice& s);   // the older fit (the grid's box in keystone space) — used when the grid spans no area
 static void FitCornersToMesh(Slice& s) {
+  auto grid = MeshGrid(s);
+  std::vector<ImVec2> pts; for (auto& row : grid) for (auto& p : row) pts.push_back(p);
+  ImVec2 quad[4];
+  if (!MinAreaQuad(pts, quad)) { FitCornersToMeshBox(s); return; }
+  // same winding as the grid's own corners TL, TR, BR, BL, then the rotation that puts each big corner nearest its grid corner
+  int R = (int)grid.size(), C = (int)grid[0].size();
+  const ImVec2 vc[4] = {grid[0][0], grid[0][C - 1], grid[R - 1][C - 1], grid[R - 1][0]};
+  auto wind = [](const ImVec2* q) { double a = 0; for (int i = 0; i < 4; ++i) a += (double)q[i].x * q[(i + 1) % 4].y - (double)q[(i + 1) % 4].x * q[i].y; return a; };
+  if ((wind(quad) > 0) != (wind(vc) > 0)) std::swap(quad[1], quad[3]);
+  int bestR = 0; double bestD = 1e300;
+  for (int r = 0; r < 4; ++r) {
+    double d = 0; for (int i = 0; i < 4; ++i) { ImVec2 q = quad[(i + r) % 4]; d += (q.x - vc[i].x) * (q.x - vc[i].x) + (q.y - vc[i].y) * (q.y - vc[i].y); }
+    if (d < bestD) { bestD = d; bestR = r; }
+  }
+  ImVec2 nq[4];
+  for (int i = 0; i < 4; ++i) {
+    nq[i] = quad[(i + bestR) % 4];
+    if (nq[i].x < -4000.f || nq[i].x > 8000.f || nq[i].y < -4000.f || nq[i].y > 8000.f) return;   // would not fit the output range: keep
+  }
+  bool same = true; for (int i = 0; i < 4; ++i) if (std::fabs(nq[i].x - s.q[i].x) > 0.01f || std::fabs(nq[i].y - s.q[i].y) > 0.01f) same = false;
+  if (same) return;
+  Keystone k2(nq);
+  if (!k2.proj) return;
+  std::vector<std::vector<ImVec2>> lg(R, std::vector<ImVec2>(C));
+  for (int r = 0; r < R; ++r) for (int c = 0; c < C; ++c) if (!k2.Inv(grid[r][c], lg[r][c])) return;
+  for (int i = 0; i < 4; ++i) s.q[i] = nq[i];
+  s.meshLocal = lg;
+}
+static void FitCornersToMeshBox(Slice& s) {
+
   auto lg = LocalGrid(s);
   float u0 = 1e9f, v0 = 1e9f, u1 = -1e9f, v1 = -1e9f;
   for (auto& row : lg) for (auto& p : row) { u0 = std::min(u0, p.x); u1 = std::max(u1, p.x); v0 = std::min(v0, p.y); v1 = std::max(v1, p.y); }
@@ -307,6 +443,7 @@ bool MappingSelfTest(std::string& why) {
   Slice s; s.q[0] = {200, 150}; s.q[1] = {1500, 120}; s.q[2] = {1600, 900}; s.q[3] = {150, 980};
   s.meshCols = 3; s.meshRows = 2;
   s.meshLocal = LocalGrid(s); s.meshLocal[0][0] = {0.08f, 0.05f}; s.meshLocal[1][1] = {0.4f, 0.62f}; s.meshLocal[2][3] = {0.93f, 1.04f};
+  FitCornersToMesh(s);   // as the editor keeps every slice: big corners = the smallest quad around the grid
   // Transform: moving / scaling / turning the box moves every warp point by the same affine map (the warp keeps its shape)
   auto g0 = MeshGrid(s); RectXf b0 = OutputBox(s);
   RectXf b1 = b0; b1.w *= 0.6f; b1.h *= 1.3f; b1.x += 140; b1.y -= 60; b1.rot = 30.f;
@@ -332,14 +469,33 @@ bool MappingSelfTest(std::string& why) {
   // an old corner-pin-only slice becomes a 1 x 1 grid that looks the same
   Slice o = s; o.warp = 0; ImVec2 keyAt = SliceMapUV(o, 0.3f, 0.7f); NormalizeWarp(o);
   if (o.warp != 1 || o.meshCols != 1 || o.meshRows != 1 || !near2(SliceMapUV(o, 0.3f, 0.7f), keyAt, 0.01f)) { why = "old corner-pin slice changed when normalised"; return false; }
-  // Edit Points: a grid point dragged outside the big corners grows them to surround the grid again; nothing on screen moves
-  Slice fc = s; fc.meshLocal[0][0] = {-0.2f, -0.15f}; fc.meshLocal[1][2] = {0.7f, 1.3f};
-  std::vector<ImVec2> before; for (float u : {0.f, 0.3f, 0.66f, 1.f}) for (float v : {0.f, 0.5f, 1.f}) before.push_back(SliceMapUV(fc, u, v));
-  FitCornersToMesh(fc);
-  float lu0 = 1e9f, lv0 = 1e9f, lu1 = -1e9f, lv1 = -1e9f;
-  for (auto& row : fc.meshLocal) for (auto& p : row) { lu0 = std::min(lu0, p.x); lu1 = std::max(lu1, p.x); lv0 = std::min(lv0, p.y); lv1 = std::max(lv1, p.y); }
-  if (std::fabs(lu0) > 1e-4f || std::fabs(lv0) > 1e-4f || std::fabs(lu1 - 1.f) > 1e-4f || std::fabs(lv1 - 1.f) > 1e-4f) { why = "the big corners do not surround the grid after a point left them"; return false; }
-  { size_t k = 0; for (float u : {0.f, 0.3f, 0.66f, 1.f}) for (float v : {0.f, 0.5f, 1.f}) if (!near2(SliceMapUV(fc, u, v), before[k++], 0.05f)) { why = "refitting the big corners moved the picture"; return false; } }
+  // Edit Points: the big corners are the smallest quad around the grid — every grid point inside, grid points unmoved, and never
+  // larger than the grid's own screen bounding box (the old keystone-space box grew huge under strong perspective)
+  {
+    Slice fc = s; fc.meshLocal[0][2] = {0.5f, -0.35f}; fc.meshLocal[2][0] = {-0.1f, 1.2f};   // a roof on top, a foot at the bottom left
+    auto g0 = MeshGrid(fc);
+    FitCornersToMesh(fc);
+    auto g1 = MeshGrid(fc);
+    float x0 = 1e9f, y0 = 1e9f, x1 = -1e9f, y1 = -1e9f;
+    for (size_t r = 0; r < g0.size(); ++r) for (size_t c = 0; c < g0[r].size(); ++c) {
+      if (!near2(g1[r][c], g0[r][c], 0.05f)) { why = "refitting the big corners moved a grid point"; return false; }
+      x0 = std::min(x0, g0[r][c].x); x1 = std::max(x1, g0[r][c].x); y0 = std::min(y0, g0[r][c].y); y1 = std::max(y1, g0[r][c].y);
+    }
+    double area = 0; for (int i = 0; i < 4; ++i) area += (double)fc.q[i].x * fc.q[(i + 1) % 4].y - (double)fc.q[(i + 1) % 4].x * fc.q[i].y;
+    area = std::fabs(area) * 0.5;
+    if (area > (double)(x1 - x0) * (y1 - y0) + 1.0) { why = "the big corners are not the smallest quad (bigger than the grid's bounding box)"; return false; }
+    for (auto& row : g0) for (auto& p : row) for (int i = 0; i < 4; ++i) {
+      ImVec2 a0 = fc.q[i], a1 = fc.q[(i + 1) % 4], a2 = fc.q[(i + 2) % 4];
+      double side = (double)(a1.x - a0.x) * (p.y - a0.y) - (double)(a1.y - a0.y) * (p.x - a0.x);
+      double ref = (double)(a1.x - a0.x) * (a2.y - a0.y) - (double)(a1.y - a0.y) * (a2.x - a0.x);   // the inside is where the next corner is
+      double dist = side / std::max(1e-6, (double)std::hypot(a1.x - a0.x, a1.y - a0.y));   // signed distance to the side, px
+      if (ref > 0 ? dist < -0.5 : dist > 0.5) { why = "a grid point lies outside the big corners"; return false; }
+    }
+    // a strongly keystoned slice: the grid's border is the smallest quad already, so nothing changes
+    Slice ks; ks.q[0] = {400, 100}; ks.q[1] = {900, 150}; ks.q[2] = {1700, 1000}; ks.q[3] = {100, 950}; ks.meshCols = 3; ks.meshRows = 2;
+    Slice ks0 = ks; FitCornersToMesh(ks);
+    for (int i = 0; i < 4; ++i) if (!near2(ks.q[i], ks0.q[i], 0.05f)) { why = "an untouched keystoned grid got new corners"; return false; }
+  }
   // Match Input Shape with moved grid corners: the corners the audience sees land exactly on the target
   Slice mv = s; const ImVec2 tgt[4] = {{300, 200}, {1400, 260}, {1350, 950}, {250, 880}};
   SetVisibleCorners(mv, tgt);
@@ -782,7 +938,10 @@ void App::nudgeSelection(float dx, float dy) {
       else if (kind == 1) if (Slice* s = slice(r)) { s->ix += (int)std::lround(dx); s->iy += (int)std::lround(dy); }
     }
   } else if (!mapPts.empty()) {   // Output with points picked: move exactly those
-    if (Screen* sc = curScreen()) { auto st = CapturePoints(*sc, mapPts); MovePointsTo(*sc, st, ImVec2(dx, dy)); }
+    if (Screen* sc = curScreen()) {
+      auto st = CapturePoints(*sc, mapPts); MovePointsTo(*sc, st, ImVec2(dx, dy));
+      for (auto& s : sc->slices) for (auto& r : mapPts) if (r.sl == s.id) { FitCornersToMesh(s); break; }   // (only perspective corners picked: refit here)
+    }
   } else {            // Output: the selected slices' quads, or every slice of the selected screens (the mesh rides along with the keystone)
     auto moveQ = [&](Slice& s) { for (auto& q : s.q) { q.x = clampQ(q.x + dx); q.y = clampQ(q.y + dy); } };
     for (auto& r : sel) {
@@ -1542,7 +1701,10 @@ static void Stage(ImRect r) {
   g.dl->PopClipRect();   // everything below draws across the whole stage: a point outside the output box stays visible
 
   // ---- drag processing ----
-  if (dragKind && !ImGui::IsMouseDown(0)) dragKind = 0;
+  if (dragKind && !ImGui::IsMouseDown(0)) {
+    if ((dragKind == 1 || dragKind == 7) && sl) FitCornersToMesh(*sl);   // a perspective corner was let go: back to the smallest quad around the grid
+    dragKind = 0;
+  }
   gGuideLines.clear(); gGuideDots.clear();
   if (A.mpage != 1) A.mapPts.clear();   // picked points belong to the Output page
   const bool snapOn = A.mapSnap && !io.KeyAlt;   // magnet on; hold Alt to place freely
