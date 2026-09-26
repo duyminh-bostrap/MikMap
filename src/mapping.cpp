@@ -2011,7 +2011,7 @@ static void PropsPanel(ImRect r) {
         y += 24 + 4;
       }
       y += 4;
-    } else {
+    } else if (!output) {   // the input rectangle and the masks belong to the Input page; the Output panel has neither
       HLine(ox + 8, ox + 8 + w, oy + y, K(pal::g2a)); y += 1 + 6;
       Label(x, oy + y, "Input rectangle (px)"); y += 9 + 4;
       // X/Y are the rect's centre, Left/Top its unrotated top-left corner (what the stage frame edits)
@@ -2031,9 +2031,11 @@ static void PropsPanel(ImRect r) {
       y += 41 * 4 + 2;
     }
     // Input Mask: pick a shape to add a mask to this slice (pen = draw your own outline). Masks are edited on this Input stage.
-    y = InputMaskBar(ox, oy, W, x, w, y, false);
-    Text(x, oy + y + 6, UI_S, 9, K(pal::t66), "Add a mask that cuts the picture.", 0.01f);
-    y += 16 + 6;
+    if (!output) {
+      y = InputMaskBar(ox, oy, W, x, w, y, false);
+      Text(x, oy + y + 6, UI_S, 9, K(pal::t66), "Add a mask that cuts the picture.", 0.01f);
+      y += 16 + 6;
+    }
   }
   if (kind == 2) {
     Label(x, oy + y, "Mask name"); y += 9 + 6;

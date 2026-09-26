@@ -326,7 +326,7 @@ Slice, **trang Output** (2026-09-26, thông tin theo panel slice của Resolume,
 - **4-key (Transform):** Input source · **Output rectangle** (X/Y/Left/Top/Width/Height/Rotation — chính là hình chữ nhật kéo trên stage) · Flip · Is key · Black BG ·
   Brightness/Contrast/Red/Green/Blue · Soft edge · Black level compensation. **Không có** Warping.
 - **Mesh (Edit Points):** Input source · Flip · Is key · Black BG · màu · Soft edge · Black level compensation · **Warping**: *Point mode* (chỉ Linear) + **Subdivisions X / Y**
-  (số đường chia thêm giữa hai biên, 0…15, −/+; đổi số thì lưới về đều) + công cụ lưới riêng của MikMap (Flatten / Uniform / + Add col / + Add row) + 4 toạ độ góc gõ số (F15). **Không có** khối X/Y/Width….
+  (số đường chia thêm giữa hai biên, 0…15, −/+; đổi số thì lưới về đều) + công cụ lưới riêng của MikMap (Flatten / Uniform / + Add col / + Add row) + 4 toạ độ góc gõ số (F15). **Không có** khối X/Y/Width… và **không có Input mask** (khối *Input rectangle* và các nút Input mask chỉ ở trang Input; cả hai chế độ Output đều không hiện chúng).
 - Flip (NONE / X / Y / X+Y) cộng hợp với mirror của khung input. Black BG = nền đen đặc sau hình (nằm trong mask). Màu của slice chồng lên màu của Screen.
 - Thật sự chạy trên hình: Flip, Black BG, màu slice. **Lưu nhưng chưa vẽ** (nhãn "NOT RENDERED YET"): Is key, Soft edge và Black level compensation.
 Trang Input có các hàng X/Y/Left/Top/Width/Height/Rotation + Input Mask (§3.2); công tắc Soft Edge đã dời sang Output. Mask: đảo, độ mờ, danh sách điểm (≤8 điểm), xoá.
