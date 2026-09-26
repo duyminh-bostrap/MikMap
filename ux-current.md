@@ -322,10 +322,10 @@ Ba vùng: **cây Screen/Slice/Mask** (trái) | **Stage canvas** (giữa) | **Pro
 | M12 | **Thumbnail output của từng slice** (2026-09-26): mỗi slice hiện đúng hình nó gửi ra máy chiếu — sau vùng lấy, keystone/mesh, **mask cắt**, Opacity/màu của Screen — vẽ bằng chính `DrawSliceOutput` (`output.cpp`) mà cửa sổ máy chiếu dùng, cắt theo khung 1920×1080; **không tô nền**: slice đang chọn chỉ có viền coral, slice khác chỉ có viền nét đứt (2026-09-26). Tôn trọng ẩn/Solo. | ✅ |
 
 ### 3.3 Properties (phải)
-Slice, **trang Output** (2026-09-26, thông tin theo panel slice của Resolume, widget/màu giữ của MikMap) — hai bộ tuỳ theo chế độ warp:
-- **4-key (Transform):** Input source · **Output rectangle** (X/Y/Left/Top/Width/Height/Rotation — chính là hình chữ nhật kéo trên stage) · Flip · Is key · Black BG ·
+Slice, **trang Output** (2026-09-26, thông tin theo panel slice của Resolume, widget/màu giữ của MikMap; **Input source chỉ chọn ở trang Input**, không hiện ở Output) — hai bộ tuỳ theo chế độ warp:
+- **4-key (Transform):** **Output rectangle** (X/Y/Left/Top/Width/Height/Rotation — chính là hình chữ nhật kéo trên stage) · Flip · Is key · Black BG ·
   Brightness/Contrast/Red/Green/Blue · Soft edge · Black level compensation. **Không có** Warping.
-- **Mesh (Edit Points):** Input source · Flip · Is key · Black BG · màu · Soft edge · Black level compensation · **Warping**: *Point mode* (chỉ Linear) + **Subdivisions X / Y**
+- **Mesh (Edit Points):** Flip · Is key · Black BG · màu · Soft edge · Black level compensation · **Warping**: *Point mode* (chỉ Linear) + **Subdivisions X / Y**
   (số đường chia thêm giữa hai biên, 0…15, −/+; đổi số thì lưới về đều) + công cụ lưới riêng của MikMap (Flatten / Uniform / + Add col / + Add row) (**không còn** ô gõ toạ độ 4 góc — chỉ kéo chuột). **Không có** khối X/Y/Width… và **không có Input mask** (khối *Input rectangle* và các nút Input mask chỉ ở trang Input; cả hai chế độ Output đều không hiện chúng).
 - **Gọn (2026-09-26):** mỗi thuộc tính một dòng 22px (nhãn · thanh trượt · giá trị); Flip và bốn lựa chọn cùng một dòng; *Is key* / *Black BG* cạnh nhau; Soft edge có ô bật ngay trên tiêu đề mục; Output rectangle dùng ô số có nhãn bên trái (4 dòng thay vì 7). Panel 4-key vừa gần đủ một màn hình 900px.
 - Flip (NONE / X / Y / X+Y) cộng hợp với mirror của khung input. Black BG = nền đen đặc sau hình (nằm trong mask). Màu của slice chồng lên màu của Screen.

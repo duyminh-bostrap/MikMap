@@ -1832,8 +1832,8 @@ static void PropsPanel(ImRect r) {
     Label(x, oy + y, "Slice name"); y += 9 + 4;
     TextField("##slicename", Rc(x, oy + y, w, 28), sl->name);
     y += 28 + 8;
-    // F22: what this slice shows — the whole composition, or a single layer / group routed to it
-    {
+    // F22: what this slice shows — the whole composition, or a single layer / group routed to it. Chosen on the Input page only.
+    if (!output) {
       Label(x, oy + y, "Input source"); y += 9 + 4;
       bool ok = SliceSourceValid(*sl);
       std::string cur = ok ? SliceSourceName(*sl) : std::string("Missing \xC2\xB7 showing Composition");
