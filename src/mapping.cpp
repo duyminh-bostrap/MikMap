@@ -229,8 +229,8 @@ ImVec2 WarpMap::Map(float canvasX, float canvasY) const {
     float x = dx * co - dy * si; dy = dx * si + dy * co; dx = x;
   }
   float u = dx / rw + 0.5f, v = dy / rh + 0.5f;
-  if (slice->iflipX) u = 1.f - u;
-  if (slice->iflipY) v = 1.f - v;
+  if (slice->iflipX != ((slice->oflip & 1) != 0)) u = 1.f - u;   // the input rect's mirror and the output Flip cancel each other out
+  if (slice->iflipY != ((slice->oflip & 2) != 0)) v = 1.f - v;
   ImVec2 o = SliceMapUV(*slice, u, v);
   return ImVec2(ox + o.x * sx, oy + o.y * sy);
 }
@@ -1866,7 +1866,76 @@ static void PropsPanel(ImRect r) {
       }
       y += 28 + 8;
     }
-    if (sl->warp != 0) {
+    if (output) {
+      // ── Output slice properties (info as in Resolume's slice panel, MikMap's own widgets) ──
+      auto section = [&](const char* title, const char* note = nullptr) {
+        HLine(ox, ox + W, oy + y, K(pal::g2a)); y += 1 + 6;
+        Text(x, oy + y + 4.5f, MONO_R, 9, K(pal::t88), Upper(title).c_str(), 0.09f);
+        if (note) TextR(x + w, oy + y + 4.5f, MONO_R, 8, K(pal::t66), note);
+        y += 9 + 6;
+      };
+      auto checkRow = [&](const char* label, bool& v, uint32_t hex, bool dim = false) {
+        ImRect ir(x, oy + y, x + w, oy + y + 24);
+        Hit ih = HitR(ir);
+        Text(x, ir.Min.y + 12, UI_S, 10, K(dim ? pal::t66 : pal::te0), label);
+        ImRect cb(ir.Max.x - 14, ir.Min.y + 5, ir.Max.x, ir.Min.y + 19);
+        Box(cb, v ? K(hex) : K(pal::g050), v ? K(hex) : K(pal::g22), 2);
+        if (v) Check(ImVec2((cb.Min.x + cb.Max.x) * 0.5f, (cb.Min.y + cb.Max.y) * 0.5f), 12, K(0x0f0f0f));
+        if (ih.hover) CursorHand();
+        bool ch = ih.click; if (ch) v = !v;
+        y += 24 + 4;
+        return ch;
+      };
+      auto intRow = [&](const char* label, int& v, int lo, int hi, uint32_t id, uint32_t hex) {
+        float fv = (float)v; char vb[24]; snprintf(vb, sizeof vb, "%d", v); bool ch = false;
+        y += SliderRow(x, oy + y, w, label, vb, id, fv, (float)lo, (float)hi, hex, &ch);
+        if (ch) v = (int)std::lround(std::clamp(fv, (float)lo, (float)hi));
+      };
+      auto fltRow = [&](const char* label, float& v, float lo, float hi, uint32_t id, uint32_t hex, bool dim) {
+        char vb[24]; snprintf(vb, sizeof vb, "%.2f", v); bool ch = false; float prev = g.alpha; if (dim) g.alpha *= 0.5f;
+        y += SliderRow(x, oy + y, w, label, vb, id, v, lo, hi, hex, &ch);
+        g.alpha = prev;
+      };
+      HLine(ox, ox + W, oy + y, K(pal::g2a)); y += 1 + 6;
+      Label(x, oy + y, "Flip"); y += 9 + 4;
+      {   // 0 none, 1 mirror X, 2 mirror Y, 3 both
+        const char* fl4[4] = {"NONE", "X", "Y", "X+Y"}; float bw = (w - 3 * 4) / 4.f;
+        for (int i = 0; i < 4; ++i) {
+          ImRect br(x + i * (bw + 4), oy + y, x + i * (bw + 4) + bw, oy + y + 26);
+          Hit h = HitR(br); bool on = sl->oflip == i;
+          Box(br, on ? K(pal::coral, 0.2f) : h.hover ? K(pal::ctrlHover) : K(pal::g1c), on ? K(pal::coral) : K(pal::g22), 3);
+          TextC((br.Min.x + br.Max.x) * 0.5f, (br.Min.y + br.Max.y) * 0.5f, MONO_B, 9, K(on ? pal::coral : pal::tcc), fl4[i], 0.06f);
+          if (h.hover) CursorHand();
+          if (h.click && !on) { A.pushHist(); sl->oflip = i; }
+        }
+        y += 26 + 8;
+      }
+      checkRow("Is key", sl->isKey, pal::coral);
+      checkRow("Black BG", sl->blackBg, pal::coral);
+      y += 2;
+      intRow("Brightness", sl->brightness, -100, 100, 0x3201, pal::yellow);
+      intRow("Contrast", sl->contrast, -100, 100, 0x3202, pal::yellow);
+      intRow("Red", sl->red, -100, 100, 0x3203, pal::red);
+      intRow("Green", sl->green, -100, 100, 0x3204, pal::mint);
+      intRow("Blue", sl->blue, -100, 100, 0x3205, pal::cyan);
+      section("Soft edge", "NOT RENDERED YET");
+      checkRow("Enabled", sl->softEdge, pal::mint);
+      fltRow("Gamma red", sl->seGammaR, 0.1f, 4.f, 0x3211, pal::red, !sl->softEdge);
+      fltRow("Gamma green", sl->seGammaG, 0.1f, 4.f, 0x3212, pal::mint, !sl->softEdge);
+      fltRow("Gamma blue", sl->seGammaB, 0.1f, 4.f, 0x3213, pal::cyan, !sl->softEdge);
+      fltRow("Gamma", sl->seGamma, 0.1f, 4.f, 0x3214, pal::yellow, !sl->softEdge);
+      fltRow("Luminance", sl->seLum, 0.f, 1.f, 0x3215, pal::yellow, !sl->softEdge);
+      fltRow("Power", sl->sePower, 0.1f, 8.f, 0x3216, pal::yellow, !sl->softEdge);
+      section("Black level compensation", "NOT RENDERED YET");
+      intRow("Red", sl->blR, 0, 100, 0x3221, pal::red);
+      intRow("Green", sl->blG, 0, 100, 0x3222, pal::mint);
+      intRow("Blue", sl->blB, 0, 100, 0x3223, pal::cyan);
+      section("Warping");
+      Text(x, oy + y + 5, UI_S, 10, K(pal::t88), "Point mode");
+      TextR(x + w, oy + y + 5, MONO_B, 10, K(pal::coral), "Linear");
+      y += 10 + 8;
+    }
+    if (output && sl->warp != 0) {
       HLine(ox + 8, ox + 8 + w, oy + y, K(pal::g2a)); y += 1 + 6;
       std::vector<float> uu, vv; MeshUV(*sl, uu, vv);
       int ncol = (int)uu.size() + 1, nrow = (int)vv.size() + 1;
@@ -1924,7 +1993,27 @@ static void PropsPanel(ImRect r) {
         y += 24 + 8;
       }
     }
-    if (output) {
+    if (output && sl->warp == 0) {   // 4-key: the output is one rectangle, edited like the input rect
+      HLine(ox + 8, ox + 8 + w, oy + y, K(pal::g2a)); y += 1 + 6;
+      Label(x, oy + y, "Output rectangle (px)"); y += 9 + 4;
+      RectXf R = RectOfQuad(sl->q);
+      float vals[7] = {R.x + R.w * 0.5f, R.y + R.h * 0.5f, R.x, R.y, R.w, R.h, R.rot};
+      const char* fl[7] = {"X", "Y", "Left", "Top", "Width", "Height", "Rotation"};
+      float fw = (w - 6) / 2.f;
+      for (int i = 0; i < 7; ++i) {
+        float fx = x + (i % 2) * (fw + 6), fy = y + (i / 2) * (35 + 6);
+        char id[24]; snprintf(id, sizeof id, "##op%d", i);
+        if (!NumCell(fx, oy + fy, fw, fl[i], id, vals[i], i == 6 ? 1 : 0)) continue;
+        float v = std::round(vals[i]);
+        if (i == 0) R.x = v - R.w * 0.5f; else if (i == 1) R.y = v - R.h * 0.5f;
+        else if (i == 2) R.x = v; else if (i == 3) R.y = v;
+        else if (i == 4) { float cx = R.x + R.w * 0.5f; R.w = std::clamp(v, 8.f, 16384.f); R.x = cx - R.w * 0.5f; }
+        else if (i == 5) { float cy = R.y + R.h * 0.5f; R.h = std::clamp(v, 8.f, 16384.f); R.y = cy - R.h * 0.5f; }
+        else R.rot = std::fabs(vals[6]) < 0.05f ? 0.f : std::clamp(vals[6], -180.f, 180.f);
+        ImVec2 qc[4]; RectCorners(R, qc); for (int k = 0; k < 4; ++k) sl->q[k] = ImVec2(std::clamp(qc[k].x, -4000.f, 8000.f), std::clamp(qc[k].y, -4000.f, 8000.f));
+      }
+      y += 41 * 4 + 2;
+    } else if (output) {
       HLine(ox + 8, ox + 8 + w, oy + y, K(pal::g2a)); y += 1 + 6;
       Label(x, oy + y, "Corner pins"); y += 9 + 4;
       const char* ck[4] = {"TL", "TR", "BR", "BL"};
@@ -1959,21 +2048,6 @@ static void PropsPanel(ImRect r) {
         else sl->irot = std::fabs(vals[6]) < 0.05f ? 0.f : std::clamp(vals[6], -180.f, 180.f);
       }
       y += 41 * 4 + 2;
-    }
-    // Soft Edge: a saved per-slice switch. The projector output does not feather slice edges yet (see features.md F20).
-    {
-      HLine(ox, ox + W, oy + y, K(pal::g2a)); y += 1 + 4;
-      ImRect er(x, oy + y, x + w, oy + y + 22);
-      Hit eh = HitR(er);
-      Text(x, er.Min.y + 11, UI_S, 10, K(pal::t88), "Soft edge");
-      const char* el = sl->softEdge ? "ENABLED" : "DISABLED";
-      float bw2 = TextW(MONO_B, 9, el, 0.09f) + 12 + 2;
-      ImRect bb(er.Max.x - bw2, er.Min.y + 2, er.Max.x, er.Min.y + 20);
-      Box(bb, sl->softEdge ? K(pal::mint, 0.2f) : K(pal::g1c), sl->softEdge ? K(pal::mint, 0.4f) : K(pal::g22), 3);
-      Text(bb.Min.x + 7, (bb.Min.y + bb.Max.y) * 0.5f, MONO_B, 9, K(sl->softEdge ? pal::mint : pal::t66), el, 0.09f);
-      if (eh.hover) CursorHand();
-      if (eh.click) sl->softEdge = !sl->softEdge;
-      y += 22 + 6;
     }
     // Input Mask: pick a shape to add a mask to this slice (pen = draw your own outline). Masks are edited on this Input stage.
     y = InputMaskBar(ox, oy, W, x, w, y, false);

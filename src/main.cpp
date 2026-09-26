@@ -941,10 +941,15 @@ int main(int argc, char** argv) {
       A.startMaskPen(); A.penPts = {{100, 100}, {300, 120}, {200, 300}, {90, 250}, {60, 180}}; A.finishMaskPen();
       Mask* pm = A.curMask(); if (!pm || pm->pts.size() != 5 || A.maskPen) return fail("pen must create a mask with exactly the clicked points");
       A.curSlice()->softEdge = true;
+      { Slice& os = *A.curSlice(); os.oflip = 3; os.isKey = true; os.blackBg = true; os.brightness = -20; os.contrast = 15; os.red = 5; os.green = -6; os.blue = 7;
+        os.seGammaR = 1.5f; os.seGammaG = 2.5f; os.seGammaB = 3.f; os.seGamma = 1.25f; os.seLum = 0.75f; os.sePower = 3.5f; os.blR = 10; os.blG = 20; os.blB = 30; }
       std::string penId = pm->id; size_t nm = A.curSlice()->masks.size();
       if (!SaveProject(roundtrip, err) || !LoadProject(roundtrip, err)) return fail(err.c_str());
       Slice& ls = A.screens[0].slices[0];
       if (ls.masks.size() != nm || !ls.softEdge) return fail("masks / soft edge did not round-trip");
+      if (ls.oflip != 3 || !ls.isKey || !ls.blackBg || ls.brightness != -20 || ls.contrast != 15 || ls.red != 5 || ls.green != -6 || ls.blue != 7 ||
+          ls.seGammaR != 1.5f || ls.seGammaG != 2.5f || ls.seGammaB != 3.f || ls.seGamma != 1.25f || ls.seLum != 0.75f || ls.sePower != 3.5f ||
+          ls.blR != 10 || ls.blG != 20 || ls.blB != 30) return fail("output slice properties (flip / key / colour / soft edge / black level) did not round-trip");
       bool found = false; for (auto& m : ls.masks) if (m.id == penId) { found = m.pts.size() == 5 && m.pts[3].x == 90.f; }
       if (!found) return fail("a 5-point mask did not round-trip its points");
       // every preset outline must touch all four sides of its rect (the hexagon used to stop short of top and bottom)

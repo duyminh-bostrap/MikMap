@@ -125,6 +125,11 @@ JsonValue SliceJ(const Slice& s) {
   o.set("ix", s.ix); o.set("iy", s.iy); o.set("iw", s.iw); o.set("ih", s.ih);
   o.set("maskSpace", 1);   // masks are in composition canvas px (files without this stored output px)
   o.set("irot", (double)s.irot); o.set("iflipX", s.iflipX); o.set("iflipY", s.iflipY); o.set("softEdge", s.softEdge);
+  o.set("oflip", s.oflip); o.set("isKey", s.isKey); o.set("blackBg", s.blackBg);
+  o.set("sBri", s.brightness); o.set("sCon", s.contrast); o.set("sRed", s.red); o.set("sGrn", s.green); o.set("sBlu", s.blue);
+  o.set("seGR", (double)s.seGammaR); o.set("seGG", (double)s.seGammaG); o.set("seGB", (double)s.seGammaB);
+  o.set("seGamma", (double)s.seGamma); o.set("seLum", (double)s.seLum); o.set("sePow", (double)s.sePower);
+  o.set("blR", s.blR); o.set("blG", s.blG); o.set("blB", s.blB);
   JsonValue q = JsonValue::array(); for (int i = 0; i < 4; ++i) q.push(V2(s.q[i]));
   o.set("q", q);
   JsonValue ms = JsonValue::array();
@@ -158,6 +163,12 @@ Slice ReadSlice(const JsonValue& o) {
   s.srcKind = std::clamp(o["srcKind"].asInt(0), 0, 2); s.srcRef = o["srcRef"].asString();
   s.ix = o["ix"].asInt(0); s.iy = o["iy"].asInt(0); s.iw = std::max(20, o["iw"].asInt(1920)); s.ih = std::max(20, o["ih"].asInt(1080));
   s.irot = std::clamp((float)o["irot"].asNumber(0.0), -180.f, 180.f); s.iflipX = o["iflipX"].asBool(false); s.iflipY = o["iflipY"].asBool(false); s.softEdge = o["softEdge"].asBool(false);
+  s.oflip = std::clamp(o["oflip"].asInt(0), 0, 3); s.isKey = o["isKey"].asBool(false); s.blackBg = o["blackBg"].asBool(false);
+  s.brightness = std::clamp(o["sBri"].asInt(0), -100, 100); s.contrast = std::clamp(o["sCon"].asInt(0), -100, 100);
+  s.red = std::clamp(o["sRed"].asInt(0), -100, 100); s.green = std::clamp(o["sGrn"].asInt(0), -100, 100); s.blue = std::clamp(o["sBlu"].asInt(0), -100, 100);
+  s.seGammaR = std::clamp((float)o["seGR"].asNumber(2.0), 0.1f, 4.f); s.seGammaG = std::clamp((float)o["seGG"].asNumber(2.0), 0.1f, 4.f); s.seGammaB = std::clamp((float)o["seGB"].asNumber(2.0), 0.1f, 4.f);
+  s.seGamma = std::clamp((float)o["seGamma"].asNumber(1.0), 0.1f, 4.f); s.seLum = std::clamp((float)o["seLum"].asNumber(0.5), 0.f, 1.f); s.sePower = std::clamp((float)o["sePow"].asNumber(2.0), 0.1f, 8.f);
+  s.blR = std::clamp(o["blR"].asInt(0), 0, 100); s.blG = std::clamp(o["blG"].asInt(0), 0, 100); s.blB = std::clamp(o["blB"].asInt(0), 0, 100);
   ImVec2 def[4] = {{(float)s.ix, (float)s.iy}, {(float)(s.ix + s.iw), (float)s.iy}, {(float)(s.ix + s.iw), (float)(s.iy + s.ih)}, {(float)s.ix, (float)(s.iy + s.ih)}};
   for (int i = 0; i < 4; ++i) s.q[i] = o["q"].isArray() && o["q"].size() > (size_t)i ? ReadV2(o["q"].at(i), def[i]) : def[i];
   s.maskLegacy = o["maskSpace"].asInt(0) != 1;

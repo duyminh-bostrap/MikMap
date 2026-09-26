@@ -112,6 +112,14 @@ struct Slice {
   bool iflipX = false, iflipY = false;
   bool maskLegacy = false;   // runtime: masks came from a file that stored them in output px; converted to canvas px right after load
   bool softEdge = false;   // Slice properties > Soft Edge. A saved switch only: the projector output does not feather edges yet
+  // Output-side slice properties (Output routing page). oflip / blackBg / the colour block are drawn by DrawSliceOutput; isKey, the
+  // soft-edge curve and the black-level compensation are saved and edited but not rendered yet (they matter with edge blending).
+  int oflip = 0;                       // 0 none, 1 mirror X, 2 mirror Y, 3 both — combined with the input rect's own mirror (WarpMap::Map)
+  bool isKey = false, blackBg = false;
+  int brightness = 0, contrast = 0, red = 0, green = 0, blue = 0;   // per-slice colour correction, -100..100, on top of the Screen's
+  float seGammaR = 2.f, seGammaG = 2.f, seGammaB = 2.f, seGamma = 1.f, seLum = 0.5f, sePower = 2.f;
+  int blR = 0, blG = 0, blB = 0;       // black level compensation, 0..100
+  bool colorActive() const { return brightness || contrast || red || green || blue; }
   ImVec2 q[4];   // tl, tr, br, bl — keystone corners (perspective, like Resolume / engine WarpCornerPin)
   std::vector<Mask> masks;
 };

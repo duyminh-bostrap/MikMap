@@ -128,8 +128,14 @@ void DrawSliceOutput(const Screen& sc, const Slice& sl, float ox, float oy, floa
     }
     const bool masked = !keep.empty() || !holes.empty();
     if (masked) MaskBegin(keep, holes, bb);
+    if (sl.blackBg) { std::vector<ImVec2> o = SliceOutline(sl); for (auto& p : o) p = ImVec2(ox + p.x * sx, oy + p.y * sy); g.dl->AddConcavePolyFilled(o.data(), (int)o.size(), IM_COL32(0, 0, 0, 255)); }   // Black BG: opaque black behind the picture
     DrawSliceSource(sl, bb, t, std::clamp(sc.opacity / 100.f, 0.f, 1.f));   // F22: composition, or just the layer/group this slice is routed to; Screen > Opacity scales it
     // Screen > Brightness / Contrast / Red / Green / Blue over this slice's outline (inside the mask, so cut-out areas stay dark)
+    if (sl.colorActive()) {   // the slice's own colour correction, then the Screen's on top
+      std::vector<ImVec2> o = SliceOutline(sl);
+      for (auto& p : o) p = ImVec2(ox + p.x * sx, oy + p.y * sy);
+      DrawColorAdjust(o.data(), (int)o.size(), sl.contrast / 100.f, sl.brightness / 100.f, sl.red / 100.f, sl.green / 100.f, sl.blue / 100.f);
+    }
     if (sc.brightness || sc.contrast || sc.red || sc.green || sc.blue) {
       std::vector<ImVec2> o = SliceOutline(sl);
       for (auto& p : o) p = ImVec2(ox + p.x * sx, oy + p.y * sy);
