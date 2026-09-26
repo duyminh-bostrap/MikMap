@@ -1769,6 +1769,12 @@ static bool NumCell(float x, float y, float w, const char* label, const char* id
   Text(x, y + 4.5f, MONO_R, 9, K(pal::t66), label);
   return FloatField(id, Rc(x, y + 11, w, 24), v, decimals);
 }
+// The same field with its label on the left (one line, 24px): the compact form used by the Output rectangle.
+static bool NumCellInline(float x, float y, float w, const char* label, const char* id, float& v, int decimals) {
+  float lw = TextW(MONO_R, 9, label) + 8;
+  Text(x, y + 12, MONO_R, 9, K(pal::t66), label);
+  return FloatField(id, Rc(x + lw, y, w - lw, 24), v, decimals);
+}
 // A slider row like the Clip transform panel: label left, toned mono value right, the slider underneath. Returns the height used.
 static float SliderRow(float x, float y, float w, const char* label, const char* val, uint32_t id, float& v, float mn, float mx, uint32_t hex, bool* changed = nullptr) {
   Text(x, y + 5, UI_S, 10, K(pal::t88), label);
@@ -1854,15 +1860,15 @@ static void PropsPanel(ImRect r) {
     }
     if (output && sl->warp == 0) {   // 4-key: the output is one rectangle, edited like the input rect
       HLine(ox + 8, ox + 8 + w, oy + y, K(pal::g2a)); y += 1 + 6;
-      Label(x, oy + y, "Output rectangle (px)"); y += 9 + 4;
+      Label(x, oy + y, "Output rectangle (px)"); y += 9 + 2;
       RectXf R = RectOfQuad(sl->q);
       float vals[7] = {R.x + R.w * 0.5f, R.y + R.h * 0.5f, R.x, R.y, R.w, R.h, R.rot};
       const char* fl[7] = {"X", "Y", "Left", "Top", "Width", "Height", "Rotation"};
       float fw = (w - 6) / 2.f;
       for (int i = 0; i < 7; ++i) {
-        float fx = x + (i % 2) * (fw + 6), fy = y + (i / 2) * (35 + 6);
+        float fx = x + (i % 2) * (fw + 6), fy = y + (i / 2) * 27;
         char id[24]; snprintf(id, sizeof id, "##op%d", i);
-        if (!NumCell(fx, oy + fy, fw, fl[i], id, vals[i], i == 6 ? 1 : 0)) continue;
+        if (!NumCellInline(fx, oy + fy, i == 6 ? w : fw, fl[i], id, vals[i], i == 6 ? 1 : 0)) continue;
         float v = std::round(vals[i]);
         if (i == 0) R.x = v - R.w * 0.5f; else if (i == 1) R.y = v - R.h * 0.5f;
         else if (i == 2) R.x = v; else if (i == 3) R.y = v;
@@ -1871,86 +1877,99 @@ static void PropsPanel(ImRect r) {
         else R.rot = std::fabs(vals[6]) < 0.05f ? 0.f : std::clamp(vals[6], -180.f, 180.f);
         ImVec2 qc[4]; RectCorners(R, qc); for (int k = 0; k < 4; ++k) sl->q[k] = ImVec2(std::clamp(qc[k].x, -4000.f, 8000.f), std::clamp(qc[k].y, -4000.f, 8000.f));
       }
-      y += 41 * 4 + 2;
+      y += 27 * 4 + 2;
     }
     if (output) {
       // ── Output slice properties (info as in Resolume's slice panel, MikMap's own widgets) ──
-      auto section = [&](const char* title, const char* note = nullptr) {
-        HLine(ox, ox + W, oy + y, K(pal::g2a)); y += 1 + 6;
-        Text(x, oy + y + 4.5f, MONO_R, 9, K(pal::t88), Upper(title).c_str(), 0.09f);
-        if (note) TextR(x + w, oy + y + 4.5f, MONO_R, 8, K(pal::t66), note);
-        y += 9 + 6;
-      };
-      auto checkRow = [&](const char* label, bool& v, uint32_t hex, bool dim = false) {
-        ImRect ir(x, oy + y, x + w, oy + y + 24);
-        Hit ih = HitR(ir);
-        Text(x, ir.Min.y + 12, UI_S, 10, K(dim ? pal::t66 : pal::te0), label);
-        ImRect cb(ir.Max.x - 14, ir.Min.y + 5, ir.Max.x, ir.Min.y + 19);
+      // Compact rows: one line per property (label | slider | value), section headers carry their own on/off box.
+      const float kRow = 22.f, kLab = 76.f;
+      auto checkBox = [&](ImRect cb, bool& v, uint32_t hex) {
+        Hit ih = HitR(ImRect(cb.Min.x - 4, cb.Min.y - 4, cb.Max.x + 4, cb.Max.y + 4));
         Box(cb, v ? K(hex) : K(pal::g050), v ? K(hex) : K(pal::g22), 2);
         if (v) Check(ImVec2((cb.Min.x + cb.Max.x) * 0.5f, (cb.Min.y + cb.Max.y) * 0.5f), 12, K(0x0f0f0f));
         if (ih.hover) CursorHand();
-        bool ch = ih.click; if (ch) v = !v;
-        y += 24 + 4;
-        return ch;
+        if (ih.click) v = !v;
+      };
+      auto section = [&](const char* title, const char* note = nullptr, bool* on = nullptr, uint32_t hex = pal::mint) {
+        HLine(ox, ox + W, oy + y, K(pal::g2a)); y += 1 + 4;
+        Text(x, oy + y + 9, MONO_R, 9, K(pal::t88), Upper(title).c_str(), 0.09f);
+        float rx = x + w;
+        if (on) { checkBox(ImRect(rx - 14, oy + y + 2, rx, oy + y + 16), *on, hex); rx -= 22; }
+        if (note) TextR(rx, oy + y + 9, MONO_R, 8, K(pal::t66), note);
+        y += 18 + 2;
+      };
+      auto slider = [&](const char* label, const char* val, uint32_t id, float& v, float lo, float hi, uint32_t hex, bool dim) -> bool {
+        float prev = g.alpha; if (dim) g.alpha *= 0.5f;
+        Text(x, oy + y + kRow * 0.5f, UI_S, 10, K(pal::t88), label);
+        TextR(x + w, oy + y + kRow * 0.5f, MONO_B, 10, K(hex), val);
+        bool ch = Slider(id, Rc(x + kLab, oy + y + kRow * 0.5f - 3, w - kLab - 44, 6), v, hex, lo, hi);
+        g.alpha = prev; y += kRow; return ch;
       };
       auto intRow = [&](const char* label, int& v, int lo, int hi, uint32_t id, uint32_t hex) {
-        float fv = (float)v; char vb[24]; snprintf(vb, sizeof vb, "%d", v); bool ch = false;
-        y += SliderRow(x, oy + y, w, label, vb, id, fv, (float)lo, (float)hi, hex, &ch);
-        if (ch) v = (int)std::lround(std::clamp(fv, (float)lo, (float)hi));
+        float fv = (float)v; char vb[24]; snprintf(vb, sizeof vb, "%d", v);
+        if (slider(label, vb, id, fv, (float)lo, (float)hi, hex, false)) v = (int)std::lround(std::clamp(fv, (float)lo, (float)hi));
       };
       auto fltRow = [&](const char* label, float& v, float lo, float hi, uint32_t id, uint32_t hex, bool dim) {
-        char vb[24]; snprintf(vb, sizeof vb, "%.2f", v); bool ch = false; float prev = g.alpha; if (dim) g.alpha *= 0.5f;
-        y += SliderRow(x, oy + y, w, label, vb, id, v, lo, hi, hex, &ch);
-        g.alpha = prev;
+        char vb[24]; snprintf(vb, sizeof vb, "%.2f", v);
+        slider(label, vb, id, v, lo, hi, hex, dim);
       };
-      HLine(ox, ox + W, oy + y, K(pal::g2a)); y += 1 + 6;
-      Label(x, oy + y, "Flip"); y += 9 + 4;
-      {   // 0 none, 1 mirror X, 2 mirror Y, 3 both
-        const char* fl4[4] = {"NONE", "X", "Y", "X+Y"}; float bw = (w - 3 * 4) / 4.f;
+      HLine(ox, ox + W, oy + y, K(pal::g2a)); y += 1 + 4;
+      {   // Flip: 0 none, 1 mirror X, 2 mirror Y, 3 both — label and the four choices on one line
+        Text(x, oy + y + 12, UI_S, 10, K(pal::t88), "Flip");
+        const char* fl4[4] = {"NONE", "X", "Y", "X+Y"}; float bw = (w - kLab - 3 * 3) / 4.f;
         for (int i = 0; i < 4; ++i) {
-          ImRect br(x + i * (bw + 4), oy + y, x + i * (bw + 4) + bw, oy + y + 26);
+          ImRect br(x + kLab + i * (bw + 3), oy + y + 2, x + kLab + i * (bw + 3) + bw, oy + y + 22);
           Hit h = HitR(br); bool on = sl->oflip == i;
           Box(br, on ? K(pal::coral, 0.2f) : h.hover ? K(pal::ctrlHover) : K(pal::g1c), on ? K(pal::coral) : K(pal::g22), 3);
-          TextC((br.Min.x + br.Max.x) * 0.5f, (br.Min.y + br.Max.y) * 0.5f, MONO_B, 9, K(on ? pal::coral : pal::tcc), fl4[i], 0.06f);
+          TextC((br.Min.x + br.Max.x) * 0.5f, (br.Min.y + br.Max.y) * 0.5f, MONO_B, 8, K(on ? pal::coral : pal::tcc), fl4[i], 0.04f);
           if (h.hover) CursorHand();
           if (h.click && !on) { A.pushHist(); sl->oflip = i; }
         }
-        y += 26 + 8;
+        y += 24;
       }
-      checkRow("Is key", sl->isKey, pal::coral);
-      checkRow("Black BG", sl->blackBg, pal::coral);
-      y += 2;
+      {   // Is key / Black BG side by side
+        const char* kl[2] = {"Is key", "Black BG"}; bool* kv[2] = {&sl->isKey, &sl->blackBg};
+        for (int i = 0; i < 2; ++i) {
+          float fx = x + i * (w * 0.5f + 4);
+          Text(fx, oy + y + 12, UI_S, 10, K(pal::te0), kl[i]);
+          float cx0 = fx + TextW(UI_S, 10, kl[i]) + 8;
+          checkBox(ImRect(cx0, oy + y + 5, cx0 + 14, oy + y + 19), *kv[i], pal::coral);
+        }
+        y += 26;
+      }
       intRow("Brightness", sl->brightness, -100, 100, 0x3201, pal::yellow);
       intRow("Contrast", sl->contrast, -100, 100, 0x3202, pal::yellow);
       intRow("Red", sl->red, -100, 100, 0x3203, pal::red);
       intRow("Green", sl->green, -100, 100, 0x3204, pal::mint);
       intRow("Blue", sl->blue, -100, 100, 0x3205, pal::cyan);
-      section("Soft edge", "NOT RENDERED YET");
-      checkRow("Enabled", sl->softEdge, pal::mint);
+      y += 4;
+      section("Soft edge", "NOT RENDERED YET", &sl->softEdge, pal::mint);
       fltRow("Gamma red", sl->seGammaR, 0.1f, 4.f, 0x3211, pal::red, !sl->softEdge);
       fltRow("Gamma green", sl->seGammaG, 0.1f, 4.f, 0x3212, pal::mint, !sl->softEdge);
       fltRow("Gamma blue", sl->seGammaB, 0.1f, 4.f, 0x3213, pal::cyan, !sl->softEdge);
       fltRow("Gamma", sl->seGamma, 0.1f, 4.f, 0x3214, pal::yellow, !sl->softEdge);
       fltRow("Luminance", sl->seLum, 0.f, 1.f, 0x3215, pal::yellow, !sl->softEdge);
       fltRow("Power", sl->sePower, 0.1f, 8.f, 0x3216, pal::yellow, !sl->softEdge);
+      y += 4;
       section("Black level compensation", "NOT RENDERED YET");
       intRow("Red", sl->blR, 0, 100, 0x3221, pal::red);
       intRow("Green", sl->blG, 0, 100, 0x3222, pal::mint);
       intRow("Blue", sl->blB, 0, 100, 0x3223, pal::cyan);
+      y += 4;
     }
     if (output && sl->warp != 0) {
       HLine(ox, ox + W, oy + y, K(pal::g2a)); y += 1 + 6;
       Text(x, oy + y + 4.5f, MONO_R, 9, K(pal::t88), "WARPING", 0.09f); y += 9 + 6;
-      Text(x, oy + y + 5, UI_S, 10, K(pal::t88), "Point mode");
-      TextR(x + w, oy + y + 5, MONO_B, 10, K(pal::coral), "Linear");
-      y += 10 + 8;
+      Text(x, oy + y + 11, UI_S, 10, K(pal::t88), "Point mode");
+      TextR(x + w, oy + y + 11, MONO_B, 10, K(pal::coral), "Linear");
+      y += 22;
       std::vector<float> uu, vv; MeshUV(*sl, uu, vv);
       const int sub[2] = {(int)uu.size(), (int)vv.size()};   // subdivisions = the extra grid lines between the borders (0 = a single patch across)
       for (int i = 0; i < 2; ++i) {   // Subdivisions X / Y: label, value, − / +
-        ImRect mb(x + w - 50, oy + y, x + w - 26, oy + y + 24), pb(x + w - 24, oy + y, x + w, oy + y + 24);
-        Text(x, oy + y + 12, UI_S, 10, K(pal::t88), i ? "Subdivisions Y" : "Subdivisions X");
+        ImRect mb(x + w - 46, oy + y + 1, x + w - 24, oy + y + 21), pb(x + w - 22, oy + y + 1, x + w, oy + y + 21);
+        Text(x, oy + y + 11, UI_S, 10, K(pal::t88), i ? "Subdivisions Y" : "Subdivisions X");
         char nb[8]; snprintf(nb, sizeof nb, "%d", sub[i]);
-        TextR(x + w - 58, oy + y + 12, MONO_B, 11, K(pal::tf3), nb);
+        TextR(x + w - 54, oy + y + 11, MONO_B, 11, K(pal::tf3), nb);
         Hit hm = HitR(mb), hp = HitR(pb);
         Box(mb, K(pal::g1c), hm.hover ? K(pal::coral) : K(pal::g22), 3); TextC((mb.Min.x + mb.Max.x) * 0.5f, (mb.Min.y + mb.Max.y) * 0.5f, MONO_B, 11, K(hm.hover ? pal::coral : pal::tcc), "\xE2\x88\x92");
         Box(pb, K(pal::g1c), hp.hover ? K(pal::coral) : K(pal::g22), 3); TextC((pb.Min.x + pb.Max.x) * 0.5f, (pb.Min.y + pb.Max.y) * 0.5f, MONO_B, 11, K(hp.hover ? pal::coral : pal::tcc), "+");
@@ -1961,7 +1980,7 @@ static void PropsPanel(ImRect r) {
           nv = std::clamp(nv, 0, 15);
           if (nv != sub[i]) { A.pushHist(); if (i) { sl->meshRows = nv + 1; sl->meshV.clear(); } else { sl->meshCols = nv + 1; sl->meshU.clear(); } sl->meshLocal.clear(); }   // a new split count starts from an even grid again
         }
-        y += 24 + 4;
+        y += 22;
       }
       y += 4;
       {
