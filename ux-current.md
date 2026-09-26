@@ -293,9 +293,18 @@ Ba vùng: **cây Screen/Slice/Mask** (trái) | **Stage canvas** (giữa) | **Pro
   (`Source Content: Layer · Layer 3 · 1920x1080`). Nguồn không có clip đang live thì nền chỉ còn lưới. ✅
 - **Chế độ warp**: nút Corner-pin (khung) ⇄ Mesh (lưới).
 - **Undo / Redo** (nút trên thanh này và `Ctrl/Cmd+Z`) — dùng chung lịch sử toàn app.
-- **Zoom**: 5 nút icon (phóng to, thu nhỏ, tìm/vừa vùng, phóng tối đa, bật/tắt chế độ tập trung — tên chính xác chưa kiểm chứng). **Alt + lăn chuột**
-  = zoom theo con trỏ. **Lăn chuột** = cuộn dọc, **lăn ngang** = cuộn ngang.
+- **Zoom**: 5 nút icon (phóng to, thu nhỏ, tìm/vừa vùng, phóng tối đa, bật/tắt chế độ tập trung — tên chính xác chưa kiểm chứng). **Lăn chuột**
+  = **zoom theo con trỏ** (2026-09-26; một nấc = 15%, trackpad mượt); `Shift`+lăn = cuộn dọc, **lăn ngang** = cuộn ngang.
   **Kéo chuột phải** = pan.
+- **Hai nút công cụ (2026-09-26, cả Input lẫn Output, nằm cạnh nhóm Undo/Redo):** 🖐 **Bàn tay** — bật thì **kéo chuột trái = pan** khu vực làm việc, mọi thao tác sửa
+  (kéo điểm, chọn, marquee, bút) tạm tắt; ⧉ **Nam châm** — bật thì mọi lần kéo **hít vào điểm và cạnh**: điểm của slice khác/của chính slice, đường x/y trùng nhau, rồi tới cạnh
+  gần nhất, cùng viền khung 1920×1080 (Output) hoặc canvas (Input) và điểm giữa; nét trắng mảnh/vòng tròn cho thấy nó đang hít vào đâu. Ngưỡng 8px màn hình. Giữ **Alt**
+  để đặt tự do. Áp cho kéo góc corner pin, điểm mesh, nhóm điểm, co giãn/di chuyển khung input và khung mask (khi di chuyển thì mép/tâm khung hít vào các đường). Cả hai công tắc
+  chỉ trong phiên (không lưu). ✅
+- **Kéo thả chọn vùng (marquee, 2026-09-26):** kéo chuột trên vùng trống của stage vẽ khung nét đứt. **Trang Output:** chọn mọi **điểm** (góc corner pin của mọi slice
+  đang hiện + điểm mesh của slice đang chọn) nằm trong khung — điểm được chọn hiện đĩa trắng viền coral; **kéo một điểm đã chọn = kéo cả nhóm** cùng một độ dời (nam châm
+  áp cho điểm cầm, không hít vào chính các điểm đang di chuyển); phím mũi tên cũng dịch cả nhóm; bấm vào chỗ trống thả nhóm. **Trang Input:** chọn mọi slice mà khung input chạm vào
+  khung kéo (chọn nhiều slice). Ctrl/Cmd/Shift + kéo = thêm vào vùng chọn hiện có. ✅
 - Menu **Reset** (theo trang đang xem): Input → Whole area; Output → Reset 4 corner pins · Match output to input · Reset mesh warp · Reset all warping.
 
 **Trang Input**: kéo **4 góc** của khung cyan để đổi vùng lấy (tối thiểu 20px). ✅
@@ -383,7 +392,7 @@ Cả 4 field lưu trong `settings.json` (`SaveSettings`/`LoadSettings`,
 | `F11` | Mở/đóng cửa sổ output máy chiếu |
 | `Esc` / `F11` / `Ctrl+W` (`Cmd+W`) **khi cửa sổ output đang được focus** | **Đóng cửa sổ output** — trước đây `F11` chỉ ăn khi cửa sổ chính có focus, còn cửa sổ máy chiếu (GLFW trần, không qua ImGui) không nhận phím nào. Nay nó có callback phím riêng (`OutputKeyCb`, `output.cpp`); chỉ tác dụng lúc nhấn xuống, phím khác không đóng. Có trong bảng phím tắt (Help) |
 | `Esc` | Đóng popover/menu/hộp thoại/ô đổi tên/Cài đặt |
-| Alt + lăn chuột (Mapping) | Zoom theo con trỏ |
+| Lăn chuột (Mapping, trang Input/Output) | **Zoom theo con trỏ** (điểm dưới con trỏ đứng yên); `Shift`+lăn = cuộn dọc; lăn ngang/trackpad = cuộn ngang. Trước đây lăn = cuộn, phải `Alt`+lăn mới zoom |
 
 Phím tắt bị vô hiệu khi đang gõ chữ hoặc khi có menu/hộp thoại mở. Chưa có `Ctrl+C/V` hay phím gán tuỳ ý cho từng clip.
 

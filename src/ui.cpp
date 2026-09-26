@@ -269,6 +269,19 @@ void Icon(const char* n, ImVec2 c, float sz, ImU32 col) {
     Poly({P(8, 21), P(5, 15), P(4, 12), P(5.5f, 11), P(8, 13), P(8, 5), P(9, 4), P(10, 5), P(10, 11), P(10, 3), P(11, 2), P(12, 3), P(12, 11),
           P(12, 4), P(13, 3), P(14, 4), P(14, 11), P(14, 6), P(15, 5), P(16, 6), P(16, 15), P(14, 21), P(8, 21)});
   }
+  else if (is("magnet")) {   // horseshoe: outer arc + inner arc joined by the two legs, pole tips marked
+    std::vector<ImVec2> pl;
+    for (int i = 0; i <= 12; ++i) { float a = 3.14159265f * (1.f - i / 12.f); pl.push_back(P(12 + 8 * std::cos(a), 11 - 8 * std::sin(a))); }
+    std::vector<ImVec2> pin;
+    for (int i = 0; i <= 12; ++i) { float a = 3.14159265f * (1.f - i / 12.f); pin.push_back(P(12 + 4 * std::cos(a), 11 - 4 * std::sin(a))); }
+    std::vector<ImVec2> poly; poly.push_back(P(4, 21)); poly.push_back(P(4, 11));
+    for (auto& q : pl) poly.push_back(q);
+    poly.push_back(P(20, 11)); poly.push_back(P(20, 21)); poly.push_back(P(16, 21)); poly.push_back(P(16, 11));
+    for (int i = (int)pin.size() - 1; i >= 0; --i) poly.push_back(pin[i]);
+    poly.push_back(P(8, 11)); poly.push_back(P(8, 21));
+    dl->AddPolyline(poly.data(), (int)poly.size(), col, ImDrawFlags_Closed, th);
+    Line(4, 16, 8, 16); Line(16, 16, 20, 16);
+  }
   else if (is("repeat")) { Poly({P(17, 2), P(21, 6), P(17, 10)}); Poly({P(3, 11), P(3, 9), P(5, 6), P(21, 6)}); Poly({P(7, 22), P(3, 18), P(7, 14)}); Poly({P(21, 13), P(21, 15), P(19, 18), P(3, 18)}); }
 }
 

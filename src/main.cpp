@@ -627,7 +627,7 @@ int main(int argc, char** argv) {
   std::string compTest, clipTest, pvTest; std::vector<std::string> layerTest, clipColors;
   OsDrop dropTest;   // --drop: injected at frame 8 of a --shot run, standing in for a real Explorer drag
   bool openOut = false; std::string outShot;
-  bool outKeyTest = false, scriptCtrl = false;
+  bool outKeyTest = false, scriptCtrl = false, startSnap = false, startHand = false;
   std::string roundtrip; std::vector<int> fxTest;
   std::string shot; int startScreen = 0, frames = 12, W = 1440, H = 900, tab = -1, page = -1;
   bool sel = false, scaleGiven = false; int selLi = 0, selCi = 0, ctxTest = 0, cliScale = 100;
@@ -643,6 +643,11 @@ int main(int argc, char** argv) {
     else if (a == "--menu") A.projectMenu = true;
     else if (a == "--out") openOut = true;
     else if (a == "--outkeytest") outKeyTest = true;
+    else if (a == "--snap") startSnap = true;    // test aid: start with the Mapping magnet on
+    else if (a == "--hand") startHand = true;    // test aid: start with the Mapping hand tool on
+    else if (a == "--wheel" && i + 1 < argc) {   // test aid: mouse wheel notch(es) at x,y,amount
+      Script sc{}; sc.kind = 4; sscanf(argv[++i], "%f,%f,%f", &sc.x0, &sc.y0, &sc.x1); script.push_back(sc);
+    }
     else if (a == "--shift") scriptCtrl = true;   // test aid: hold Shift through the whole scripted run (multi-selection screenshots; Ctrl+click is a right click on macOS)
     else if (a == "--outshot" && i + 1 < argc) { openOut = true; outShot = argv[++i]; }
     else if (a == "--scale" && i + 1 < argc) { A.prefs.scale = atoi(argv[++i]); cliScale = A.prefs.scale; scaleGiven = true; }
@@ -1064,6 +1069,16 @@ int main(int argc, char** argv) {
       A.nudgeSelection(4.f, 4.f);
       if (std::fabs(A.screens[0].slices[0].q[2].x - qa.x - 4.f) > 1e-3f) return fail("arrow keys on a selected screen must move all its slices on the Output page");
     }
+    NewProject(); {   // picked output points move together (arrow keys use the same path as the group drag)
+      Screen& sc0 = A.screens[0]; A.selSc = sc0.id; A.selSl = sc0.slices[0].id; A.selKind = 1; A.mapMulti.clear();
+      ImVec2 a0 = sc0.slices[0].q[0], b0 = sc0.slices[1].q[2], c0 = sc0.slices[0].q[1];
+      A.mpage = 1; A.mapPts = {{sc0.slices[0].id, 0}, {sc0.slices[1].id, 2}};
+      A.nudgeSelection(5.f, -3.f);
+      if (std::fabs(sc0.slices[0].q[0].x - a0.x - 5.f) > 1e-3f || std::fabs(sc0.slices[0].q[0].y - a0.y + 3.f) > 1e-3f ||
+          std::fabs(sc0.slices[1].q[2].x - b0.x - 5.f) > 1e-3f || std::fabs(sc0.slices[1].q[2].y - b0.y + 3.f) > 1e-3f) return fail("arrow keys must move every picked point, on every slice, by the same amount");
+      if (sc0.slices[0].q[1].x != c0.x || sc0.slices[0].q[1].y != c0.y) return fail("points that were not picked must stay put");
+      A.mapPts.clear(); A.mpage = 0;
+    }
     // Timeline: tlLayout lays clips back-to-back by real duration; tlSync flips exactly the clip under the playhead live.
     NewProject();
     auto lay = A.tlLayout();
@@ -1382,6 +1397,7 @@ int main(int argc, char** argv) {
 
   NewProject();
   A.screen = startScreen;
+  A.mapSnap = startSnap; A.mapHand = startHand;   // (NewProject just reset the app state)
   if (tab >= 0) A.tab = tab;
   if (page >= 0) A.mpage = page;
   if (outKeyTest) {   // headless check that the output window's own key callback is really installed and closes it
@@ -1487,6 +1503,10 @@ int main(int argc, char** argv) {
       int rel = frame - 3;
       if (rel >= 0 && rel / 6 < (int)script.size()) {
         const Script& s = script[rel / 6]; int st = rel % 6;
+        if (s.kind == 4) {   // wheel at a position: move there on frame 0, scroll on frame 1
+          io.AddMousePosEvent(s.x0 / Zs, s.y0 / Zs);
+          if (st == 1) io.AddMouseWheelEvent(0.f, s.x1);
+        } else
         if (s.kind == 3) {   // key chord: modifiers + key down on frame 1, up on frame 3
           const ImGuiKey cmdMod = io.ConfigMacOSXBehaviors ? ImGuiMod_Super : ImGuiMod_Ctrl;   // ImGui swaps Ctrl/Super on macOS: the Cmd key is what becomes io.KeyCtrl
           if (st == 1) { if (s.ctrl) io.AddKeyEvent(cmdMod, true); if (s.shift) io.AddKeyEvent(ImGuiMod_Shift, true); io.AddKeyEvent((ImGuiKey)s.key, true); }

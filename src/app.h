@@ -351,6 +351,12 @@ struct App {
   enum MaskShape { MS_HEART, MS_SQUARE, MS_CIRCLE, MS_TRIANGLE, MS_HEXAGON };
   void addMask(int shape = MS_SQUARE);
   // Pen: click points on the Output stage, click the first point (or Enter / double-click) to close, Esc cancels. Runtime only.
+  // Stage tools (Input and Output selection): hand = left-drag pans the view instead of editing; magnet = drags snap to points and edges.
+  bool mapHand = false, mapSnap = false;
+  // Output points picked together (marquee drag, Ctrl/Cmd/Shift-click): idx 0..3 = a slice's corner pin, 1000 + row*100 + col = a mesh point.
+  // Dragging any of them, or the arrow keys, moves the whole group. Runtime only.
+  struct PtRef { std::string sl; int idx; };
+  std::vector<PtRef> mapPts;
   bool maskPen = false; std::vector<ImVec2> penPts;
   bool penReplace = false;   // the pen redraws the SELECTED mask instead of adding a new one
   void startMaskPen(bool replaceSelected = false); void finishMaskPen(); void cancelMaskPen();

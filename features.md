@@ -137,7 +137,7 @@
 | [ ] | **F18** | Polygon slice (không chỉ hình chữ nhật) | L | 🟡 P2 |
 | [ ] | **F19** | Color correction per-slice (brightness/gamma/RGB) | M | 🟡 P2 |
 | [~] | **F20** | **Soft edge blending** (ghép nhiều máy chiếu) | L | 🟡 P2 |
-| [ ] | **F21** | Snapping / đường gióng khi kéo | M | 🟡 P2 |
+| [~] | **F21** | Snapping / đường gióng khi kéo | M | 🟡 P2 |
 | [x] | **F22** | Slice input từ Layer / Group cụ thể | M | 🟡 P2 |
 | [ ] | **F23** | Output ra Spout / NDI (screen ảo) | M | 🟡 P2 |
 | [ ] | **F24** | LED mapping qua Art-Net / sACN | XL | ⚪ P3 |
@@ -649,3 +649,10 @@ Nay khung input sửa giống khung transform của Preview Cue: **kéo trong kh
 - **Copy/cut/paste/duplicate/delete** (`Ctrl/Cmd+C/X/V/D`, `Delete`): `copyKind/pasteClip/deleteKind/duplicateKind` — copy **screen** mang theo slice + mask, copy **slice** mang theo mask; dán ra id mới cho từng lớp (kiểm không trùng id trong toàn dự án). Dán mask/slice/screen vào đúng cha (slice hiện tại / screen hiện tại / sau screen đang chọn). Xoá giữ ≥1 screen và ≥1 slice mỗi screen. Menu chuột phải khung input (Duplicate/Copy/Cut/Paste) dùng cùng cơ chế nên cũng thao tác nhiều slice.
 - **Mũi tên** (`nudgeSelection`): Input → khung input hoặc mask (px canvas); Output → quad slice / mọi slice của screen. 1 px, Shift 10 px.
 - Kiểm bằng `--roundtrip` (chọn 2 slice, không trộn loại, bỏ chọn, dán 2 slice kèm mask, xoá, bảo vệ slice/screen cuối, dán screen kèm slice+mask, copy mask sang slice khác, nudge cả hai trang) và bằng **phím thật qua handler** nhờ cờ thử mới `--press ctrl+c|ctrl+v|delete|shift+right…` + `--shift` (chụp: dán slice → "Left Pillar Accent copy", Delete xoá bản dán, dán screen → "LED Wall Upstage copy" kèm Panel Row A/B và mask, Shift+→ và ↓↓ đổi Left 60→70, Top 120→122; Shift-bấm chọn 2 slice, Shift-bấm screen/mask bị bỏ qua, nhãn "2 SLICES"). **Chưa thử:** kéo/sửa properties áp cho tất cả phần tử chọn (hiện chỉ áp phần tử chính), Ctrl-bấm chọn nhiều trên máy Windows/Linux thật.
+
+### Mapping: zoom bằng lăn chuột, nút bàn tay, nút nam châm, chọn vùng nhiều điểm (2026-09-26, theo yêu cầu người dùng)
+- **Lăn chuột = zoom theo con trỏ** ở Input/Output (`Stage`, `mapping.cpp`); Shift+lăn cuộn dọc.
+- **Bàn tay** (`A.mapHand`) — kéo trái để pan, tắt mọi sửa; **Nam châm** (`A.mapSnap`, Alt = tạm tắt) — `BuildSnap`/`SnapPoint`/`SnapRectMove`: hít vào điểm > đường x/y trùng > cạnh, có nét/vòng chỉ báo. Icon `magnet` mới trong `ui.cpp`.
+- **Marquee + nhóm điểm:** `A.mapPts` (góc 0..3, điểm mesh `1000 + hàng*100 + cột`), `CapturePoints`/`MovePointsTo` dùng chung cho kéo nhóm (`dragKind 7`) và phím mũi tên. Trang Input: marquee chọn nhiều slice (dùng lại chọn nhiều `mapSelectRefs`).
+- **F21 `[ ]` → `[~]`:** snapping + đường gióng có thật cho kéo góc/điểm mesh/khung input/khung mask. Đã chụp xác nhận: kéo góc slice gần góc khung output hít đúng vào (0,0) (kể cả khi kéo nhóm 2 điểm); chưa chụp riêng hít vào **cạnh** và vào điểm của slice khác, chưa hít khi **xoay**. Không tick `[x]` cho tới khi kiểm đủ. Đếm mới 54/17/64.
+- Kiểm bằng `--shot` với cờ thử mới `--snap`, `--hand`, `--wheel x,y,n` (đã chụp: zoom vào rõ rệt, bàn tay pan mà không sửa gì, marquee chọn 2 điểm ở 2 slice khác nhau và kéo cả hai cùng độ dời, marquee Input chọn 2 slice) và `--roundtrip` (phím mũi tên dịch đúng các điểm đã chọn, không đụng điểm khác).

@@ -313,7 +313,7 @@ void App::setMaskShape(int shape) {   // Mask properties > Input Mask: the shape
 void App::startMaskPen(bool replaceSelected) {
   if (!curSlice()) return;
   penReplace = replaceSelected && curMask() != nullptr;
-  maskPen = true; penPts.clear(); mpage = 0;
+  maskPen = true; mapHand = false; penPts.clear(); mpage = 0;
   if (!penReplace) { selMk.clear(); selKind = 1; }
 }
 void App::cancelMaskPen() { maskPen = false; penReplace = false; penPts.clear(); }
@@ -372,6 +372,36 @@ void App::resetInputRect() {
 static void FreshIds(Slice& c) { c.id = A.uid("slice"); for (auto& m : c.masks) m.id = A.uid("mask"); }
 static void FreshIds(Screen& c) { c.id = A.uid("screen"); for (auto& s : c.slices) FreshIds(s); }
 static int SliceIndex(const Screen& sc, const std::string& id) { for (int i = 0; i < (int)sc.slices.size(); ++i) if (sc.slices[i].id == id) return i; return -1; }
+
+// ── groups of output points (corner pins + mesh points), moved together ──
+struct PtStart { std::string sl; int idx; ImVec2 out; };   // where a point was (output px) when the group move began
+static Slice* SliceById(Screen& sc, const std::string& id) { for (auto& s : sc.slices) if (s.id == id) return &s; return nullptr; }
+static bool PointPos(const Slice& s, int idx, ImVec2& out) {
+  if (idx < 1000) { if (idx < 0 || idx > 3) return false; out = s.q[idx]; return true; }
+  auto gr = MeshGrid(s); int rr = (idx - 1000) / 100, cc = (idx - 1000) % 100;
+  if (s.warp == 0 || rr < 0 || rr >= (int)gr.size() || cc < 0 || cc >= (int)gr[rr].size()) return false;
+  out = gr[rr][cc]; return true;
+}
+static std::vector<PtStart> CapturePoints(Screen& sc, const std::vector<App::PtRef>& refs) {
+  std::vector<PtStart> out;
+  for (auto& r : refs) if (Slice* s = SliceById(sc, r.sl)) { ImVec2 p; if (PointPos(*s, r.idx, p)) out.push_back({r.sl, r.idx, p}); }
+  return out;
+}
+// Put every captured point at (its start + delta): corners first (they define the keystone), then mesh points through the new keystone.
+static void MovePointsTo(Screen& sc, const std::vector<PtStart>& st, ImVec2 delta) {
+  auto clampOut = [](ImVec2 p) { return ImVec2(std::clamp(std::round(p.x + 0.f), -4000.f, 8000.f), std::clamp(std::round(p.y + 0.f), -4000.f, 8000.f)); };
+  for (auto& p : st) if (p.idx < 1000) if (Slice* s = SliceById(sc, p.sl)) s->q[p.idx] = clampOut(ImVec2(p.out.x + delta.x, p.out.y + delta.y));
+  for (auto& s : sc.slices) {
+    bool any = false; for (auto& p : st) if (p.idx >= 1000 && p.sl == s.id) any = true;
+    if (!any || s.warp == 0) continue;
+    Keystone k(s.q); auto lg = LocalGrid(s);
+    for (auto& p : st) if (p.idx >= 1000 && p.sl == s.id) {
+      int rr = (p.idx - 1000) / 100, cc = (p.idx - 1000) % 100; ImVec2 loc;
+      if (rr < (int)lg.size() && cc < (int)lg[rr].size() && k.Inv(clampOut(ImVec2(p.out.x + delta.x, p.out.y + delta.y)), loc)) lg[rr][cc] = loc;
+    }
+    s.meshLocal = lg;
+  }
+}
 
 // ── multi-selection ──
 static bool RefIs(int kind, const App::MapRef& a, const App::MapRef& b) { return kind == 0 ? a.sc == b.sc : kind == 1 ? a.sl == b.sl : a.mk == b.mk; }
@@ -537,7 +567,7 @@ void App::pasteClip() {
 }
 void App::nudgeSelection(float dx, float dy) {
   std::vector<MapRef> sel = mapSelection();
-  if (sel.empty() || maskPen) return;
+  if ((sel.empty() && !(mpage == 1 && !mapPts.empty())) || maskPen) return;
   int kind = MapKind();
   auto slice = [&](const MapRef& r) -> Slice* { for (auto& sc : screens) if (sc.id == r.sc) for (auto& sl : sc.slices) if (sl.id == r.sl) return &sl; return nullptr; };
   auto clampQ = [](float v) { return std::clamp(v, -4000.f, 8000.f); };
@@ -546,6 +576,8 @@ void App::nudgeSelection(float dx, float dy) {
       if (kind == 2) { for (auto& sc : screens) if (sc.id == r.sc) for (auto& sl : sc.slices) if (sl.id == r.sl) for (auto& m : sl.masks) if (m.id == r.mk) { m.x += dx; m.y += dy; MaskRebuild(m); } }
       else if (kind == 1) if (Slice* s = slice(r)) { s->ix += (int)std::lround(dx); s->iy += (int)std::lround(dy); }
     }
+  } else if (!mapPts.empty()) {   // Output with points picked: move exactly those
+    if (Screen* sc = curScreen()) { auto st = CapturePoints(*sc, mapPts); MovePointsTo(*sc, st, ImVec2(dx, dy)); }
   } else {            // Output: the selected slices' quads, or every slice of the selected screens (the mesh rides along with the keystone)
     auto moveQ = [&](Slice& s) { for (auto& q : s.q) { q.x = clampQ(q.x + dx); q.y = clampQ(q.y + dy); } };
     for (auto& r : sel) {
@@ -883,8 +915,85 @@ static void RailPopover(ImRect rail) {
 static int dragKind = 0, dragIdx = 0;  // 1 corner, 2 input resize (0..3 corners, 10..13 edge middles), 3 mask point, 4 mesh point (row*100+col), 5 input move, 6 input rotate
 static ImVec2 dragOff;                  // grabbed point minus cursor (output px), so grabbing off-centre doesn't jump
 static bool dragOnMask = false;          // the input-frame drags (2 resize / 5 move / 6 rotate) edit the selected mask instead of the slice
+static std::vector<PtStart> gGroup;      // the points being dragged together (dragKind 7)
+static ImVec2 gGrabStart;                // the grabbed point of that group, output px, at grab time
+static int gMarquee = 0; static ImVec2 gMarqueeA;   // 0 idle, 1 pressed on empty stage, 2 dragging a selection rectangle
 static ImVec2 dragAnchor;               // input rect drags: the fixed corner/edge-middle (resize) in canvas px
 static float dragAng0 = 0.f, dragRot0 = 0.f;   // input rect rotate: pointer angle and rect rotation when the drag began
+
+// ── magnet: drags snap to other points, to edges, and to the canvas / output box ──
+struct SnapSet { std::vector<float> xs, ys; std::vector<ImVec2> pts; std::vector<std::pair<ImVec2, ImVec2>> segs; };
+static std::vector<std::pair<ImVec2, ImVec2>> gGuideLines;   // stage-space lines/segments the last snap locked onto (drawn by Stage)
+static std::vector<ImVec2> gGuideDots;
+static void AddRectTargets(SnapSet& S, const RectXf& R) {
+  ImVec2 c[4]; RectCorners(R, c);
+  for (int i = 0; i < 4; ++i) { S.pts.push_back(c[i]); S.segs.push_back({c[i], c[(i + 1) % 4]}); }
+}
+static SnapSet BuildSnap(const Screen* sc, const Slice* sl, const Mask* mk, bool onMask, int skipQ) {
+  SnapSet S;
+  if (A.mpage == 1) {   // Output: the screen's 1920x1080 box, and every visible slice's corners and edges
+    S.xs = {0.f, 960.f, 1920.f}; S.ys = {0.f, 540.f, 1080.f};
+    if (sc) for (auto& o : sc->slices) {
+      if (!o.visible) continue;
+      bool own = sl && o.id == sl->id;
+      for (int i = 0; i < 4; ++i) {
+        if (own && i == skipQ) continue;   // never snap a corner onto itself
+        S.pts.push_back(o.q[i]);
+        if (!(own && (i == skipQ || (i + 1) % 4 == skipQ))) S.segs.push_back({o.q[i], o.q[(i + 1) % 4]});
+      }
+    }
+  } else {              // Input: the composition canvas, other slices' input rects (and the slice's own rect when editing its mask)
+    float W = (float)A.canvasW, H = (float)A.canvasH;
+    S.xs = {0.f, W * 0.5f, W}; S.ys = {0.f, H * 0.5f, H};
+    if (sc) for (auto& o : sc->slices) {
+      if (!o.visible) continue;
+      if (sl && o.id == sl->id && !onMask) continue;   // the rect being edited is not a target for itself
+      AddRectTargets(S, RectOfSlice(o));
+    }
+    (void)mk;
+  }
+  return S;
+}
+// Snap a point: an existing point wins, then a shared x / y line, then the nearest spot on an edge. thr is in stage px.
+static ImVec2 SnapPoint(ImVec2 p, const SnapSet& S, float thr) {
+  float best = thr; const ImVec2* bp = nullptr;
+  for (auto& q : S.pts) { float d = std::hypot(q.x - p.x, q.y - p.y); if (d < best) { best = d; bp = &q; } }
+  if (bp) { gGuideDots.push_back(*bp); return *bp; }
+  ImVec2 r = p; bool sx = false, sy = false; float bx = thr, by = thr;
+  auto tryX = [&](float x) { float d = std::fabs(p.x - x); if (d < bx) { bx = d; r.x = x; sx = true; } };
+  auto tryY = [&](float y) { float d = std::fabs(p.y - y); if (d < by) { by = d; r.y = y; sy = true; } };
+  for (float x : S.xs) tryX(x); for (float y : S.ys) tryY(y);
+  for (auto& q : S.pts) { tryX(q.x); tryY(q.y); }
+  if (sx) gGuideLines.push_back({ImVec2(r.x, -4000.f), ImVec2(r.x, 8000.f)});
+  if (sy) gGuideLines.push_back({ImVec2(-4000.f, r.y), ImVec2(8000.f, r.y)});
+  if (!sx && !sy) {   // no shared line: slide onto the nearest edge
+    float bd = thr; const std::pair<ImVec2, ImVec2>* bs = nullptr; ImVec2 bpnt = p;
+    for (auto& sg : S.segs) {
+      ImVec2 a = sg.first, b = sg.second, ab(b.x - a.x, b.y - a.y);
+      float l2 = ab.x * ab.x + ab.y * ab.y; if (l2 < 1e-6f) continue;
+      float t = std::clamp(((p.x - a.x) * ab.x + (p.y - a.y) * ab.y) / l2, 0.f, 1.f);
+      ImVec2 pr(a.x + ab.x * t, a.y + ab.y * t); float d = std::hypot(pr.x - p.x, pr.y - p.y);
+      if (d < bd) { bd = d; bs = &sg; bpnt = pr; }
+    }
+    if (bs) { r = bpnt; gGuideLines.push_back(*bs); }
+  }
+  return r;
+}
+// Snap a rect that is being moved: its edges / centre (of its bounding box) onto shared x / y lines.
+static void SnapRectMove(RectXf& R, const SnapSet& S, float thr) {
+  ImVec2 c[4]; RectCorners(R, c);
+  float mnx = c[0].x, mxx = mnx, mny = c[0].y, mxy = mny;
+  for (auto& q : c) { mnx = std::min(mnx, q.x); mxx = std::max(mxx, q.x); mny = std::min(mny, q.y); mxy = std::max(mxy, q.y); }
+  const float cxs[3] = {mnx, (mnx + mxx) * 0.5f, mxx}, cys[3] = {mny, (mny + mxy) * 0.5f, mxy};
+  float bdx = thr, bdy = thr, dx = 0, dy = 0, gx = 0, gy = 0; bool sx = false, sy = false;
+  auto tx = [&](float t) { for (float cnd : cxs) { float d = t - cnd; if (std::fabs(d) < bdx) { bdx = std::fabs(d); dx = d; gx = t; sx = true; } } };
+  auto ty = [&](float t) { for (float cnd : cys) { float d = t - cnd; if (std::fabs(d) < bdy) { bdy = std::fabs(d); dy = d; gy = t; sy = true; } } };
+  for (float x : S.xs) tx(x); for (float y : S.ys) ty(y);
+  for (auto& q : S.pts) { tx(q.x); ty(q.y); }
+  R.x += dx; R.y += dy;
+  if (sx) gGuideLines.push_back({ImVec2(gx, -4000.f), ImVec2(gx, 8000.f)});
+  if (sy) gGuideLines.push_back({ImVec2(-4000.f, gy), ImVec2(8000.f, gy)});
+}
 
 // ── stage view ──
 // Corner pins and mesh points can sit far outside the 1920x1080 output (-4000..8000), so the stage is a free pan/zoom
@@ -1085,6 +1194,20 @@ static void Stage(ImRect r) {
       A.openCtx(ImVec2(rb.Min.x - 60, rb.Max.y + 4), mi);
     }
     xr = hg.Min.x - 6;
+    {   // stage tools: hand (left-drag pans) and magnet (drags snap to points and edges; hold Alt to bypass)
+      ImRect tg(xr - (2 + 2 * 22 + 2), cy - 13, xr, cy + 13);
+      Box(tg, K(pal::g1c), K(pal::g22), 3);
+      const char* ti[2] = {"hand", "magnet"}; bool* tv[2] = {&A.mapHand, &A.mapSnap};
+      for (int i = 0; i < 2; ++i) {
+        ImRect br(tg.Min.x + 2 + i * 22, cy - 10, tg.Min.x + 2 + i * 22 + 20, cy + 10);
+        Hit h = HitR(br); bool on = *tv[i];
+        Box(br, on ? K(pal::coral, 0.2f) : 0, on ? K(pal::coral, 0.5f) : 0, 3);
+        Icon(ti[i], ImVec2((br.Min.x + br.Max.x) * 0.5f, cy), 12, K(on ? pal::coral : h.hover ? pal::white : pal::tcc));
+        if (h.hover) CursorHand();
+        if (h.click) *tv[i] = !*tv[i];
+      }
+      xr = tg.Min.x - 4;
+    }
     std::string ro = A.mpage == 0 ? "Source Content: " + (sl ? SliceSourceName(*sl) + " \xC2\xB7 " : std::string()) + std::to_string(A.canvasW) + "x" + std::to_string(A.canvasH) : (sc ? sc->name + " (" + sc->outDev + ")" : "");
     float lim = leftEnd + 8;
     float rw = std::min(TextW(MONO_R, 10, ro.c_str()), std::max(0.f, xr - lim));
@@ -1107,21 +1230,26 @@ static void Stage(ImRect r) {
   bool inArea = area.Contains(m) && !g.blocked;
   ImGuiIO& io = ImGui::GetIO();
   float s = baseW * A.mapZ / SW;   // px per space px
-  if (inArea && !io.KeyAlt && io.MouseWheel != 0.f) A.mapScrollY -= io.MouseWheel * 48.f;
-  if (inArea && !io.KeyAlt && io.MouseWheelH != 0.f) A.mapScrollX -= io.MouseWheelH * 48.f;
-  if (inArea && io.KeyAlt && io.MouseWheel != 0.f) {   // alt+wheel: zoom about the cursor (the point under it stays put)
+  // Mouse wheel = zoom about the cursor (the point under it stays put); Shift+wheel scrolls vertically; a sideways wheel / trackpad pans
+  // horizontally. Panning otherwise: the hand tool, or right-drag.
+  if (inArea && io.MouseWheelH != 0.f) A.mapScrollX -= io.MouseWheelH * 48.f;
+  if (inArea && io.MouseWheel != 0.f && io.KeyShift) A.mapScrollY -= io.MouseWheel * 48.f;
+  if (inArea && io.MouseWheel != 0.f && !io.KeyShift) {
     ImVec2 p((m.x - ac.x + A.mapScrollX) / s + SW * 0.5f, (m.y - ac.y + A.mapScrollY) / s + SH * 0.5f);
-    A.mapZ = std::clamp(A.mapZ * (io.MouseWheel > 0 ? 1.15f : 1.f / 1.15f), kMinZoom, kMaxZoom);
+    A.mapZ = std::clamp(A.mapZ * std::pow(1.15f, std::clamp(io.MouseWheel, -3.f, 3.f)), kMinZoom, kMaxZoom);   // a wheel notch = one 15% step; trackpad fractions are smooth
     s = baseW * A.mapZ / SW;
     A.mapScrollX = (p.x - SW * 0.5f) * s + (ac.x - m.x); A.mapScrollY = (p.y - SH * 0.5f) * s + (ac.y - m.y);
   }
-  static bool panning = false; static ImVec2 panM; static float panX, panY;   // right-drag pan
+  static int panBtn = -1; static ImVec2 panM; static float panX, panY;   // right-drag pan, or left-drag while the hand tool is on
   bool rClick = false;   // right button released without dragging = context menu, not a pan
-  if (inArea && ImGui::IsMouseClicked(1) && !panning) { panning = true; panM = m; panX = A.mapScrollX; panY = A.mapScrollY; }
-  if (panning) {
-    if (ImGui::IsMouseDown(1)) { A.mapScrollX = panX - (m.x - panM.x); A.mapScrollY = panY - (m.y - panM.y); }
-    else { rClick = std::hypot(m.x - panM.x, m.y - panM.y) < 4.f; panning = false; }
+  if (panBtn < 0 && inArea) {
+    if (ImGui::IsMouseClicked(1)) panBtn = 1; else if (A.mapHand && ImGui::IsMouseClicked(0)) panBtn = 0;
+    if (panBtn >= 0) { panM = m; panX = A.mapScrollX; panY = A.mapScrollY; }
   }
+  if (panBtn >= 0) {
+    if (ImGui::IsMouseDown(panBtn)) { A.mapScrollX = panX - (m.x - panM.x); A.mapScrollY = panY - (m.y - panM.y); ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll); }
+    else { rClick = panBtn == 1 && std::hypot(m.x - panM.x, m.y - panM.y) < 4.f; panBtn = -1; }
+  } else if (A.mapHand && inArea) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
   // dragging a point to (or past) the stage edge scrolls the view, so the point never slides under the side panels
   if ((dragKind == 1 || dragKind == 3 || dragKind == 4) && ImGui::IsMouseDown(0)) {
     const float edge = 28.f;
@@ -1158,17 +1286,37 @@ static void Stage(ImRect r) {
 
   // ---- drag processing ----
   if (dragKind && !ImGui::IsMouseDown(0)) dragKind = 0;
+  gGuideLines.clear(); gGuideDots.clear();
+  if (A.mpage != 1) A.mapPts.clear();   // picked points belong to the Output page
+  const bool snapOn = A.mapSnap && !io.KeyAlt;   // magnet on; hold Alt to place freely
+  const float snapThr = 8.f / std::max(0.05f, s);   // 8 screen px, in stage px
   if (dragKind && sl) {
     ImVec2 to = Vadd(mo, dragOff);
     if (dragKind == 4) {   // the mesh lives in keystone space: store where the cursor lands in it
       int rr = dragIdx / 100, cc = dragIdx % 100;
-      ImVec2 loc;
-      if (Keystone(sl->q).Inv(inOutput(to), loc)) {
+      ImVec2 loc, tp = inOutput(to);
+      if (snapOn) tp = inOutput(SnapPoint(tp, BuildSnap(sc, sl, nullptr, false, -1), snapThr));
+      if (Keystone(sl->q).Inv(tp, loc)) {
         auto lg = LocalGrid(*sl);
         if (rr < (int)lg.size() && cc < (int)lg[rr].size()) { lg[rr][cc] = loc; sl->meshLocal = lg; }
       }
     }
-    else if (dragKind == 1) sl->q[dragIdx] = inOutput(to);   // the mesh follows on its own — it is keystone-relative
+    else if (dragKind == 7) {   // several points at once: the grabbed one follows the pointer (and the magnet), the rest keep their offsets
+      ImVec2 tp = inOutput(to);
+      if (snapOn) {
+        SnapSet S = BuildSnap(sc, sl, nullptr, false, -1);
+        auto moving = [&](ImVec2 q) { for (auto& p : gGroup) if (std::fabs(p.out.x - q.x) < 0.01f && std::fabs(p.out.y - q.y) < 0.01f) return true; return false; };
+        S.pts.erase(std::remove_if(S.pts.begin(), S.pts.end(), moving), S.pts.end());
+        S.segs.erase(std::remove_if(S.segs.begin(), S.segs.end(), [&](const std::pair<ImVec2, ImVec2>& g2) { return moving(g2.first) || moving(g2.second); }), S.segs.end());
+        tp = inOutput(SnapPoint(tp, S, snapThr));
+      }
+      MovePointsTo(*sc, gGroup, ImVec2(tp.x - gGrabStart.x, tp.y - gGrabStart.y));
+    }
+    else if (dragKind == 1) {   // the mesh follows on its own — it is keystone-relative
+      ImVec2 tp = inOutput(to);
+      if (snapOn) tp = inOutput(SnapPoint(tp, BuildSnap(sc, sl, nullptr, false, dragIdx), snapThr));
+      sl->q[dragIdx] = tp;
+    }
     else if (dragKind == 2 || dragKind == 5 || dragKind == 6) {
       // one editor for both the slice's input rect and a mask: read the rect, edit it in its own rotated frame, write it back
       const bool onMask = dragOnMask && mk;
@@ -1177,6 +1325,7 @@ static void Stage(ImRect r) {
       if (dragKind == 2) {   // resize: the opposite corner / edge middle stays put
         float co = std::cos(R.rot * kDegToRad), si = std::sin(R.rot * kDegToRad);
         ImVec2 P = R.rot == 0.f ? mu : ImVec2(std::round(mo.x), std::round(mo.y));   // upright rects stay inside the canvas; rotated ones may reach past it
+        if (snapOn) { P = SnapPoint(P, BuildSnap(sc, sl, mk, onMask, -1), snapThr); if (R.rot == 0.f) P = inCanvas(P); }
         float dx = P.x - dragAnchor.x, dy = P.y - dragAnchor.y;
         float lx = dx * co + dy * si, ly = -dx * si + dy * co;   // pointer relative to the anchor, in rect-local axes
         float w = R.w, h = R.h, hx = 0, hy = 0;                  // hx/hy: new centre offset from the anchor, local axes
@@ -1206,6 +1355,7 @@ static void Stage(ImRect r) {
         r -= 360.f * std::floor((r + 180.f) / 360.f);   // keep within -180..180
         R.rot = std::fabs(r) < 0.05f ? 0.f : r;
       }
+      if (snapOn && dragKind == 5) SnapRectMove(R, BuildSnap(sc, sl, mk, onMask, -1), snapThr);
       if (onMask) { mk->x = R.x; mk->y = R.y; mk->w = R.w; mk->h = R.h; mk->rot = R.rot; MaskRebuild(*mk); }
       else {   // the slice's rect is whole pixels: round the size first, then keep the centre
         float cx = R.x + R.w * 0.5f, cy = R.y + R.h * 0.5f;
@@ -1218,7 +1368,7 @@ static void Stage(ImRect r) {
   bool scVis = sc->visible;
   // anywhere on the stage, not just inside the output box — a handle dragged outside must be grabbable again
   bool overStage = inArea && ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
-  bool clickPending = ImGui::IsMouseClicked(0) && overStage && !dragKind;
+  bool clickPending = ImGui::IsMouseClicked(0) && overStage && !dragKind && !A.mapHand;   // the hand tool only pans
 
   if (A.mpage == 0) {
     if (!sl) A.cancelMaskPen();
@@ -1253,7 +1403,7 @@ static void Stage(ImRect r) {
       ImVec2 ctrCv(R.x + R.w * 0.5f, R.y + R.h * 0.5f), ctrPx = toPx(ctrCv);
       const float kSqR = 8.f, kRingR = 16.f;
       auto dist = [&](ImVec2 a2, ImVec2 b2) { return std::hypot(a2.x - b2.x, a2.y - b2.y); };
-      const bool live = !A.maskPen;
+      const bool live = !A.maskPen && !A.mapHand;
       int hot = 0, hotIdx = 0;   // what the pointer is over: 2 resize, 6 rotate, 5 move
       if (inArea && dragKind == 0 && live && !frameTookClick) {
         for (int i = 0; i < 4 && !hot; ++i) if (dist(m, cpx[i]) <= kSqR) { hot = 2; hotIdx = i; }
@@ -1318,7 +1468,7 @@ static void Stage(ImRect r) {
       TextC((area.Min.x + area.Max.x) * 0.5f, area.Min.y + 16, MONO_R, 10, K(pal::yellow), "PEN \xC2\xB7 click points \xC2\xB7 click the first point / Enter / double-click to close \xC2\xB7 Esc cancels");
     }
     // Clicking inside another slice's dashed outline selects it (the topmost one when they overlap).
-    if (scVis && inArea && dragKind == 0 && !frameTookClick) {
+    if (scVis && inArea && dragKind == 0 && !frameTookClick && !A.mapHand) {
       for (auto it = sc->slices.rbegin(); it != sc->slices.rend(); ++it) {
         if (!it->visible || (sl && it->id == sl->id)) continue;
         ImVec2 oc[4], opx[4]; InputCorners(*it, oc);
@@ -1339,7 +1489,15 @@ static void Stage(ImRect r) {
     // handles keep a fixed on-screen size at any zoom (they used to scale with it and vanish when zoomed out)
     const float kCornerR = 8.f, kMeshR = 5.5f, kGrabPad = 4.f;
     auto nearPt = [&](ImVec2 outPt, float rad) { ImVec2 p = toPx(outPt); return std::hypot(m.x - p.x, m.y - p.y) <= rad; };
-    auto grab = [&](int kind, int idx, ImVec2 at) { A.pushHist(); dragKind = kind; dragIdx = idx; dragOff = Vsub(at, mo); consumed = true; };
+    // forget picked points that no longer exist (a slice or mesh point was deleted / re-meshed)
+    A.mapPts.erase(std::remove_if(A.mapPts.begin(), A.mapPts.end(), [&](const App::PtRef& r) { Slice* ps = SliceById(*sc, r.sl); ImVec2 tmp; return !ps || !PointPos(*ps, r.idx, tmp); }), A.mapPts.end());
+    auto grab = [&](int kind, int idx, ImVec2 at) { A.mapPts.clear(); A.pushHist(); dragKind = kind; dragIdx = idx; dragOff = Vsub(at, mo); consumed = true; };
+    if (clickPending && !consumed && A.mapPts.size() > 1) {   // pressing one of several picked points drags the whole group
+      for (auto& r : A.mapPts) if (Slice* ps = SliceById(*sc, r.sl)) {
+        ImVec2 pos; if (!PointPos(*ps, r.idx, pos) || !nearPt(pos, kCornerR + kGrabPad)) continue;
+        A.pushHist(); gGroup = CapturePoints(*sc, A.mapPts); gGrabStart = pos; dragKind = 7; dragIdx = 0; dragOff = Vsub(pos, mo); consumed = true; break;
+      }
+    }
     // zoom-to-zone chip next to the selected slice label
     ImRect zoomBtn; bool haveZoom = false; ImVec2 labelAt; float labelW = 0;
     if (sl && sl->visible) {
@@ -1452,6 +1610,12 @@ static void Stage(ImRect r) {
       g.dl->AddCircleFilled(p, kCornerR + (hot ? 2.f : 0.f), Ca(K(pal::coral)), 24); g.dl->AddCircle(p, kCornerR + (hot ? 2.f : 0.f), Ca(K(pal::white)), 24, 2.5f);
       if (hot) CursorHand();
     }
+    for (auto& r : A.mapPts) if (Slice* ps = SliceById(*sc, r.sl)) {   // the picked points: white discs with a coral ring, on any slice
+      ImVec2 pos; if (!PointPos(*ps, r.idx, pos)) continue;
+      ImVec2 pp = toPx(pos); bool hotP = !dragKind && inArea && std::hypot(m.x - pp.x, m.y - pp.y) <= kCornerR + kGrabPad;
+      g.dl->AddCircleFilled(pp, kCornerR + (hotP ? 2.f : 0.f), Ca(K(pal::white)), 24); g.dl->AddCircle(pp, kCornerR + (hotP ? 2.f : 0.f), Ca(K(pal::coral)), 24, 2.5f);
+      if (hotP) CursorHand();
+    }
     // live readout of the point being dragged — most useful exactly when it is outside the output box
     if (dragKind == 1 || dragKind == 4) {
       ImVec2 at = dragKind == 1 ? sl->q[dragIdx] : ImVec2(0, 0);
@@ -1463,6 +1627,54 @@ static void Stage(ImRect r) {
       Text(tb2.Min.x + 6, (tb2.Min.y + tb2.Max.y) * 0.5f, MONO_B, 10, K(pal::white), rd);
     }
   }
+  {   // marquee: drag a rectangle on the stage to pick the points inside (Output) or the slices it touches (Input); Ctrl/Cmd/Shift adds
+    const bool armOk = overStage && !A.mapHand && !A.maskPen && scVis;
+    if (gMarquee == 0 && ImGui::IsMouseClicked(0) && armOk && dragKind == 0) { gMarquee = 1; gMarqueeA = m; }
+    if (gMarquee) {
+      if (!ImGui::IsMouseDown(0)) {
+        const bool add = MultiMod();
+        if (gMarquee == 2) {
+          ImRect mr(std::min(gMarqueeA.x, m.x), std::min(gMarqueeA.y, m.y), std::max(gMarqueeA.x, m.x), std::max(gMarqueeA.y, m.y));
+          if (A.mpage == 1) {
+            std::vector<App::PtRef> hit;
+            for (auto& S : sc->slices) if (S.visible) {
+              for (int i = 0; i < 4; ++i) if (mr.Contains(toPx(S.q[i]))) hit.push_back({S.id, i});
+              if (sl && S.id == sl->id && S.warp != 0) {
+                auto gr = MeshGrid(S); int R = (int)gr.size(), C = (int)gr[0].size();
+                for (int rr = 0; rr < R; ++rr) for (int cc = 0; cc < C; ++cc)
+                  if (!((rr == 0 || rr == R - 1) && (cc == 0 || cc == C - 1)) && mr.Contains(toPx(gr[rr][cc]))) hit.push_back({S.id, 1000 + rr * 100 + cc});
+              }
+            }
+            if (add) { for (auto& h : hit) { bool have = false; for (auto& q : A.mapPts) if (q.sl == h.sl && q.idx == h.idx) have = true; if (!have) A.mapPts.push_back(h); } }
+            else A.mapPts = hit;
+          } else {
+            std::vector<App::MapRef> refs;
+            if (add && A.MapKind() == 1) refs = A.mapSelection();
+            for (auto& S : sc->slices) if (S.visible) {
+              ImVec2 rc[4]; InputCorners(S, rc); ImVec2 lo = toPx(rc[0]), hi = lo;
+              for (int i = 1; i < 4; ++i) { ImVec2 q = toPx(rc[i]); lo = ImVec2(std::min(lo.x, q.x), std::min(lo.y, q.y)); hi = ImVec2(std::max(hi.x, q.x), std::max(hi.y, q.y)); }
+              bool touches = lo.x <= mr.Max.x && hi.x >= mr.Min.x && lo.y <= mr.Max.y && hi.y >= mr.Min.y, have = false;
+              for (auto& r : refs) if (r.sl == S.id) have = true;
+              if (touches && !have) refs.push_back({sc->id, S.id, ""});
+            }
+            if (!refs.empty()) A.mapSelectRefs(1, refs);
+          }
+        } else if (!add && A.mpage == 1) A.mapPts.clear();   // a plain click on the stage lets go of the picked points
+        gMarquee = 0;
+      } else {
+        if (gMarquee == 1 && std::hypot(m.x - gMarqueeA.x, m.y - gMarqueeA.y) > 4.f) gMarquee = 2;
+        if (dragKind != 0) gMarquee = 0;
+        if (gMarquee == 2) {
+          ImRect mr(std::min(gMarqueeA.x, m.x), std::min(gMarqueeA.y, m.y), std::max(gMarqueeA.x, m.x), std::max(gMarqueeA.y, m.y));
+          g.dl->AddRectFilled(mr.Min, mr.Max, Ca(K(pal::white, 0.06f)));
+          ImVec2 mp[4] = {mr.Min, ImVec2(mr.Max.x, mr.Min.y), mr.Max, ImVec2(mr.Min.x, mr.Max.y)};
+          DashedPoly(mp, 4, K(pal::white, 0.85f), 1.5f, 6, 4);
+        }
+      }
+    }
+  }
+  for (auto& gl : gGuideLines) g.dl->AddLine(toPx(gl.first), toPx(gl.second), Ca(K(pal::white, 0.55f)), 1.f);   // what the magnet locked onto
+  for (auto& gd : gGuideDots) g.dl->AddCircle(toPx(gd), 7.f, Ca(K(pal::white, 0.9f)), 16, 1.5f);
   Border(cv, K(pal::g2a), 3);
   // position indicators: a thumb per axis whenever part of the content (output box or any point) is outside the view
   {
