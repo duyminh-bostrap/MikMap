@@ -370,7 +370,7 @@ static void DrawHelpDialog(ImVec2 disp, bool fresh) {
   static const char* rows[][2] = {{"Ctrl/Cmd + N", "New blank project"}, {"Ctrl/Cmd + O", "Open project"}, {"Ctrl/Cmd + S", "Save project"},
                                   {"Ctrl/Cmd + Shift + S", "Save a timestamped copy"}, {"Ctrl/Cmd + Z", "Undo"},
                                   {"Ctrl/Cmd + Shift + Z / Y", "Redo"}, {"F11", "Open / close projector output"}, {"Esc / F11 / Ctrl+W", "Close output (while the output window has focus)"}, {"Tab", "Show Mode (hide all editing UI)"},
-                                  {"Space", "Play / pause"}, {"Enter", "Trigger selected clip"}, {"Left / Right", "Previous / next column"}, {"L", "Selected clip: loop mode"}, {"Delete", "Clear selected clip"}, {"Esc", "Close menu, dialog or popover"}, {"Double-click layer", "Rename layer"}, {"Alt + wheel (Mapping)", "Zoom at cursor"}};
+                                  {"Ctrl/Cmd + C / X / V / D  (Mapping)", "Copy / cut / paste / duplicate the selected screens, slices or masks"}, {"Delete  (Mapping)", "Delete the selected screens, slices or masks"}, {"Arrows / Shift+Arrows  (Mapping)", "Move the selection 1 / 10 px"}, {"Ctrl/Cmd/Shift + click  (Mapping)", "Add to / remove from the selection"}, {"Space", "Play / pause"}, {"Enter", "Trigger selected clip"}, {"Left / Right", "Previous / next column"}, {"L", "Selected clip: loop mode"}, {"Delete", "Clear selected clip"}, {"Esc", "Close menu, dialog or popover"}, {"Double-click layer", "Rename layer"}, {"Alt + wheel (Mapping)", "Zoom at cursor"}};
   int n = (int)(sizeof rows / sizeof rows[0]);
   float w = 460, h = 30 + n * 26 + 30;
   ImRect r((disp.x - w) * 0.5f, std::max(48.f, (disp.y - h) * 0.4f), (disp.x + w) * 0.5f, std::max(48.f, (disp.y - h) * 0.4f) + h);
@@ -619,7 +619,7 @@ static void SetupStyle() {
   c[ImGuiCol_NavHighlight] = ImVec4(0, 0, 0, 0);
 }
 
-struct Script { int kind; float x0, y0, x1, y1; };
+struct Script { int kind; float x0, y0, x1, y1; int key = 0; bool ctrl = false, shift = false; };   // kind 3 = a key chord (--press)
 
 int main(int argc, char** argv) {
   std::vector<Script> script;
@@ -627,7 +627,7 @@ int main(int argc, char** argv) {
   std::string compTest, clipTest, pvTest; std::vector<std::string> layerTest, clipColors;
   OsDrop dropTest;   // --drop: injected at frame 8 of a --shot run, standing in for a real Explorer drag
   bool openOut = false; std::string outShot;
-  bool outKeyTest = false;
+  bool outKeyTest = false, scriptCtrl = false;
   std::string roundtrip; std::vector<int> fxTest;
   std::string shot; int startScreen = 0, frames = 12, W = 1440, H = 900, tab = -1, page = -1;
   bool sel = false, scaleGiven = false; int selLi = 0, selCi = 0, ctxTest = 0, cliScale = 100;
@@ -643,8 +643,17 @@ int main(int argc, char** argv) {
     else if (a == "--menu") A.projectMenu = true;
     else if (a == "--out") openOut = true;
     else if (a == "--outkeytest") outKeyTest = true;
+    else if (a == "--shift") scriptCtrl = true;   // test aid: hold Shift through the whole scripted run (multi-selection screenshots; Ctrl+click is a right click on macOS)
     else if (a == "--outshot" && i + 1 < argc) { openOut = true; outShot = argv[++i]; }
     else if (a == "--scale" && i + 1 < argc) { A.prefs.scale = atoi(argv[++i]); cliScale = A.prefs.scale; scaleGiven = true; }
+    else if (a == "--press" && i + 1 < argc) {   // test aid: a key chord, e.g. ctrl+c, delete, shift+left (Ctrl here is io.KeyCtrl = Cmd on macOS)
+      std::string c = argv[++i]; Script sc{}; sc.kind = 3;
+      for (size_t at; (at = c.find('+')) != std::string::npos; c.erase(0, at + 1)) { std::string m = c.substr(0, at); if (m == "ctrl") sc.ctrl = true; if (m == "shift") sc.shift = true; }
+      static const struct { const char* n; ImGuiKey k; } keys[] = {{"c", ImGuiKey_C}, {"v", ImGuiKey_V}, {"x", ImGuiKey_X}, {"d", ImGuiKey_D}, {"delete", ImGuiKey_Delete}, {"backspace", ImGuiKey_Backspace},
+        {"left", ImGuiKey_LeftArrow}, {"right", ImGuiKey_RightArrow}, {"up", ImGuiKey_UpArrow}, {"down", ImGuiKey_DownArrow}};
+      for (auto& k : keys) if (c == k.n) sc.key = (int)k.k;
+      script.push_back(sc);
+    }
     else if (a == "--ctx") ctxTest = 1;
     else if ((a == "--click" || a == "--rclick" || a == "--drag") && i + 1 < argc) {
       // scripted input for headless checks: x,y  (drag: x0,y0,x1,y1)
@@ -900,7 +909,7 @@ int main(int argc, char** argv) {
       bool dupIds = false; for (auto& x : A.screens[0].slices) for (auto& y : A.screens[0].slices) if (&x != &y && x.id == y.id) dupIds = true;
       if (dupIds) return fail("Duplicate produced a repeated slice id");
       if (A.curSlice() == nullptr || A.curSlice()->name.find(" copy") == std::string::npos) return fail("Duplicate should name the copy");
-      A.copySlice(); if (!A.hasSliceClip) return fail("Copy must fill the slice clipboard");
+      A.copySlice(); if (!A.hasClip()) return fail("Copy must fill the slice clipboard");
       size_t n1 = A.screens[0].slices.size(); A.cutSlice();
       if (A.screens[0].slices.size() != n1 - 1) return fail("Cut must remove the slice");
       A.pasteSlice();
@@ -988,6 +997,73 @@ int main(int argc, char** argv) {
       return fail("Esc / F11 / Ctrl+W / Cmd+W must close the output window");
     if (OutputKeyCloses(GLFW_KEY_ESCAPE, GLFW_RELEASE, 0) || OutputKeyCloses(GLFW_KEY_W, GLFW_PRESS, 0) || OutputKeyCloses(GLFW_KEY_A, GLFW_PRESS, GLFW_MOD_CONTROL))
       return fail("only the listed keys, on press, may close the output window");
+    NewProject(); {   // Advanced Mapping: multi-selection (one kind at a time), copy/paste/delete with nested content, nudge
+      auto allIdsUnique = []() {
+        std::vector<std::string> ids;
+        for (auto& sc : A.screens) { ids.push_back(sc.id); for (auto& sl : sc.slices) { ids.push_back(sl.id); for (auto& m : sl.masks) ids.push_back(m.id); } }
+        std::sort(ids.begin(), ids.end()); return std::adjacent_find(ids.begin(), ids.end()) == ids.end();
+      };
+      Screen& sc0 = A.screens[0]; std::string s0 = sc0.id, sA = sc0.slices[0].id, sB = sc0.slices[1].id;
+      A.selSc = s0; A.selSl = sA; A.selMk.clear(); A.selKind = 1;
+      A.mapToggle(1, {s0, sB, ""});
+      if (A.mapSelCount() != 2 || !A.mapIsSel(1, s0, sA, "") || !A.mapIsSel(1, s0, sB, "")) return fail("Ctrl-click must add a second slice to the selection");
+      A.mapToggle(0, {A.screens[1].id, "", ""});   // a screen while slices are selected: ignored, the kinds never mix
+      A.mapToggle(2, {s0, sA, A.screens[0].slices[0].masks[0].id});
+      if (A.mapSelCount() != 2 || A.MapKind() != 1) return fail("selecting a different kind together with slices must be ignored");
+      A.mapToggle(1, {s0, sB, ""});
+      if (A.mapSelCount() != 1 || A.mapIsSel(1, s0, sB, "")) return fail("Ctrl-click on a selected slice must remove it");
+      A.mapToggle(1, {s0, sB, ""}); A.selSl = sB; A.selSc = s0;   // the primary moving elsewhere by a plain click drops the multi-selection
+      A.selSl = A.screens[1].slices[0].id; A.selSc = A.screens[1].id;
+      if (A.mapSelCount() != 1) return fail("a plain selection elsewhere must end the multi-selection");
+      // copy 2 slices (one carries a mask) and paste: fresh ids, masks come along
+      A.selSc = s0; A.selSl = sA; A.selKind = 1; A.mapMulti.clear(); A.mapToggle(1, {s0, sB, ""});
+      size_t nSl = A.screens[0].slices.size(), nMk = 0; for (auto& sl : A.screens[0].slices) nMk += sl.masks.size();
+      A.copySelection(); A.pasteSelection();
+      size_t nMk2 = 0; for (auto& sl : A.screens[0].slices) nMk2 += sl.masks.size();
+      if (A.screens[0].slices.size() != nSl + 2 || nMk2 <= nMk || A.mapSelCount() != 2 || !allIdsUnique()) return fail("pasting two slices must add both (with their masks), select them, and keep every id unique");
+      // delete the pasted pair, then a screen keeps its last slice
+      A.deleteSelection();
+      if (A.screens[0].slices.size() != nSl) return fail("Delete must remove every selected slice");
+      A.selSc = A.screens[2].id; A.selSl = A.screens[2].slices[0].id; A.selMk.clear(); A.selKind = 1; A.mapMulti.clear();
+      A.deleteSelection();
+      if (A.screens[2].slices.size() != 1) return fail("the last slice of a screen must survive Delete");
+      // screen copy carries its slices and their masks
+      A.selSc = A.screens[1].id; A.selKind = 0; A.mapMulti.clear();
+      size_t nScr = A.screens.size(), slIn = A.screens[1].slices.size(), mkIn = 0; for (auto& sl : A.screens[1].slices) mkIn += sl.masks.size();
+      A.copySelection(); A.pasteSelection();
+      if (A.screens.size() != nScr + 1 || !allIdsUnique()) return fail("pasting a screen must add one screen with unique ids");
+      Screen* pc = nullptr; for (auto& sc : A.screens) if (sc.id == A.selSc) pc = &sc;
+      size_t mkOut = 0; if (pc) for (auto& sl : pc->slices) mkOut += sl.masks.size();
+      if (!pc || pc->slices.size() != slIn || mkOut != mkIn || pc->id == A.screens[1].id) return fail("a pasted screen must carry all its slices and masks");
+      // multi-screen delete leaves at least one screen
+      A.mapToggle(0, {A.screens[0].id, "", ""}); A.mapToggle(0, {A.screens[1].id, "", ""}); A.mapToggle(0, {A.screens[2].id, "", ""});
+      while (A.screens.size() > 1 && A.mapSelCount() < (int)A.screens.size()) { A.mapToggle(0, {A.screens[A.mapSelCount() % A.screens.size()].id, "", ""}); break; }
+      A.deleteSelection();
+      if (A.screens.empty()) return fail("Delete must never remove the last screen");
+    }
+    NewProject(); {   // masks: copy into another slice, delete, nudge on both pages
+      Screen& sc0 = A.screens[0]; std::string s0 = sc0.id, sA = sc0.slices[0].id, sB = sc0.slices[1].id;
+      std::string mid = sc0.slices[0].masks[0].id;
+      A.selSc = s0; A.selSl = sA; A.selMk = mid; A.selKind = 2; A.mapMulti.clear();
+      A.copySelection();
+      A.selSl = sB; A.selMk.clear(); A.selKind = 1;
+      size_t before = A.screens[0].slices[1].masks.size(); A.pasteSelection();
+      if (A.screens[0].slices[1].masks.size() != before + 1 || A.MapKind() != 2 || !A.curMask() || A.curMask()->id == mid) return fail("a copied mask must paste into the current slice as a new, selected mask");
+      Mask* pm = A.curMask(); float mx0 = pm->x, my0 = pm->y;
+      A.mpage = 0; A.nudgeSelection(3.f, -2.f);
+      if (std::fabs(pm->x - mx0 - 3.f) > 1e-3f || std::fabs(pm->y - my0 + 2.f) > 1e-3f) return fail("arrow keys must move the selected mask on the Input page");
+      A.deleteSelection();
+      if (A.screens[0].slices[1].masks.size() != before) return fail("Delete must remove the selected mask");
+      Slice& sb = A.screens[0].slices[1]; int ix0 = sb.ix; ImVec2 q0 = sb.q[0];
+      A.selSl = sB; A.selMk.clear(); A.selKind = 1; A.mapMulti.clear();
+      A.mpage = 0; A.nudgeSelection(10.f, 0.f);
+      if (sb.ix != ix0 + 10) return fail("arrow keys must move the selected slice's input rect on the Input page");
+      A.mpage = 1; A.nudgeSelection(0.f, 5.f);
+      if (std::fabs(sb.q[0].y - q0.y - 5.f) > 1e-3f || std::fabs(sb.q[0].x - q0.x) > 1e-3f) return fail("arrow keys must move the selected slice's output quad on the Output page");
+      A.selSc = s0; A.selKind = 0; A.mapMulti.clear(); ImVec2 qa = A.screens[0].slices[0].q[2];
+      A.nudgeSelection(4.f, 4.f);
+      if (std::fabs(A.screens[0].slices[0].q[2].x - qa.x - 4.f) > 1e-3f) return fail("arrow keys on a selected screen must move all its slices on the Output page");
+    }
     // Timeline: tlLayout lays clips back-to-back by real duration; tlSync flips exactly the clip under the playhead live.
     NewProject();
     auto lay = A.tlLayout();
@@ -1406,22 +1482,31 @@ int main(int argc, char** argv) {
     }
     if (!shot.empty() && hoverTest && frame >= 3 + 6 * (int)script.size()) io.AddMousePosEvent(hoverX / Zs, hoverY / Zs);
     if (!shot.empty()) {
+      if (scriptCtrl) io.AddKeyEvent(ImGuiMod_Shift, true);
       // each scripted action occupies 6 frames starting at frame 3
       int rel = frame - 3;
       if (rel >= 0 && rel / 6 < (int)script.size()) {
         const Script& s = script[rel / 6]; int st = rel % 6;
+        if (s.kind == 3) {   // key chord: modifiers + key down on frame 1, up on frame 3
+          const ImGuiKey cmdMod = io.ConfigMacOSXBehaviors ? ImGuiMod_Super : ImGuiMod_Ctrl;   // ImGui swaps Ctrl/Super on macOS: the Cmd key is what becomes io.KeyCtrl
+          if (st == 1) { if (s.ctrl) io.AddKeyEvent(cmdMod, true); if (s.shift) io.AddKeyEvent(ImGuiMod_Shift, true); io.AddKeyEvent((ImGuiKey)s.key, true); }
+          if (st == 3) { io.AddKeyEvent((ImGuiKey)s.key, false); if (s.ctrl) io.AddKeyEvent(cmdMod, false); if (s.shift) io.AddKeyEvent(ImGuiMod_Shift, false); }
+        } else {
         io.AddMousePosEvent((st < 3 ? s.x0 : s.x1) / Zs, (st < 3 ? s.y0 : s.y1) / Zs);
         int btn = s.kind == 1 ? 1 : 0;
         if (st == 1) io.AddMouseButtonEvent(btn, true);
         if (s.kind == 2 && st == 3) io.AddMousePosEvent(s.x1 / Zs, s.y1 / Zs);
         if (st == 4 || (s.kind != 2 && st == 2)) io.AddMouseButtonEvent(btn, false);
+        }
       }
     }
     ImGui::NewFrame();
     {
       static Prefs lastPrefs = A.prefs; static int lastMon = A.outMonitor; static std::string lastTitle;
       if (io.MouseDown[0] || io.MouseDown[1] || io.MouseDown[2] || io.MouseWheel != 0.f || io.MouseWheelH != 0.f || io.InputQueueCharacters.Size > 0 ||
-          ImGui::IsKeyPressed(ImGuiKey_Delete, false) || ImGui::IsKeyPressed(ImGuiKey_Backspace, false) || ImGui::IsKeyPressed(ImGuiKey_L, false)) UndoNote();
+          ImGui::IsKeyPressed(ImGuiKey_Delete, false) || ImGui::IsKeyPressed(ImGuiKey_Backspace, false) || ImGui::IsKeyPressed(ImGuiKey_L, false) ||
+          (A.screen == 1 && (ImGui::IsKeyPressed(ImGuiKey_LeftArrow) || ImGui::IsKeyPressed(ImGuiKey_RightArrow) || ImGui::IsKeyPressed(ImGuiKey_UpArrow) ||
+                             ImGui::IsKeyPressed(ImGuiKey_DownArrow) || ImGui::IsKeyPressed(ImGuiKey_V, false) || ImGui::IsKeyPressed(ImGuiKey_X, false) || ImGui::IsKeyPressed(ImGuiKey_D, false)))) UndoNote();
       UndoTick(ImGui::IsMouseDown(0) || ImGui::IsMouseDown(1) || io.WantTextInput || A.rename.open, glfwGetTime());   // also keeps A.projectDirty current
       if (shot.empty() && (std::memcmp(&lastPrefs, &A.prefs, sizeof(Prefs)) != 0 || lastMon != A.outMonitor)) { lastPrefs = A.prefs; lastMon = A.outMonitor; SaveSettings(); }
       std::string title = "MikMap Pro \xE2\x80\x94 " + A.projectName + ".mikmap" + (A.projectDirty ? " *" : "");
@@ -1440,6 +1525,23 @@ int main(int argc, char** argv) {
         else if (ImGui::IsKeyPressed(ImGuiKey_Delete, false) || ImGui::IsKeyPressed(ImGuiKey_Backspace, false)) {
           A.layers[li].clips[ci] = Clip();
           A.layers[li].live = false; for (auto& k : A.layers[li].clips) if (k.isLive()) A.layers[li].live = true;
+        }
+      }
+      if (!A.showMode && free && A.screen == 1 && !io.KeyAlt) {   // Advanced Mapping: copy / cut / paste / duplicate / delete / nudge what is selected
+        if (io.KeyCtrl) {   // Ctrl (Cmd on macOS)
+          if (ImGui::IsKeyPressed(ImGuiKey_C, false)) { A.copySelection(); if (A.hasClip()) A.notify(A.mapClip.kind == 0 ? "Copied screen(s) with their slices and masks" : A.mapClip.kind == 1 ? "Copied slice(s) with their masks" : "Copied mask(s)", 1.5); }
+          else if (ImGui::IsKeyPressed(ImGuiKey_X, false)) A.cutSelection();
+          else if (ImGui::IsKeyPressed(ImGuiKey_V, false)) A.pasteSelection();
+          else if (ImGui::IsKeyPressed(ImGuiKey_D, false)) A.duplicateSelection();
+        } else {
+          if (ImGui::IsKeyPressed(ImGuiKey_Delete, false) || ImGui::IsKeyPressed(ImGuiKey_Backspace, false)) A.deleteSelection();
+          float st = io.KeyShift ? 10.f : 1.f, dx = 0, dy = 0;   // arrows: 1 px, Shift = 10 px (the pixel space of the page being shown)
+          bool first = false;
+          if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) { dx = -st; first |= ImGui::IsKeyPressed(ImGuiKey_LeftArrow, false); }
+          if (ImGui::IsKeyPressed(ImGuiKey_RightArrow)) { dx = st; first |= ImGui::IsKeyPressed(ImGuiKey_RightArrow, false); }
+          if (ImGui::IsKeyPressed(ImGuiKey_UpArrow)) { dy = -st; first |= ImGui::IsKeyPressed(ImGuiKey_UpArrow, false); }
+          if (ImGui::IsKeyPressed(ImGuiKey_DownArrow)) { dy = st; first |= ImGui::IsKeyPressed(ImGuiKey_DownArrow, false); }
+          if (dx != 0 || dy != 0) { if (first) A.pushHist(); A.nudgeSelection(dx, dy); }   // one history step per press, not per key repeat
         }
       }
       if (!io.WantTextInput && io.KeyCtrl) {

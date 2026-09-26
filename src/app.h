@@ -356,8 +356,30 @@ struct App {
   void startMaskPen(bool replaceSelected = false); void finishMaskPen(); void cancelMaskPen();
   void setMaskShape(int shape);   // Mask properties: change the selected mask's shape (rect and rotation stay)
   // Slice clipboard + stacking order (Advanced Mapping > right-click the input rect). The clipboard is runtime-only.
-  Slice sliceClip; bool hasSliceClip = false;
-  void duplicateSlice(); void copySlice(); void cutSlice(); void pasteSlice();
+  // ── Advanced Mapping multi-selection ──
+  // Several screens, OR several slices, OR several masks can be selected together (Ctrl/Cmd/Shift-click); the kinds never mix.
+  // `selSc/selSl/selMk/selKind` stay the primary selection (what the properties and the stage frame edit); `mapMulti` lists EVERY
+  // selected item of that kind (primary included) when there are two or more, and is dropped as soon as the primary moves elsewhere.
+  struct MapRef { std::string sc, sl, mk; };
+  std::vector<MapRef> mapMulti; int mapMultiKind = -1;
+  void mapValidate();
+  bool mapIsSel(int kind, const std::string& sc, const std::string& sl, const std::string& mk);
+  std::vector<MapRef> mapSelection();                 // the selection of kind MapKind(): the multi list, or just the primary
+  int mapSelCount() { return (int)mapSelection().size(); }
+  void mapToggle(int kind, const MapRef& r);          // Ctrl/Cmd/Shift-click: add/remove r; a different kind is ignored
+  void mapSelectRefs(int kind, const std::vector<MapRef>& refs);   // select exactly these (last one becomes the primary)
+  // Clipboard: copying a screen carries its slices and their masks, a slice carries its masks. Pasting: screens go after the selected
+  // screen, slices into the current screen, masks into the current slice; every copy gets fresh ids.
+  struct MapClip { int kind = -1; std::vector<Screen> screens; std::vector<Slice> slices; std::vector<Mask> masks; } mapClip;
+  bool hasClip() const { return mapClip.kind >= 0; }
+  void copyKind(int kind); void deleteKind(int kind); void duplicateKind(int kind); void pasteClip();
+  void copySelection() { copyKind(MapKind()); }
+  void cutSelection() { copyKind(MapKind()); deleteKind(MapKind()); }
+  void deleteSelection() { deleteKind(MapKind()); }
+  void duplicateSelection() { duplicateKind(MapKind()); }
+  void pasteSelection() { pasteClip(); }
+  void nudgeSelection(float dx, float dy);            // arrow keys: input rects / masks on the Input page, slice quads on the Output page
+  void duplicateSlice() { duplicateKind(1); } void copySlice() { copyKind(1); } void cutSlice() { copyKind(1); deleteKind(1); } void pasteSlice() { pasteClip(); }
   void moveSliceZ(int delta);   // +1 = bring forward (later in the list draws on top), -1 = send backwards
   void resetWarp();         // output corner pins -> fullscreen default (0,0,1920,1080), mesh follows (keystone-relative)
   void resetMeshWarp();     // flatten mesh deformation only, keep grid density/splits

@@ -250,6 +250,9 @@ Ba vùng: **cây Screen/Slice/Mask** (trái) | **Stage canvas** (giữa) | **Pro
 | M2 | ▾ thu gọn Screen; 👁 ẩn/hiện | ✅ |
 | M3 | **Chuột phải** → menu: Screen (Move up/down, Duplicate, Add slice, Delete) · Slice (Hide/Show, **Solo/Unsolo**, Whole area, Match output to input, Reset warp, Reset mesh warp, Reset all warping, Add mask, Delete) · Mask (Duplicate, Delete) | ✅ |
 | M3b | **Chuột phải khung input** (trang Input selection) → menu kiểu Resolume: Center X/Y · Mirror X/Y · Left/Top/Right/Bottom Half · Whole Area · Match Output Shape · Swap Input Output Shape · Bring Forward/Send Backwards · Duplicate/Copy/Cut/Paste (xem §3.2) | ✅ |
+| M3c | **Chọn nhiều (2026-09-26):** giữ **Ctrl/Cmd hoặc Shift + bấm** trên cây (hoặc bấm slice trên stage) để thêm/bớt vào vùng chọn. Chọn được **nhiều screen, hoặc nhiều slice, hoặc nhiều mask** — **không trộn loại** (đang chọn slice thì Ctrl-bấm screen/mask bị bỏ qua) và không bỏ được phần tử cuối cùng. Slice thuộc nhiều screen khác nhau chọn chung được. Bấm thường (không phím) ở bất cứ đâu → về chọn 1. Nhãn ở đầu panel đổi thành "N Slices/Screens/Masks"; panel vẫn sửa **phần tử chính** (cái chọn sau cùng); các slice/mask chọn kèm được tô sáng (viền liền trên trang Input, tô cam trên trang Output). Ghi chú macOS: Ctrl+bấm là chuột phải, dùng **Cmd** hoặc **Shift** | ✅ |
+| M3d | **Phím tắt trang Mapping (2026-09-26):** `Ctrl/Cmd+C` copy · `Ctrl/Cmd+X` cắt · `Ctrl/Cmd+V` dán · `Ctrl/Cmd+D` nhân đôi · `Delete/Backspace` xoá — áp cho **toàn bộ phần tử đang chọn**. **Copy screen mang theo mọi slice và mask bên trong; copy slice mang theo mask của nó** (dán ra bản mới, id mới, tên thêm " copy" nếu trùng). Dán: screen → ngay sau screen đang chọn, slice → vào screen hiện tại (sau slice đang chọn), mask → vào slice hiện tại (tự sang trang Input). Xoá: luôn còn ≥1 screen và mỗi screen còn ≥1 slice (có báo). Clipboard chỉ trong phiên, không lưu vào dự án | ✅ |
+| M3e | **Phím mũi tên (2026-09-26):** ←↑→↓ dịch 1 px, `Shift`+mũi tên 10 px (giữ để lặp; một lần bấm = một bước undo). **Trang Input:** dịch khung input của các slice đang chọn hoặc các mask đang chọn (px canvas); **trang Output:** dịch quad output của các slice đang chọn (lưới mesh đi theo keystone), hoặc mọi slice của các screen đang chọn | ✅ |
 | M4 | Nút thêm **Screen / Slice** ở chân cây (nút **Mask** đã chuyển vào Slice Properties → Input Mask, 2026-09-26) | ✅ |
 | M5 | Thu gọn cây thành rail; bấm tên Screen trong rail để mở tạm | ✅ |
 
@@ -374,6 +377,7 @@ Cả 4 field lưu trong `settings.json` (`SaveSettings`/`LoadSettings`,
 | `←` / `→` | Cột trước / sau |
 | `L` | Clip đang chọn: chế độ LOOP |
 | `Delete` / `Backspace` | Xoá clip đang chọn |
+| Trang **Advanced Mapping**: `Ctrl/Cmd+C/X/V/D`, `Delete`, mũi tên, `Ctrl/Cmd/Shift`+bấm | Copy / cắt / dán / nhân đôi / xoá / dịch / chọn nhiều screen-slice-mask (xem M3c–M3e, có trong bảng Help) |
 | `F11` | Mở/đóng cửa sổ output máy chiếu |
 | `Esc` / `F11` / `Ctrl+W` (`Cmd+W`) **khi cửa sổ output đang được focus** | **Đóng cửa sổ output** — trước đây `F11` chỉ ăn khi cửa sổ chính có focus, còn cửa sổ máy chiếu (GLFW trần, không qua ImGui) không nhận phím nào. Nay nó có callback phím riêng (`OutputKeyCb`, `output.cpp`); chỉ tác dụng lúc nhấn xuống, phím khác không đóng. Có trong bảng phím tắt (Help) |
 | `Esc` | Đóng popover/menu/hộp thoại/ô đổi tên/Cài đặt |

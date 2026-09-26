@@ -370,24 +370,189 @@ void App::resetInputRect() {
 }
 // ── slice clipboard / stacking order ──
 static void FreshIds(Slice& c) { c.id = A.uid("slice"); for (auto& m : c.masks) m.id = A.uid("mask"); }
+static void FreshIds(Screen& c) { c.id = A.uid("screen"); for (auto& s : c.slices) FreshIds(s); }
 static int SliceIndex(const Screen& sc, const std::string& id) { for (int i = 0; i < (int)sc.slices.size(); ++i) if (sc.slices[i].id == id) return i; return -1; }
-void App::duplicateSlice() {
-  Screen* sc = curScreen(); Slice* sl = curSlice(); if (!sc || !sl) return;
-  pushHist();
-  int at = SliceIndex(*sc, sl->id); Slice c = *sl; FreshIds(c); c.name += " copy";
-  sc->slices.insert(sc->slices.begin() + at + 1, c);   // right above the original
-  selSl = c.id; selMk.clear(); selKind = 1;
+
+// ── multi-selection ──
+static bool RefIs(int kind, const App::MapRef& a, const App::MapRef& b) { return kind == 0 ? a.sc == b.sc : kind == 1 ? a.sl == b.sl : a.mk == b.mk; }
+static bool RefExists(int kind, const App::MapRef& r) {
+  for (auto& sc : A.screens) if (sc.id == r.sc) {
+    if (kind == 0) return true;
+    for (auto& sl : sc.slices) if (sl.id == r.sl) {
+      if (kind == 1) return true;
+      for (auto& m : sl.masks) if (m.id == r.mk) return true;
+    }
+  }
+  return false;
 }
-void App::copySlice() { if (Slice* sl = curSlice()) { sliceClip = *sl; hasSliceClip = true; } }
-void App::cutSlice() { Screen* sc = curScreen(); if (!sc || sc->slices.size() <= 1) return; copySlice(); deleteSlice(); }   // the last slice can't be removed
-void App::pasteSlice() {
-  Screen* sc = curScreen(); if (!sc || !hasSliceClip) return;
+void App::mapValidate() {
+  if (mapMulti.empty()) return;
+  int k = MapKind();
+  MapRef prim{selSc, selSl, selMk};
+  std::vector<MapRef> keep; bool primIn = false;
+  for (auto& r : mapMulti) if (RefExists(k, r)) { keep.push_back(r); if (RefIs(k, r, prim)) primIn = true; }
+  if (k != mapMultiKind || !primIn || keep.size() < 2) mapMulti.clear(); else mapMulti = keep;
+}
+std::vector<App::MapRef> App::mapSelection() {
+  mapValidate();
+  if (!mapMulti.empty()) return mapMulti;
+  MapRef p{selSc, selSl, MapKind() == 2 ? selMk : std::string()};
+  if (MapKind() == 0) p.sl.clear();
+  if (RefExists(MapKind(), p)) return {p};
+  return {};
+}
+bool App::mapIsSel(int kind, const std::string& sc, const std::string& sl, const std::string& mk) {
+  if (MapKind() != kind) return false;
+  MapRef q{sc, sl, mk};
+  for (auto& r : mapSelection()) if (RefIs(kind, r, q)) return true;
+  return false;
+}
+void App::mapSelectRefs(int kind, const std::vector<MapRef>& refs) {
+  if (refs.empty()) return;
+  const MapRef& p = refs.back();
+  selSc = p.sc; selKind = kind;
+  if (kind >= 1) selSl = p.sl; else { bool keep = false; for (auto& sc : screens) if (sc.id == p.sc) for (auto& sl : sc.slices) if (sl.id == selSl) keep = true;
+    if (!keep) for (auto& sc : screens) if (sc.id == p.sc) selSl = sc.slices.empty() ? "" : sc.slices[0].id; }
+  selMk = kind == 2 ? p.mk : std::string();
+  if (refs.size() >= 2) { mapMulti = refs; mapMultiKind = kind; } else mapMulti.clear();
+}
+void App::mapToggle(int kind, const MapRef& r) {
+  if (MapKind() != kind) return;   // screens, slices and masks are never selected together
+  std::vector<MapRef> cur = mapSelection();
+  int at = -1; for (int i = 0; i < (int)cur.size(); ++i) if (RefIs(kind, cur[i], r)) at = i;
+  if (at >= 0) { if (cur.size() < 2) return; cur.erase(cur.begin() + at); }
+  else cur.push_back(r);
+  mapSelectRefs(kind, cur);
+}
+
+// ── clipboard ──
+static std::string UniqueName(const std::vector<std::string>& taken, std::string base) {
+  auto has = [&](const std::string& n) { return std::find(taken.begin(), taken.end(), n) != taken.end(); };
+  while (has(base)) base += " copy";
+  return base;
+}
+void App::copyKind(int kind) {
+  std::vector<MapRef> sel = MapKind() == kind ? mapSelection() : std::vector<MapRef>();
+  if (sel.empty()) { MapRef p{selSc, selSl, selMk}; if (kind == 0) p.sl.clear(); if (kind < 2) p.mk.clear(); if (RefExists(kind, p)) sel = {p}; }
+  MapClip c; c.kind = kind;
+  auto picked = [&](const MapRef& r) { for (auto& q : sel) if (RefIs(kind, q, r)) return true; return false; };
+  for (auto& sc : screens) {   // in tree order, so pasting keeps the on-screen order
+    if (kind == 0 && picked({sc.id, "", ""})) c.screens.push_back(sc);
+    for (auto& sl : sc.slices) {
+      if (kind == 1 && picked({sc.id, sl.id, ""})) c.slices.push_back(sl);
+      for (auto& m : sl.masks) if (kind == 2 && picked({sc.id, sl.id, m.id})) c.masks.push_back(m);
+    }
+  }
+  if (c.screens.empty() && c.slices.empty() && c.masks.empty()) return;
+  mapClip = c;
+}
+void App::deleteKind(int kind) {
+  std::vector<MapRef> sel = MapKind() == kind ? mapSelection() : std::vector<MapRef>();
+  if (sel.empty()) return;
   pushHist();
-  Slice c = sliceClip; FreshIds(c);
-  for (auto& o : sc->slices) if (o.name == c.name) { c.name += " copy"; break; }
-  Slice* cur = curSlice(); int at = cur ? SliceIndex(*sc, cur->id) + 1 : (int)sc->slices.size();
-  sc->slices.insert(sc->slices.begin() + std::clamp(at, 0, (int)sc->slices.size()), c);
-  selSl = c.id; selMk.clear(); selKind = 1;
+  int gone = 0;
+  if (kind == 0) {
+    for (auto& r : sel) { if (screens.size() <= 1) break;   // there is always at least one screen
+      auto it = std::remove_if(screens.begin(), screens.end(), [&](const Screen& s) { return s.id == r.sc; });
+      if (it != screens.end()) { screens.erase(it, screens.end()); ++gone; } }
+    if (gone) { selSc = screens[0].id; selSl = screens[0].slices.empty() ? "" : screens[0].slices[0].id; selMk.clear(); selKind = -1; }
+  } else if (kind == 1) {
+    std::string keepSc;
+    for (auto& r : sel) for (auto& sc : screens) if (sc.id == r.sc && sc.slices.size() > 1) {   // a screen keeps at least one slice
+      auto it = std::remove_if(sc.slices.begin(), sc.slices.end(), [&](const Slice& s) { return s.id == r.sl; });
+      if (it != sc.slices.end()) { sc.slices.erase(it, sc.slices.end()); ++gone; keepSc = sc.id; }
+    }
+    if (gone) for (auto& sc : screens) if (sc.id == keepSc) { selSc = sc.id; selSl = sc.slices[0].id; selMk.clear(); selKind = -1; }
+  } else {
+    std::string keepSc, keepSl;
+    for (auto& r : sel) for (auto& sc : screens) if (sc.id == r.sc) for (auto& sl : sc.slices) if (sl.id == r.sl) {
+      auto it = std::remove_if(sl.masks.begin(), sl.masks.end(), [&](const Mask& m) { return m.id == r.mk; });
+      if (it != sl.masks.end()) { sl.masks.erase(it, sl.masks.end()); ++gone; keepSc = sc.id; keepSl = sl.id; }
+    }
+    if (gone) { selSc = keepSc; selSl = keepSl; selMk.clear(); selKind = 1; }
+  }
+  mapMulti.clear();
+  if (!gone) notify(kind == 0 ? "A project needs at least one screen" : kind == 1 ? "A screen needs at least one slice" : "Nothing to delete");
+}
+void App::duplicateKind(int kind) {
+  std::vector<MapRef> sel = MapKind() == kind ? mapSelection() : std::vector<MapRef>();
+  if (sel.empty()) return;
+  pushHist();
+  std::vector<MapRef> made;
+  if (kind == 0) {
+    for (auto& r : sel) for (size_t i = 0; i < screens.size(); ++i) if (screens[i].id == r.sc) {
+      Screen c = screens[i]; FreshIds(c); c.name += " copy"; made.push_back({c.id, c.slices.empty() ? "" : c.slices[0].id, ""});
+      screens.insert(screens.begin() + i + 1, c); break; }
+  } else if (kind == 1) {
+    for (auto& r : sel) for (auto& sc : screens) if (sc.id == r.sc) { int at = SliceIndex(sc, r.sl); if (at < 0) continue;
+      Slice c = sc.slices[at]; FreshIds(c); c.name += " copy"; made.push_back({sc.id, c.id, ""});
+      sc.slices.insert(sc.slices.begin() + at + 1, c); }
+  } else {
+    for (auto& r : sel) for (auto& sc : screens) if (sc.id == r.sc) for (auto& sl : sc.slices) if (sl.id == r.sl) for (size_t i = 0; i < sl.masks.size(); ++i) if (sl.masks[i].id == r.mk) {
+      Mask c = sl.masks[i]; c.id = uid("mask"); c.name += " copy"; made.push_back({sc.id, sl.id, c.id});
+      sl.masks.insert(sl.masks.begin() + i + 1, c); break; }
+  }
+  if (!made.empty()) { mapSelectRefs(kind, made); if (kind == 2) mpage = 0; }
+}
+void App::pasteClip() {
+  if (!hasClip()) return;
+  if (mapClip.kind == 0) {
+    if (mapClip.screens.empty()) return;
+    pushHist();
+    int at = (int)screens.size();   // after the last selected screen (or the current one), else at the end
+    if (Screen* cs = curScreen()) for (int i = 0; i < (int)screens.size(); ++i) if (screens[i].id == cs->id) at = i + 1;
+    if (MapKind() == 0) for (auto& r : mapSelection()) for (int i = 0; i < (int)screens.size(); ++i) if (screens[i].id == r.sc) at = std::max(at, i + 1);
+    std::vector<MapRef> made;
+    for (auto c : mapClip.screens) {
+      std::vector<std::string> names; for (auto& s : screens) names.push_back(s.name);
+      FreshIds(c); c.name = UniqueName(names, c.name);
+      made.push_back({c.id, c.slices.empty() ? "" : c.slices[0].id, ""});
+      screens.insert(screens.begin() + std::min(at++, (int)screens.size()), c);
+    }
+    mapSelectRefs(0, made);
+  } else if (mapClip.kind == 1) {
+    Screen* sc = curScreen(); if (!sc || mapClip.slices.empty()) return;
+    pushHist();
+    int at = (int)sc->slices.size();
+    if (Slice* cur = curSlice()) at = SliceIndex(*sc, cur->id) + 1;
+    if (MapKind() == 1) for (auto& r : mapSelection()) if (r.sc == sc->id) at = std::max(at, SliceIndex(*sc, r.sl) + 1);
+    std::string scId = sc->id; std::vector<MapRef> made;
+    for (auto c : mapClip.slices) {
+      std::vector<std::string> names; for (auto& s : sc->slices) names.push_back(s.name);
+      FreshIds(c); c.name = UniqueName(names, c.name); made.push_back({scId, c.id, ""});
+      sc->slices.insert(sc->slices.begin() + std::clamp(at++, 0, (int)sc->slices.size()), c);
+    }
+    mapSelectRefs(1, made);
+  } else {
+    Screen* sc = curScreen(); Slice* sl = curSlice();
+    if (!sc || !sl || mapClip.masks.empty()) { notify("Select a slice to paste the mask into"); return; }
+    pushHist();
+    std::string scId = sc->id, slId = sl->id; std::vector<MapRef> made;
+    for (auto c : mapClip.masks) {
+      std::vector<std::string> names; for (auto& m : sl->masks) names.push_back(m.name);
+      c.id = uid("mask"); c.name = UniqueName(names, c.name); made.push_back({scId, slId, c.id}); sl->masks.push_back(c);
+    }
+    mapSelectRefs(2, made); mpage = 0;
+  }
+}
+void App::nudgeSelection(float dx, float dy) {
+  std::vector<MapRef> sel = mapSelection();
+  if (sel.empty() || maskPen) return;
+  int kind = MapKind();
+  auto slice = [&](const MapRef& r) -> Slice* { for (auto& sc : screens) if (sc.id == r.sc) for (auto& sl : sc.slices) if (sl.id == r.sl) return &sl; return nullptr; };
+  auto clampQ = [](float v) { return std::clamp(v, -4000.f, 8000.f); };
+  if (mpage == 0) {   // Input: the selected input rects / masks (canvas px)
+    for (auto& r : sel) {
+      if (kind == 2) { for (auto& sc : screens) if (sc.id == r.sc) for (auto& sl : sc.slices) if (sl.id == r.sl) for (auto& m : sl.masks) if (m.id == r.mk) { m.x += dx; m.y += dy; MaskRebuild(m); } }
+      else if (kind == 1) if (Slice* s = slice(r)) { s->ix += (int)std::lround(dx); s->iy += (int)std::lround(dy); }
+    }
+  } else {            // Output: the selected slices' quads, or every slice of the selected screens (the mesh rides along with the keystone)
+    auto moveQ = [&](Slice& s) { for (auto& q : s.q) { q.x = clampQ(q.x + dx); q.y = clampQ(q.y + dy); } };
+    for (auto& r : sel) {
+      if (kind == 1) { if (Slice* s = slice(r)) moveQ(*s); }
+      else if (kind == 0) for (auto& sc : screens) if (sc.id == r.sc) for (auto& sl : sc.slices) moveQ(sl);
+    }
+  }
 }
 void App::moveSliceZ(int delta) {
   Screen* sc = curScreen(); Slice* sl = curSlice(); if (!sc || !sl) return;
@@ -508,6 +673,9 @@ std::vector<MenuItem> App::maskMenu(const std::string& scId, const std::string& 
 }
 
 // ───────────────────────── tree ─────────────────────────
+// Ctrl / Cmd / Shift held: a click adds to / removes from the selection instead of replacing it.
+static bool MultiMod() { const ImGuiIO& io = ImGui::GetIO(); return io.KeyCtrl || io.KeyShift || io.KeySuper; }
+
 struct Node {
   enum Kind { ScreenN, SliceN, MaskN } kind;
   std::string sc, sl, mk, name, meta;
@@ -521,9 +689,10 @@ static void TreeRow(ImRect r, const Node& n, bool railMode) {
   bool scOn = cs && n.sc == cs->id;
   bool on;
   uint32_t hexOn;
-  if (n.kind == Node::ScreenN) { on = scOn; hexOn = n.color; }
-  else if (n.kind == Node::SliceN) { on = scOn && csl && n.sl == csl->id && !cmk; hexOn = pal::coral; }
-  else { on = cmk && cmk->id == n.mk; hexOn = pal::yellow; }
+  const int mkind = A.MapKind(); const bool multi = A.mapSelCount() > 1;   // several of one kind are selected: mark exactly those
+  if (n.kind == Node::ScreenN) { on = multi && mkind == 0 ? A.mapIsSel(0, n.sc, "", "") : scOn; hexOn = n.color; }
+  else if (n.kind == Node::SliceN) { on = multi && mkind == 1 ? A.mapIsSel(1, n.sc, n.sl, "") : scOn && csl && n.sl == csl->id && !cmk; hexOn = pal::coral; }
+  else { on = multi && mkind == 2 ? A.mapIsSel(2, n.sc, n.sl, n.mk) : cmk && cmk->id == n.mk; hexOn = pal::yellow; }
   Hit h = HitR(r);
   float prev = g.alpha;
   if (!n.vis) g.alpha = 0.5f;
@@ -562,7 +731,10 @@ static void TreeRow(ImRect r, const Node& n, bool railMode) {
   TextEll(x, cy, right - x, n.kind == Node::ScreenN ? UI_B : UI_S, 10, K(fg), n.name.c_str());
   g.alpha = prev;
   if (h.hover) CursorHand();
-  if (h.click && !chevHit && !visHit) {
+  if (h.click && !chevHit && !visHit && MultiMod()) {   // Ctrl / Cmd / Shift + click: add or remove (only within the same kind)
+    A.mapToggle(n.kind == Node::ScreenN ? 0 : n.kind == Node::SliceN ? 1 : 2, {n.sc, n.sl, n.kind == Node::MaskN ? n.mk : std::string()});
+  } else if (h.click && !chevHit && !visHit) {
+    A.mapMulti.clear();
     if (n.kind == Node::ScreenN) {
       Screen* sc = nullptr; for (auto& s : A.screens) if (s.id == n.sc) sc = &s;
       bool keep = false; if (sc) for (auto& sl : sc->slices) if (sl.id == A.selSl) keep = true;
@@ -663,7 +835,7 @@ static void RailPanel(ImRect r) {
     TextC(cx, y + 23, MONO_B, 8, fg, std::to_string(i + 1).c_str());
     if (A.railScreen == sc.id) railTop = y;
     if (h.hover) CursorHand();
-    if (h.click) { A.selSc = sc.id; A.selSl = sc.slices.empty() ? "" : sc.slices[0].id; A.selMk.clear(); A.selKind = 0; A.railScreen = A.railScreen == sc.id ? "" : sc.id; }
+    if (h.click) { A.mapMulti.clear(); A.selSc = sc.id; A.selSl = sc.slices.empty() ? "" : sc.slices[0].id; A.selMk.clear(); A.selKind = 0; A.railScreen = A.railScreen == sc.id ? "" : sc.id; }
     if (h.rclick) A.openCtx(ImGui::GetIO().MousePos, A.screenMenu(sc.id));
     y += 30 + 6;
   }
@@ -803,7 +975,7 @@ static void InputRectMenu(ImVec2 at) {
   add("Duplicate", [] { A.duplicateSlice(); }, true);
   add("Copy", [] { A.copySlice(); });
   add("Cut", [] { A.cutSlice(); }, false, n <= 1);
-  add("Paste", [] { A.pasteSlice(); }, false, !A.hasSliceClip);
+  add("Paste", [] { A.pasteSlice(); }, false, !A.hasClip());
   A.openCtx(at, mi);
 }
 
@@ -1057,7 +1229,8 @@ static void Stage(ImRect r) {
       if (!o.visible || (sl && o.id == sl->id)) continue;
       ImVec2 oc[4], opx[4]; InputCorners(o, oc);
       for (int i = 0; i < 4; ++i) opx[i] = toPx(oc[i]);
-      DashedPoly(opx, 4, K(pal::cyan, 0.7f), 1.5f, 8, 5);   // dashed and unnamed: only the selected slice carries its name
+      if (A.MapKind() == 1 && A.mapSelCount() > 1 && A.mapIsSel(1, sc->id, o.id, "")) g.dl->AddPolyline(opx, 4, Ca(K(pal::cyan)), ImDrawFlags_Closed, 2.f);   // selected together with the primary: solid
+      else DashedPoly(opx, 4, K(pal::cyan, 0.7f), 1.5f, 8, 5);   // dashed and unnamed: only the selected slice carries its name
     }
     // ---- transform frames: the slice's input rect, or — when a mask is selected — that mask ----
     // Both are edited the same way (like the Preview Cue frame): drag inside to move, the small squares (corners and edge middles)
@@ -1122,6 +1295,11 @@ static void Stage(ImRect r) {
         // the slice is just an outline while its mask is edited; clicking it (outside the mask's frame) goes back to the slice
         ImVec2 sc4[4], sp4[4]; InputCorners(*sl, sc4); for (int i = 0; i < 4; ++i) sp4[i] = toPx(sc4[i]);
         g.dl->AddPolyline(sp4, 4, Ca(K(pal::cyan, 0.8f)), ImDrawFlags_Closed, 1.5f);
+        for (auto& M : sl->masks) if (M.id != mk->id && A.mapSelCount() > 1 && A.mapIsSel(2, sc->id, sl->id, M.id)) {   // masks selected together: shown, edited via the primary
+          std::vector<ImVec2> op(M.pts.size()); for (size_t i = 0; i < op.size(); ++i) op[i] = toPx(M.pts[i]);
+          g.dl->AddConcavePolyFilled(op.data(), (int)op.size(), Ca(K(pal::yellow, 0.18f)));
+          DashedPoly(op.data(), (int)op.size(), K(pal::yellow, 0.8f), 1.5f, 9, 7);
+        }
         std::vector<ImVec2> pp(mk->pts.size()); for (size_t i = 0; i < pp.size(); ++i) pp[i] = toPx(mk->pts[i]);
         g.dl->AddConcavePolyFilled(pp.data(), (int)pp.size(), Ca(K(pal::yellow, 0.30f)));   // the mask tone of the design: yellow
         DashedPoly(pp.data(), (int)pp.size(), K(pal::yellow), 2.f, 9, 7);
@@ -1147,7 +1325,10 @@ static void Stage(ImRect r) {
         for (int i = 0; i < 4; ++i) opx[i] = toPx(oc[i]);
         if (!PointInPoly(m, opx, 4)) continue;
         CursorHand();
-        if (clickPending) { A.selSc = sc->id; A.selSl = it->id; A.selMk.clear(); A.selKind = 1; }
+        if (clickPending) {
+          if (MultiMod()) A.mapToggle(1, {sc->id, it->id, ""});
+          else { A.mapMulti.clear(); A.selSc = sc->id; A.selSl = it->id; A.selMk.clear(); A.selKind = 1; }
+        }
         break;
       }
     }
@@ -1184,7 +1365,9 @@ static void Stage(ImRect r) {
       for (auto it = sc->slices.rbegin(); it != sc->slices.rend() && !consumed; ++it) if (it->visible) {
         auto ol = outlinePx(*it);
         if (!PointInPoly(m, ol.data(), (int)ol.size())) continue;
+        if (MultiMod()) { A.mapToggle(1, {sc->id, it->id, ""}); consumed = true; break; }   // Ctrl / Cmd / Shift: add or remove
         bool wasOn = sl && it->id == sl->id;
+        A.mapMulti.clear();
         A.selSc = sc->id; A.selSl = it->id; A.selMk.clear(); A.selKind = 1; consumed = true;
         ImVec2 l;   // where the click lands in keystone space = the split position for "+ add col / + add row"
         if (wasOn && it->warp != 0 && Keystone(it->q).Inv(mo, l)) {
@@ -1203,7 +1386,7 @@ static void Stage(ImRect r) {
     sl = A.curSlice(); mk = A.curMask();
     for (auto& S : sc->slices) {
       if (!S.visible) continue;
-      bool on = sl && S.id == sl->id;
+      bool on = (sl && S.id == sl->id) || (A.MapKind() == 1 && A.mapSelCount() > 1 && A.mapIsSel(1, sc->id, S.id, ""));
       ImU32 fill = on ? K(pal::coral, 0.22f) : K(0xffffff, 0.05f);
       if (S.warp == 0) { ImVec2 pp[4]; polyPx(S.q, 4, pp); FillPoly(pp, 4, fill); }
       else {   // a warped mesh may be concave overall — fill it cell by cell
@@ -1351,7 +1534,12 @@ static void PropsPanel(ImRect r) {
   if (kind == 2 && !mk) kind = 1;
   if (kind == 1 && !sl) kind = 0;
   PanelHeader(Rc(r.Min.x + 1, r.Min.y, r.GetWidth() - 1, 24), kind == 0 ? "Screen properties" : kind == 2 ? "Mask properties" : "Slice properties", pal::t88);
-  Badge(r.Max.x - 6, r.Min.y + 11.5f, kind == 0 ? "Screen" : kind == 2 ? "Mask" : "Slice", kind == 0 ? T_AUDIO : kind == 2 ? T_STANDBY : T_LIVE, true);
+  {
+    int nsel = A.MapKind() == kind ? A.mapSelCount() : 1;
+    std::string bl = kind == 0 ? "Screen" : kind == 2 ? "Mask" : "Slice";
+    if (nsel > 1) bl = std::to_string(nsel) + " " + bl + "s";   // several selected together: the panel edits the primary, copy / delete take all
+    Badge(r.Max.x - 6, r.Min.y + 11.5f, bl.c_str(), kind == 0 ? T_AUDIO : kind == 2 ? T_STANDBY : T_LIVE, true);
+  }
   static ScrollArea sa;
   sa.Begin("##mapprops", ImRect(r.Min.x + 1, r.Min.y + 24, r.Max.x, r.Max.y));
   float ox = sa.origin.x + 0, oy = sa.origin.y, W = r.GetWidth() - 1 - 8, x = ox + 8, w = W - 16, y = 8;
