@@ -131,7 +131,7 @@
 | [~] | **F12** | **Bezier mask per-slice** | L | 🟠 P1 |
 | [~] | **F13** | Slice transform (position/scale/rotate/flip) | S | 🟠 P1 |
 | [x] | **F14** | Test card / lưới calibration overlay | S | 🟠 P1 |
-| [x] | **F15** | Nhập toạ độ bằng số (không chỉ kéo chuột) | S | 🟠 P1 |
+| [~] | **F15** | Nhập toạ độ bằng số (không chỉ kéo chuột) | S | 🟠 P1 |
 | [x] | **F16** | Slice enable / disable / solo | S | 🟠 P1 |
 | [~] | **F17** | Multi-screen (nhiều máy chiếu) | M | 🟠 P1 |
 | [ ] | **F18** | Polygon slice (không chỉ hình chữ nhật) | L | 🟡 P2 |
@@ -666,3 +666,4 @@ Nay khung input sửa giống khung transform của Preview Cue: **kéo trong kh
 - **Panel slice trang Output theo Resolume (2026-09-26):** thêm vào `Slice` (`app.h`) `oflip`, `isKey`, `blackBg`, màu `brightness/contrast/red/green/blue`, đường cong soft edge (`seGamma*`, `seLum`, `sePower`), `blR/G/B`; lưu/đọc trong `project.cpp` (đã thêm vào kiểm `--roundtrip`). **Vẽ thật:** Flip (`WarpMap::Map` xor với mirror input), Black BG và màu riêng slice (`DrawSliceOutput`). **Chỉ lưu + sửa, chưa vẽ:** Is key, Soft edge (công tắc + 6 tham số), Black level compensation — vì vậy F20 (soft edge) vẫn không đổi trạng thái. Point mode chỉ có Linear. Đã chụp panel (cuộn tới hết) và bấm Flip X đảo ngược thẻ test.
 - **Output device: màn hình thật khoá độ phân giải, thiết bị ảo mới gõ được (2026-09-26):** `DeviceMonitor/DeviceResolution/SyncScreenResolutions/IsVirtualDevice` (`output.cpp`), dropdown thêm NDI/Spout/Virtual Output (`mapping.cpp`). Đã chụp: Main Projector 1 → 1920×1200 khoá, NDI Broadcast → gõ được 1280×720, nút mở output mờ đi khi thiết bị ảo. **Chưa có** bộ gửi NDI/Spout thật (I3/F-mục liên quan vẫn không đổi trạng thái). Chưa thử cắm/rút màn hình khi app đang chạy.
 - **Panel slice Output tách theo chế độ (2026-09-26):** 4-key = Output rectangle + thuộc tính chung, không Warping; Mesh = thuộc tính chung + Warping (Point mode Linear, Subdivisions X/Y, công cụ lưới, 4 góc gõ số), không khối chữ nhật. `Uni()` giờ trả 0 đường chia khi n ≤ 1 nên lưới 1 patch biểu diễn được (file cũ `meshCols` ≥ 2 không đổi; kẹp khi nạp đổi 2→1). Đã chụp cả hai panel và đổi chế độ bằng nút trên thanh công cụ. Chưa bấm thử −/+ của Subdivisions.
+- **F15 `[x]` → `[~]` (2026-09-26, theo yêu cầu bỏ khối Corner pins khỏi panel Mesh):** còn nhập được bằng số ở **Output rectangle** (4-key) và **Input rectangle**, nhưng **toạ độ từng góc corner-pin ở chế độ Mesh không còn ô số** (chỉ kéo chuột). Đếm mới 53/18/64 → thực tế theo bảng: 53 `[x]` · 18 `[~]` · 64 `[ ]`.

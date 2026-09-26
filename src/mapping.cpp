@@ -1994,24 +1994,8 @@ static void PropsPanel(ImRect r) {
         y += 24 + 8;
       }
     }
-    if (output && sl->warp != 0) {   // Mesh: the four corner pins by number too (typed coordinates, F15)
-      HLine(ox + 8, ox + 8 + w, oy + y, K(pal::g2a)); y += 1 + 6;
-      Label(x, oy + y, "Corner pins"); y += 9 + 4;
-      const char* ck[4] = {"TL", "TR", "BR", "BL"};
-      for (int i = 0; i < 4; ++i) {
-        ImRect cr(x, oy + y, x + w, oy + y + 24);
-        Box(cr, K(pal::g18), K(pal::g2a), 3);
-        Text(cr.Min.x + 8, cr.Min.y + 12, MONO_B, 10, K(pal::coral), ck[i]);
-        // F15: type exact coordinates (output-space px); dragging on the stage still works and stays in sync
-        float fw = (cr.GetWidth() - 34 - 6) / 2.f;
-        int vx = (int)std::round(sl->q[i].x), vy = (int)std::round(sl->q[i].y);
-        char idx[24], idy[24]; snprintf(idx, sizeof idx, "##cpx%d", i); snprintf(idy, sizeof idy, "##cpy%d", i);
-        if (IntField(idx, Rc(cr.Min.x + 30, cr.Min.y, fw, 24), vx)) sl->q[i].x = (float)std::clamp(vx, -4000, 8000);
-        if (IntField(idy, Rc(cr.Min.x + 30 + fw + 6, cr.Min.y, fw, 24), vy)) sl->q[i].y = (float)std::clamp(vy, -4000, 8000);
-        y += 24 + 4;
-      }
-      y += 4;
-    } else if (!output) {   // the input rectangle and the masks belong to the Input page; the Output panel has neither
+    // The Output panel ends with Warping / Black level: no corner-pin numbers, no input rectangle, no masks.
+    if (!output) {   // the input rectangle and the masks belong to the Input page
       HLine(ox + 8, ox + 8 + w, oy + y, K(pal::g2a)); y += 1 + 6;
       Label(x, oy + y, "Input rectangle (px)"); y += 9 + 4;
       // X/Y are the rect's centre, Left/Top its unrotated top-left corner (what the stage frame edits)
