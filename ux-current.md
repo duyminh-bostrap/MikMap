@@ -266,7 +266,8 @@ Ba vùng: **cây Screen/Slice/Mask** (trái) | **Stage canvas** (giữa) | **Pro
   clipboard slice (runtime, không lưu). ✅ Chưa thử kéo ô co giãn khi khung đang xoay bằng chuột thật.
 - **Nhiều slice cùng screen (2026-09-26):** slice đang chọn có khung chỉnh sửa như trên nhưng **nền tô chỉ còn ~5%** (trước 15%) để hình
   nguồn bên dưới vẫn rõ; các slice **khác cùng screen** (đang hiện) chỉ vẽ **viền nét đứt** (không tên, không tay nắm) phần input của chúng, để biết
-  vùng nào của nguồn đã được lấy khi chuyển sang slice khác. Slice ẩn (👁 tắt) không vẽ. Chưa cho bấm vào viền để chọn — chọn qua cây bên trái. ✅
+  vùng nào của nguồn đã được lấy khi chuyển sang slice khác. Slice ẩn (👁 tắt) không vẽ. **Bấm vào bên trong khung nét đứt = chọn slice đó** (nhiều khung chồng nhau thì lấy khung trên cùng; khung của slice đang chọn được ưu tiên trước — kéo/xoay/co giãn vẫn như cũ). Con trỏ hiện bàn tay khi rê vào. ✅
+- **Không còn lưới nền** (ô 40px mờ) ở cả trang Input lẫn Output routing (2026-09-26) — khung canvas chỉ còn nền tối phẳng.
 - **Nền trang Input = nội dung thật của nguồn (2026-09-26):** khung canvas hiện hình đang phát của đúng
   **nguồn mà slice đang chọn nhận** (*Input source*: Composition / Layer / Group — cùng `DrawSliceSource` với
   cửa sổ output, nên solo/bypass/opacity/transform khớp), chạy động cùng nhịp Live Output; đổi Input source là nền đổi theo.

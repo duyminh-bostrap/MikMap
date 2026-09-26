@@ -899,8 +899,6 @@ static void Stage(ImRect r) {
     Slice comp;
     DrawSliceSource(sl ? *sl : comp, cv, (float)g.time * 1.2f, 1.f);   // same time base as the Live Output monitor
   }
-  for (float x = cv.Min.x + 39; x < cv.Max.x; x += 40) VLine(std::floor(x), cv.Min.y, cv.Max.y, K(0xffffff, 0.045f));
-  for (float y = cv.Min.y + 39; y < cv.Max.y; y += 40) HLine(cv.Min.x, cv.Max.x, std::floor(y), K(0xffffff, 0.045f));
   g.dl->PopClipRect();   // everything below draws across the whole stage: a point outside the output box stays visible
 
   // ---- drag processing ----
@@ -964,6 +962,7 @@ static void Stage(ImRect r) {
   if (A.mpage == 0) {
     // The other slices of this screen show only their input outline (no handles), so it is clear which parts of the source
     // are already taken while another slice is being edited. Drawn first so the selected slice's frame stays on top.
+    bool frameTookClick = false;   // the selected slice's own frame (handles / rings / body) has first claim on a click
     if (scVis) for (auto& o : sc->slices) {
       if (!o.visible || (sl && o.id == sl->id)) continue;
       ImVec2 oc[4], opx[4]; InputCorners(o, oc);
@@ -988,6 +987,7 @@ static void Stage(ImRect r) {
       }
       if (hot) ImGui::SetMouseCursor(hot == 5 ? ImGuiMouseCursor_Hand : ImGuiMouseCursor_ResizeAll);
       if (hot && clickPending) {
+        frameTookClick = true;
         A.pushHist(); dragKind = hot; dragIdx = hotIdx;
         if (hot == 2) dragAnchor = hotIdx >= 10 ? mcv[(hotIdx % 10 + 2) % 4] : cp[(hotIdx + 2) % 4];   // opposite corner / edge middle
         else if (hot == 5) dragOff = Vsub(ctrCv, mo);
@@ -1010,6 +1010,18 @@ static void Stage(ImRect r) {
         ImRect hr(set[i].x - 5, set[i].y - 5, set[i].x + 5, set[i].y + 5);
         Box(hr, K(pal::white), K(pal::cyan), 2);
         Border(hr, K(pal::cyan), 2, 2);
+      }
+    }
+    // Clicking inside another slice's dashed outline selects it (the topmost one when they overlap).
+    if (scVis && inArea && dragKind == 0 && !frameTookClick) {
+      for (auto it = sc->slices.rbegin(); it != sc->slices.rend(); ++it) {
+        if (!it->visible || (sl && it->id == sl->id)) continue;
+        ImVec2 oc[4], opx[4]; InputCorners(*it, oc);
+        for (int i = 0; i < 4; ++i) opx[i] = toPx(oc[i]);
+        if (!PointInPoly(m, opx, 4)) continue;
+        CursorHand();
+        if (clickPending) { A.selSc = sc->id; A.selSl = it->id; A.selMk.clear(); A.selKind = 1; }
+        break;
       }
     }
   } else if (scVis) {
