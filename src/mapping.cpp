@@ -1593,9 +1593,9 @@ static void Stage(ImRect r) {
         A.mapMulti.clear();
         A.selSc = sc->id; A.selSl = it->id; A.selMk.clear(); A.selKind = 1; consumed = true;
         ImVec2 l;   // where the click lands in keystone space = the split position for "+ add col / + add row"
-        if (wasOn && it->warp != 0 && Keystone(it->q).Inv(mo, l)) {
+        if (it->warp != 0 && Keystone(it->q).Inv(mo, l)) {   // any click inside a mesh slice marks the spot (the yellow dot), also the one that selects it
           float u = std::clamp(l.x, 0.02f, 0.98f), v = std::clamp(l.y, 0.02f, 0.98f);
-          if (A.meshArm) {
+          if (A.meshArm && wasOn) {   // a split is only ever placed in the slice that was already selected
             std::vector<float> us, vs; MeshUV(*it, us, vs);
             std::vector<float>& lst = A.meshArm == 'u' ? us : vs; float p = A.meshArm == 'u' ? u : v;
             bool dup = false; for (float x : lst) if (std::fabs(x - p) < 0.01f) dup = true;
