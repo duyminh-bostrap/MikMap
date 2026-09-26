@@ -150,7 +150,7 @@ Slice ReadSlice(const JsonValue& o) {
   Slice s;
   s.id = o["id"].asString(); s.name = o["name"].asString(); s.visible = o["visible"].asBool(true); s.solo = o["solo"].asBool(false);
   s.warp = std::clamp(o["warp"].asInt(0), 0, 1);
-  s.meshCols = std::clamp(o["meshCols"].asInt(4), 2, 64); s.meshRows = std::clamp(o["meshRows"].asInt(3), 2, 64);
+  s.meshCols = std::clamp(o["meshCols"].asInt(4), 1, 64); s.meshRows = std::clamp(o["meshRows"].asInt(3), 1, 64);
   s.meshU = ReadFloats(o["meshU"]); s.meshV = ReadFloats(o["meshV"]);
   auto readGrid = [](const JsonValue& a) {
     std::vector<std::vector<ImVec2>> g;

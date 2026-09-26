@@ -139,7 +139,7 @@ struct Keystone {
 };
 }  // namespace
 
-static std::vector<float> Uni(int n) { std::vector<float> v; for (int i = 1; i < std::max(2, n); ++i) v.push_back((float)i / n); return v; }
+static std::vector<float> Uni(int n) { std::vector<float> v; for (int i = 1; i < n; ++i) v.push_back((float)i / n); return v; }   // n patches across = n-1 interior lines; n <= 1 = none
 static void MeshUV(const Slice& s, std::vector<float>& us, std::vector<float>& vs) {
   us = s.meshU.empty() ? Uni(s.meshCols) : s.meshU; vs = s.meshV.empty() ? Uni(s.meshRows) : s.meshV;
   std::sort(us.begin(), us.end()); std::sort(vs.begin(), vs.end());
@@ -1852,6 +1852,27 @@ static void PropsPanel(ImRect r) {
       }
       y += 28 + 8;
     }
+    if (output && sl->warp == 0) {   // 4-key: the output is one rectangle, edited like the input rect
+      HLine(ox + 8, ox + 8 + w, oy + y, K(pal::g2a)); y += 1 + 6;
+      Label(x, oy + y, "Output rectangle (px)"); y += 9 + 4;
+      RectXf R = RectOfQuad(sl->q);
+      float vals[7] = {R.x + R.w * 0.5f, R.y + R.h * 0.5f, R.x, R.y, R.w, R.h, R.rot};
+      const char* fl[7] = {"X", "Y", "Left", "Top", "Width", "Height", "Rotation"};
+      float fw = (w - 6) / 2.f;
+      for (int i = 0; i < 7; ++i) {
+        float fx = x + (i % 2) * (fw + 6), fy = y + (i / 2) * (35 + 6);
+        char id[24]; snprintf(id, sizeof id, "##op%d", i);
+        if (!NumCell(fx, oy + fy, fw, fl[i], id, vals[i], i == 6 ? 1 : 0)) continue;
+        float v = std::round(vals[i]);
+        if (i == 0) R.x = v - R.w * 0.5f; else if (i == 1) R.y = v - R.h * 0.5f;
+        else if (i == 2) R.x = v; else if (i == 3) R.y = v;
+        else if (i == 4) { float cx = R.x + R.w * 0.5f; R.w = std::clamp(v, 8.f, 16384.f); R.x = cx - R.w * 0.5f; }
+        else if (i == 5) { float cy = R.y + R.h * 0.5f; R.h = std::clamp(v, 8.f, 16384.f); R.y = cy - R.h * 0.5f; }
+        else R.rot = std::fabs(vals[6]) < 0.05f ? 0.f : std::clamp(vals[6], -180.f, 180.f);
+        ImVec2 qc[4]; RectCorners(R, qc); for (int k = 0; k < 4; ++k) sl->q[k] = ImVec2(std::clamp(qc[k].x, -4000.f, 8000.f), std::clamp(qc[k].y, -4000.f, 8000.f));
+      }
+      y += 41 * 4 + 2;
+    }
     if (output) {
       // ── Output slice properties (info as in Resolume's slice panel, MikMap's own widgets) ──
       auto section = [&](const char* title, const char* note = nullptr) {
@@ -1916,39 +1937,33 @@ static void PropsPanel(ImRect r) {
       intRow("Red", sl->blR, 0, 100, 0x3221, pal::red);
       intRow("Green", sl->blG, 0, 100, 0x3222, pal::mint);
       intRow("Blue", sl->blB, 0, 100, 0x3223, pal::cyan);
-      section("Warping");
+    }
+    if (output && sl->warp != 0) {
+      HLine(ox, ox + W, oy + y, K(pal::g2a)); y += 1 + 6;
+      Text(x, oy + y + 4.5f, MONO_R, 9, K(pal::t88), "WARPING", 0.09f); y += 9 + 6;
       Text(x, oy + y + 5, UI_S, 10, K(pal::t88), "Point mode");
       TextR(x + w, oy + y + 5, MONO_B, 10, K(pal::coral), "Linear");
       y += 10 + 8;
-    }
-    if (output && sl->warp != 0) {
-      HLine(ox + 8, ox + 8 + w, oy + y, K(pal::g2a)); y += 1 + 6;
       std::vector<float> uu, vv; MeshUV(*sl, uu, vv);
-      int ncol = (int)uu.size() + 1, nrow = (int)vv.size() + 1;
-      bool custom = !sl->meshU.empty() || !sl->meshV.empty();
-      Text(x, oy + y + 4.5f, MONO_R, 9, K(pal::t88), "OUTPUT MESH GRID", 0.09f);
-      char ml[64]; snprintf(ml, sizeof ml, "%d \xC3\x97 %d patches%s", ncol, nrow, custom ? " \xC2\xB7 custom" : "");
-      TextR(x + w, oy + y + 4.5f, MONO_B, 9, K(pal::coral), ml);
-      y += 9 + 4;
-      float fw = (w - 12) / 2.f;
-      for (int i = 0; i < 2; ++i) {
-        float fx = x + i * (fw + 12);
-        Text(fx, oy + y + 4.5f, MONO_R, 9, K(pal::t66), i ? "ROWS" : "COLUMNS", 0.09f);
-        int n = i ? nrow : ncol;
-        ImRect mb(fx, oy + y + 11, fx + 22, oy + y + 11 + 26), pb(fx + fw - 22, oy + y + 11, fx + fw, oy + y + 11 + 26);
-        ImRect vb(fx + 24, oy + y + 11, fx + fw - 24, oy + y + 11 + 26);
-        int nv = n; bool chg = false;
+      const int sub[2] = {(int)uu.size(), (int)vv.size()};   // subdivisions = the extra grid lines between the borders (0 = a single patch across)
+      for (int i = 0; i < 2; ++i) {   // Subdivisions X / Y: label, value, − / +
+        ImRect mb(x + w - 50, oy + y, x + w - 26, oy + y + 24), pb(x + w - 24, oy + y, x + w, oy + y + 24);
+        Text(x, oy + y + 12, UI_S, 10, K(pal::t88), i ? "Subdivisions Y" : "Subdivisions X");
+        char nb[8]; snprintf(nb, sizeof nb, "%d", sub[i]);
+        TextR(x + w - 58, oy + y + 12, MONO_B, 11, K(pal::tf3), nb);
         Hit hm = HitR(mb), hp = HitR(pb);
         Box(mb, K(pal::g1c), hm.hover ? K(pal::coral) : K(pal::g22), 3); TextC((mb.Min.x + mb.Max.x) * 0.5f, (mb.Min.y + mb.Max.y) * 0.5f, MONO_B, 11, K(hm.hover ? pal::coral : pal::tcc), "\xE2\x88\x92");
         Box(pb, K(pal::g1c), hp.hover ? K(pal::coral) : K(pal::g22), 3); TextC((pb.Min.x + pb.Max.x) * 0.5f, (pb.Min.y + pb.Max.y) * 0.5f, MONO_B, 11, K(hp.hover ? pal::coral : pal::tcc), "+");
-        Box(vb, K(pal::g050), K(pal::g22), 3);
-        char nb[8]; snprintf(nb, sizeof nb, "%d", n);
-        TextC((vb.Min.x + vb.Max.x) * 0.5f, (vb.Min.y + vb.Max.y) * 0.5f, MONO_B, 11, K(pal::tf3), nb);
         if (hm.hover || hp.hover) CursorHand();
-        if (hm.click) { nv = n - 1; chg = true; } if (hp.click) { nv = n + 1; chg = true; }
-        if (chg) { A.pushHist(); nv = std::clamp(nv, 2, 16); if (i) { sl->meshRows = nv; sl->meshV.clear(); } else { sl->meshCols = nv; sl->meshU.clear(); } sl->meshLocal.clear(); }
+        int nv = sub[i]; bool chg = false;
+        if (hm.click) { nv = sub[i] - 1; chg = true; } if (hp.click) { nv = sub[i] + 1; chg = true; }
+        if (chg) {
+          nv = std::clamp(nv, 0, 15);
+          if (nv != sub[i]) { A.pushHist(); if (i) { sl->meshRows = nv + 1; sl->meshV.clear(); } else { sl->meshCols = nv + 1; sl->meshU.clear(); } sl->meshLocal.clear(); }   // a new split count starts from an even grid again
+        }
+        y += 24 + 4;
       }
-      y += 11 + 26 + 6;
+      y += 4;
       {
         const char* pl = A.meshArm ? (A.meshArm == 'u' ? "CLICK CANVAS TO PLACE COLUMN" : "CLICK CANVAS TO PLACE ROW") : A.meshPickOn ? "" : "PICK ADD COL / ADD ROW FIRST";
         char pk[64]; if (!A.meshArm && A.meshPickOn) snprintf(pk, sizeof pk, "LAST POINT \xC2\xB7 U %d%% \xC2\xB7 V %d%%", (int)std::round(A.meshPickU * 100), (int)std::round(A.meshPickV * 100)); else snprintf(pk, sizeof pk, "%s", pl);
@@ -1979,27 +1994,7 @@ static void PropsPanel(ImRect r) {
         y += 24 + 8;
       }
     }
-    if (output && sl->warp == 0) {   // 4-key: the output is one rectangle, edited like the input rect
-      HLine(ox + 8, ox + 8 + w, oy + y, K(pal::g2a)); y += 1 + 6;
-      Label(x, oy + y, "Output rectangle (px)"); y += 9 + 4;
-      RectXf R = RectOfQuad(sl->q);
-      float vals[7] = {R.x + R.w * 0.5f, R.y + R.h * 0.5f, R.x, R.y, R.w, R.h, R.rot};
-      const char* fl[7] = {"X", "Y", "Left", "Top", "Width", "Height", "Rotation"};
-      float fw = (w - 6) / 2.f;
-      for (int i = 0; i < 7; ++i) {
-        float fx = x + (i % 2) * (fw + 6), fy = y + (i / 2) * (35 + 6);
-        char id[24]; snprintf(id, sizeof id, "##op%d", i);
-        if (!NumCell(fx, oy + fy, fw, fl[i], id, vals[i], i == 6 ? 1 : 0)) continue;
-        float v = std::round(vals[i]);
-        if (i == 0) R.x = v - R.w * 0.5f; else if (i == 1) R.y = v - R.h * 0.5f;
-        else if (i == 2) R.x = v; else if (i == 3) R.y = v;
-        else if (i == 4) { float cx = R.x + R.w * 0.5f; R.w = std::clamp(v, 8.f, 16384.f); R.x = cx - R.w * 0.5f; }
-        else if (i == 5) { float cy = R.y + R.h * 0.5f; R.h = std::clamp(v, 8.f, 16384.f); R.y = cy - R.h * 0.5f; }
-        else R.rot = std::fabs(vals[6]) < 0.05f ? 0.f : std::clamp(vals[6], -180.f, 180.f);
-        ImVec2 qc[4]; RectCorners(R, qc); for (int k = 0; k < 4; ++k) sl->q[k] = ImVec2(std::clamp(qc[k].x, -4000.f, 8000.f), std::clamp(qc[k].y, -4000.f, 8000.f));
-      }
-      y += 41 * 4 + 2;
-    } else if (output) {
+    if (output && sl->warp != 0) {   // Mesh: the four corner pins by number too (typed coordinates, F15)
       HLine(ox + 8, ox + 8 + w, oy + y, K(pal::g2a)); y += 1 + 6;
       Label(x, oy + y, "Corner pins"); y += 9 + 4;
       const char* ck[4] = {"TL", "TR", "BR", "BL"};

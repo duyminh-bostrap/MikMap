@@ -322,11 +322,13 @@ Ba vùng: **cây Screen/Slice/Mask** (trái) | **Stage canvas** (giữa) | **Pro
 | M12 | **Thumbnail output của từng slice** (2026-09-26): mỗi slice hiện đúng hình nó gửi ra máy chiếu — sau vùng lấy, keystone/mesh, **mask cắt**, Opacity/màu của Screen — vẽ bằng chính `DrawSliceOutput` (`output.cpp`) mà cửa sổ máy chiếu dùng, cắt theo khung 1920×1080; **không tô nền**: slice đang chọn chỉ có viền coral, slice khác chỉ có viền nét đứt (2026-09-26). Tôn trọng ẩn/Solo. | ✅ |
 
 ### 3.3 Properties (phải)
-Slice, **trang Output** (2026-09-26, thông tin theo panel slice của Resolume, widget/màu giữ của MikMap): tên · Input source · **Flip** (NONE / X / Y / X+Y, cộng hợp với mirror của khung input) ·
-**Is key** · **Black BG** (nền đen đặc sau hình, nằm trong mask) · **Brightness / Contrast / Red / Green / Blue** (−100…100, chồng lên màu của Screen) ·
-**Soft edge** (công tắc + Gamma R/G/B, Gamma, Luminance, Power) · **Black level compensation** R/G/B (0…100) · **Warping**: Point mode (chỉ *Linear*) + lưới mesh (số cột/hàng, reset, thêm cột/hàng) +
-khối số: **4-key** = *Output rectangle* (X/Y/Left/Top/Width/Height/Rotation, chính là hình chữ nhật kéo trên stage), **Mesh** = 4 toạ độ góc; cuối cùng Input Mask.
-Thật sự chạy trên hình: Flip, Black BG, màu slice. **Lưu nhưng chưa vẽ** (nhãn "NOT RENDERED YET" trên panel): Is key, Soft edge và Black level compensation.
+Slice, **trang Output** (2026-09-26, thông tin theo panel slice của Resolume, widget/màu giữ của MikMap) — hai bộ tuỳ theo chế độ warp:
+- **4-key (Transform):** Input source · **Output rectangle** (X/Y/Left/Top/Width/Height/Rotation — chính là hình chữ nhật kéo trên stage) · Flip · Is key · Black BG ·
+  Brightness/Contrast/Red/Green/Blue · Soft edge · Black level compensation. **Không có** Warping.
+- **Mesh (Edit Points):** Input source · Flip · Is key · Black BG · màu · Soft edge · Black level compensation · **Warping**: *Point mode* (chỉ Linear) + **Subdivisions X / Y**
+  (số đường chia thêm giữa hai biên, 0…15, −/+; đổi số thì lưới về đều) + công cụ lưới riêng của MikMap (Flatten / Uniform / + Add col / + Add row) + 4 toạ độ góc gõ số (F15). **Không có** khối X/Y/Width….
+- Flip (NONE / X / Y / X+Y) cộng hợp với mirror của khung input. Black BG = nền đen đặc sau hình (nằm trong mask). Màu của slice chồng lên màu của Screen.
+- Thật sự chạy trên hình: Flip, Black BG, màu slice. **Lưu nhưng chưa vẽ** (nhãn "NOT RENDERED YET"): Is key, Soft edge và Black level compensation.
 Trang Input có các hàng X/Y/Left/Top/Width/Height/Rotation + Input Mask (§3.2); công tắc Soft Edge đã dời sang Output. Mask: đảo, độ mờ, danh sách điểm (≤8 điểm), xoá.
 
 **Screen (thông tin theo mẫu Resolume, giao diện giữ theo thiết kế MikMap, 2026-09-26):** tên · **Output device** (dropdown chọn màn hình xuất) · ô số **Width / Height** ·
