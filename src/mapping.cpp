@@ -968,8 +968,7 @@ static void Stage(ImRect r) {
       if (!o.visible || (sl && o.id == sl->id)) continue;
       ImVec2 oc[4], opx[4]; InputCorners(o, oc);
       for (int i = 0; i < 4; ++i) opx[i] = toPx(oc[i]);
-      g.dl->AddPolyline(opx, 4, Ca(K(pal::cyan, 0.7f)), ImDrawFlags_Closed, 1.5f);
-      TextEll(opx[0].x + 6, opx[0].y + 10, std::max(0.f, std::hypot(opx[1].x - opx[0].x, opx[1].y - opx[0].y) - 12), MONO_R, 9, K(pal::cyan, 0.8f), o.name.c_str());
+      DashedPoly(opx, 4, K(pal::cyan, 0.7f), 1.5f, 8, 5);   // dashed and unnamed: only the selected slice carries its name
     }
     if (sl && sl->visible && scVis) {
       // The input rect is edited like the Preview Cue transform frame: drag inside to move, the small squares (corners and
