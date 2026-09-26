@@ -289,11 +289,10 @@ Ba vùng: **cây Screen/Slice/Mask** (trái) | **Stage canvas** (giữa) | **Pro
 - **Nền trang Input = nội dung thật của nguồn (2026-09-26):** khung canvas hiện hình đang phát của đúng
   **nguồn mà slice đang chọn nhận** (*Input source*: Composition / Layer / Group — cùng `DrawSliceSource` với
   cửa sổ output, nên solo/bypass/opacity/transform khớp), chạy động cùng nhịp Live Output; đổi Input source là nền đổi theo.
-  Chưa chọn slice thì hiện Composition. Chú thích trên thanh stage ghi tên nguồn
-  (`Source Content: Layer · Layer 3 · 1920x1080`). Nguồn không có clip đang live thì nền chỉ còn lưới. ✅
+  Chưa chọn slice thì hiện Composition. (Dòng chú thích tên nguồn trên thanh stage đã bỏ ngày 2026-09-26; nguồn xem ở ô Input source bên phải.) Nguồn không có clip đang live thì nền chỉ còn lưới. ✅
 - **Chế độ warp**: nút Corner-pin (khung) ⇄ Mesh (lưới).
 - **Undo / Redo** (nút trên thanh này và `Ctrl/Cmd+Z`) — dùng chung lịch sử toàn app.
-- **Zoom**: 5 nút icon (phóng to, thu nhỏ, tìm/vừa vùng, phóng tối đa, bật/tắt chế độ tập trung — tên chính xác chưa kiểm chứng). **Lăn chuột**
+- **Zoom (thu gọn 2026-09-26)**: `−` · số % · `+` · bật/tắt chế độ tập trung. Bấm số % = vừa toàn bộ (thay nút "phóng tối đa"); zoom vào slice đã có chip 🔍 cạnh tên slice trên stage. Mọi icon thanh công cụ lớn hơn (nút 28px, icon 16px). Đã **bỏ dòng chữ** bên phải thanh công cụ (tên thiết bị output / nguồn nội dung). **Lăn chuột**
   = **zoom theo con trỏ** (2026-09-26; một nấc = 15%, trackpad mượt); `Shift`+lăn = cuộn dọc, **lăn ngang** = cuộn ngang.
   **Kéo chuột phải** = pan.
 - **Hai nút công cụ (2026-09-26, cả Input lẫn Output, nằm cạnh nhóm Undo/Redo):** 🖐 **Bàn tay** — bật thì **kéo chuột trái = pan** khu vực làm việc, mọi thao tác sửa

@@ -1130,69 +1130,74 @@ static void Stage(ImRect r) {
     if (h.click) A.mpage = i;
     px += pw[i] + 2;
   }
-  float leftEnd = grp.Max.x;
+  const float kBtnW = 28.f, kBtnH = 28.f, kIco = 16.f, kGrpH = 17.f;   // toolbar buttons: big icons
   if (sl && A.mpage != 0) {
-    ImRect wg(grp.Max.x + 4, cy - 14, grp.Max.x + 4 + 4 + 21 * 2 + 2 + 2, cy + 14);
+    ImRect wg(grp.Max.x + 4, cy - kGrpH, grp.Max.x + 4 + 3 + 2 * (kBtnW + 2) + 1, cy + kGrpH);
     Box(wg, K(0x000000), K(pal::g2a), 4);
     const char* wi[2] = {"frame", "grid-3x3"};
     for (int i = 0; i < 2; ++i) {
-      ImRect br(wg.Min.x + 3 + i * 23, cy - 11, wg.Min.x + 3 + i * 23 + 21, cy + 11);
+      ImRect br(wg.Min.x + 3 + i * (kBtnW + 2), cy - kBtnH * 0.5f, wg.Min.x + 3 + i * (kBtnW + 2) + kBtnW, cy + kBtnH * 0.5f);
       bool on = (i == 0) == (sl->warp == 0);
       Hit h = HitR(br);
       Box(br, on ? K(pal::coral, 0.2f) : 0, on ? K(pal::coral, 0.5f) : 0, 3);
-      Icon(wi[i], ImVec2((br.Min.x + br.Max.x) * 0.5f, cy), 11, K(on ? pal::coral : pal::t77));
+      Icon(wi[i], ImVec2((br.Min.x + br.Max.x) * 0.5f, cy), kIco, K(on ? pal::coral : pal::t77));
       if (h.hover) CursorHand();
       if (h.click && !on) { A.pushHist(); sl->warp = i; }
     }
-    leftEnd = wg.Max.x;
   }
-  // right side: zoom group, history/reset group, readout
+  // right side: zoom group, history/reset group, tools. Large icons; the zoom group is just − % + and focus mode.
   float xr = tb.Max.x - 6;
   {
-    const char* zi[5] = {"zoom-in", "zoom-out", "scan-search", "maximize", A.mapFocus ? "minimize-2" : "expand"};
     char zl[16]; snprintf(zl, sizeof zl, "%d%%", (int)std::round(A.mapZ * 100));
-    float gw = 2 + 5 * 20 + 26 + 4 + 2;
-    ImRect zg(xr - gw, cy - 13, xr, cy + 13);
+    const float pctW = 46.f;
+    float gw = 3 + kBtnW + pctW + kBtnW + 5 + kBtnW + 3;
+    ImRect zg(xr - gw, cy - kGrpH, xr, cy + kGrpH);
     Box(zg, K(pal::g1c), K(pal::g22), 3);
     float zx = zg.Min.x + 3;
-    for (int i = 0; i < 5; ++i) {
-      ImRect br(zx, cy - 10, zx + 18, cy + 10);
+    auto iconBtn = [&](float x, const char* ic, bool on) {
+      ImRect br(x, cy - kBtnH * 0.5f, x + kBtnW, cy + kBtnH * 0.5f);
       Hit h = HitR(br);
-      if (h.hover) Fill(br, K(pal::g1c), 2);
-      uint32_t hex = i == 2 ? pal::coral : (i == 4 && A.mapFocus) ? pal::coral : h.hover ? pal::white : pal::tcc;
-      Icon(zi[i], ImVec2((br.Min.x + br.Max.x) * 0.5f, cy), 11, K(hex));
+      if (h.hover) Fill(br, K(pal::g22), 3);
+      Icon(ic, ImVec2((br.Min.x + br.Max.x) * 0.5f, cy), kIco, K(on ? pal::coral : h.hover ? pal::white : pal::tcc));
       if (h.hover) CursorHand();
-      if (h.click) {
-        if (i == 0) A.setZoom(A.mapZ * 1.4f); else if (i == 1) A.setZoom(A.mapZ / 1.4f);
-        else if (i == 2 && sl) ZoomToSlice(StageArea(r), *sl);
-        else if (i == 3 && sc) FitAll(StageArea(r), *sc);   // frames points dragged outside the output too
-        else if (i == 4) A.mapFocus = !A.mapFocus;
-      }
-      zx += 20;
+      return h.click;
+    };
+    if (iconBtn(zx, "zoom-out", false)) A.setZoom(A.mapZ / 1.4f);
+    zx += kBtnW;
+    {   // the readout is also the "fit everything" button
+      ImRect pr(zx, cy - kBtnH * 0.5f, zx + pctW, cy + kBtnH * 0.5f);
+      Hit h = HitR(pr);
+      if (h.hover) { Fill(pr, K(pal::g22), 3); CursorHand(); }
+      TextC((pr.Min.x + pr.Max.x) * 0.5f, cy, MONO_B, 11, K(h.hover ? pal::white : pal::tcc), zl);
+      if (h.click && sc) FitAll(StageArea(r), *sc);   // frames points dragged outside the output too
+      zx += pctW;
     }
-    TextC(zx + 11, cy, MONO_B, 9, K(pal::tcc), zl);
+    if (iconBtn(zx, "zoom-in", false)) A.setZoom(A.mapZ * 1.4f);
+    zx += kBtnW;
+    VLine(zx + 2, cy - 8, cy + 8, K(pal::g2a)); zx += 5;
+    if (iconBtn(zx, A.mapFocus ? "minimize-2" : "expand", A.mapFocus)) A.mapFocus = !A.mapFocus;
     xr = zg.Min.x - 4;
-    float hw = 2 + 20 * 2 + 2 + 1 + 2 + 20 + 2 + 2;
-    ImRect hg(xr - hw, cy - 13, xr, cy + 13);
+    float hw = 3 + kBtnW * 2 + 2 + 5 + kBtnW + 3;
+    ImRect hg(xr - hw, cy - kGrpH, xr, cy + kGrpH);
     Box(hg, K(pal::g1c), K(pal::g22), 3);
     float hx = hg.Min.x + 3;
     for (int i = 0; i < 2; ++i) {
-      ImRect br(hx, cy - 10, hx + 20, cy + 10);
+      ImRect br(hx, cy - kBtnH * 0.5f, hx + kBtnW, cy + kBtnH * 0.5f);
       bool can = i == 0 ? CanUndo() : CanRedo();
       Hit h = HitR(br);
-      if (h.hover && can) Fill(br, K(pal::g1c), 2);
+      if (h.hover && can) Fill(br, K(pal::g22), 3);
       float prev = g.alpha; if (!can) g.alpha *= 0.4f;
-      Icon(i == 0 ? "undo-2" : "redo-2", ImVec2((br.Min.x + br.Max.x) * 0.5f, cy), 11, K(can ? (h.hover ? pal::white : pal::tcc) : pal::t66));
+      Icon(i == 0 ? "undo-2" : "redo-2", ImVec2((br.Min.x + br.Max.x) * 0.5f, cy), kIco, K(can ? (h.hover ? pal::white : pal::tcc) : pal::t66));
       g.alpha = prev;
       if (h.hover && can) CursorHand();
       if (h.click) { if (i == 0) A.undoMap(); else A.redoMap(); }
-      hx += 22;
+      hx += kBtnW + 2;
     }
-    VLine(hx, cy - 7, cy + 7, K(pal::g2a)); hx += 3;
-    ImRect rb(hx, cy - 10, hx + 20, cy + 10);
+    VLine(hx + 1, cy - 8, cy + 8, K(pal::g2a)); hx += 5;
+    ImRect rb(hx, cy - kBtnH * 0.5f, hx + kBtnW, cy + kBtnH * 0.5f);
     Hit rh = HitR(rb);
-    if (rh.hover) Fill(rb, K(pal::g1c), 2);
-    Icon("rotate-ccw", ImVec2((rb.Min.x + rb.Max.x) * 0.5f, cy), 12, K(rh.hover ? pal::white : pal::t88));
+    if (rh.hover) Fill(rb, K(pal::g22), 3);
+    Icon("rotate-ccw", ImVec2((rb.Min.x + rb.Max.x) * 0.5f, cy), kIco, K(rh.hover ? pal::white : pal::t88));
     if (rh.hover) CursorHand();
     if (rh.click) {
       std::vector<MenuItem> mi;
@@ -1212,23 +1217,19 @@ static void Stage(ImRect r) {
     }
     xr = hg.Min.x - 6;
     {   // stage tools: hand (left-drag pans) and magnet (drags snap to points and edges; hold Alt to bypass)
-      ImRect tg(xr - (2 + 2 * 22 + 2), cy - 13, xr, cy + 13);
+      ImRect tg(xr - (3 + 2 * (kBtnW + 2) + 1), cy - kGrpH, xr, cy + kGrpH);
       Box(tg, K(pal::g1c), K(pal::g22), 3);
       const char* ti[2] = {"hand", "magnet"}; bool* tv[2] = {&A.mapHand, &A.mapSnap};
       for (int i = 0; i < 2; ++i) {
-        ImRect br(tg.Min.x + 2 + i * 22, cy - 10, tg.Min.x + 2 + i * 22 + 20, cy + 10);
+        ImRect br(tg.Min.x + 3 + i * (kBtnW + 2), cy - kBtnH * 0.5f, tg.Min.x + 3 + i * (kBtnW + 2) + kBtnW, cy + kBtnH * 0.5f);
         Hit h = HitR(br); bool on = *tv[i];
         Box(br, on ? K(pal::coral, 0.2f) : 0, on ? K(pal::coral, 0.5f) : 0, 3);
-        Icon(ti[i], ImVec2((br.Min.x + br.Max.x) * 0.5f, cy), 12, K(on ? pal::coral : h.hover ? pal::white : pal::tcc));
+        Icon(ti[i], ImVec2((br.Min.x + br.Max.x) * 0.5f, cy), kIco, K(on ? pal::coral : h.hover ? pal::white : pal::tcc));
         if (h.hover) CursorHand();
         if (h.click) *tv[i] = !*tv[i];
       }
       xr = tg.Min.x - 4;
     }
-    std::string ro = A.mpage == 0 ? "Source Content: " + (sl ? SliceSourceName(*sl) + " \xC2\xB7 " : std::string()) + std::to_string(A.canvasW) + "x" + std::to_string(A.canvasH) : (sc ? sc->name + " (" + sc->outDev + ")" : "");
-    float lim = leftEnd + 8;
-    float rw = std::min(TextW(MONO_R, 10, ro.c_str()), std::max(0.f, xr - lim));
-    TextEll(xr - rw, cy, rw, MONO_R, 10, K(pal::t88), ro.c_str());
   }  // canvas viewport
   ImRect area = StageArea(r);
   if (area.GetWidth() - 20 < 60 || !sc) return;
