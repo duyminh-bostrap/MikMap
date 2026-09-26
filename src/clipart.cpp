@@ -260,7 +260,66 @@ static void ApplyXf(Clip& c, float px, float py, float scalePct, float rotDeg, f
   c.scale *= sc; c.rotation += rotDeg;
 }
 
+// Show TestCard: a full-composition test pattern that TAKES OVER from the deck. It is a source like any other — drawn in
+// canvas pixels — so the Live Output monitor, the Input selection stage and every slice's output (input rect -> keystone/mesh,
+// masks, colour) all show it, each slice getting exactly the part of the card its input rect takes.
+static void DrawTestCard(ImRect canvas, float alpha) {
+  ImDrawList* dl = g.dl;
+  const float W = (float)std::max(1, A.canvasW), H = (float)std::max(1, A.canvasH);
+  const bool warped = g.warp != nullptr;
+  const bool mesh = warped && g.warp->slice && g.warp->slice->warp != 0;
+  auto P = [&](float x, float y) { return warped ? g.warp->Map(x, y) : ImVec2(canvas.Min.x + x / W * canvas.GetWidth(), canvas.Min.y + y / H * canvas.GetHeight()); };
+  ImVec2 o0 = P(0, 0), o1 = P(W, 0);
+  const float k = std::max(0.05f, std::hypot(o1.x - o0.x, o1.y - o0.y) / W);   // screen px per canvas px, for line weights
+  auto C = [&](uint32_t hex, float al) { return Ca(K(hex, al * alpha)); };
+  const ImDrawListFlags fl = dl->Flags;
+  dl->Flags &= ~ImDrawListFlags_AntiAliasedFill;   // neighbouring fills must not show seams
+  auto quad = [&](float x0, float y0, float x1, float y1, ImU32 c) {
+    int seg = mesh ? 8 : 1;   // a keystone keeps straight edges straight; only a mesh bends them
+    for (int iy = 0; iy < seg; ++iy) for (int ix = 0; ix < seg; ++ix) {
+      float a0 = x0 + (x1 - x0) * ix / seg, a1 = x0 + (x1 - x0) * (ix + 1) / seg, b0 = y0 + (y1 - y0) * iy / seg, b1 = y0 + (y1 - y0) * (iy + 1) / seg;
+      ImVec2 q[4] = {P(a0, b0), P(a1, b0), P(a1, b1), P(a0, b1)};
+      dl->AddConvexPolyFilled(q, 4, c);
+    }
+  };
+  static const uint32_t bars[7] = {0xc0c0c0, 0xc0c000, 0x00c0c0, 0x00c000, 0xc000c0, 0xc00000, 0x0000c0};
+  for (int i = 0; i < 7; ++i) quad(W * i / 7.f, 0, W * (i + 1) / 7.f, H * 0.7f, C(bars[i], 1.f));
+  quad(0, H * 0.7f, W, H, C(0x101010, 1.f));
+  for (int i = 0; i < 8; ++i) {   // grey ramp along the bottom
+    uint32_t v = (uint32_t)(i * 255 / 7); quad(W * (0.1f + 0.1f * i), H * 0.8f, W * (0.2f + 0.1f * i), H * 0.92f, C((v << 16) | (v << 8) | v, 1.f));
+  }
+  dl->Flags = fl;
+  auto line = [&](float x0, float y0, float x1, float y1, ImU32 c, float w) { dl->AddLine(P(x0, y0), P(x1, y1), c, std::max(1.f, w * k)); };
+  for (int c = 1; c < 16; ++c) line(W * c / 16.f, 0, W * c / 16.f, H, C(0xffffff, 0.35f), 2.f);   // 16 x 9 grid: straight lines show every warp error
+  for (int r = 1; r < 9; ++r) line(0, H * r / 9.f, W, H * r / 9.f, C(0xffffff, 0.35f), 2.f);
+  line(0, 0, W, H, C(pal::cyan, 0.5f), 3.f); line(W, 0, 0, H, C(pal::cyan, 0.5f), 3.f);
+  std::vector<ImVec2> ring; const float rad = std::min(W, H) * 0.25f;
+  for (int i = 0; i < 96; ++i) { float a = i * 6.2831853f / 96.f; ring.push_back(P(W * 0.5f + std::cos(a) * rad, H * 0.5f + std::sin(a) * rad)); }
+  dl->AddPolyline(ring.data(), (int)ring.size(), C(pal::coral, 1.f), ImDrawFlags_Closed, std::max(1.5f, 5.f * k));
+  line(W * 0.5f - 60, H * 0.5f, W * 0.5f + 60, H * 0.5f, C(pal::coral, 1.f), 5.f);
+  line(W * 0.5f, H * 0.5f - 60, W * 0.5f, H * 0.5f + 60, C(pal::coral, 1.f), 5.f);
+  if (unsigned lt = LogoTexture()) {   // the MikMap mark in the middle of the ring, bent by the warp like everything else
+    const float hl = rad * 0.62f; const int seg = mesh ? 8 : 1;
+    for (int iy = 0; iy < seg; ++iy) for (int ix = 0; ix < seg; ++ix) {
+      float u0 = (float)ix / seg, u1 = (float)(ix + 1) / seg, v0 = (float)iy / seg, v1 = (float)(iy + 1) / seg;
+      auto Q = [&](float u, float v) { return P(W * 0.5f - hl + 2 * hl * u, H * 0.5f - hl + 2 * hl * v); };
+      dl->AddImageQuad((ImTextureID)(intptr_t)lt, Q(u0, v0), Q(u1, v0), Q(u1, v1), Q(u0, v1), ImVec2(u0, v0), ImVec2(u1, v0), ImVec2(u1, v1), ImVec2(u0, v1), C(0xffffff, 1.f));
+    }
+  }
+  {   // one differently coloured disc per corner: tells at a glance if the picture is mirrored or turned
+    const uint32_t cc[4] = {0xe63946, 0x2ecc71, 0x3b82f6, 0xf1c40f}; const float m = std::min(W, H) * 0.06f;
+    const ImVec2 at[4] = {{m, m}, {W - m, m}, {W - m, H - m}, {m, H - m}};
+    for (int i = 0; i < 4; ++i) {
+      std::vector<ImVec2> d; for (int j = 0; j < 32; ++j) { float a = j * 6.2831853f / 32.f; d.push_back(P(at[i].x + std::cos(a) * m * 0.55f, at[i].y + std::sin(a) * m * 0.55f)); }
+      dl->AddConvexPolyFilled(d.data(), (int)d.size(), C(cc[i], 1.f)); dl->AddPolyline(d.data(), (int)d.size(), C(0xffffff, 1.f), ImDrawFlags_Closed, std::max(1.5f, 3.f * k));
+    }
+  }
+  ImVec2 fr[4] = {P(4, 4), P(W - 4, 4), P(W - 4, H - 4), P(4, H - 4)};   // border: shows where the canvas ends
+  dl->AddPolyline(fr, 4, C(pal::yellow, 1.f), ImDrawFlags_Closed, std::max(1.5f, 6.f * k));
+}
+
 void DrawSliceSource(const Slice& s, ImRect canvas, float t, float alpha) {
+  if (A.testCard) { DrawTestCard(canvas, alpha); return; }   // takes over from the deck everywhere the composition is shown
   int kind = SliceSourceValid(s) ? s.srcKind : (int)Slice::SrcComp;
   auto member = [&](const Layer& l) {
     return kind == Slice::SrcComp || (kind == Slice::SrcLayer && l.id == s.srcRef) || (kind == Slice::SrcGroup && l.group == s.srcRef);

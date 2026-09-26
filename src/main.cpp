@@ -36,6 +36,7 @@ extern const char* BLEND_NAMES[8];
 static GLFWwindow* gWin = nullptr;
 GLFWwindow* glfwWin() { return gWin; }
 static GLuint gLogoTex = 0;
+unsigned LogoTexture() { return gLogoTex; }   // the MikMap mark, also the centrepiece of the test card (clipart.cpp)
 static std::string gAssets;
 
 static std::string FindAssets(const char* argv0) {
@@ -627,7 +628,7 @@ int main(int argc, char** argv) {
   std::string compTest, clipTest, pvTest; std::vector<std::string> layerTest, clipColors;
   OsDrop dropTest;   // --drop: injected at frame 8 of a --shot run, standing in for a real Explorer drag
   bool openOut = false; std::string outShot;
-  bool outKeyTest = false, scriptCtrl = false, startSnap = false, startHand = false;
+  bool outKeyTest = false, scriptCtrl = false, startSnap = false, startHand = false, startCard = false;
   std::string roundtrip; std::vector<int> fxTest;
   std::string shot; int startScreen = 0, frames = 12, W = 1440, H = 900, tab = -1, page = -1;
   bool sel = false, scaleGiven = false; int selLi = 0, selCi = 0, ctxTest = 0, cliScale = 100;
@@ -660,6 +661,7 @@ int main(int argc, char** argv) {
       script.push_back(sc);
     }
     else if (a == "--ctx") ctxTest = 1;
+    else if (a == "--testcard") startCard = true;   // test aid: Show TestCard on from the first frame
     else if ((a == "--click" || a == "--rclick" || a == "--drag") && i + 1 < argc) {
       // scripted input for headless checks: x,y  (drag: x0,y0,x1,y1)
       Script s; s.kind = a == "--click" ? 0 : a == "--rclick" ? 1 : 2;
@@ -1397,7 +1399,7 @@ int main(int argc, char** argv) {
 
   NewProject();
   A.screen = startScreen;
-  A.mapSnap = startSnap; A.mapHand = startHand;   // (NewProject just reset the app state)
+  A.mapSnap = startSnap; A.mapHand = startHand; A.testCard = startCard;   // (NewProject just reset the app state)
   if (tab >= 0) A.tab = tab;
   if (page >= 0) A.mpage = page;
   if (outKeyTest) {   // headless check that the output window's own key callback is really installed and closes it

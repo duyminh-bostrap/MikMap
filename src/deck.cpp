@@ -772,14 +772,6 @@ static void LayerRow(ImRect r, int li, ScrollArea&) {
 }
 // ───────────────────────── monitors ─────────────────────────
 
-static void TestCard(ImRect r) {
-  static const uint32_t bars[7] = {0xc0c0c0, 0xc0c000, 0x00c0c0, 0x00c000, 0xc000c0, 0xc00000, 0x0000c0};
-  float w = r.GetWidth() / 7.f;
-  for (int i = 0; i < 7; ++i) Fill(ImRect(r.Min.x + w * i, r.Min.y, r.Min.x + w * (i + 1), r.Min.y + r.GetHeight() * 0.7f), K(bars[i]));
-  Fill(ImRect(r.Min.x, r.Min.y + r.GetHeight() * 0.7f, r.Max.x, r.Max.y), K(0x101010));
-}
-
-
 // ───────────────────────── Preview Cue transform editor ─────────────────────────
 // The Preview Cue monitor edits the previewed clip's transform directly: drag inside the frame to move, the small squares
 // to scale (uniform — clips have one scale), the big corner circles to rotate. Right-click for the quick presets. It edits
@@ -934,8 +926,7 @@ static void Monitor(ImRect r, bool live) {
   if (blk) {
     TextC((well.Min.x + well.Max.x) * 0.5f, (well.Min.y + well.Max.y) * 0.5f, MONO_M, 10, K(pal::red), "OUTPUT MUTED", 0.14f);
   } else if (live) {
-    if (A.testCard) TestCard(well);
-    else {
+    {
       Fill(well, K(0x050505));
       // A1: the composition has its own virtual resolution; letterbox the monitor to that aspect.
       ImRect cv = CanvasRect(well);

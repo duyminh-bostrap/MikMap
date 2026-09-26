@@ -102,20 +102,6 @@ std::string MonitorName(int i) {
   return b;
 }
 
-// ── test card drawn straight onto the output (F14) ──
-static void OutputTestCard(ImRect r) {
-  ImDrawList* dl = g.dl;
-  float W = r.GetWidth(), H = r.GetHeight();
-  for (int c = 0; c <= 16; ++c) { float x = r.Min.x + W * c / 16.f; dl->AddLine(ImVec2(x, r.Min.y), ImVec2(x, r.Max.y), Ca(K(0xffffff, 0.35f))); }
-  for (int y0 = 0; y0 <= 9; ++y0) { float y = r.Min.y + H * y0 / 9.f; dl->AddLine(ImVec2(r.Min.x, y), ImVec2(r.Max.x, y), Ca(K(0xffffff, 0.35f))); }
-  ImVec2 c((r.Min.x + r.Max.x) * 0.5f, (r.Min.y + r.Max.y) * 0.5f);
-  dl->AddCircle(c, std::min(W, H) * 0.25f, Ca(K(pal::coral)), 64, 2.f);
-  dl->AddLine(ImVec2(c.x - 30, c.y), ImVec2(c.x + 30, c.y), Ca(K(pal::coral)), 2.f);
-  dl->AddLine(ImVec2(c.x, c.y - 30), ImVec2(c.x, c.y + 30), Ca(K(pal::coral)), 2.f);
-  dl->AddLine(r.Min, r.Max, Ca(K(pal::cyan, 0.4f)), 1.5f);
-  dl->AddLine(ImVec2(r.Max.x, r.Min.y), ImVec2(r.Min.x, r.Max.y), Ca(K(pal::cyan, 0.4f)), 1.5f);
-}
-
 // One slice as the projector shows it: input rect -> keystone/mesh, cut by its input masks, Screen opacity + colour correction.
 // (ox, oy, sx, sy) map the screen's 1920x1080 output space to window pixels — the projector window and the Output stage share this.
 void DrawSliceOutput(const Screen& sc, const Slice& sl, float ox, float oy, float sx, float sy, float t) {
@@ -130,8 +116,7 @@ void DrawSliceOutput(const Screen& sc, const Slice& sl, float ox, float oy, floa
   const WarpMap* prevWarp = g.warp;
   dl->PushClipRect(bb.Min, bb.Max, true);
   g.warp = &wm;
-  if (A.testCard) OutputTestCard(bb);
-  else {
+  {
     // Input masks (canvas-space polygons) cut the picture BEFORE it is warped: map each point through the same input-rect ->
     // keystone/mesh map as the content, then let the stencil limit everything this slice draws.
     std::vector<std::vector<ImVec2>> keep, holes;
