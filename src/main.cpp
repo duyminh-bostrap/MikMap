@@ -946,6 +946,7 @@ int main(int argc, char** argv) {
       { Slice& os = *A.curSlice(); os.oflip = 3; os.isKey = true; os.blackBg = true; os.brightness = -20; os.contrast = 15; os.red = 5; os.green = -6; os.blue = 7;
         os.seGammaR = 1.5f; os.seGammaG = 2.5f; os.seGammaB = 3.f; os.seGamma = 1.25f; os.seLum = 0.75f; os.sePower = 3.5f; os.blR = 10; os.blG = 20; os.blB = 30; }
       pm->visible = false;   // the tree's eye: a hidden mask must stay hidden after save / load
+      pm->pointMode = 1; pm->feather = 120; { MaskHandle mh; mh.i = 2; mh.t = ImVec2(0.25f, -0.5f); pm->handles = {mh}; }
       { Slice& bs = *A.curSlice(); bs.pointMode = 1; bs.meshCols = 3; bs.meshRows = 2; MeshHandle h; h.r = 1; h.c = 2; h.tu = ImVec2(0.5f, 0.25f); h.tv = ImVec2(-0.125f, 1.5f); bs.meshHandles = {h}; }
       std::string penId = pm->id; size_t nm = A.curSlice()->masks.size();
       if (!SaveProject(roundtrip, err) || !LoadProject(roundtrip, err)) return fail(err.c_str());
@@ -955,7 +956,7 @@ int main(int argc, char** argv) {
       if (ls.oflip != 3 || !ls.isKey || !ls.blackBg || ls.brightness != -20 || ls.contrast != 15 || ls.red != 5 || ls.green != -6 || ls.blue != 7 ||
           ls.seGammaR != 1.5f || ls.seGammaG != 2.5f || ls.seGammaB != 3.f || ls.seGamma != 1.25f || ls.seLum != 0.75f || ls.sePower != 3.5f ||
           ls.blR != 10 || ls.blG != 20 || ls.blB != 30) return fail("output slice properties (flip / key / colour / soft edge / black level) did not round-trip");
-      bool found = false; for (auto& m : ls.masks) if (m.id == penId) { found = m.pts.size() == 5 && m.pts[3].x == 90.f; if (m.visible) return fail("a hidden mask came back visible"); }
+      bool found = false; for (auto& m : ls.masks) if (m.id == penId) { found = m.pts.size() == 5 && m.pts[3].x == 90.f; if (m.visible) return fail("a hidden mask came back visible"); if (m.pointMode != 1 || m.feather != 120 || m.handles.size() != 1 || m.handles[0].i != 2 || m.handles[0].t.y != -0.5f) return fail("Bezier mask / feather did not round-trip"); }
       if (!found) return fail("a 5-point mask did not round-trip its points");
       // every preset outline must touch all four sides of its rect (the hexagon used to stop short of top and bottom)
       for (auto& m : A.curSlice()->masks) if (m.shape >= 0 && m.rot == 0.f) {

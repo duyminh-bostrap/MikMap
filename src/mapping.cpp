@@ -394,6 +394,8 @@ static void SetVisibleCorners(Slice& s, const ImVec2 target[4]) {
 
 // --roundtrip checks for the Resolume-style tools (the helpers are private to this file).
 static bool GroupMoveSelfTest(std::string& why);
+static ImVec2 MaskTanToCanvas(const Mask& m, ImVec2 t);
+static ImVec2 MaskTanToUnit(const Mask& m, ImVec2 c);
 bool MappingSelfTest(std::string& why) {
   if (!GroupMoveSelfTest(why)) return false;
   auto near2 = [](ImVec2 a, ImVec2 b, float tol) { return std::fabs(a.x - b.x) <= tol && std::fabs(a.y - b.y) <= tol; };
@@ -475,6 +477,23 @@ bool MappingSelfTest(std::string& why) {
       ImVec2 a0 = SliceMapUV(add, u, v), b0 = SliceMapUV(b, u, v); worst = std::max(worst, std::hypot(a0.x - b0.x, a0.y - b0.y));
     }
     if (worst > 1.5f) { why = "adding a column changed the Bezier surface"; return false; }
+  }
+  // Bezier masks (F12)
+  {
+    Mask bm; bm.shape = App::MS_SQUARE; bm.x = 400; bm.y = 300; bm.w = 600; bm.h = 400; bm.rot = 20; MaskRebuild(bm);
+    auto lin = MaskOutline(bm);
+    if (lin.size() != bm.pts.size()) { why = "a linear mask outline is not its points"; return false; }
+    bm.pointMode = 1; auto cur = MaskOutline(bm);
+    const size_t per = cur.size() / bm.pts.size();
+    for (size_t i = 0; i < bm.pts.size(); ++i) if (!near2(cur[i * per], bm.pts[i], 1e-3f)) { why = "the Bezier mask does not pass through its points"; return false; }
+    // automatic tangents round the square's corners: the middle of an edge bulges out past the straight line
+    ImVec2 mid = cur[per / 2], a = bm.pts[0], b = bm.pts[1], sm((a.x + b.x) * 0.5f, (a.y + b.y) * 0.5f);
+    if (near2(mid, sm, 2.f)) { why = "a Bezier mask is not curved"; return false; }
+    // a handle is kept in the mask's own frame: scaling the frame scales the curve with it
+    MaskHandle h; h.i = 0; h.t = MaskTanToUnit(bm, ImVec2(300, -120)); bm.handles = {h};
+    if (!near2(MaskTanToCanvas(bm, bm.handles[0].t), ImVec2(300, -120), 1e-2f)) { why = "mask handle frame conversion is not exact"; return false; }
+    std::vector<ImVec2> moved = bm.pts; moved[2].x += 50; MaskSetPoints(bm, moved);
+    if (!near2(MaskTanToCanvas(bm, bm.handles[0].t), ImVec2(300, -120), 0.5f)) { why = "editing a point changed another point's Bezier handle"; return false; }
   }
   // Match Input Shape with moved grid corners: the corners the audience sees land exactly on the target
   Slice mv = s; const ImVec2 tgt[4] = {{300, 200}, {1400, 260}, {1350, 950}, {250, 880}};
@@ -627,8 +646,42 @@ void MaskFromPolygon(Mask& m, const std::vector<ImVec2>& poly) {
   for (auto& p : poly) m.u.push_back(ImVec2((p.x - m.x) / m.w, (p.y - m.y) / m.h));
   MaskRebuild(m);
 }
+// Bezier masks: tangents are kept in the mask's unit square so they follow its frame (move / scale / turn). In canvas px a unit
+// tangent t is the frame's linear part applied to it.
+static ImVec2 MaskTanToCanvas(const Mask& m, ImVec2 t) {
+  const float r = m.rot * 3.14159265f / 180.f, co = std::cos(r), si = std::sin(r), x = t.x * m.w, y = t.y * m.h;
+  return ImVec2(x * co - y * si, x * si + y * co);
+}
+static ImVec2 MaskTanToUnit(const Mask& m, ImVec2 c) {
+  const float r = m.rot * 3.14159265f / 180.f, co = std::cos(r), si = std::sin(r);
+  return ImVec2((c.x * co + c.y * si) / std::max(1e-3f, m.w), (-c.x * si + c.y * co) / std::max(1e-3f, m.h));
+}
+// canvas tangent at every point: automatic Catmull-Rom ((next - previous) / 2) unless the user dragged a handle
+static std::vector<ImVec2> MaskTangents(const Mask& m) {
+  const int n = (int)m.pts.size();
+  std::vector<ImVec2> t(n);
+  for (int i = 0; i < n; ++i) { ImVec2 a = m.pts[(i + n - 1) % n], b = m.pts[(i + 1) % n]; t[i] = ImVec2((b.x - a.x) * 0.5f, (b.y - a.y) * 0.5f); }
+  for (auto& h : m.handles) if (h.i >= 0 && h.i < n) t[h.i] = MaskTanToCanvas(m, h.t);
+  return t;
+}
+std::vector<ImVec2> MaskOutline(const Mask& m) {
+  if (m.pointMode != 1 || m.pts.size() < 3) return m.pts;
+  const int n = (int)m.pts.size(), k = 12;   // samples per segment
+  auto T = MaskTangents(m);
+  std::vector<ImVec2> o; o.reserve((size_t)n * k);
+  for (int i = 0; i < n; ++i) {
+    ImVec2 p0 = m.pts[i], p3 = m.pts[(i + 1) % n];
+    ImVec2 p1(p0.x + T[i].x / 3, p0.y + T[i].y / 3), p2(p3.x - T[(i + 1) % n].x / 3, p3.y - T[(i + 1) % n].y / 3);
+    for (int j = 0; j < k; ++j) {
+      float u = (float)j / k, v = 1 - u, b0 = v * v * v, b1 = 3 * u * v * v, b2 = 3 * u * u * v, b3 = u * u * u;
+      o.push_back(ImVec2(p0.x * b0 + p1.x * b1 + p2.x * b2 + p3.x * b3, p0.y * b0 + p1.y * b1 + p2.y * b2 + p3.y * b3));
+    }
+  }
+  return o;
+}
 void MaskSetPoints(Mask& m, const std::vector<ImVec2>& pts) {
   if (pts.size() < 3) return;
+  std::vector<ImVec2> keepTan; for (auto& h : m.handles) keepTan.push_back(MaskTanToCanvas(m, h.t));   // the frame changes below: keep the handles' canvas shape
   const float r = m.rot * 3.14159265f / 180.f, co = std::cos(r), si = std::sin(r);
   float x0 = 1e9f, y0 = 1e9f, x1 = -1e9f, y1 = -1e9f;
   std::vector<ImVec2> l(pts.size());
@@ -640,6 +693,7 @@ void MaskSetPoints(Mask& m, const std::vector<ImVec2>& pts) {
   float cx = lcx * co - lcy * si, cy = lcx * si + lcy * co;
   m.shape = -1; m.x = cx - w * 0.5f; m.y = cy - h * 0.5f; m.w = w; m.h = h;
   m.u.clear(); for (auto& p : l) m.u.push_back(ImVec2((p.x - x0) / w, (p.y - y0) / h));
+  for (size_t i = 0; i < m.handles.size() && i < keepTan.size(); ++i) m.handles[i].t = MaskTanToUnit(m, keepTan[i]);
   MaskRebuild(m);
 }
 // The shape buttons draw the same outline, fitted to a box centred on c.
@@ -661,7 +715,7 @@ void App::addMask(int shape) { pushHist();
 }
 void App::setMaskShape(int shape) {   // Mask properties > Input Mask: the shape buttons re-shape the selected mask
   Mask* mk = curMask(); if (!mk) return;
-  pushHist(); mk->shape = shape; MaskRebuild(*mk);
+  pushHist(); mk->shape = shape; mk->handles.clear(); MaskRebuild(*mk);
 }
 void App::startMaskPen(bool replaceSelected) {
   if (!curSlice()) return;
@@ -674,7 +728,7 @@ void App::finishMaskPen() {
   Slice* sl = curSlice();
   if (sl && penPts.size() >= 3) {
     pushHist();
-    if (penReplace && curMask()) MaskFromPolygon(*curMask(), penPts);   // redraw the selected mask's outline (rect resets to the drawing's box)
+    if (penReplace && curMask()) { curMask()->handles.clear(); MaskFromPolygon(*curMask(), penPts); }   // redraw the selected mask's outline (rect resets to the drawing's box)
     else {
       Mask m; m.id = uid("mask"); m.name = "Mask " + std::to_string(sl->masks.size() + 1); m.inverted = true; m.feather = 4;
       MaskFromPolygon(m, penPts);
@@ -1306,7 +1360,8 @@ static int dragKind = 0, dragIdx = 0;  // 1 perspective corner, 2 frame resize (
 static bool dragOnQuad = false;         // the resize / move / rotate drag edits the Output Transform box of the slice (all its points)
 static ImVec2 dragMo0;                  // pointer (space px) when a frame drag began: Shift locks a move to one axis from here
 static float dragAspect = 1.f;          // w / h of the frame when a corner resize began: Shift keeps it
-static std::string gBezSl; static int gBezR = -1, gBezC = -1;   // Point Mode Bezier: the warp point whose handles are shown (the last one grabbed)
+static std::string gBezSl; static int gBezR = -1, gBezC = -1;
+static std::string gMaskPtSl; static int gMaskPt = -1;   // Bezier mask: the point whose handles are shown on the Input page   // Point Mode Bezier: the warp point whose handles are shown (the last one grabbed)
 static ImVec2 dragOff;                  // grabbed point minus cursor (output px), so grabbing off-centre doesn't jump
 static bool dragOnMask = false;          // the input-frame drags (2 resize / 5 move / 6 rotate) edit the selected mask instead of the slice
 static std::vector<PtStart> gGroup;      // the points being dragged together (dragKind 7)
@@ -1744,6 +1799,16 @@ static void Stage(ImRect r) {
       ImVec2 tp = inOutput(to), loc;
       if (gBezSl == sl->id && Keystone(sl->q).Inv(tp, loc)) { SetBezHandle(*sl, gBezR, gBezC, dragIdx, loc); FitCornersToMesh(*sl); }   // the big corners keep surrounding the curves
     }
+    else if (dragKind == 10 && mk) {   // Bezier mask handle: the tangent follows (the other handle mirrors); a preset shape becomes free
+      if (gMaskPtSl == mk->id && gMaskPt >= 0 && gMaskPt < (int)mk->pts.size()) {
+        if (mk->shape >= 0) MaskSetPoints(*mk, mk->pts);
+        ImVec2 P = mk->pts[gMaskPt], t((to.x - P.x) * 3.f, (to.y - P.y) * 3.f);
+        if (dragIdx == 1) t = ImVec2(-t.x, -t.y);
+        MaskHandle* e = nullptr; for (auto& h : mk->handles) if (h.i == gMaskPt) e = &h;
+        if (!e) { MaskHandle h; h.i = gMaskPt; mk->handles.push_back(h); e = &mk->handles.back(); }
+        e->t = MaskTanToUnit(*mk, t);
+      }
+    }
     else if (dragKind == 8 && mk) {   // Input > Edit Points: one outline point of the selected mask
       ImVec2 tp = inCanvas(to);
       if (snapOn) tp = inCanvas(SnapPoint(tp, BuildSnap(sc, sl, mk, true, -1), snapThr));
@@ -1920,34 +1985,54 @@ static void Stage(ImRect r) {
         ImVec2 sc4[4], sp4[4]; InputCorners(*sl, sc4); for (int i = 0; i < 4; ++i) sp4[i] = toPx(sc4[i]);
         g.dl->AddPolyline(sp4, 4, Ca(K(pal::cyan, 0.8f)), ImDrawFlags_Closed, 1.5f);
         for (auto& M : sl->masks) if (M.id != mk->id && A.mapSelCount() > 1 && A.mapIsSel(2, sc->id, sl->id, M.id)) {   // masks selected together: shown, edited via the primary
-          std::vector<ImVec2> op(M.pts.size()); for (size_t i = 0; i < op.size(); ++i) op[i] = toPx(M.pts[i]);
+          std::vector<ImVec2> op = MaskOutline(M); for (auto& q : op) q = toPx(q);
           g.dl->AddConcavePolyFilled(op.data(), (int)op.size(), Ca(K(pal::yellow, 0.18f)));
           DashedPoly(op.data(), (int)op.size(), K(pal::yellow, 0.8f), 1.5f, 9, 7);
         }
-        std::vector<ImVec2> pp(mk->pts.size()); for (size_t i = 0; i < pp.size(); ++i) pp[i] = toPx(mk->pts[i]);
-        g.dl->AddConcavePolyFilled(pp.data(), (int)pp.size(), Ca(K(pal::yellow, mk->visible ? 0.30f : 0.08f)));   // the mask tone of the design: yellow (faint while hidden)
-        DashedPoly(pp.data(), (int)pp.size(), K(pal::yellow, mk->visible ? 1.f : 0.45f), 2.f, 9, 7);
+        std::vector<ImVec2> pp(mk->pts.size()); for (size_t i = 0; i < pp.size(); ++i) pp[i] = toPx(mk->pts[i]);   // the points
+        std::vector<ImVec2> po = MaskOutline(*mk); for (auto& q : po) q = toPx(q);                                   // the outline cut (Bezier: the curve)
+        const int perSeg = mk->pointMode == 1 ? (int)(po.size() / std::max<size_t>(1, pp.size())) : 1;
+        g.dl->AddConcavePolyFilled(po.data(), (int)po.size(), Ca(K(pal::yellow, mk->visible ? 0.30f : 0.08f)));   // the mask tone of the design: yellow (faint while hidden)
+        DashedPoly(po.data(), (int)po.size(), K(pal::yellow, mk->visible ? 1.f : 0.45f), 2.f, 9, 7);
         if (A.inTool == 1) frame(RectOfMask(*mk), pal::yellow, 1, -1);   // Transform: the frame (move / scale / turn)
         else if (!A.maskPen) {   // Edit Points: each outline point on its own; double-click a point to remove it, the outline to add one
           const float kPtHalf = 4.5f, kPad = 4.f;
-          int hotPt = -1, hotSeg = -1; float segT = 0.f;
-          for (int i = 0; i < (int)pp.size() && hotPt < 0; ++i) if (std::hypot(m.x - pp[i].x, m.y - pp[i].y) <= kPtHalf + kPad) hotPt = i;
-          if (hotPt < 0) for (int i = 0; i < (int)pp.size() && hotSeg < 0; ++i) {
-            ImVec2 a = pp[i], b = pp[(i + 1) % pp.size()], ab(b.x - a.x, b.y - a.y);
+          int hotPt = -1, hotSeg = -1, hotHandle = -1; ImVec2 segAt(0, 0);
+          // Bezier: the handles of the last point grabbed (forward = towards the next point, backward mirrors it)
+          const bool bezMask = mk->pointMode == 1 && gMaskPtSl == mk->id && gMaskPt >= 0 && gMaskPt < (int)mk->pts.size();
+          ImVec2 hpx[2];
+          if (bezMask) {
+            auto T = MaskTangents(*mk); ImVec2 P = mk->pts[gMaskPt], t = T[gMaskPt];
+            hpx[0] = toPx(ImVec2(P.x + t.x / 3, P.y + t.y / 3)); hpx[1] = toPx(ImVec2(P.x - t.x / 3, P.y - t.y / 3));
+            for (int d = 0; d < 2 && hotHandle < 0; ++d) if (std::hypot(m.x - hpx[d].x, m.y - hpx[d].y) <= 6.f + kPad) hotHandle = d;
+          }
+          for (int i = 0; i < (int)pp.size() && hotPt < 0 && hotHandle < 0; ++i) if (std::hypot(m.x - pp[i].x, m.y - pp[i].y) <= kPtHalf + kPad) hotPt = i;
+          if (hotPt < 0 && hotHandle < 0) for (int i = 0; i < (int)po.size() && hotSeg < 0; ++i) {   // along the outline actually cut
+            ImVec2 a = po[i], b = po[(i + 1) % po.size()], ab(b.x - a.x, b.y - a.y);
             float l2 = ab.x * ab.x + ab.y * ab.y; if (l2 < 1.f) continue;
             float t = std::clamp(((m.x - a.x) * ab.x + (m.y - a.y) * ab.y) / l2, 0.f, 1.f);
-            if (std::hypot(a.x + ab.x * t - m.x, a.y + ab.y * t - m.y) <= 5.f) { hotSeg = i; segT = t; }
+            if (std::hypot(a.x + ab.x * t - m.x, a.y + ab.y * t - m.y) <= 5.f) { hotSeg = i / perSeg; segAt = ImVec2(a.x + ab.x * t, a.y + ab.y * t); }
           }
           if (inArea && dragKind == 0 && !frameTookClick && !A.mapHand) {
-            if (hotPt >= 0 || hotSeg >= 0) CursorHand();
-            if (ImGui::IsMouseDoubleClicked(0) && hotPt >= 0 && mk->pts.size() > 3) {
-              A.pushHist(); std::vector<ImVec2> np = mk->pts; np.erase(np.begin() + hotPt); MaskSetPoints(*mk, np); frameTookClick = true;
-            } else if (ImGui::IsMouseDoubleClicked(0) && hotSeg >= 0) {
-              A.pushHist(); std::vector<ImVec2> np = mk->pts; ImVec2 a = np[hotSeg], b = np[(hotSeg + 1) % np.size()];
-              np.insert(np.begin() + hotSeg + 1, ImVec2(a.x + (b.x - a.x) * segT, a.y + (b.y - a.y) * segT)); MaskSetPoints(*mk, np); frameTookClick = true;
+            if (hotPt >= 0 || hotSeg >= 0 || hotHandle >= 0) CursorHand();
+            if (clickPending && hotHandle >= 0) {
+              A.pushHist(); dragKind = 10; dragIdx = hotHandle; frameTookClick = true;
+              dragOff = Vsub(ImVec2((hpx[hotHandle].x - cv.Min.x) / s, (hpx[hotHandle].y - cv.Min.y) / s), mo);
+            } else if (ImGui::IsMouseDoubleClicked(0) && hotPt >= 0 && mk->pts.size() > 3) {
+              A.pushHist(); std::vector<ImVec2> np = mk->pts; np.erase(np.begin() + hotPt); mk->handles.clear(); MaskSetPoints(*mk, np); frameTookClick = true;
+            } else if (ImGui::IsMouseDoubleClicked(0) && hotSeg >= 0) {   // a new point where the outline was clicked
+              A.pushHist(); std::vector<ImVec2> np = mk->pts;
+              np.insert(np.begin() + hotSeg + 1, ImVec2((segAt.x - cv.Min.x) / s, (segAt.y - cv.Min.y) / s)); mk->handles.clear(); MaskSetPoints(*mk, np); frameTookClick = true;
             } else if (clickPending && hotPt >= 0) {
               A.pushHist(); dragKind = 8; dragIdx = hotPt; dragOff = Vsub(mk->pts[hotPt], mo); frameTookClick = true;
-            } else if (clickPending && PointInPoly(m, pp.data(), (int)pp.size())) frameTookClick = true;   // inside the mask: keep it selected
+              gMaskPtSl = mk->id; gMaskPt = hotPt;
+            } else if (clickPending && PointInPoly(m, po.data(), (int)po.size())) frameTookClick = true;   // inside the mask: keep it selected
+          }
+          if (bezMask) for (int d = 0; d < 2; ++d) {
+            bool hot = (dragKind == 10 && dragIdx == d) || (dragKind == 0 && hotHandle == d);
+            g.dl->AddLine(pp[gMaskPt], hpx[d], Ca(K(pal::white, 0.7f)), 1.f);
+            g.dl->AddCircleFilled(hpx[d], hot ? 5.5f : 4.5f, Ca(K(hot ? pal::white : pal::cyan)), 16);
+            g.dl->AddCircle(hpx[d], hot ? 5.5f : 4.5f, Ca(K(0x050505)), 16, 1.5f);
           }
           for (int i = 0; i < (int)pp.size(); ++i) {
             bool hot = (dragKind == 8 && dragIdx == i) || (dragKind == 0 && hotPt == i);
@@ -2570,12 +2655,25 @@ static void PropsPanel(ImRect r) {
       if (ih.click) mk->inverted = !mk->inverted;
       y += 24 + 6;
     }
+    {   // Point mode: straight edges between the points, or a smooth Bezier curve through them (handles on the Input page, Edit Points)
+      Text(x, oy + y + 11, UI_S, 10, K(pal::t88), "Point mode");
+      const char* pm[2] = {"LINEAR", "BEZIER"}; const float bw = 58.f;
+      for (int i = 0; i < 2; ++i) {
+        ImRect br(x + w - (2 - i) * (bw + 3) + 3, oy + y + 1, x + w - (1 - i) * (bw + 3), oy + y + 21);
+        Hit h = HitR(br); bool on = mk->pointMode == i;
+        Box(br, on ? K(pal::yellow, 0.2f) : h.hover ? K(pal::ctrlHover) : K(pal::g1c), on ? K(pal::yellow) : K(pal::g22), 3);
+        TextC((br.Min.x + br.Max.x) * 0.5f, (br.Min.y + br.Max.y) * 0.5f, MONO_B, 8, K(on ? pal::yellow : pal::tcc), pm[i], 0.06f);
+        if (h.hover) CursorHand();
+        if (h.click && !on) { A.pushHist(); mk->pointMode = i; }
+      }
+      y += 22 + 6;
+    }
     Text(x, oy + y + 5, UI_S, 10, K(pal::t88), "Feather");
     char fb[16]; snprintf(fb, sizeof fb, "%dpx", mk->feather);
     TextR(x + w, oy + y + 5, MONO_B, 10, K(pal::yellow), fb);
     y += 10 + 6;
-    float fv = mk->feather / 40.f * 100.f;
-    if (Slider(0x3001, Rc(x, oy + y + 4, w, 6), fv, pal::yellow)) mk->feather = (int)std::round(fv / 100.f * 40.f);
+    float fv = (float)mk->feather;   // soft edge, canvas px: the picture fades to black over this distance at the mask's edge
+    if (Slider(0x3001, Rc(x, oy + y + 4, w, 6), fv, pal::yellow, 0.f, 200.f)) mk->feather = (int)std::round(fv);
     y += 14 + 6;
     HLine(x, x + w, oy + y, K(pal::g2a)); y += 1 + 6;
     Label(x, oy + y, "Mask rectangle (px)"); y += 9 + 4;

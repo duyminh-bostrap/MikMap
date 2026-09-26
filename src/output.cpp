@@ -140,11 +140,21 @@ void DrawSliceOutput(const Screen& sc, const Slice& sl, float ox, float oy, floa
     // Input masks (canvas-space polygons) cut the picture BEFORE it is warped: map each point through the same input-rect ->
     // keystone/mesh map as the content, then let the stencil limit everything this slice draws.
     std::vector<std::vector<ImVec2>> keep, holes;
+    // Each mask outline (straight or Bezier) is cut into short pieces in canvas px before mapping, so its edges bend with the mesh.
+    std::vector<std::vector<ImVec2>> canvasOl;   // per visible mask, the dense canvas outline (the feather band uses it too)
+    std::vector<const Mask*> olMask;
     for (auto& mk : sl.masks) {
       if (mk.pts.size() < 3 || !mk.visible) continue;   // a hidden mask (eye off in the tree) does not cut
-      std::vector<ImVec2> pp; pp.reserve(mk.pts.size());
-      for (auto& p : mk.pts) pp.push_back(wm.Map(p.x, p.y));
+      std::vector<ImVec2> ol = MaskOutline(mk), dense;
+      for (size_t i = 0; i < ol.size(); ++i) {
+        ImVec2 a = ol[i], b = ol[(i + 1) % ol.size()];
+        int n = std::clamp((int)(std::hypot(b.x - a.x, b.y - a.y) / 24.f), 1, 64);
+        for (int j = 0; j < n; ++j) dense.push_back(ImVec2(a.x + (b.x - a.x) * j / n, a.y + (b.y - a.y) * j / n));
+      }
+      std::vector<ImVec2> pp; pp.reserve(dense.size());
+      for (auto& p : dense) pp.push_back(wm.Map(p.x, p.y));
       (mk.inverted ? holes : keep).push_back(std::move(pp));
+      canvasOl.push_back(std::move(dense)); olMask.push_back(&mk);
     }
     // The picture is limited to the slice's own outline (quad or mesh border) — the input rect is a crop, so nothing may spill
     // outside the warped shape — and then to the masks.
@@ -165,6 +175,39 @@ void DrawSliceOutput(const Screen& sc, const Slice& sl, float ox, float oy, floa
       std::vector<ImVec2> o = SliceOutline(sl);
       for (auto& p : o) p = ImVec2(ox + p.x * sx, oy + p.y * sy);
       DrawColorAdjust(o.data(), (int)o.size(), sc.contrast / 100.f, sc.brightness / 100.f, sc.red / 100.f, sc.green / 100.f, sc.blue / 100.f);
+    }
+    // Feather: a band along each mask edge on the visible side, black at the edge fading to clear over `feather` canvas px — the picture
+    // fades into the cut instead of stopping hard. Drawn in canvas px and mapped through the warp like everything else.
+    for (size_t mi = 0; mi < canvasOl.size(); ++mi) {
+      const Mask& mk = *olMask[mi]; const auto& ol = canvasOl[mi];
+      const int n = (int)ol.size();
+      if (mk.feather <= 0 || n < 3) continue;
+      double area2 = 0; for (int i = 0; i < n; ++i) area2 += (double)ol[i].x * ol[(i + 1) % n].y - (double)ol[(i + 1) % n].x * ol[i].y;
+      // inward normal of an edge d is sign(area) * (-d.y, d.x); a keep-mask fades inside its edge, a hole fades outside it
+      const float side = (area2 > 0 ? 1.f : -1.f) * (mk.inverted ? -1.f : 1.f), f = (float)mk.feather;
+      std::vector<ImVec2> inner(n);
+      for (int i = 0; i < n; ++i) {
+        ImVec2 a = ol[(i + n - 1) % n], p = ol[i], b = ol[(i + 1) % n];
+        ImVec2 d0(p.x - a.x, p.y - a.y), d1(b.x - p.x, b.y - p.y);
+        float l0 = std::max(1e-4f, std::hypot(d0.x, d0.y)), l1 = std::max(1e-4f, std::hypot(d1.x, d1.y));
+        ImVec2 n0(-d0.y / l0, d0.x / l0), n1(-d1.y / l1, d1.x / l1), nm(n0.x + n1.x, n0.y + n1.y);
+        float lm = std::hypot(nm.x, nm.y); if (lm < 1e-4f) nm = n1, lm = 1.f;
+        nm = ImVec2(nm.x / lm, nm.y / lm);
+        float c = std::max(0.35f, nm.x * n1.x + nm.y * n1.y);   // miter, capped at sharp corners
+        inner[i] = ImVec2(p.x + nm.x * side * f / c, p.y + nm.y * side * f / c);
+      }
+      const ImU32 edge = IM_COL32(0, 0, 0, 255), clear = IM_COL32(0, 0, 0, 0);
+      const ImVec2 uv = ImGui::GetDrawListSharedData()->TexUvWhitePixel;
+      for (int i = 0; i < n; ++i) {
+        int j = (i + 1) % n;
+        ImVec2 q[4] = {wm.Map(ol[i].x, ol[i].y), wm.Map(ol[j].x, ol[j].y), wm.Map(inner[j].x, inner[j].y), wm.Map(inner[i].x, inner[i].y)};
+        ImU32 cl[4] = {edge, edge, clear, clear};
+        dl->PrimReserve(6, 4);
+        ImDrawIdx base = (ImDrawIdx)dl->_VtxCurrentIdx;
+        for (int k = 0; k < 4; ++k) dl->PrimWriteVtx(q[k], uv, cl[k]);
+        dl->PrimWriteIdx(base); dl->PrimWriteIdx((ImDrawIdx)(base + 1)); dl->PrimWriteIdx((ImDrawIdx)(base + 2));
+        dl->PrimWriteIdx(base); dl->PrimWriteIdx((ImDrawIdx)(base + 2)); dl->PrimWriteIdx((ImDrawIdx)(base + 3));
+      }
     }
     MaskEnd();
   }

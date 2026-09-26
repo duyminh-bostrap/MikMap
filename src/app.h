@@ -80,10 +80,13 @@ struct Deck {
 };
 
 // ───────────── mapping model ─────────────
+struct MaskHandle { int i = 0; ImVec2 t; };   // Bezier mask: point i's tangent, in the mask's unit square (follows its frame)
 struct Mask {
   std::string id, name;
   bool inverted = true;   // Mask properties > Invert: on = cut a hole, off = keep only the inside
   bool visible = true;    // the eye in the Mapping tree: off = the mask is kept but does not cut the output
+  int pointMode = 0;      // 0 Linear (straight between points), 1 Bezier (a smooth closed curve through them)
+  std::vector<MaskHandle> handles;   // Bezier tangents the user dragged; the others are automatic (Catmull-Rom)
   int feather = 4;        // stored only: the output does not feather mask edges yet
   // Every mask is an outline (a preset shape, or a free one) placed by a rotated rectangle in COMPOSITION CANVAS px — it is edited
   // exactly like the input rect (move / resize / rotate frame, X Y Left Top Width Height Rotation).
@@ -518,7 +521,8 @@ std::vector<ImVec2> SliceOutline(const Slice& s);   // output-space outline of a
 void MaskBegin(const std::vector<ImVec2>& outline, const std::vector<std::vector<ImVec2>>& keep, const std::vector<std::vector<ImVec2>>& holes);
 void MaskEnd();
 void MaskRebuild(Mask& m);
-void MaskSetPoints(Mask& m, const std::vector<ImVec2>& pts);   // a free outline through these canvas points; keeps the mask's turn
+void MaskSetPoints(Mask& m, const std::vector<ImVec2>& pts);
+std::vector<ImVec2> MaskOutline(const Mask& m);   // the outline actually cut (canvas px): the points, or the Bezier curve through them   // a free outline through these canvas points; keeps the mask's turn
 void NormalizeWarp(Slice& s);
 bool MappingSelfTest(std::string& why);   // --roundtrip: Transform box, subdivision resampling, old-file normalising, mask point edits   // old corner-pin-only slices (warp 0) become a plain 1 x 1 grid                                        // regenerate pts from shape/u + the rect (call after changing any of them)
 void MaskFromPolygon(Mask& m, const std::vector<ImVec2>& poly);   // make m a free outline that fits a canvas-px polygon
