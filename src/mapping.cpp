@@ -1073,11 +1073,6 @@ static bool PointInPoly(ImVec2 p, const ImVec2* v, int n) {
   return in;
 }
 
-static void FillPoly(const ImVec2* p, int n, ImU32 c) {
-  // fan triangulation (quads are convex; masks are user-edited quads)
-  for (int i = 1; i + 1 < n; ++i) g.dl->AddTriangleFilled(p[0], p[i], p[i + 1], Ca(c));
-}
-
 // Right-click on the input rect: quick placement (centre / mirror / halves / whole), exchange shape with the output quad,
 // stacking order, and the slice clipboard — the same list Resolume offers on its input selection.
 static void InputRectMenu(ImVec2 at, bool output = false) {
@@ -1623,16 +1618,7 @@ static void Stage(ImRect r) {
     for (auto& S : sc->slices) {
       if (!S.visible) continue;
       bool on = (sl && S.id == sl->id) || (A.MapKind() == 1 && A.mapSelCount() > 1 && A.mapIsSel(1, sc->id, S.id, ""));
-      ImU32 fill = on ? K(pal::coral, 0.10f) : 0;   // faint on purpose: the thumbnail underneath has to stay readable
-      if (!fill) {}
-      else if (S.warp == 0) { ImVec2 pp[4]; polyPx(S.q, 4, pp); FillPoly(pp, 4, fill); }
-      else {   // a warped mesh may be concave overall — fill it cell by cell
-        auto gr = MeshGrid(S);
-        for (size_t rr = 0; rr + 1 < gr.size(); ++rr) for (size_t cc = 0; cc + 1 < gr[rr].size(); ++cc) {
-          ImVec2 cell[4] = {toPx(gr[rr][cc]), toPx(gr[rr][cc + 1]), toPx(gr[rr + 1][cc + 1]), toPx(gr[rr + 1][cc])};
-          FillPoly(cell, 4, fill);
-        }
-      }
+      // no tinted fill on the Output page: a slice is only an outline, so the thumbnail underneath shows exactly what it sends out
       auto ol = outlinePx(S);
       if (on) g.dl->AddPolyline(ol.data(), (int)ol.size(), Ca(K(pal::coral)), ImDrawFlags_Closed, 2.5f);
       else DashedPoly(ol.data(), (int)ol.size(), K(0x444444), 1.5f, 9, 6);

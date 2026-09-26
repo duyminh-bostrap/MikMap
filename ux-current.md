@@ -319,7 +319,7 @@ Ba vùng: **cây Screen/Slice/Mask** (trái) | **Stage canvas** (giữa) | **Pro
 | M9 | Bấm trong slice → chọn slice trên cùng; bấm vào mask → chọn mask | ✅ |
 | M10 | Với slice đang chọn ở chế độ mesh: bấm lại để đặt "điểm cắt", rồi dùng nút thêm cột/hàng | ✅ |
 | M11 | Chip 🔍 cạnh tên slice → zoom vào slice | ✅ |
-| M12 | **Thumbnail output của từng slice** (2026-09-26): mỗi slice hiện đúng hình nó gửi ra máy chiếu — sau vùng lấy, keystone/mesh, **mask cắt**, Opacity/màu của Screen — vẽ bằng chính `DrawSliceOutput` (`output.cpp`) mà cửa sổ máy chiếu dùng, cắt theo khung 1920×1080; nền slice đang chọn chỉ còn ~10% coral, slice khác chỉ có viền nét đứt. Tôn trọng ẩn/Solo. | ✅ |
+| M12 | **Thumbnail output của từng slice** (2026-09-26): mỗi slice hiện đúng hình nó gửi ra máy chiếu — sau vùng lấy, keystone/mesh, **mask cắt**, Opacity/màu của Screen — vẽ bằng chính `DrawSliceOutput` (`output.cpp`) mà cửa sổ máy chiếu dùng, cắt theo khung 1920×1080; **không tô nền**: slice đang chọn chỉ có viền coral, slice khác chỉ có viền nét đứt (2026-09-26). Tôn trọng ẩn/Solo. | ✅ |
 
 ### 3.3 Properties (phải)
 Slice, **trang Output** (2026-09-26, thông tin theo panel slice của Resolume, widget/màu giữ của MikMap): tên · Input source · **Flip** (NONE / X / Y / X+Y, cộng hợp với mirror của khung input) ·
