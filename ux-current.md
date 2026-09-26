@@ -262,7 +262,7 @@ Ba vùng: **cây Screen/Slice/Mask** (trái) | **Stage canvas** (giữa) | **Pro
 - **Hai trang** (tab đầu canvas): **Input selection** (chọn vùng lấy từ canvas) và
   **Output routing** (bố trí đầu ra/warp).
 - **Khung input sửa như khung transform của Preview Cue (2026-09-26):** kéo **trong khung** = di chuyển (khung
-  thẳng bị giữ trong canvas) · **ô vuông ở góc / giữa cạnh** = co giãn trong hệ trục của khung (cạnh/góc đối diện
+  thẳng bị giữ trong canvas) · **ô vuông ở góc / bất kỳ đâu dọc cạnh** = co giãn (kéo cả đoạn cạnh, không chỉ ô vuông giữa) trong hệ trục của khung (cạnh/góc đối diện
   đứng yên, kể cả khi đã xoay) · **vòng tròn quanh 4 góc** = **xoay** quanh tâm (giữ `Shift` = nhảy 15°). Thanh
   **Rotation** (−180…180°) ở Slice Properties sửa cùng giá trị, bấm đúp để về 0; nhãn giữa khung ghi
   `W × H · góc · flip`. Xoay/Mirror áp lên **output thật** (`WarpMap::Map`), lưu trong dự án và undo được.
@@ -278,7 +278,7 @@ Ba vùng: **cây Screen/Slice/Mask** (trái) | **Stage canvas** (giữa) | **Pro
   mỗi ô như trước đây · công tắc **Soft edge** (nút ENABLED/DISABLED cùng kiểu Edge blending) · mục **INPUT MASK** với 6 nút hình: **tim · vuông · tròn · tam giác · lục giác · bút**.
   Bấm một hình = thêm mask cỡ nửa **khung input** của slice, ngay giữa khung, và chọn mask vừa tạo.
   **Mask nằm trong không gian composition canvas (như khung input), sửa ở trang Input và cắt hình gửi ra output thật** (2026-09-26):
-  - **Mask chỉnh y hệt khung input** (khung kiểu Preview Cue): kéo **trong khung** = di chuyển, **ô vuông ở góc / giữa cạnh** = co giãn, **vòng tròn quanh 4 góc** = xoay (giữ `Shift` = nhảy 15°). Mọi mask — hình có sẵn hay bút — đều là một đường viền đơn vị đặt bằng một hình chữ nhật xoay (`Mask::x/y/w/h/rot` + `shape` hoặc `u`), nên cùng một bộ điều khiển.
+  - **Mask chỉnh y hệt khung input** (khung kiểu Preview Cue): kéo **trong khung** = di chuyển, **ô vuông ở góc / bất kỳ đâu dọc cạnh** = co giãn (kéo cả đoạn cạnh, không chỉ ô vuông giữa), **vòng tròn quanh 4 góc** = xoay (giữ `Shift` = nhảy 15°). Mọi mask — hình có sẵn hay bút — đều là một đường viền đơn vị đặt bằng một hình chữ nhật xoay (`Mask::x/y/w/h/rot` + `shape` hoặc `u`), nên cùng một bộ điều khiển.
   - **Chỉ mask đang được chọn mới hiện** (kèm khung); các mask khác ẩn cho tới khi chọn ở cây bên trái (bấm mask ở cây tự nhảy sang trang Input). Đang sửa mask thì khung slice chỉ còn viền; bấm vào khung slice (ngoài khung mask) = quay về chọn slice.
   - **Panel Mask** (thông tin theo mẫu Resolume, giao diện MikMap): ô tên · **Invert (cut hole)** (bật = khoét lỗ, tắt = chỉ giữ phần bên trong) · Feather · lưới ô số **Mask rectangle (px)** `X · Y · Left · Top · Width · Height · Rotation` (1 số lẻ) · mục **Mask shape** — **bấm một hình = đổi shape của mask đang chọn** (giữ nguyên khung/góc xoay; hình hiện tại được tô sáng), nút **bút** = vẽ lại đường viền mask đang chọn (bấm từng điểm, bấm lại điểm đầu / `Enter` / bấm đúp để đóng, `Esc` huỷ; khung tự vừa với nét vẽ) · **Delete mask**. Feather vẫn ở panel như thiết kế cũ nhưng **mới chỉ lưu, output chưa làm mờ viền**. Khi chọn **slice** (không phải mask), cùng thanh INPUT MASK ở panel slice **thêm** mask mới (nửa khung input, ở giữa khung).
   - Nhiều mask cùng slice: phần được giữ là hợp các mask "chỉ giữ trong" (không có thì cả hình) trừ đi các lỗ.
