@@ -264,6 +264,9 @@ Ba vùng: **cây Screen/Slice/Mask** (trái) | **Stage canvas** (giữa) | **Pro
   **Chuột phải** trong khung mở menu (M3b): *Match Output Shape* = input lấy hình dạng + góc của quad output,
   *Swap* = đổi chỗ hai hình, *Bring Forward/Send Backwards* = thứ tự chồng slice, *Duplicate/Copy/Cut/Paste* =
   clipboard slice (runtime, không lưu). ✅ Chưa thử kéo ô co giãn khi khung đang xoay bằng chuột thật.
+- **Nhiều slice cùng screen (2026-09-26):** slice đang chọn có khung chỉnh sửa như trên nhưng **nền tô chỉ còn ~5%** (trước 15%) để hình
+  nguồn bên dưới vẫn rõ; các slice **khác cùng screen** (đang hiện) chỉ vẽ **viền + tên** phần input của chúng (không tay nắm), để biết
+  vùng nào của nguồn đã được lấy khi chuyển sang slice khác. Slice ẩn (👁 tắt) không vẽ. Chưa cho bấm vào viền để chọn — chọn qua cây bên trái. ✅
 - **Nền trang Input = nội dung thật của nguồn (2026-09-26):** khung canvas hiện hình đang phát của đúng
   **nguồn mà slice đang chọn nhận** (*Input source*: Composition / Layer / Group — cùng `DrawSliceSource` với
   cửa sổ output, nên solo/bypass/opacity/transform khớp), chạy động cùng nhịp Live Output; đổi Input source là nền đổi theo.

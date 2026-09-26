@@ -962,6 +962,15 @@ static void Stage(ImRect r) {
   bool clickPending = ImGui::IsMouseClicked(0) && overStage && !dragKind;
 
   if (A.mpage == 0) {
+    // The other slices of this screen show only their input outline (no handles), so it is clear which parts of the source
+    // are already taken while another slice is being edited. Drawn first so the selected slice's frame stays on top.
+    if (scVis) for (auto& o : sc->slices) {
+      if (!o.visible || (sl && o.id == sl->id)) continue;
+      ImVec2 oc[4], opx[4]; InputCorners(o, oc);
+      for (int i = 0; i < 4; ++i) opx[i] = toPx(oc[i]);
+      g.dl->AddPolyline(opx, 4, Ca(K(pal::cyan, 0.7f)), ImDrawFlags_Closed, 1.5f);
+      TextEll(opx[0].x + 6, opx[0].y + 10, std::max(0.f, std::hypot(opx[1].x - opx[0].x, opx[1].y - opx[0].y) - 12), MONO_R, 9, K(pal::cyan, 0.8f), o.name.c_str());
+    }
     if (sl && sl->visible && scVis) {
       // The input rect is edited like the Preview Cue transform frame: drag inside to move, the small squares (corners and
       // edge middles) to resize, the rings around the corners to rotate. Right-click for the quick placement menu.
@@ -986,7 +995,7 @@ static void Stage(ImRect r) {
         else { dragAng0 = std::atan2(mo.y - ctrCv.y, mo.x - ctrCv.x); dragRot0 = sl->irot; }
       }
       if (rClick && PointInPoly(m, cpx, 4)) InputRectMenu(m);
-      g.dl->AddConvexPolyFilled(cpx, 4, Ca(K(pal::cyan, 0.15f)));
+      g.dl->AddConvexPolyFilled(cpx, 4, Ca(K(pal::cyan, 0.05f)));   // faint on purpose: the source thumbnail underneath has to stay readable
       g.dl->AddPolyline(cpx, 4, Ca(K(pal::cyan)), ImDrawFlags_Closed, 2.f);
       char dm[64]; int len = snprintf(dm, sizeof dm, "%d \xC3\x97 %d", sl->iw, sl->ih);
       if (sl->irot != 0.f) len += snprintf(dm + len, sizeof dm - len, " \xC2\xB7 %.0f\xC2\xB0", sl->irot);
