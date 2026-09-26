@@ -300,7 +300,9 @@ static void SetVisibleCorners(Slice& s, const ImVec2 target[4]) {
 }
 
 // --roundtrip checks for the Resolume-style tools (the helpers are private to this file).
+static bool GroupMoveSelfTest(std::string& why);
 bool MappingSelfTest(std::string& why) {
+  if (!GroupMoveSelfTest(why)) return false;
   auto near2 = [](ImVec2 a, ImVec2 b, float tol) { return std::fabs(a.x - b.x) <= tol && std::fabs(a.y - b.y) <= tol; };
   Slice s; s.q[0] = {200, 150}; s.q[1] = {1500, 120}; s.q[2] = {1600, 900}; s.q[3] = {150, 980};
   s.meshCols = 3; s.meshRows = 2;
@@ -564,20 +566,46 @@ static std::vector<PtStart> CapturePoints(Screen& sc, const std::vector<App::PtR
   return out;
 }
 // Put every captured point at (its start + delta): corners first (they define the keystone), then mesh points through the new keystone.
+// Put every captured point at (its start + delta). A slice whose warp points are in the group is a point edit: its warp points that are
+// NOT in the group keep their place on screen (moving a picked perspective corner must not drag the rest of the grid along), and the
+// big corners are refit around the grid afterwards. A slice with only perspective corners in the group is a perspective edit: its
+// grid follows the new corners, as when one corner is dragged on its own.
 static void MovePointsTo(Screen& sc, const std::vector<PtStart>& st, ImVec2 delta) {
   auto clampOut = [](ImVec2 p) { return ImVec2(std::clamp(std::round(p.x + 0.f), -4000.f, 8000.f), std::clamp(std::round(p.y + 0.f), -4000.f, 8000.f)); };
+  std::map<std::string, std::vector<std::vector<ImVec2>>> pinned;   // slice id -> its grid on screen before this move
+  for (auto& s : sc.slices) for (auto& p : st) if (p.idx >= 1000 && p.sl == s.id) { pinned[s.id] = MeshGrid(s); break; }
   for (auto& p : st) if (p.idx < 1000) if (Slice* s = SliceById(sc, p.sl)) s->q[p.idx] = clampOut(ImVec2(p.out.x + delta.x, p.out.y + delta.y));
   for (auto& s : sc.slices) {
-    bool any = false; for (auto& p : st) if (p.idx >= 1000 && p.sl == s.id) any = true;
-    if (!any || s.warp == 0) continue;
+    auto it = pinned.find(s.id); if (it == pinned.end()) continue;
+    const auto& was = it->second;
     Keystone k(s.q); auto lg = LocalGrid(s);
-    for (auto& p : st) if (p.idx >= 1000 && p.sl == s.id) {
-      int rr = (p.idx - 1000) / 100, cc = (p.idx - 1000) % 100; ImVec2 loc;
-      if (rr < (int)lg.size() && cc < (int)lg[rr].size() && k.Inv(clampOut(ImVec2(p.out.x + delta.x, p.out.y + delta.y)), loc)) lg[rr][cc] = loc;
+    for (int rr = 0; rr < (int)lg.size() && rr < (int)was.size(); ++rr) for (int cc = 0; cc < (int)lg[rr].size() && cc < (int)was[rr].size(); ++cc) {
+      ImVec2 target = was[rr][cc];   // not picked: stays where it is on screen
+      for (auto& p : st) if (p.sl == s.id && p.idx == 1000 + rr * 100 + cc) { target = clampOut(ImVec2(p.out.x + delta.x, p.out.y + delta.y)); break; }
+      ImVec2 loc; if (k.Inv(target, loc)) lg[rr][cc] = loc;
     }
     s.meshLocal = lg;
     FitCornersToMesh(s);   // the big corners keep surrounding the grid
   }
+}
+// --roundtrip: moving a group of top points (two perspective corners among them) leaves every other warp point where it was.
+static bool GroupMoveSelfTest(std::string& why) {
+  Screen sc; Slice s; s.id = "g"; s.q[0] = {200, 150}; s.q[1] = {1500, 120}; s.q[2] = {1600, 900}; s.q[3] = {150, 980};
+  s.meshCols = 4; s.meshRows = 3; s.meshLocal = LocalGrid(s); s.meshLocal[1][2] = {0.55f, 0.4f};
+  sc.slices.push_back(s);
+  auto before = MeshGrid(sc.slices[0]);
+  std::vector<App::PtRef> refs = {{"g", 0}, {"g", 1}};
+  for (int c = 0; c < 5; ++c) { refs.push_back({"g", 1000 + c}); refs.push_back({"g", 1100 + c}); }   // the top two rows
+  auto st = CapturePoints(sc, refs);
+  MovePointsTo(sc, st, ImVec2(12, -80));
+  auto after = MeshGrid(sc.slices[0]);
+  for (size_t r = 0; r < after.size(); ++r) for (size_t c = 0; c < after[r].size(); ++c) {
+    ImVec2 want = r <= 1 ? ImVec2(std::round(before[r][c].x + 12), std::round(before[r][c].y - 80)) : before[r][c];
+    if (std::fabs(after[r][c].x - want.x) > 0.6f || std::fabs(after[r][c].y - want.y) > 0.6f) {
+      why = r <= 1 ? "a picked warp point did not move with the group" : "moving the top points dragged unpicked warp points along"; return false;
+    }
+  }
+  return true;
 }
 
 // ── multi-selection ──
