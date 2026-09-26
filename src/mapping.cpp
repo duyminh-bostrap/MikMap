@@ -194,6 +194,24 @@ ImVec2 SliceMapUV(const Slice& s, float u, float v) {
   return k.Fwd(Bilerp(at(ri, ci), at(ri, ci + 1), at(ri + 1, ci + 1), at(ri + 1, ci), lu, lv));
 }
 
+// The mesh parameter (u, v) whose output position is `out`: start from the keystone's own inverse and refine with Newton steps, so on a
+// deformed mesh the point a click lands on is the point the new column / row is placed through.
+static bool MeshParamAt(const Slice& s, ImVec2 out, float& u, float& v) {
+  ImVec2 l; if (!Keystone(s.q).Inv(out, l)) return false;
+  u = l.x; v = l.y;
+  if (s.warp == 0) return true;
+  for (int it = 0; it < 8; ++it) {
+    ImVec2 p = SliceMapUV(s, u, v), e(out.x - p.x, out.y - p.y);
+    if (std::hypot(e.x, e.y) < 0.25f) break;
+    const float h = 0.002f;
+    ImVec2 pu = SliceMapUV(s, u + h, v), pv = SliceMapUV(s, u, v + h);
+    float a = (pu.x - p.x) / h, c = (pu.y - p.y) / h, b = (pv.x - p.x) / h, d = (pv.y - p.y) / h, det = a * d - b * c;
+    if (std::fabs(det) < 1e-6f) break;
+    u += (d * e.x - b * e.y) / det; v += (-c * e.x + a * e.y) / det;
+  }
+  return true;
+}
+
 void SliceOutputBounds(const Slice& s, ImVec2& mn, ImVec2& mx) {
   mn = ImVec2(1e9f, 1e9f); mx = ImVec2(-1e9f, -1e9f);
   auto add = [&](ImVec2 p) { mn.x = std::min(mn.x, p.x); mn.y = std::min(mn.y, p.y); mx.x = std::max(mx.x, p.x); mx.y = std::max(mx.y, p.y); };
@@ -1557,7 +1575,8 @@ static void Stage(ImRect r) {
     // forget picked points that no longer exist (a slice or mesh point was deleted / re-meshed)
     A.mapPts.erase(std::remove_if(A.mapPts.begin(), A.mapPts.end(), [&](const App::PtRef& r) { Slice* ps = SliceById(*sc, r.sl); ImVec2 tmp; return !ps || !PointPos(*ps, r.idx, tmp); }), A.mapPts.end());
     auto grab = [&](int kind, int idx, ImVec2 at) { A.mapPts.clear(); A.pushHist(); dragKind = kind; dragIdx = idx; dragOff = Vsub(at, mo); consumed = true; };
-    if (clickPending && !consumed && A.mapPts.size() > 1) {   // pressing one of several picked points drags the whole group
+    const bool placing = A.meshArm != 0;   // armed by + Add col / + Add row: the next click places the split, even right on top of a point or line
+    if (clickPending && !consumed && !placing && A.mapPts.size() > 1) {   // pressing one of several picked points drags the whole group
       for (auto& r : A.mapPts) if (Slice* ps = SliceById(*sc, r.sl)) {
         ImVec2 pos; if (!PointPos(*ps, r.idx, pos) || !nearPt(pos, kCornerR + kGrabPad)) continue;
         A.pushHist(); gGroup = CapturePoints(*sc, A.mapPts); gGrabStart = pos; dragKind = 7; dragIdx = 0; dragOff = Vsub(pos, mo); consumed = true; break;
@@ -1574,9 +1593,9 @@ static void Stage(ImRect r) {
       haveZoom = true;
     }
     if (clickPending && haveZoom && zoomBtn.Contains(m)) { ZoomToSlice(area, *sl); consumed = true; }
-    if (sl && sl->visible && sl->warp != 0 && clickPending && !consumed)   // free corners belong to Mesh mode; 4-key edits a rectangle
+    if (sl && sl->visible && sl->warp != 0 && clickPending && !consumed && !placing)   // free corners belong to Mesh mode; 4-key edits a rectangle
       for (int i = 0; i < 4 && !consumed; ++i) if (nearPt(sl->q[i], kCornerR + kGrabPad)) grab(1, i, sl->q[i]);
-    if (clickPending && !consumed && sl && sl->visible && sl->warp != 0) {
+    if (clickPending && !consumed && !placing && sl && sl->visible && sl->warp != 0) {
       auto gr = MeshGrid(*sl);
       int R = (int)gr.size(), C = (int)gr[0].size();
       for (int rr = 0; rr < R && !consumed; ++rr) for (int cc = 0; cc < C && !consumed; ++cc) {
@@ -1592,9 +1611,9 @@ static void Stage(ImRect r) {
         bool wasOn = sl && it->id == sl->id;
         A.mapMulti.clear();
         A.selSc = sc->id; A.selSl = it->id; A.selMk.clear(); A.selKind = 1; consumed = true;
-        ImVec2 l;   // where the click lands in keystone space = the split position for "+ add col / + add row"
-        if (it->warp != 0 && Keystone(it->q).Inv(mo, l)) {   // any click inside a mesh slice marks the spot (the yellow dot), also the one that selects it
-          float u = std::clamp(l.x, 0.02f, 0.98f), v = std::clamp(l.y, 0.02f, 0.98f);
+        float pu0, pv0;   // where the click lands on the mesh = the split position for "+ add col / + add row"
+        if (it->warp != 0 && MeshParamAt(*it, mo, pu0, pv0)) {   // any click inside a mesh slice marks the spot (the yellow dot), also the one that selects it
+          float u = std::clamp(pu0, 0.02f, 0.98f), v = std::clamp(pv0, 0.02f, 0.98f);
           if (A.meshArm && wasOn) {   // a split is only ever placed in the slice that was already selected
             std::vector<float> us, vs; MeshUV(*it, us, vs);
             std::vector<float>& lst = A.meshArm == 'u' ? us : vs; float p = A.meshArm == 'u' ? u : v;
@@ -1602,7 +1621,7 @@ static void Stage(ImRect r) {
             if (!dup) { A.pushHist(); lst.push_back(p); std::sort(lst.begin(), lst.end()); it->meshU = us; it->meshV = vs; it->warp = 1; }
             A.meshArm = 0;
           }
-          A.meshPickOn = true; A.meshPickU = u; A.meshPickV = v;
+          A.meshPickOn = true; A.meshPickU = u; A.meshPickV = v; A.meshPickSl = it->id;
         }
       }
     }
@@ -1641,8 +1660,21 @@ static void Stage(ImRect r) {
         g.dl->AddCircle(p, rad, Ca(K(hot ? pal::white : 0x050505)), 20, hot ? 1.5f : 2.f);
         if (hot) CursorHand();
       }
-      if (A.meshPickOn) {
-        ImVec2 mp = toPx(Keystone(sl->q).Fwd(ImVec2(A.meshPickU, A.meshPickV)));
+      if (A.meshArm && overStage && !dragKind) {   // + Add col / + Add row armed: a line follows the pointer, showing where the click will put it
+        float pu, pv;
+        if (MeshParamAt(*sl, mo, pu, pv) && pu > 0.f && pu < 1.f && pv > 0.f && pv < 1.f) {
+          const bool col = A.meshArm == 'u';
+          float cu = std::clamp(pu, 0.02f, 0.98f), cv = std::clamp(pv, 0.02f, 0.98f);
+          std::vector<ImVec2> pl; for (int i = 0; i <= 32; ++i) { float t = i / 32.f; pl.push_back(toPx(SliceMapUV(*sl, col ? cu : t, col ? t : cv))); }
+          g.dl->AddPolyline(pl.data(), (int)pl.size(), Ca(K(0x050505, 0.6f)), 0, 4.f);
+          g.dl->AddPolyline(pl.data(), (int)pl.size(), Ca(K(pal::yellow)), 0, 2.f);
+          char lb[24]; snprintf(lb, sizeof lb, "%s %d%%", col ? "COL" : "ROW", (int)std::lround((col ? cu : cv) * 100.f));
+          TextR(m.x - 12, m.y - 14, MONO_B, 9, K(pal::yellow), lb, 0.06f);
+          ImGui::SetMouseCursor(col ? ImGuiMouseCursor_ResizeEW : ImGuiMouseCursor_ResizeNS);
+        }
+      }
+      if (A.meshPickOn && A.meshPickSl == sl->id) {
+        ImVec2 mp = toPx(SliceMapUV(*sl, A.meshPickU, A.meshPickV));
         g.dl->AddCircleFilled(mp, 6.f, Ca(K(pal::yellow)), 20); g.dl->AddCircle(mp, 6.f, Ca(K(0x050505)), 20, 2.f);
       }
     }
@@ -1990,7 +2022,7 @@ static void PropsPanel(ImRect r) {
         if (hm.click) { nv = sub[i] - 1; chg = true; } if (hp.click) { nv = sub[i] + 1; chg = true; }
         if (chg) {
           nv = std::clamp(nv, 0, 15);
-          if (nv != sub[i]) { A.pushHist(); if (i) { sl->meshRows = nv + 1; sl->meshV.clear(); } else { sl->meshCols = nv + 1; sl->meshU.clear(); } sl->meshLocal.clear(); }   // a new split count starts from an even grid again
+          if (nv != sub[i]) { A.meshPickOn = false; A.pushHist(); if (i) { sl->meshRows = nv + 1; sl->meshV.clear(); } else { sl->meshCols = nv + 1; sl->meshU.clear(); } sl->meshLocal.clear(); }   // a new split count starts from an even grid again
         }
         y += 22;
       }
@@ -2007,7 +2039,7 @@ static void PropsPanel(ImRect r) {
         Box(ub, K(pal::g1c), hu.hover ? K(pal::yellow) : K(pal::g22), 3); TextC((ub.Min.x + ub.Max.x) * 0.5f, oy + y + 10, MONO_B, 9, K(hu.hover ? pal::yellow : pal::t88), "UNIFORM", 0.09f);
         if (hf.hover || hu.hover) CursorHand();
         if (hf.click) { A.pushHist(); sl->meshLocal.clear(); }
-        if (hu.click) { A.pushHist(); sl->meshU.clear(); sl->meshV.clear(); sl->meshLocal.clear(); }
+        if (hu.click) { A.meshPickOn = false; A.pushHist(); sl->meshU.clear(); sl->meshV.clear(); sl->meshLocal.clear(); }
         y += 20 + 6;
       }
       {

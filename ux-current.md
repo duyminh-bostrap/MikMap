@@ -317,7 +317,7 @@ Ba vùng: **cây Screen/Slice/Mask** (trái) | **Stage canvas** (giữa) | **Pro
 | M7c | **Chuột phải** trong một slice ở Output = chọn slice đó + menu như Input: Center X/Y, Mirror X/Y, Left/Top/Right/Bottom Half, Whole Area (theo khung 1920×1080), Match Input Shape, Swap Input Output Shape, Bring Forward/Send Backwards, Duplicate/Copy/Cut/Paste. | ✅ |
 | M8 | **Khung chỉnh mask** như khung input: di chuyển / co giãn / xoay; chỉ mask đang chọn hiện — làm ở trang **Input** | ✅ |
 | M9 | Bấm trong slice → chọn slice trên cùng; bấm vào mask → chọn mask | ✅ |
-| M10 | Với slice đang chọn ở chế độ mesh: bấm lại để đặt "điểm cắt", rồi dùng nút thêm cột/hàng | ✅ |
+| M10 | Chế độ mesh: bấm vào slice để đánh dấu chấm vàng "điểm cắt". Bấm **+ Add col / + Add row** (nút sáng vàng): một **đường xem trước** (vàng, kèm nhãn `COL 58%` / `ROW 40%`) chạy theo chuột và uốn theo lưới; bấm để đặt đường đó — kể cả khi bấm ngay sát một điểm/đường có sẵn (lúc đang chờ đặt thì không nắm điểm). Vị trí tính qua lưới đã méo (`MeshParamAt`), không chỉ theo keystone. Chấm chỉ hiện với slice đã đặt nó và tắt khi đổi số Subdivisions / Flatten / Uniform | ✅ |
 | M11 | Chip 🔍 cạnh tên slice → zoom vào slice | ✅ |
 | M12 | **Thumbnail output của từng slice** (2026-09-26): mỗi slice hiện đúng hình nó gửi ra máy chiếu — sau vùng lấy, keystone/mesh, **mask cắt**, Opacity/màu của Screen — vẽ bằng chính `DrawSliceOutput` (`output.cpp`) mà cửa sổ máy chiếu dùng, cắt theo khung 1920×1080; **không tô nền**: slice đang chọn chỉ có viền coral, slice khác chỉ có viền nét đứt (2026-09-26). Tôn trọng ẩn/Solo. | ✅ |
 

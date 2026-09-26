@@ -314,7 +314,7 @@ struct App {
   void setZoom(float z) { setZoom(z, mapCx, mapCy); }
   void setZoom(float z, float cx, float cy) { mapReq.valid = true; mapReq.z = z; mapReq.cx = cx; mapReq.cy = cy; }
   bool mapFocus = false;
-  char meshArm = 0; bool meshPickOn = false; float meshPickU = 0, meshPickV = 0;
+  char meshArm = 0; bool meshPickOn = false; float meshPickU = 0, meshPickV = 0; std::string meshPickSl;   // meshArm: 'u'/'v' = the next click on the stage places a column/row; the pick dot belongs to slice meshPickSl
   // Undo/redo is global (project.cpp): snapshots are taken automatically when input goes idle, so pushHist() is a
   // no-op kept only so the many call sites in mapping.cpp stay valid.
   void pushHist() {}
