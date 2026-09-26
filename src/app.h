@@ -461,6 +461,10 @@ bool OutputOpen();
 void OpenOutput(struct GLFWwindow* share, int monitorIdx);
 void CloseOutput();
 void ToggleOutput(struct GLFWwindow* share, int monitorIdx);
+// Keys that close the projector window while IT has focus (the main window's F11 only works when the main window does):
+// Esc, F11, or Ctrl/Cmd+W. GLFW key/action/mods values are passed through so this stays testable without a window.
+bool OutputKeyCloses(int key, int action, int mods);
+bool OutputKeyWiringOk();   // test aid (--outkeytest): fires Esc through the output window's real key callback and reports whether it got flagged to close
 void RenderOutput();
 struct GLFWwindow* glfwWin();   // the control window, for opening the output on a shared context
 int MonitorCount();

@@ -32,6 +32,27 @@ static std::string gCapture;   // one-shot screenshot of the projector window (h
 void SetOutputCapture(const char* path) { gCapture = path ? path : ""; }
 bool OutputOpen() { return gOut != nullptr; }
 
+bool OutputKeyCloses(int key, int action, int mods) {
+  if (action != GLFW_PRESS) return false;
+  if (key == GLFW_KEY_ESCAPE || key == GLFW_KEY_F11) return true;
+  return key == GLFW_KEY_W && (mods & (GLFW_MOD_CONTROL | GLFW_MOD_SUPER)) != 0;
+}
+// The output window is a bare GLFW window (no ImGui input), so it gets its own key callback: closing is just flagging it,
+// RenderOutput() then tears it down on the next frame like the window's own close button.
+static void OutputKeyCb(GLFWwindow* w, int key, int, int action, int mods) {
+  if (OutputKeyCloses(key, action, mods)) glfwSetWindowShouldClose(w, GLFW_TRUE);
+}
+
+bool OutputKeyWiringOk() {
+  if (!gOut) return false;
+  GLFWkeyfun cb = glfwSetKeyCallback(gOut, OutputKeyCb);   // returns the callback that was installed by OpenOutput
+  if (!cb) return false;
+  cb(gOut, GLFW_KEY_ESCAPE, 0, GLFW_PRESS, 0);
+  bool flagged = glfwWindowShouldClose(gOut) != 0;
+  glfwSetWindowShouldClose(gOut, GLFW_FALSE);
+  return flagged;
+}
+
 void CloseOutput() {
   if (!gOut) return;
   GLFWwindow* w = gOut;
@@ -59,6 +80,7 @@ void OpenOutput(GLFWwindow* share, int monitorIdx) {
   glfwWindowHint(GLFW_FOCUS_ON_SHOW, GLFW_TRUE);
   if (!gOut) return;
   glfwSetWindowPos(gOut, mx, my);
+  glfwSetKeyCallback(gOut, OutputKeyCb);
   glfwMakeContextCurrent(gOut);
   glfwSwapInterval(1);
   if (gMain) glfwMakeContextCurrent(gMain);

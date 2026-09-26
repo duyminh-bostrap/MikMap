@@ -370,6 +370,7 @@ Cả 4 field lưu trong `settings.json` (`SaveSettings`/`LoadSettings`,
 | `L` | Clip đang chọn: chế độ LOOP |
 | `Delete` / `Backspace` | Xoá clip đang chọn |
 | `F11` | Mở/đóng cửa sổ output máy chiếu |
+| `Esc` / `F11` / `Ctrl+W` (`Cmd+W`) **khi cửa sổ output đang được focus** | **Đóng cửa sổ output** — trước đây `F11` chỉ ăn khi cửa sổ chính có focus, còn cửa sổ máy chiếu (GLFW trần, không qua ImGui) không nhận phím nào. Nay nó có callback phím riêng (`OutputKeyCb`, `output.cpp`); chỉ tác dụng lúc nhấn xuống, phím khác không đóng. Có trong bảng phím tắt (Help) |
 | `Esc` | Đóng popover/menu/hộp thoại/ô đổi tên/Cài đặt |
 | Alt + lăn chuột (Mapping) | Zoom theo con trỏ |
 

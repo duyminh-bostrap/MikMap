@@ -369,7 +369,7 @@ static void DrawHelpDialog(ImVec2 disp, bool fresh) {
   ImGuiIO& io = ImGui::GetIO();
   static const char* rows[][2] = {{"Ctrl/Cmd + N", "New blank project"}, {"Ctrl/Cmd + O", "Open project"}, {"Ctrl/Cmd + S", "Save project"},
                                   {"Ctrl/Cmd + Shift + S", "Save a timestamped copy"}, {"Ctrl/Cmd + Z", "Undo"},
-                                  {"Ctrl/Cmd + Shift + Z / Y", "Redo"}, {"F11", "Open / close projector output"}, {"Tab", "Show Mode (hide all editing UI)"},
+                                  {"Ctrl/Cmd + Shift + Z / Y", "Redo"}, {"F11", "Open / close projector output"}, {"Esc / F11 / Ctrl+W", "Close output (while the output window has focus)"}, {"Tab", "Show Mode (hide all editing UI)"},
                                   {"Space", "Play / pause"}, {"Enter", "Trigger selected clip"}, {"Left / Right", "Previous / next column"}, {"L", "Selected clip: loop mode"}, {"Delete", "Clear selected clip"}, {"Esc", "Close menu, dialog or popover"}, {"Double-click layer", "Rename layer"}, {"Alt + wheel (Mapping)", "Zoom at cursor"}};
   int n = (int)(sizeof rows / sizeof rows[0]);
   float w = 460, h = 30 + n * 26 + 30;
@@ -627,6 +627,7 @@ int main(int argc, char** argv) {
   std::string compTest, clipTest, pvTest; std::vector<std::string> layerTest, clipColors;
   OsDrop dropTest;   // --drop: injected at frame 8 of a --shot run, standing in for a real Explorer drag
   bool openOut = false; std::string outShot;
+  bool outKeyTest = false;
   std::string roundtrip; std::vector<int> fxTest;
   std::string shot; int startScreen = 0, frames = 12, W = 1440, H = 900, tab = -1, page = -1;
   bool sel = false, scaleGiven = false; int selLi = 0, selCi = 0, ctxTest = 0, cliScale = 100;
@@ -641,6 +642,7 @@ int main(int argc, char** argv) {
     else if (a == "--roundtrip" && i + 1 < argc) roundtrip = argv[++i];
     else if (a == "--menu") A.projectMenu = true;
     else if (a == "--out") openOut = true;
+    else if (a == "--outkeytest") outKeyTest = true;
     else if (a == "--outshot" && i + 1 < argc) { openOut = true; outShot = argv[++i]; }
     else if (a == "--scale" && i + 1 < argc) { A.prefs.scale = atoi(argv[++i]); cliScale = A.prefs.scale; scaleGiven = true; }
     else if (a == "--ctx") ctxTest = 1;
@@ -940,6 +942,12 @@ int main(int argc, char** argv) {
       if (ls.opacity != 40 || ls.brightness != -25 || ls.contrast != 60 || ls.red != 100 || ls.green != -100 || ls.blue != 7 || ls.w != 800 || ls.h != 600)
         return fail("screen colour / size did not round-trip");
     }
+    // Projector output window: Esc / F11 / Ctrl(Cmd)+W close it on key press only.
+    if (!OutputKeyCloses(GLFW_KEY_ESCAPE, GLFW_PRESS, 0) || !OutputKeyCloses(GLFW_KEY_F11, GLFW_PRESS, 0) ||
+        !OutputKeyCloses(GLFW_KEY_W, GLFW_PRESS, GLFW_MOD_CONTROL) || !OutputKeyCloses(GLFW_KEY_W, GLFW_PRESS, GLFW_MOD_SUPER))
+      return fail("Esc / F11 / Ctrl+W / Cmd+W must close the output window");
+    if (OutputKeyCloses(GLFW_KEY_ESCAPE, GLFW_RELEASE, 0) || OutputKeyCloses(GLFW_KEY_W, GLFW_PRESS, 0) || OutputKeyCloses(GLFW_KEY_A, GLFW_PRESS, GLFW_MOD_CONTROL))
+      return fail("only the listed keys, on press, may close the output window");
     // Timeline: tlLayout lays clips back-to-back by real duration; tlSync flips exactly the clip under the playhead live.
     NewProject();
     auto lay = A.tlLayout();
@@ -1260,6 +1268,13 @@ int main(int argc, char** argv) {
   A.screen = startScreen;
   if (tab >= 0) A.tab = tab;
   if (page >= 0) A.mpage = page;
+  if (outKeyTest) {   // headless check that the output window's own key callback is really installed and closes it
+    OpenOutput(win, A.outMonitor);
+    bool ok = OutputKeyWiringOk();
+    std::printf("output key wiring: %s\n", ok ? "OK" : "FAILED");
+    CloseOutput();
+    return ok ? 0 : 1;
+  }
   if (openOut) OpenOutput(win, A.outMonitor);
   if (ctxTest) A.openCtx(ImVec2(500, 300), A.sliceMenu("screen1", "slice1"));
   if (sel) A.cue(selLi, selCi);
