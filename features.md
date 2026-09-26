@@ -129,7 +129,7 @@
 | [ ] | **F10** | **Bezier warping** (bề mặt cong, tượng) | L | 🟠 P1 |
 | [x] | **F11** | Điều chỉnh mật độ lưới warp (subdivision) | S | 🟠 P1 |
 | [~] | **F12** | **Bezier mask per-slice** | L | 🟠 P1 |
-| [ ] | **F13** | Slice transform (position/scale/rotate/flip) | S | 🟠 P1 |
+| [~] | **F13** | Slice transform (position/scale/rotate/flip) | S | 🟠 P1 |
 | [x] | **F14** | Test card / lưới calibration overlay | S | 🟠 P1 |
 | [x] | **F15** | Nhập toạ độ bằng số (không chỉ kéo chuột) | S | 🟠 P1 |
 | [x] | **F16** | Slice enable / disable / solo | S | 🟠 P1 |
@@ -612,3 +612,12 @@ Thêm một hàng mảnh (26px) ở đầu vùng deck, ngay trên lưới/timeli
 Khối bên trái thanh transport có **2 hàng như khối TIMELINE bên phải**: hàng 1 = **SYSTEM TIME + giờ hệ thống**; hàng 2 = **menu deck** vẽ giống thanh nav trên cùng (Composition / Advanced Mapping / Sensor I/O):
 một nhóm bo tròn tối, tab đang chọn viền + glow cam, tab khác chữ xám, tab đang chọn có mũi tên mở menu deck. Hàng SYSTEM TIME riêng phía trên lưới deck đã bỏ (lưới cao lại như trước).
 Dự phòng khi thanh transport thấp hơn 44px hoặc quá hẹp: Deck() tự vẽ hàng SYSTEM TIME + hàng tab (kiểu nav) phía trên lưới. Đã chụp bố cục 2 hàng; nhánh dự phòng **chưa chụp**.
+
+### Input selection: khung xoay/di chuyển/co giãn như Preview + menu chuột phải kiểu Resolume (2026-09-26, theo yêu cầu người dùng)
+Trang **Input selection** (Advanced Mapping) trước chỉ có 4 tay nắm góc để co giãn hình chữ nhật, không xoay, không kéo cả khối, menu chuột phải chỉ có "Whole area".
+Nay khung input sửa giống khung transform của Preview Cue: **kéo trong khung = di chuyển** (khung thẳng thì bị giữ trong canvas), **ô vuông ở 4 góc + 4 điểm giữa cạnh = co giãn** trong hệ trục của chính khung (góc/cạnh đối diện đứng yên, kể cả khi đã xoay), **vòng tròn quanh 4 góc = xoay** quanh tâm (giữ Shift = nhảy 15°). Panel Slice Properties thêm thanh **Rotation** (−180…180°, bấm đúp để về 0).
+- Dữ liệu: `Slice::irot`, `iflipX`, `iflipY` (`app.h`), lưu/đọc trong `project.cpp` (nên undo phủ luôn); `ix..ih` vẫn là hình chữ nhật CHƯA xoay nên tâm và các ô số không đổi khi xoay. `WarpMap::Map` (`mapping.cpp`) hoàn tác xoay quanh tâm rồi mới lật, nên **output thật** (cửa sổ máy chiếu) nhận đúng vùng đã xoay/lật.
+- **Chuột phải trên khung input** — đúng danh sách trong ảnh mẫu của Resolume: Center X · Center Y · Mirror X · Mirror Y | Left/Top/Right/Bottom Half · Whole Area | **Match Output Shape** (input lấy hình dạng + góc xoay của quad output) · **Swap Input Output Shape** | Bring Forward · Send Backwards (đổi thứ tự slice, mờ ở đầu/cuối) | Duplicate · Copy · Cut · Paste (Paste mờ khi clipboard trống, Cut mờ khi chỉ còn 1 slice). Clipboard slice là runtime, không lưu vào dự án.
+- "Match output to input" (menu slice) nay cũng mang theo góc xoay của input, và quy đổi canvas→output theo từng trục (trước đây chép thẳng số px, chỉ đúng khi canvas = 1920×1080). "Whole area" nay đưa xoay về 0.
+- **F13 `[ ]` → `[~]`:** position/scale/rotate/flip đã có **cho input rect** (bằng tay + số + menu); chưa có cho **output** — quad output vẫn chỉ là 4 corner pin tự do, không có nút xoay/lật riêng. Không tick `[x]` cho tới khi output cũng có.
+- Kiểm bằng ảnh chụp (`--shot --screen 1 --page 0`): vòng xoay kéo ra 6° (nhãn `1720 × 980 · 6°`, thanh Rotation cập nhật, Undo bật); menu hiện đủ 17 mục, "Send Backwards" và "Paste" mờ đúng; Swap sau khi xoay đưa quad output thành chữ nhật nghiêng 6° (chụp trang Output routing); kéo góc/cạnh/cả khối trên khung thẳng ra đúng ô số (giữ trong canvas). `--roundtrip` thêm: ánh xạ `WarpMap` (thẳng/Mirror X/Mirror Y/xoay 180°), lưu-nạp `irot`/flip, `matchOutputToInput` mang góc xoay, Bring Forward/Send Backwards, Duplicate/Copy/Cut/Paste (id không trùng). **Chưa thử:** kéo ô co giãn khi khung đang xoay bằng chuột thật (logic có, chỉ mới kiểm khung thẳng), và phím tắt cho các lệnh menu.

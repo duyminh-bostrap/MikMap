@@ -101,6 +101,10 @@ struct Slice {
   int srcKind = SrcComp;
   std::string srcRef;   // Layer::id or Group::id; ignored for SrcComp
   int ix = 0, iy = 0, iw = 1920, ih = 1080;
+  // The input rect can be rotated about its own centre (degrees, -180..180) and mirrored — Resolume's input-selection
+  // transform. ix..ih stay the UNROTATED rect, so rotating never moves the centre or changes the numeric fields.
+  float irot = 0;
+  bool iflipX = false, iflipY = false;
   ImVec2 q[4];   // tl, tr, br, bl — keystone corners (perspective, like Resolume / engine WarpCornerPin)
   std::vector<Mask> masks;
 };
@@ -332,6 +336,10 @@ struct App {
   void moveClip(int fl, int fc, int tl, int tc);
   // mapping actions
   void addScreen(); void addSlice(); void addMask(); void deleteMask(); void deleteSlice();
+  // Slice clipboard + stacking order (Advanced Mapping > right-click the input rect). The clipboard is runtime-only.
+  Slice sliceClip; bool hasSliceClip = false;
+  void duplicateSlice(); void copySlice(); void cutSlice(); void pasteSlice();
+  void moveSliceZ(int delta);   // +1 = bring forward (later in the list draws on top), -1 = send backwards
   void resetWarp();         // output corner pins -> fullscreen default (0,0,1920,1080), mesh follows (keystone-relative)
   void resetMeshWarp();     // flatten mesh deformation only, keep grid density/splits
   void resetAllWarping();   // fullscreen + default 4x3 uniform grid, no deformation

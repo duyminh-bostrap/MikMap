@@ -249,12 +249,21 @@ Ba vùng: **cây Screen/Slice/Mask** (trái) | **Stage canvas** (giữa) | **Pro
 | M1 | Bấm dòng Screen/Slice/Mask → chọn | ✅ |
 | M2 | ▾ thu gọn Screen; 👁 ẩn/hiện | ✅ |
 | M3 | **Chuột phải** → menu: Screen (Move up/down, Duplicate, Add slice, Delete) · Slice (Hide/Show, **Solo/Unsolo**, Whole area, Match output to input, Reset warp, Reset mesh warp, Reset all warping, Add mask, Delete) · Mask (Duplicate, Delete) | ✅ |
+| M3b | **Chuột phải khung input** (trang Input selection) → menu kiểu Resolume: Center X/Y · Mirror X/Y · Left/Top/Right/Bottom Half · Whole Area · Match Output Shape · Swap Input Output Shape · Bring Forward/Send Backwards · Duplicate/Copy/Cut/Paste (xem §3.2) | ✅ |
 | M4 | Nút thêm **Screen / Slice / Mask** | ✅ |
 | M5 | Thu gọn cây thành rail; bấm tên Screen trong rail để mở tạm | ✅ |
 
 ### 3.2 Stage canvas (giữa)
 - **Hai trang** (tab đầu canvas): **Input selection** (chọn vùng lấy từ canvas) và
   **Output routing** (bố trí đầu ra/warp).
+- **Khung input sửa như khung transform của Preview Cue (2026-09-26):** kéo **trong khung** = di chuyển (khung
+  thẳng bị giữ trong canvas) · **ô vuông ở góc / giữa cạnh** = co giãn trong hệ trục của khung (cạnh/góc đối diện
+  đứng yên, kể cả khi đã xoay) · **vòng tròn quanh 4 góc** = **xoay** quanh tâm (giữ `Shift` = nhảy 15°). Thanh
+  **Rotation** (−180…180°) ở Slice Properties sửa cùng giá trị, bấm đúp để về 0; nhãn giữa khung ghi
+  `W × H · góc · flip`. Xoay/Mirror áp lên **output thật** (`WarpMap::Map`), lưu trong dự án và undo được.
+  **Chuột phải** trong khung mở menu (M3b): *Match Output Shape* = input lấy hình dạng + góc của quad output,
+  *Swap* = đổi chỗ hai hình, *Bring Forward/Send Backwards* = thứ tự chồng slice, *Duplicate/Copy/Cut/Paste* =
+  clipboard slice (runtime, không lưu). ✅ Chưa thử kéo ô co giãn khi khung đang xoay bằng chuột thật.
 - **Nền trang Input = nội dung thật của nguồn (2026-09-26):** khung canvas hiện hình đang phát của đúng
   **nguồn mà slice đang chọn nhận** (*Input source*: Composition / Layer / Group — cùng `DrawSliceSource` với
   cửa sổ output, nên solo/bypass/opacity/transform khớp), chạy động cùng nhịp Live Output; đổi Input source là nền đổi theo.

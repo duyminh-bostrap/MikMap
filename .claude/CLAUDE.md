@@ -133,9 +133,9 @@ ngoài". Định nghĩa ở `engine/core/model/IWarp.h`; mọi `IWarp` mới ph�
 
 ## `src/` — tình trạng THẬT (theo `features.md`, không theo vẻ ngoài)
 
-54 mục `[x]` (hành vi thật) · 15 mục `[~]` (chỉ UI/một phần — đọc "Ghi chú
-kiểm tra" cuối `features.md` để biết chính xác cái gì còn giả) · 66 mục `[ ]`,
-trên 135 mục Resolume-parity (đếm lại 2026-09-23 từ các dòng bảng).
+54 mục `[x]` (hành vi thật) · 16 mục `[~]` (chỉ UI/một phần — đọc "Ghi chú
+kiểm tra" cuối `features.md` để biết chính xác cái gì còn giả) · 65 mục `[ ]`,
+trên 135 mục Resolume-parity (đếm lại 2026-09-26 từ các dòng bảng).
 
 **Đợt 2026-09-23:** F8/G8/A4 chuyển `[~]` → `[x]`. F8/G8: preset output
 (`Screen`) và calibration profile (điểm + ROI/noise) giờ lưu/nạp được thành

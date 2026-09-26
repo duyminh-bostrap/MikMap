@@ -28,6 +28,35 @@ static void QuadOf(Slice& s, float x, float y, float w, float h) {
   s.q[0] = {x, y}; s.q[1] = {x + w, y}; s.q[2] = {x + w, y + h}; s.q[3] = {x, y + h};
 }
 
+// ── input rect geometry ──
+// The input rect is ix..ih rotated by irot about its centre. These convert it to/from a 4-point shape so it can be
+// exchanged with the output quad ("Match output shape" / "Swap"): the input lives in canvas px, the quad in the
+// screen's 1920x1080 output px, so the two spaces are scaled per axis.
+static constexpr float kDegToRad = 3.14159265f / 180.f;
+static void InputCorners(const Slice& s, ImVec2 c[4]) {   // canvas px: tl, tr, br, bl
+  float cx = s.ix + s.iw * 0.5f, cy = s.iy + s.ih * 0.5f, hw = s.iw * 0.5f, hh = s.ih * 0.5f;
+  float co = std::cos(s.irot * kDegToRad), si = std::sin(s.irot * kDegToRad);
+  static const float sx[4] = {-1, 1, 1, -1}, sy[4] = {-1, -1, 1, 1};
+  for (int i = 0; i < 4; ++i) { float lx = sx[i] * hw, ly = sy[i] * hh; c[i] = ImVec2(cx + lx * co - ly * si, cy + lx * si + ly * co); }
+}
+static void InputAsOutputQuad(const Slice& s, ImVec2 q[4]) {
+  ImVec2 c[4]; InputCorners(s, c);
+  float kx = 1920.f / std::max(1, A.canvasW), ky = 1080.f / std::max(1, A.canvasH);
+  for (int i = 0; i < 4; ++i) q[i] = ImVec2(c[i].x * kx, c[i].y * ky);
+}
+static void SetInputFromQuad(Slice& s, const ImVec2 q[4]) {   // best-fit rotated rectangle through a (possibly keystoned) quad
+  float kx = (float)std::max(1, A.canvasW) / 1920.f, ky = (float)std::max(1, A.canvasH) / 1080.f;
+  ImVec2 p[4]; for (int i = 0; i < 4; ++i) p[i] = ImVec2(q[i].x * kx, q[i].y * ky);
+  auto len = [](ImVec2 a, ImVec2 b) { return std::hypot(b.x - a.x, b.y - a.y); };
+  float cx = (p[0].x + p[1].x + p[2].x + p[3].x) * 0.25f, cy = (p[0].y + p[1].y + p[2].y + p[3].y) * 0.25f;
+  float w = (len(p[0], p[1]) + len(p[3], p[2])) * 0.5f, h = (len(p[0], p[3]) + len(p[1], p[2])) * 0.5f;
+  float ex = (p[1].x - p[0].x) + (p[2].x - p[3].x), ey = (p[1].y - p[0].y) + (p[2].y - p[3].y);   // top + bottom edge
+  float rot = std::atan2(ey, ex) / kDegToRad;
+  s.iw = std::max(20, (int)std::lround(w)); s.ih = std::max(20, (int)std::lround(h));
+  s.ix = (int)std::lround(cx - s.iw * 0.5f); s.iy = (int)std::lround(cy - s.ih * 0.5f);
+  s.irot = std::fabs(rot) < 0.01f ? 0.f : rot;
+}
+
 // ── keystone: unit square → the 4 corner pins ──
 // A true perspective map (closed-form square-to-quad homography, Heckbert), same model as engine WarpCornerPin and
 // Resolume's perspective corners: straight lines stay straight and spacing foreshortens the way a tilted projector's
@@ -178,9 +207,16 @@ void MigrateAbsoluteMesh(Slice& s, const std::vector<std::vector<ImVec2>>& abs) 
 
 ImVec2 WarpMap::Map(float canvasX, float canvasY) const {
   if (!slice) return ImVec2(ox + canvasX * sx, oy + canvasY * sy);
-  // canvas pixels → the slice's input rect in unit coordinates
-  float u = (canvasX - slice->ix) / std::max(1, slice->iw);
-  float v = (canvasY - slice->iy) / std::max(1, slice->ih);
+  // canvas pixels → the slice's input rect in unit coordinates (undo the rect's rotation about its centre, then mirror)
+  float rw = (float)std::max(1, slice->iw), rh = (float)std::max(1, slice->ih);
+  float dx = canvasX - (slice->ix + rw * 0.5f), dy = canvasY - (slice->iy + rh * 0.5f);
+  if (slice->irot != 0.f) {
+    float r = -slice->irot * 3.14159265f / 180.f, co = std::cos(r), si = std::sin(r);
+    float x = dx * co - dy * si; dy = dx * si + dy * co; dx = x;
+  }
+  float u = dx / rw + 0.5f, v = dy / rh + 0.5f;
+  if (slice->iflipX) u = 1.f - u;
+  if (slice->iflipY) v = 1.f - v;
   ImVec2 o = SliceMapUV(*slice, u, v);
   return ImVec2(ox + o.x * sx, oy + o.y * sy);
 }
@@ -235,15 +271,45 @@ void App::resetAllWarping() {
 }
 // Resolume-style explicit match (the old resetWarp behaviour): output quad takes the input rect's shape/position.
 // Kept as its own action so "reset" always means "back to fullscreen default", never "copy the crop".
-void App::matchOutputToInput() { pushHist(); if (Slice* s = curSlice()) QuadOf(*s, (float)s->ix, (float)s->iy, (float)s->iw, (float)s->ih); }
+void App::matchOutputToInput() {
+  pushHist();
+  if (Slice* s = curSlice()) { ImVec2 q[4]; InputAsOutputQuad(*s, q); for (int i = 0; i < 4; ++i) s->q[i] = q[i]; }   // keeps the input's rotation
+}
 // Resolume calls this "Whole area": the input rect snaps back to covering the entire composition canvas —
 // matches a brand-new slice's own default (Slice struct defaults / NewBlankProject), so an operator who cropped
 // by mistake gets back to exactly what they started with, not some other arbitrary rectangle.
 void App::resetInputRect() {
   pushHist(); if (Slice* s = curSlice()) {
     int cw = canvasW > 0 ? canvasW : 1920, ch = canvasH > 0 ? canvasH : 1080;
-    s->ix = 0; s->iy = 0; s->iw = cw; s->ih = ch;
+    s->ix = 0; s->iy = 0; s->iw = cw; s->ih = ch; s->irot = 0;   // a rotated rect could not cover the whole canvas
   }
+}
+// ── slice clipboard / stacking order ──
+static void FreshIds(Slice& c) { c.id = A.uid("slice"); for (auto& m : c.masks) m.id = A.uid("mask"); }
+static int SliceIndex(const Screen& sc, const std::string& id) { for (int i = 0; i < (int)sc.slices.size(); ++i) if (sc.slices[i].id == id) return i; return -1; }
+void App::duplicateSlice() {
+  Screen* sc = curScreen(); Slice* sl = curSlice(); if (!sc || !sl) return;
+  pushHist();
+  int at = SliceIndex(*sc, sl->id); Slice c = *sl; FreshIds(c); c.name += " copy";
+  sc->slices.insert(sc->slices.begin() + at + 1, c);   // right above the original
+  selSl = c.id; selMk.clear(); selKind = 1;
+}
+void App::copySlice() { if (Slice* sl = curSlice()) { sliceClip = *sl; hasSliceClip = true; } }
+void App::cutSlice() { Screen* sc = curScreen(); if (!sc || sc->slices.size() <= 1) return; copySlice(); deleteSlice(); }   // the last slice can't be removed
+void App::pasteSlice() {
+  Screen* sc = curScreen(); if (!sc || !hasSliceClip) return;
+  pushHist();
+  Slice c = sliceClip; FreshIds(c);
+  for (auto& o : sc->slices) if (o.name == c.name) { c.name += " copy"; break; }
+  Slice* cur = curSlice(); int at = cur ? SliceIndex(*sc, cur->id) + 1 : (int)sc->slices.size();
+  sc->slices.insert(sc->slices.begin() + std::clamp(at, 0, (int)sc->slices.size()), c);
+  selSl = c.id; selMk.clear(); selKind = 1;
+}
+void App::moveSliceZ(int delta) {
+  Screen* sc = curScreen(); Slice* sl = curSlice(); if (!sc || !sl) return;
+  int i = SliceIndex(*sc, sl->id), j = i + delta;
+  if (i < 0 || j < 0 || j >= (int)sc->slices.size()) return;
+  pushHist(); std::swap(sc->slices[i], sc->slices[j]);
 }
 // A new canvas resolution rescales every slice's input rect (per axis) so it keeps covering the same part of the
 // canvas — a slice that took "the whole area" of 1920x1080 still takes the whole area of 3840x2160. Only the INPUT
@@ -559,8 +625,10 @@ static void RailPopover(ImRect rail) {
 }
 
 // ───────────────────────── stage ─────────────────────────
-static int dragKind = 0, dragIdx = 0;  // 1 corner, 2 input, 3 mask point, 4 mesh point (row*100+col)
+static int dragKind = 0, dragIdx = 0;  // 1 corner, 2 input resize (0..3 corners, 10..13 edge middles), 3 mask point, 4 mesh point (row*100+col), 5 input move, 6 input rotate
 static ImVec2 dragOff;                  // grabbed point minus cursor (output px), so grabbing off-centre doesn't jump
+static ImVec2 dragAnchor;               // input rect drags: the fixed corner/edge-middle (resize) in canvas px
+static float dragAng0 = 0.f, dragRot0 = 0.f;   // input rect rotate: pointer angle and rect rotation when the drag began
 
 // ── stage view ──
 // Corner pins and mesh points can sit far outside the 1920x1080 output (-4000..8000), so the stage is a free pan/zoom
@@ -617,6 +685,43 @@ static bool PointInPoly(ImVec2 p, const ImVec2* v, int n) {
 static void FillPoly(const ImVec2* p, int n, ImU32 c) {
   // fan triangulation (quads are convex; masks are user-edited quads)
   for (int i = 1; i + 1 < n; ++i) g.dl->AddTriangleFilled(p[0], p[i], p[i + 1], Ca(c));
+}
+
+// Right-click on the input rect: quick placement (centre / mirror / halves / whole), exchange shape with the output quad,
+// stacking order, and the slice clipboard — the same list Resolume offers on its input selection.
+static void InputRectMenu(ImVec2 at) {
+  Screen* sc = A.curScreen(); Slice* sl = A.curSlice(); if (!sc || !sl) return;
+  int n = (int)sc->slices.size(), idx = 0; for (int i = 0; i < n; ++i) if (sc->slices[i].id == sl->id) idx = i;
+  std::vector<MenuItem> mi;
+  auto add = [&](const char* label, std::function<void()> fn, bool divider = false, bool disabled = false) {
+    if (divider) { MenuItem d; d.label = ""; d.disabled = true; d.divider = true; mi.push_back(d); }
+    MenuItem it; it.label = label; it.disabled = disabled; it.run = std::move(fn); mi.push_back(it);
+  };
+  auto edit = [](std::function<void(Slice&)> f) { return [f] { A.pushHist(); if (Slice* s = A.curSlice()) f(*s); }; };
+  auto setRect = [](Slice& s, int x, int y, int w, int h) { s.ix = x; s.iy = y; s.iw = std::max(20, w); s.ih = std::max(20, h); s.irot = 0; };
+  add("Center X", edit([](Slice& s) { s.ix = (A.canvasW - s.iw) / 2; }));
+  add("Center Y", edit([](Slice& s) { s.iy = (A.canvasH - s.ih) / 2; }));
+  add("Mirror X", edit([](Slice& s) { s.iflipX = !s.iflipX; }));
+  add("Mirror Y", edit([](Slice& s) { s.iflipY = !s.iflipY; }));
+  add("Left Half", edit([setRect](Slice& s) { setRect(s, 0, 0, A.canvasW / 2, A.canvasH); }), true);
+  add("Top Half", edit([setRect](Slice& s) { setRect(s, 0, 0, A.canvasW, A.canvasH / 2); }));
+  add("Right Half", edit([setRect](Slice& s) { setRect(s, A.canvasW / 2, 0, A.canvasW - A.canvasW / 2, A.canvasH); }));
+  add("Bottom Half", edit([setRect](Slice& s) { setRect(s, 0, A.canvasH / 2, A.canvasW, A.canvasH - A.canvasH / 2); }));
+  add("Whole Area", [] { A.resetInputRect(); });
+  add("Match Output Shape", edit([](Slice& s) { SetInputFromQuad(s, s.q); }), true);
+  add("Swap Input Output Shape", edit([](Slice& s) {
+    ImVec2 outQ[4], inQ[4]; for (int i = 0; i < 4; ++i) outQ[i] = s.q[i];
+    InputAsOutputQuad(s, inQ);
+    for (int i = 0; i < 4; ++i) s.q[i] = inQ[i];
+    SetInputFromQuad(s, outQ);
+  }));
+  add("Bring Forward", [] { A.moveSliceZ(1); }, true, idx >= n - 1);
+  add("Send Backwards", [] { A.moveSliceZ(-1); }, false, idx <= 0);
+  add("Duplicate", [] { A.duplicateSlice(); }, true);
+  add("Copy", [] { A.copySlice(); });
+  add("Cut", [] { A.cutSlice(); }, false, n <= 1);
+  add("Paste", [] { A.pasteSlice(); }, false, !A.hasSliceClip);
+  A.openCtx(at, mi);
 }
 
 static void Stage(ImRect r) {
@@ -812,13 +917,42 @@ static void Stage(ImRect r) {
     }
     else if (dragKind == 1) sl->q[dragIdx] = inOutput(to);   // the mesh follows on its own — it is keystone-relative
     else if (dragKind == 3 && mk) mk->pts[dragIdx] = inCanvas(to);
-    else if (dragKind == 2) {
-      int x = (int)mu.x, y = (int)mu.y, ix = sl->ix, iy = sl->iy, iw = sl->iw, ih = sl->ih, nx = ix, ny = iy, nw = iw, nh = ih;
-      if (dragIdx == 0) { nx = x; ny = y; nw = ix + iw - x; nh = iy + ih - y; }
-      else if (dragIdx == 1) { ny = y; nw = x - ix; nh = iy + ih - y; }
-      else if (dragIdx == 2) { nw = x - ix; nh = y - iy; }
-      else { nx = x; nw = ix + iw - x; nh = y - iy; }
-      if (nw > 20 && nh > 20) { sl->ix = nx; sl->iy = ny; sl->iw = nw; sl->ih = nh; }
+    else if (dragKind == 2) {   // resize in the rect's own (rotated) frame; the opposite corner / edge middle stays put
+      float co = std::cos(sl->irot * kDegToRad), si = std::sin(sl->irot * kDegToRad);
+      ImVec2 P = sl->irot == 0.f ? mu : ImVec2(std::round(mo.x), std::round(mo.y));   // upright rects stay inside the canvas; rotated ones may reach past it
+      float dx = P.x - dragAnchor.x, dy = P.y - dragAnchor.y;
+      float lx = dx * co + dy * si, ly = -dx * si + dy * co;   // pointer relative to the anchor, in rect-local axes
+      float w = (float)sl->iw, h = (float)sl->ih, hx = 0, hy = 0;   // hx/hy: new centre offset from the anchor, local axes
+      int k = dragIdx % 10;
+      if (dragIdx >= 10) {
+        if (k == 0) { h = std::max(20.f, -ly); hy = -h * 0.5f; }
+        else if (k == 1) { w = std::max(20.f, lx); hx = w * 0.5f; }
+        else if (k == 2) { h = std::max(20.f, ly); hy = h * 0.5f; }
+        else { w = std::max(20.f, -lx); hx = -w * 0.5f; }
+      } else {
+        float sx = (k == 1 || k == 2) ? 1.f : -1.f, sy = (k == 2 || k == 3) ? 1.f : -1.f;
+        w = std::max(20.f, sx * lx); h = std::max(20.f, sy * ly); hx = sx * w * 0.5f; hy = sy * h * 0.5f;
+      }
+      float cx = dragAnchor.x + hx * co - hy * si, cy = dragAnchor.y + hx * si + hy * co;
+      sl->iw = (int)std::lround(w); sl->ih = (int)std::lround(h);
+      sl->ix = (int)std::lround(cx - sl->iw * 0.5f); sl->iy = (int)std::lround(cy - sl->ih * 0.5f);
+    }
+    else if (dragKind == 5) {   // move: an upright rect stays inside the canvas, a rotated one just keeps its centre on it
+      float cx = to.x, cy = to.y;
+      if (sl->irot == 0.f && sl->iw <= A.canvasW && sl->ih <= A.canvasH) {
+        sl->ix = std::clamp((int)std::lround(cx - sl->iw * 0.5f), 0, A.canvasW - sl->iw);
+        sl->iy = std::clamp((int)std::lround(cy - sl->ih * 0.5f), 0, A.canvasH - sl->ih);
+      } else {
+        sl->ix = (int)std::lround(std::clamp(cx, 0.f, (float)A.canvasW) - sl->iw * 0.5f);
+        sl->iy = (int)std::lround(std::clamp(cy, 0.f, (float)A.canvasH) - sl->ih * 0.5f);
+      }
+    }
+    else if (dragKind == 6) {   // rotate about the centre; Shift snaps to 15 degrees
+      float ccx = sl->ix + sl->iw * 0.5f, ccy = sl->iy + sl->ih * 0.5f;
+      float r = dragRot0 + (std::atan2(mo.y - ccy, mo.x - ccx) - dragAng0) / kDegToRad;
+      if (ImGui::GetIO().KeyShift) r = std::round(r / 15.f) * 15.f;
+      r -= 360.f * std::floor((r + 180.f) / 360.f);   // keep within -180..180
+      sl->irot = std::fabs(r) < 0.05f ? 0.f : r;
     }
   }
 
@@ -829,26 +963,45 @@ static void Stage(ImRect r) {
 
   if (A.mpage == 0) {
     if (sl && sl->visible && scVis) {
-      ImRect ir(cv.Min.x + sl->ix * s, cv.Min.y + sl->iy * s, cv.Min.x + (sl->ix + sl->iw) * s, cv.Min.y + (sl->iy + sl->ih) * s);
-      // Resolume-style quick reset: right-click the input rect for "Whole area" instead of dragging all 4 corners by hand
-      if (rClick && ir.Contains(m)) {
-        bool full = sl->ix == 0 && sl->iy == 0 && sl->iw == A.canvasW && sl->ih == A.canvasH;
-        MenuItem it; it.label = "Whole area"; it.icon = "maximize"; it.disabled = full; it.run = [] { A.resetInputRect(); };
-        A.openCtx(m, {it});
+      // The input rect is edited like the Preview Cue transform frame: drag inside to move, the small squares (corners and
+      // edge middles) to resize, the rings around the corners to rotate. Right-click for the quick placement menu.
+      ImVec2 cp[4]; InputCorners(*sl, cp);
+      ImVec2 cpx[4], mpx[4], mcv[4];
+      for (int i = 0; i < 4; ++i) { cpx[i] = toPx(cp[i]); mcv[i] = ImVec2((cp[i].x + cp[(i + 1) % 4].x) * 0.5f, (cp[i].y + cp[(i + 1) % 4].y) * 0.5f); mpx[i] = toPx(mcv[i]); }
+      ImVec2 ctrCv(sl->ix + sl->iw * 0.5f, sl->iy + sl->ih * 0.5f), ctrPx = toPx(ctrCv);
+      const float kSqR = 8.f, kRingR = 16.f;
+      auto dist = [&](ImVec2 a2, ImVec2 b2) { return std::hypot(a2.x - b2.x, a2.y - b2.y); };
+      int hot = 0, hotIdx = 0;   // what the pointer is over: 2 resize, 6 rotate, 5 move
+      if (inArea && dragKind == 0) {
+        for (int i = 0; i < 4 && !hot; ++i) if (dist(m, cpx[i]) <= kSqR) { hot = 2; hotIdx = i; }
+        for (int i = 0; i < 4 && !hot; ++i) if (dist(m, mpx[i]) <= kSqR) { hot = 2; hotIdx = 10 + i; }
+        for (int i = 0; i < 4 && !hot; ++i) if (dist(m, cpx[i]) <= kRingR) { hot = 6; hotIdx = i; }
+        if (!hot && PointInPoly(m, cpx, 4)) hot = 5;
       }
-      Fill(ir, K(pal::cyan, 0.15f));
-      Border(ir, K(pal::cyan), 0, 2);
-      char dm[48]; snprintf(dm, sizeof dm, "%d \xC3\x97 %d", sl->iw, sl->ih);
-      float mxc = (ir.Min.x + ir.Max.x) * 0.5f, myc = (ir.Min.y + ir.Max.y) * 0.5f;
-      TextC(mxc, myc - 7, MONO_B, 11, K(pal::cyan), sl->name.c_str());
-      TextC(mxc, myc + 7, MONO_R, 9, K(pal::tcc), dm);
-      ImVec2 hp[4] = {{ir.Min.x, ir.Min.y}, {ir.Max.x, ir.Min.y}, {ir.Max.x, ir.Max.y}, {ir.Min.x, ir.Max.y}};
+      if (hot) ImGui::SetMouseCursor(hot == 5 ? ImGuiMouseCursor_Hand : ImGuiMouseCursor_ResizeAll);
+      if (hot && clickPending) {
+        A.pushHist(); dragKind = hot; dragIdx = hotIdx;
+        if (hot == 2) dragAnchor = hotIdx >= 10 ? mcv[(hotIdx % 10 + 2) % 4] : cp[(hotIdx + 2) % 4];   // opposite corner / edge middle
+        else if (hot == 5) dragOff = Vsub(ctrCv, mo);
+        else { dragAng0 = std::atan2(mo.y - ctrCv.y, mo.x - ctrCv.x); dragRot0 = sl->irot; }
+      }
+      if (rClick && PointInPoly(m, cpx, 4)) InputRectMenu(m);
+      g.dl->AddConvexPolyFilled(cpx, 4, Ca(K(pal::cyan, 0.15f)));
+      g.dl->AddPolyline(cpx, 4, Ca(K(pal::cyan)), ImDrawFlags_Closed, 2.f);
+      char dm[64]; int len = snprintf(dm, sizeof dm, "%d \xC3\x97 %d", sl->iw, sl->ih);
+      if (sl->irot != 0.f) len += snprintf(dm + len, sizeof dm - len, " \xC2\xB7 %.0f\xC2\xB0", sl->irot);
+      if (sl->iflipX || sl->iflipY) snprintf(dm + len, sizeof dm - len, " \xC2\xB7 flip %s%s", sl->iflipX ? "X" : "", sl->iflipY ? "Y" : "");
+      TextC(ctrPx.x, ctrPx.y - 7, MONO_B, 11, K(pal::cyan), sl->name.c_str());
+      TextC(ctrPx.x, ctrPx.y + 7, MONO_R, 9, K(pal::tcc), dm);
+      const bool rotating = dragKind == 6 || (dragKind == 0 && hot == 6);
       for (int i = 0; i < 4; ++i) {
-        ImRect hr(hp[i].x - 6, hp[i].y - 6, hp[i].x + 6, hp[i].y + 6);
+        bool ringHot = rotating && (dragKind == 6 || hotIdx == i);
+        g.dl->AddCircle(cpx[i], 11.f, Ca(K(ringHot ? pal::white : pal::cyan)), 24, 1.5f);
+      }
+      for (const ImVec2* set : {cpx, mpx}) for (int i = 0; i < 4; ++i) {
+        ImRect hr(set[i].x - 5, set[i].y - 5, set[i].x + 5, set[i].y + 5);
         Box(hr, K(pal::white), K(pal::cyan), 2);
         Border(hr, K(pal::cyan), 2, 2);
-        ImRect big(hr.Min.x - 3, hr.Min.y - 3, hr.Max.x + 3, hr.Max.y + 3);
-        if (inArea && big.Contains(m)) { CursorHand(); if (ImGui::IsMouseClicked(0)) { A.pushHist(); dragKind = 2; dragIdx = i; } }
       }
     }
   } else if (scVis) {
@@ -1153,6 +1306,16 @@ static void PropsPanel(ImRect r) {
         IntField(id, Rc(fx, oy + fy + 11, fw, 24), *vals[i]);
       }
       y += 35 * 2 + 6 + 8;
+      // rotation about the rect's centre — the same value the rings on the stage edit (double-click resets)
+      Text(x, oy + y + 5, UI_S, 10, K(pal::t88), "Rotation");
+      char rb[16]; snprintf(rb, sizeof rb, "%.0f\xC2\xB0", sl->irot);
+      Hit rh = HitR(ImRect(x, oy + y, x + w, oy + y + 10));
+      TextR(x + w, oy + y + 5, MONO_B, 10, K(pal::cyan), rb);
+      y += 10 + 6;
+      float rv = sl->irot;
+      if (Slider(0x3010, Rc(x, oy + y + 4, w, 6), rv, pal::cyan, -180.f, 180.f)) sl->irot = std::fabs(rv) < 0.5f ? 0.f : std::round(rv);
+      if (rh.dbl) sl->irot = 0.f;
+      y += 14 + 8;
     }
   }
   if (kind == 2) {

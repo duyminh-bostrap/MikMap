@@ -123,6 +123,7 @@ JsonValue SliceJ(const Slice& s) {
   o.set("meshLocal", mp);
   o.set("srcKind", s.srcKind); o.set("srcRef", s.srcRef);
   o.set("ix", s.ix); o.set("iy", s.iy); o.set("iw", s.iw); o.set("ih", s.ih);
+  o.set("irot", (double)s.irot); o.set("iflipX", s.iflipX); o.set("iflipY", s.iflipY);
   JsonValue q = JsonValue::array(); for (int i = 0; i < 4; ++i) q.push(V2(s.q[i]));
   o.set("q", q);
   JsonValue ms = JsonValue::array();
@@ -152,6 +153,7 @@ Slice ReadSlice(const JsonValue& o) {
   // layer/group (e.g. an undo) restores the routing
   s.srcKind = std::clamp(o["srcKind"].asInt(0), 0, 2); s.srcRef = o["srcRef"].asString();
   s.ix = o["ix"].asInt(0); s.iy = o["iy"].asInt(0); s.iw = std::max(20, o["iw"].asInt(1920)); s.ih = std::max(20, o["ih"].asInt(1080));
+  s.irot = std::clamp((float)o["irot"].asNumber(0.0), -180.f, 180.f); s.iflipX = o["iflipX"].asBool(false); s.iflipY = o["iflipY"].asBool(false);
   ImVec2 def[4] = {{(float)s.ix, (float)s.iy}, {(float)(s.ix + s.iw), (float)s.iy}, {(float)(s.ix + s.iw), (float)(s.iy + s.ih)}, {(float)s.ix, (float)(s.iy + s.ih)}};
   for (int i = 0; i < 4; ++i) s.q[i] = o["q"].isArray() && o["q"].size() > (size_t)i ? ReadV2(o["q"].at(i), def[i]) : def[i];
   if (o["masks"].isArray()) for (auto& mo : o["masks"].arrayItems()) {

@@ -862,6 +862,51 @@ int main(int argc, char** argv) {
     if (A.decks[1].name != "Deck B" || A.decks[2].name != "Deck A") return fail("moveDeckTo(1,2) did not swap the two trailing decks");
     A.moveDeckTo(0, 0);   // no-op: same index
     if (A.decks[0].name != "Deck C" || A.curDeckIdx != 0) return fail("moveDeckTo(i,i) must be a no-op");
+    // Input rect rotation/mirror: persisted, honoured by the warp map, exchanged with the output quad; slice clipboard + z-order.
+    NewProject(); {
+      Screen& sc0 = A.screens[0]; A.selSc = sc0.id; A.selSl = sc0.slices[0].id;
+      Slice& s0 = sc0.slices[0];
+      s0.warp = 0; s0.ix = 0; s0.iy = 0; s0.iw = A.canvasW; s0.ih = A.canvasH;
+      s0.q[0] = {0, 0}; s0.q[1] = {1920, 0}; s0.q[2] = {1920, 1080}; s0.q[3] = {0, 1080};
+      WarpMap wm; wm.slice = &s0;
+      auto near2 = [](ImVec2 a, float x, float y) { return std::fabs(a.x - x) < 0.5f && std::fabs(a.y - y) < 0.5f; };
+      if (!near2(wm.Map(0, 0), 0, 0) || !near2(wm.Map((float)A.canvasW, (float)A.canvasH), 1920, 1080)) return fail("unrotated input rect must map the canvas straight through");
+      s0.iflipX = true; if (!near2(wm.Map(0, 0), 1920, 0)) return fail("Mirror X must flip the input horizontally"); s0.iflipX = false;
+      s0.iflipY = true; if (!near2(wm.Map(0, 0), 0, 1080)) return fail("Mirror Y must flip the input vertically"); s0.iflipY = false;
+      s0.irot = 180.f; if (!near2(wm.Map(0, 0), 1920, 1080)) return fail("a 180 degree input rotation must send the canvas origin to the opposite corner");
+      // persistence
+      s0.irot = 33.f; s0.iflipX = true; s0.iflipY = false;
+      if (!SaveProject(roundtrip, err) || !LoadProject(roundtrip, err)) return fail(err.c_str());
+      Slice& l0 = A.screens[0].slices[0];
+      if (std::fabs(l0.irot - 33.f) > 1e-3f || !l0.iflipX || l0.iflipY) return fail("input rotation / mirror did not round-trip");
+      // Match output to input keeps the rotation: the quad's top edge must point along the rect's rotated x axis
+      A.selSc = A.screens[0].id; A.selSl = l0.id; A.matchOutputToInput();
+      Slice& m0 = A.screens[0].slices[0];
+      float ang = std::atan2(m0.q[1].y - m0.q[0].y, m0.q[1].x - m0.q[0].x) * 180.f / 3.14159265f;
+      if (std::fabs(ang - 33.f) > 0.1f) return fail("matchOutputToInput must carry the input rotation onto the output quad");
+    }
+    NewProject(); {   // slice stacking + clipboard
+      Screen& sc0 = A.screens[0]; A.selSc = sc0.id;
+      if (sc0.slices.size() < 2) return fail("fixture: expected >= 2 slices on the first screen");
+      std::string a0 = sc0.slices[0].id, a1 = sc0.slices[1].id; size_t n0 = sc0.slices.size();
+      A.selSl = a0; A.moveSliceZ(-1);
+      if (A.screens[0].slices[0].id != a0) return fail("Send Backwards on the bottom slice must be a no-op");
+      A.moveSliceZ(1);
+      if (A.screens[0].slices[0].id != a1 || A.screens[0].slices[1].id != a0 || A.selSl != a0) return fail("Bring Forward must swap with the slice above and keep the selection");
+      A.duplicateSlice();
+      if (A.screens[0].slices.size() != n0 + 1 || A.selSl == a0) return fail("Duplicate must add a slice and select the copy");
+      bool dupIds = false; for (auto& x : A.screens[0].slices) for (auto& y : A.screens[0].slices) if (&x != &y && x.id == y.id) dupIds = true;
+      if (dupIds) return fail("Duplicate produced a repeated slice id");
+      if (A.curSlice() == nullptr || A.curSlice()->name.find(" copy") == std::string::npos) return fail("Duplicate should name the copy");
+      A.copySlice(); if (!A.hasSliceClip) return fail("Copy must fill the slice clipboard");
+      size_t n1 = A.screens[0].slices.size(); A.cutSlice();
+      if (A.screens[0].slices.size() != n1 - 1) return fail("Cut must remove the slice");
+      A.pasteSlice();
+      if (A.screens[0].slices.size() != n1 || A.curSlice() == nullptr) return fail("Paste must bring the cut slice back and select it");
+      // the clipboard survives being pasted twice, each time with fresh ids
+      A.pasteSlice(); bool dup2 = false; for (auto& x : A.screens[0].slices) for (auto& y : A.screens[0].slices) if (&x != &y && x.id == y.id) dup2 = true;
+      if (dup2) return fail("pasting twice produced a repeated slice id");
+    }
     // Timeline: tlLayout lays clips back-to-back by real duration; tlSync flips exactly the clip under the playhead live.
     NewProject();
     auto lay = A.tlLayout();
