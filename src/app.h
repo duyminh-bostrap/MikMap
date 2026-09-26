@@ -84,7 +84,12 @@ struct Mask {
   std::string id, name;
   bool inverted = true;
   int feather = 4;
-  std::vector<ImVec2> pts = std::vector<ImVec2>(4);   // polygon, 3+ points (square 4, triangle 3, hexagon 6, circle/heart many, pen = any)
+  std::vector<ImVec2> pts = std::vector<ImVec2>(4);   // polygon in COMPOSITION CANVAS px (like the input rect), 3+ points (square 4, triangle 3, hexagon 6, circle/heart many, pen = any)
+  // Preset shapes (App::MaskShape) are edited by their 4 bounding-box corners only: `box` (tl, tr, br, bl, canvas px) is the truth
+  // and `pts` is the shape's unit outline mapped through it (MaskRebuild). shape < 0 = a free polygon (the pen, or an old file):
+  // every point is its own handle and `box` is unused.
+  int shape = -1;
+  ImVec2 box[4];
 };
 struct Slice {
   std::string id, name;
@@ -105,6 +110,7 @@ struct Slice {
   // transform. ix..ih stay the UNROTATED rect, so rotating never moves the centre or changes the numeric fields.
   float irot = 0;
   bool iflipX = false, iflipY = false;
+  bool maskLegacy = false;   // runtime: masks came from a file that stored them in output px; converted to canvas px right after load
   bool softEdge = false;   // Slice properties > Soft Edge. A saved switch only: the projector output does not feather edges yet
   ImVec2 q[4];   // tl, tr, br, bl — keystone corners (perspective, like Resolume / engine WarpCornerPin)
   std::vector<Mask> masks;
@@ -450,6 +456,12 @@ void DrawComposite(ImRect canvas, float t, float alpha);   // all live clips, bo
 // A source whose layer/group no longer exists falls back to the composition (SliceSourceValid tells the UI to warn).
 void DrawSliceSource(const Slice& s, ImRect canvas, float t, float alpha);
 std::vector<ImVec2> SliceOutline(const Slice& s);   // output-space outline of a slice as the audience sees it (quad, or the mesh border)
+// Masks: everything drawn between MaskBegin and MaskEnd is limited to the union of `keep` polygons (the whole `bounds` when there
+// are none) minus the `holes`. Polygons are in window px. Done with the stencil buffer through draw-list callbacks; SetBlendMode(0)
+// re-arms the stencil test after the backend's ResetRenderState (which disables it). No feathering yet.
+void MaskBegin(const std::vector<std::vector<ImVec2>>& keep, const std::vector<std::vector<ImVec2>>& holes, ImRect bounds);
+void MaskEnd();
+void MaskRebuild(struct Mask& m);   // shape masks: regenerate pts from box
 // Brightness/contrast/RGB (each -1..1) on what is already drawn inside `poly` (window px): contrast pivots on mid-grey, RGB scale
 // that channel, brightness shifts all. Done with GL multiply / gain (dst*(1+c)) / add / subtract passes, so it needs no shader.
 void DrawColorAdjust(const ImVec2* poly, int n, float contrast, float brightness, float r, float gch, float b);

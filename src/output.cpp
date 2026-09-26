@@ -158,19 +158,29 @@ void RenderOutput() {
       dl.PushClipRect(bb.Min, bb.Max, true);
       g.warp = &wm;
       if (A.testCard) OutputTestCard(bb);
-      else DrawSliceSource(sl, bb, t, std::clamp(sc->opacity / 100.f, 0.f, 1.f));   // F22: composition, or just the layer/group this slice is routed to; Screen > Opacity scales it
+      else {
+        // Input masks (canvas-space polygons) cut the picture BEFORE it is warped: map each point through the same input-rect ->
+        // keystone/mesh map as the content, then let the stencil limit everything this slice draws.
+        std::vector<std::vector<ImVec2>> keep, holes;
+        for (auto& mk : sl.masks) {
+          if (mk.pts.size() < 3) continue;
+          std::vector<ImVec2> pp; pp.reserve(mk.pts.size());
+          for (auto& p : mk.pts) pp.push_back(wm.Map(p.x, p.y));
+          (mk.inverted ? holes : keep).push_back(std::move(pp));
+        }
+        const bool masked = !keep.empty() || !holes.empty();
+        if (masked) MaskBegin(keep, holes, bb);
+        DrawSliceSource(sl, bb, t, std::clamp(sc->opacity / 100.f, 0.f, 1.f));   // F22: composition, or just the layer/group this slice is routed to; Screen > Opacity scales it
+        // Screen > Brightness / Contrast / Red / Green / Blue over this slice's outline (inside the mask, so cut-out areas stay dark)
+        if (sc->brightness || sc->contrast || sc->red || sc->green || sc->blue) {
+          std::vector<ImVec2> o = SliceOutline(sl);
+          for (auto& p : o) p = ImVec2(p.x * sx, p.y * sy);
+          DrawColorAdjust(o.data(), (int)o.size(), sc->contrast / 100.f, sc->brightness / 100.f, sc->red / 100.f, sc->green / 100.f, sc->blue / 100.f);
+        }
+        if (masked) MaskEnd();
+      }
       g.warp = nullptr;
       dl.PopClipRect();
-    }
-    // Screen > Brightness / Contrast / Red / Green / Blue: passes over the picture, limited to each slice's outline so the
-    // black around the slices stays black (slices that overlap get the correction once per slice).
-    if (sc->brightness || sc->contrast || sc->red || sc->green || sc->blue) {
-      for (auto& sl : sc->slices) {
-        if (!sl.visible || (anySolo && !sl.solo)) continue;
-        std::vector<ImVec2> o = SliceOutline(sl);
-        for (auto& p : o) p = ImVec2(p.x * sx, p.y * sy);
-        DrawColorAdjust(o.data(), (int)o.size(), sc->contrast / 100.f, sc->brightness / 100.f, sc->red / 100.f, sc->green / 100.f, sc->blue / 100.f);
-      }
     }
   }
 

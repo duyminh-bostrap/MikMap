@@ -931,6 +931,28 @@ int main(int argc, char** argv) {
       if (ls.masks.size() != nm || !ls.softEdge) return fail("masks / soft edge did not round-trip");
       bool found = false; for (auto& m : ls.masks) if (m.id == penId) { found = m.pts.size() == 5 && m.pts[3].x == 90.f; }
       if (!found) return fail("a 5-point mask did not round-trip its points");
+      // preset shapes persist as shape + 4 box corners and are rebuilt from them; the pen mask stays a free polygon
+      int nShape = 0; for (auto& m : ls.masks) if (m.shape >= 0) { ++nShape; std::vector<ImVec2> before = m.pts; MaskRebuild(m); if (before.size() != m.pts.size() || before[0].x != m.pts[0].x) return fail("a shape mask's pts must equal its box rebuilt"); }
+      if (nShape != 5) return fail("the five preset shapes must keep their shape id across save/load");
+      // dragging one box corner reshapes the whole shape (all points move), a pen mask keeps every point independent
+      Mask& hm = ls.masks[0].shape == App::MS_HEART ? ls.masks[0] : ls.masks[ls.masks.size() - 6];
+      std::vector<ImVec2> b4 = hm.pts; hm.box[0].x -= 50; MaskRebuild(hm);
+      int moved = 0; for (size_t i = 0; i < hm.pts.size(); ++i) if (std::fabs(hm.pts[i].x - b4[i].x) > 0.01f) ++moved;
+      if (moved < (int)hm.pts.size() / 2) return fail("moving one box corner must reshape most of the shape's points");
+    }
+    NewProject(); {   // files from before masks lived in canvas px stored output px: converted on load by the canvas/1920x1080 ratio
+      Slice& s0 = A.screens[0].slices[0];
+      if (s0.masks.empty()) return fail("fixture: expected a mask on the first slice");
+      ImVec2 p0 = s0.masks[0].pts[0];
+      if (!SaveProject(roundtrip, err)) return fail(err.c_str());
+      std::string txt; { std::FILE* f = std::fopen(roundtrip.c_str(), "rb"); if (!f) return fail("cannot reopen the saved project"); char buf[4096]; size_t n; while ((n = std::fread(buf, 1, sizeof buf, f)) > 0) txt.append(buf, n); std::fclose(f); }
+      auto rep = [&](const std::string& from, const std::string& to) { for (size_t at = txt.find(from); at != std::string::npos; at = txt.find(from, at + to.size())) txt.replace(at, from.size(), to); };
+      rep("\"maskSpace\"", "\"maskSpaceX\"");      // pretend this file predates the field
+      rep("\"canvasW\": 1920", "\"canvasW\": 3840");
+      { std::FILE* f = std::fopen(roundtrip.c_str(), "wb"); if (!f) return fail("cannot rewrite the project"); std::fwrite(txt.data(), 1, txt.size(), f); std::fclose(f); }
+      if (!LoadProject(roundtrip, err)) return fail(err.c_str());
+      ImVec2 p1 = A.screens[0].slices[0].masks[0].pts[0];
+      if (A.canvasW != 3840 || std::fabs(p1.x - p0.x * 2.f) > 0.5f || std::fabs(p1.y - p0.y) > 0.5f) return fail("legacy output-px masks must be scaled into canvas px on load");
     }
     NewProject(); {   // Screen properties: opacity / brightness / contrast / RGB persist, default is "untouched"
       Screen& sc0 = A.screens[0];

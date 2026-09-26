@@ -271,11 +271,17 @@ Ba vùng: **cây Screen/Slice/Mask** (trái) | **Stage canvas** (giữa) | **Pro
 - **Slice Properties theo mẫu Resolume (2026-09-26):** từ trên xuống — tên slice · **Input source** · các hàng
   `X · Y` (tâm khung) · `Left · Top` (góc trên-trái chưa xoay) · `Width · Height` · `Rotation` (1 số lẻ), mỗi hàng có ô gõ số và nút **− / +**
   (giữ `Shift` = bước ×10) · ô tick **Soft Edge** · thanh **INPUT MASK** với 6 nút: **tim · vuông · tròn · tam giác · lục giác · bút**.
-  Bấm một hình = thêm mask cỡ nửa slice ở giữa quad output của slice đó, tự chuyển sang trang **Output routing** và chọn mask vừa tạo
-  (mask vẫn vẽ/sửa ở trang Output như cũ). **Bút:** bấm từng điểm trên stage; bấm lại điểm đầu / `Enter` / bấm đúp để đóng
-  (cần ≥3 điểm, ít hơn thì bỏ), `Esc` hoặc đổi sang trang Input để huỷ. Hàng X…Rotation chỉ ở trang Input; Soft Edge và Input Mask hiện ở cả hai trang.
-  **Soft Edge chỉ là công tắc lưu theo slice — output máy chiếu CHƯA làm mờ viền** (giống công tắc edge blending của Screen). Mask cũng
-  **chưa che hình ở output thật** (F12). ✅ UI · ⛔ hiệu ứng thật
+  Bấm một hình = thêm mask cỡ nửa **khung input** của slice, ngay giữa khung, và chọn mask vừa tạo.
+  **Mask nằm trong không gian composition canvas (như khung input), sửa ở trang Input và cắt hình gửi ra output thật** (2026-09-26):
+  - **Hình có sẵn (tim/vuông/tròn/tam giác/lục giác) chỉ có 4 tay nắm ở 4 góc hộp bao** — kéo một góc là biến dạng cả hình (nét đứt mảnh vẽ hộp bao).
+    **Chỉ mask vẽ bằng bút** mới có tay nắm ở từng điểm. Mask 4 điểm cũ (file cũ, vd DJ Console Cutout) cũng kéo từng điểm như bút.
+  - **Bút:** bấm từng điểm trên stage; bấm lại điểm đầu / `Enter` / bấm đúp để đóng (cần ≥3 điểm, ít hơn thì bỏ), `Esc` hoặc đổi trang để huỷ.
+  - Bấm vào trong một mask = chọn nó (tay nắm hiện ra, khung input chỉ còn viền); bấm vào khung input bên ngoài mask = quay về chọn slice. Bấm mask ở cây bên trái tự nhảy sang trang Input.
+  - **Trang Output routing không còn vẽ hay sửa mask.** Panel Mask (2 trang đều có): **Cut hole** bật = khoét lỗ (đỏ), tắt = chỉ giữ phần bên trong (xanh mint); nhiều mask cùng slice: phần được giữ là hợp các mask "chỉ giữ trong" (không có thì cả hình) trừ đi các lỗ.
+  - **Ảnh hưởng output:** `output.cpp` đưa từng điểm mask qua cùng phép ánh xạ khung input → keystone/mesh với hình rồi dùng stencil buffer (`MaskBegin/MaskEnd`, `clipart.cpp`) để giới hạn mọi thứ slice đó vẽ (kể cả chỉnh màu của Screen). Đã xem trên cửa sổ output: mask tim khoét lỗ hình tim trong hình; tắt Cut hole thì chỉ còn phần trong tim. **Độ mờ viền (Feather) mới chỉ lưu, chưa làm mờ thật.** Chỉ có ở cửa sổ máy chiếu, không có ở Live Output trong workspace.
+  - File cũ lưu mask theo px output 1920×1080: tự quy đổi sang px canvas khi mở (đúng theo tỉ lệ canvas/1920×1080; ở canvas mặc định số giữ nguyên).
+  Hàng X…Rotation chỉ ở trang Input; Soft Edge và Input Mask hiện ở cả hai trang.
+  **Soft Edge chỉ là công tắc lưu theo slice — output máy chiếu CHƯA làm mờ viền** (giống công tắc edge blending của Screen). ✅
 - **Nền trang Input = nội dung thật của nguồn (2026-09-26):** khung canvas hiện hình đang phát của đúng
   **nguồn mà slice đang chọn nhận** (*Input source*: Composition / Layer / Group — cùng `DrawSliceSource` với
   cửa sổ output, nên solo/bypass/opacity/transform khớp), chạy động cùng nhịp Live Output; đổi Input source là nền đổi theo.
@@ -295,7 +301,7 @@ Ba vùng: **cây Screen/Slice/Mask** (trái) | **Stage canvas** (giữa) | **Pro
 |---|---|---|
 | M6 | Kéo **góc slice** (vùng bấm ~16px) → keystone | ✅ |
 | M7 | Kéo **điểm mesh** (viền vàng = biên, coral = trong) | ✅ |
-| M8 | Kéo **các điểm của mask** (số điểm tuỳ hình: vuông 4, tam giác 3, lục giác 6, tròn 32, tim 36, bút = bao nhiêu điểm bạn bấm) | ✅ |
+| M8 | Kéo **4 góc hộp bao** của mask hình có sẵn (biến dạng cả hình); mask bút/mask 4 điểm cũ kéo từng điểm — làm ở trang **Input** | ✅ |
 | M9 | Bấm trong slice → chọn slice trên cùng; bấm vào mask → chọn mask | ✅ |
 | M10 | Với slice đang chọn ở chế độ mesh: bấm lại để đặt "điểm cắt", rồi dùng nút thêm cột/hàng | ✅ |
 | M11 | Chip 🔍 cạnh tên slice → zoom vào slice | ✅ |

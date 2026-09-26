@@ -123,6 +123,7 @@ JsonValue SliceJ(const Slice& s) {
   o.set("meshLocal", mp);
   o.set("srcKind", s.srcKind); o.set("srcRef", s.srcRef);
   o.set("ix", s.ix); o.set("iy", s.iy); o.set("iw", s.iw); o.set("ih", s.ih);
+  o.set("maskSpace", 1);   // masks are in composition canvas px (files without this stored output px)
   o.set("irot", (double)s.irot); o.set("iflipX", s.iflipX); o.set("iflipY", s.iflipY); o.set("softEdge", s.softEdge);
   JsonValue q = JsonValue::array(); for (int i = 0; i < 4; ++i) q.push(V2(s.q[i]));
   o.set("q", q);
@@ -132,6 +133,8 @@ JsonValue SliceJ(const Slice& s) {
     mo.set("id", m.id); mo.set("name", m.name); mo.set("inverted", m.inverted); mo.set("feather", m.feather);
     JsonValue pts = JsonValue::array(); for (auto& p : m.pts) pts.push(V2(p));
     mo.set("pts", pts);
+    mo.set("shape", m.shape);
+    if (m.shape >= 0) { JsonValue bx = JsonValue::array(); for (int i = 0; i < 4; ++i) bx.push(V2(m.box[i])); mo.set("box", bx); }
     ms.push(mo);
   }
   o.set("masks", ms);
@@ -156,11 +159,17 @@ Slice ReadSlice(const JsonValue& o) {
   s.irot = std::clamp((float)o["irot"].asNumber(0.0), -180.f, 180.f); s.iflipX = o["iflipX"].asBool(false); s.iflipY = o["iflipY"].asBool(false); s.softEdge = o["softEdge"].asBool(false);
   ImVec2 def[4] = {{(float)s.ix, (float)s.iy}, {(float)(s.ix + s.iw), (float)s.iy}, {(float)(s.ix + s.iw), (float)(s.iy + s.ih)}, {(float)s.ix, (float)(s.iy + s.ih)}};
   for (int i = 0; i < 4; ++i) s.q[i] = o["q"].isArray() && o["q"].size() > (size_t)i ? ReadV2(o["q"].at(i), def[i]) : def[i];
+  s.maskLegacy = o["maskSpace"].asInt(0) != 1;
   if (o["masks"].isArray()) for (auto& mo : o["masks"].arrayItems()) {
     Mask m; m.id = mo["id"].asString(); m.name = mo["name"].asString(); m.inverted = mo["inverted"].asBool(true); m.feather = mo["feather"].asInt(4);
     m.pts.clear();   // any point count >= 3 (older files always have 4); anything shorter falls back to a default square
     if (mo["pts"].isArray()) for (auto& pp : mo["pts"].arrayItems()) { if (m.pts.size() >= 256) break; m.pts.push_back(ReadV2(pp)); }
     if (m.pts.size() < 3) m.pts = {{620, 380}, {1100, 380}, {1020, 720}, {700, 720}};
+    m.shape = mo["shape"].asInt(-1);
+    if (m.shape >= 0 && m.shape <= App::MS_HEXAGON && mo["box"].isArray() && mo["box"].size() == 4) {
+      for (int i = 0; i < 4; ++i) m.box[i] = ReadV2(mo["box"].at(i));
+      MaskRebuild(m);   // pts follow the box, so the two can never disagree after a load
+    } else m.shape = -1;
     s.masks.push_back(m);
   }
   // files/presets from before meshLocal: absolute output-pixel mesh, converted once here (needs q, so after reading it)
@@ -178,6 +187,17 @@ JsonValue ScreenJ(const Screen& s) {
   JsonValue sl = JsonValue::array(); for (auto& x : s.slices) sl.push(SliceJ(x));
   so.set("slices", sl);
   return so;
+}
+// Masks used to be stored in the screen's 1920x1080 output px; they are composition-canvas px now. Only free polygons can be
+// legacy (shapes are new), and the two spaces are the same numbers at the default canvas.
+static void ConvertLegacyMasks(Screen& sc, int canvasW, int canvasH) {
+  float kx = (float)canvasW / 1920.f, ky = (float)canvasH / 1080.f;
+  for (auto& sl : sc.slices) {
+    if (!sl.maskLegacy) continue;
+    sl.maskLegacy = false;
+    if (canvasW == 1920 && canvasH == 1080) continue;
+    for (auto& m : sl.masks) for (auto& p : m.pts) { p.x *= kx; p.y *= ky; }
+  }
 }
 Screen ReadScreen(const JsonValue& so) {
   Screen s; s.id = so["id"].asString(); s.name = so["name"].asString(); s.outDev = so["outDev"].asString();
@@ -366,6 +386,7 @@ bool Deserialize(const JsonValue& root, App& out, std::string& err) {
 
   out.screens.clear();
   if (root["screens"].isArray()) for (auto& so : root["screens"].arrayItems()) out.screens.push_back(ReadScreen(so));
+  for (auto& sc : out.screens) ConvertLegacyMasks(sc, out.canvasW, out.canvasH);
   if (out.screens.empty()) { err = "no screens in file"; return false; }
 
   const JsonValue& sn = root["sensor"];
@@ -555,6 +576,7 @@ bool LoadOutputPreset(const std::string& path, Screen& out, std::string& err) {
   if (!JsonValue::parse(text, root, perr)) { err = "invalid JSON: " + perr; return false; }
   if (!root["screen"].isObject()) { err = "not a MikMap output preset"; return false; }
   out = ReadScreen(root["screen"]);
+  ConvertLegacyMasks(out, A.canvasW, A.canvasH);
   return true;
 }
 
