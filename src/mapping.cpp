@@ -37,6 +37,15 @@ static constexpr float kDegToRad = 3.14159265f / 180.f;
 struct RectXf { float x, y, w, h, rot; };   // Left/Top of the unrotated rect, size, degrees
 static RectXf RectOfSlice(const Slice& s) { return {(float)s.ix, (float)s.iy, (float)s.iw, (float)s.ih, s.irot}; }
 static RectXf RectOfMask(const Mask& m) { return {m.x, m.y, m.w, m.h, m.rot}; }
+// A 4-key slice is edited as a plain rectangle (like the input rect and the Preview Cue frame): its keystone quad read as centre,
+// size and turn, and written back as the corners of that rectangle. Free corners belong to Mesh mode.
+static RectXf RectOfQuad(const ImVec2 q[4]) {
+  auto len = [](ImVec2 a, ImVec2 b) { return std::hypot(b.x - a.x, b.y - a.y); };
+  float w = (len(q[0], q[1]) + len(q[3], q[2])) * 0.5f, h = (len(q[0], q[3]) + len(q[1], q[2])) * 0.5f;
+  float cx = (q[0].x + q[1].x + q[2].x + q[3].x) * 0.25f, cy = (q[0].y + q[1].y + q[2].y + q[3].y) * 0.25f;
+  float rot = std::atan2(q[1].y - q[0].y, q[1].x - q[0].x) / kDegToRad;
+  return {cx - w * 0.5f, cy - h * 0.5f, w, h, std::fabs(rot) < 0.05f ? 0.f : rot};
+}
 static void RectCorners(const RectXf& r, ImVec2 c[4]) {   // canvas px: tl, tr, br, bl
   float cx = r.x + r.w * 0.5f, cy = r.y + r.h * 0.5f, hw = r.w * 0.5f, hh = r.h * 0.5f;
   float co = std::cos(r.rot * kDegToRad), si = std::sin(r.rot * kDegToRad);
@@ -913,7 +922,7 @@ static void RailPopover(ImRect rail) {
 
 // ───────────────────────── stage ─────────────────────────
 static int dragKind = 0, dragIdx = 0;  // 1 corner, 2 input resize (0..3 corners, 10..13 edge middles), 3 mask point, 4 mesh point (row*100+col), 5 input move, 6 input rotate
-static ImVec2 dragQ0[4], dragMo0;       // 4-key output: the keystone corners and the cursor (output px) when an edge / whole-quad drag began
+static bool dragOnQuad = false;         // the resize / move / rotate drag edits the output quad of a 4-key slice, not an input rect or a mask
 static ImVec2 dragOff;                  // grabbed point minus cursor (output px), so grabbing off-centre doesn't jump
 static bool dragOnMask = false;          // the input-frame drags (2 resize / 5 move / 6 rotate) edit the selected mask instead of the slice
 static std::vector<PtStart> gGroup;      // the points being dragged together (dragKind 7)
@@ -937,6 +946,7 @@ static SnapSet BuildSnap(const Screen* sc, const Slice* sl, const Mask* mk, bool
     if (sc) for (auto& o : sc->slices) {
       if (!o.visible) continue;
       bool own = sl && o.id == sl->id;
+      if (own && skipQ == -2) continue;   // a whole-quad edit: the slice's own (moving) edges are no targets
       for (int i = 0; i < 4; ++i) {
         if (own && i == skipQ) continue;   // never snap a corner onto itself
         S.pts.push_back(o.q[i]);
@@ -1070,7 +1080,7 @@ static void FillPoly(const ImVec2* p, int n, ImU32 c) {
 
 // Right-click on the input rect: quick placement (centre / mirror / halves / whole), exchange shape with the output quad,
 // stacking order, and the slice clipboard — the same list Resolume offers on its input selection.
-static void InputRectMenu(ImVec2 at) {
+static void InputRectMenu(ImVec2 at, bool output = false) {
   Screen* sc = A.curScreen(); Slice* sl = A.curSlice(); if (!sc || !sl) return;
   int n = (int)sc->slices.size(), idx = 0; for (int i = 0; i < n; ++i) if (sc->slices[i].id == sl->id) idx = i;
   std::vector<MenuItem> mi;
@@ -1080,6 +1090,21 @@ static void InputRectMenu(ImVec2 at) {
   };
   auto edit = [](std::function<void(Slice&)> f) { return [f] { A.pushHist(); if (Slice* s = A.curSlice()) f(*s); }; };
   auto setRect = [](Slice& s, int x, int y, int w, int h) { s.ix = x; s.iy = y; s.iw = std::max(20, w); s.ih = std::max(20, h); s.irot = 0; };
+  if (output) {   // the same list, acting on the slice's quad in the 1920x1080 output (a mesh follows: it lives inside the quad)
+    auto bbox = [](const Slice& s, float& x0, float& y0, float& x1, float& y1) { x0 = x1 = s.q[0].x; y0 = y1 = s.q[0].y; for (auto& p : s.q) { x0 = std::min(x0, p.x); x1 = std::max(x1, p.x); y0 = std::min(y0, p.y); y1 = std::max(y1, p.y); } };
+    auto shift = [bbox](Slice& s, float dx, float dy) { for (auto& p : s.q) { p.x = std::round(p.x + dx); p.y = std::round(p.y + dy); } (void)bbox; };
+    auto setQuad = [](Slice& s, float x, float y, float w, float h) { QuadOf(s, (int)x, (int)y, (int)w, (int)h); };
+    add("Center X", edit([bbox, shift](Slice& s) { float a, b, c, d; bbox(s, a, b, c, d); shift(s, 960.f - (a + c) * 0.5f, 0.f); }));
+    add("Center Y", edit([bbox, shift](Slice& s) { float a, b, c, d; bbox(s, a, b, c, d); shift(s, 0.f, 540.f - (b + d) * 0.5f); }));
+    add("Mirror X", edit([](Slice& s) { std::swap(s.q[0], s.q[1]); std::swap(s.q[3], s.q[2]); }));
+    add("Mirror Y", edit([](Slice& s) { std::swap(s.q[0], s.q[3]); std::swap(s.q[1], s.q[2]); }));
+    add("Left Half", edit([setQuad](Slice& s) { setQuad(s, 0, 0, 960, 1080); }), true);
+    add("Top Half", edit([setQuad](Slice& s) { setQuad(s, 0, 0, 1920, 540); }));
+    add("Right Half", edit([setQuad](Slice& s) { setQuad(s, 960, 0, 960, 1080); }));
+    add("Bottom Half", edit([setQuad](Slice& s) { setQuad(s, 0, 540, 1920, 540); }));
+    add("Whole Area", edit([setQuad](Slice& s) { setQuad(s, 0, 0, 1920, 1080); }));
+    add("Match Input Shape", [] { A.matchOutputToInput(); }, true);
+  } else {
   add("Center X", edit([](Slice& s) { s.ix = (A.canvasW - s.iw) / 2; }));
   add("Center Y", edit([](Slice& s) { s.iy = (A.canvasH - s.ih) / 2; }));
   add("Mirror X", edit([](Slice& s) { s.iflipX = !s.iflipX; }));
@@ -1090,6 +1115,7 @@ static void InputRectMenu(ImVec2 at) {
   add("Bottom Half", edit([setRect](Slice& s) { setRect(s, 0, A.canvasH / 2, A.canvasW, A.canvasH - A.canvasH / 2); }));
   add("Whole Area", [] { A.resetInputRect(); });
   add("Match Output Shape", edit([](Slice& s) { SetInputFromQuad(s, s.q); }), true);
+  }
   add("Swap Input Output Shape", edit([](Slice& s) {
     ImVec2 outQ[4], inQ[4]; for (int i = 0; i < 4; ++i) outQ[i] = s.q[i];
     InputAsOutputQuad(s, inQ);
@@ -1330,36 +1356,6 @@ static void Stage(ImRect r) {
       }
       MovePointsTo(*sc, gGroup, ImVec2(tp.x - gGrabStart.x, tp.y - gGrabStart.y));
     }
-    else if (dragKind == 10) {   // 4-key output: turn the whole quad about its centre (Shift = steps of 15 degrees)
-      ImVec2 c(0, 0); for (int k = 0; k < 4; ++k) { c.x += dragQ0[k].x * 0.25f; c.y += dragQ0[k].y * 0.25f; }
-      float da = std::atan2(mo.y - c.y, mo.x - c.x) - dragAng0;
-      if (io.KeyShift) da = std::round(da / (15.f * kDegToRad)) * 15.f * kDegToRad;
-      float co = std::cos(da), si = std::sin(da);
-      for (int k = 0; k < 4; ++k) { float x = dragQ0[k].x - c.x, y = dragQ0[k].y - c.y; sl->q[k] = inOutput(ImVec2(c.x + x * co - y * si, c.y + x * si + y * co)); }
-    }
-    else if (dragKind == 8 || dragKind == 9) {   // 4-key output: a whole side, or the whole quad, moves; the mesh follows (keystone-relative)
-      const int ids[4] = {dragIdx, (dragIdx + 1) % 4, 0, 0}; const int nId = dragKind == 8 ? 2 : 4;
-      const int all[4] = {0, 1, 2, 3};
-      const int* mv = dragKind == 8 ? ids : all;
-      ImVec2 d = Vsub(mo, dragMo0);
-      if (snapOn) {   // the moved point that is closest to something to snap to wins; only its guide is shown
-        SnapSet S = BuildSnap(sc, sl, nullptr, false, -1);
-        auto moving = [&](ImVec2 q) { for (int k = 0; k < nId; ++k) { ImVec2 o = dragQ0[mv[k]]; if (std::fabs(o.x - q.x) < 0.01f && std::fabs(o.y - q.y) < 0.01f) return true; } return false; };
-        S.pts.erase(std::remove_if(S.pts.begin(), S.pts.end(), moving), S.pts.end());
-        S.segs.erase(std::remove_if(S.segs.begin(), S.segs.end(), [&](const std::pair<ImVec2, ImVec2>& g2) { return moving(g2.first) || moving(g2.second); }), S.segs.end());
-        float bestLen = 1e9f; ImVec2 bestAdj(0, 0); std::vector<std::pair<ImVec2, ImVec2>> bl; std::vector<ImVec2> bd;
-        for (int k = 0; k < nId; ++k) {
-          ImVec2 cand(dragQ0[mv[k]].x + d.x, dragQ0[mv[k]].y + d.y);
-          size_t nl = gGuideLines.size(), nd = gGuideDots.size();
-          ImVec2 sn = SnapPoint(cand, S, snapThr), adj(sn.x - cand.x, sn.y - cand.y);
-          float len = std::hypot(adj.x, adj.y);
-          if ((adj.x != 0.f || adj.y != 0.f) && len < bestLen) { bestLen = len; bestAdj = adj; bl.assign(gGuideLines.begin() + nl, gGuideLines.end()); bd.assign(gGuideDots.begin() + nd, gGuideDots.end()); }
-          gGuideLines.resize(nl); gGuideDots.resize(nd);
-        }
-        if (bestLen < 1e9f) { d = Vadd(d, bestAdj); gGuideLines.insert(gGuideLines.end(), bl.begin(), bl.end()); gGuideDots.insert(gGuideDots.end(), bd.begin(), bd.end()); }
-      }
-      for (int k = 0; k < nId; ++k) sl->q[mv[k]] = inOutput(ImVec2(dragQ0[mv[k]].x + d.x, dragQ0[mv[k]].y + d.y));
-    }
     else if (dragKind == 1) {   // the mesh follows on its own — it is keystone-relative
       ImVec2 tp = inOutput(to);
       if (snapOn) tp = inOutput(SnapPoint(tp, BuildSnap(sc, sl, nullptr, false, dragIdx), snapThr));
@@ -1367,14 +1363,15 @@ static void Stage(ImRect r) {
     }
     else if (dragKind == 2 || dragKind == 5 || dragKind == 6) {
       // one editor for both the slice's input rect and a mask: read the rect, edit it in its own rotated frame, write it back
-      const bool onMask = dragOnMask && mk;
-      RectXf R = onMask ? RectOfMask(*mk) : RectOfSlice(*sl);
-      const float minSz = onMask ? 8.f : 20.f;
+      const bool onMask = dragOnMask && mk, onQuad = dragOnQuad && !onMask;
+      RectXf R = onQuad ? RectOfQuad(sl->q) : onMask ? RectOfMask(*mk) : RectOfSlice(*sl);
+      const float minSz = onMask || onQuad ? 8.f : 20.f;
+      const int snapSkip = onQuad ? -2 : -1;
       if (dragKind == 2) {   // resize: the opposite corner / edge middle stays put
         float co = std::cos(R.rot * kDegToRad), si = std::sin(R.rot * kDegToRad);
         // the slice's input rect may reach past the canvas (the part outside is simply empty); a mask has nothing to cut out there
         ImVec2 P = onMask && R.rot == 0.f ? mu : inOutput(mo);
-        if (snapOn) { P = SnapPoint(P, BuildSnap(sc, sl, mk, onMask, -1), snapThr); P = onMask && R.rot == 0.f ? inCanvas(P) : inOutput(P); }
+        if (snapOn) { P = SnapPoint(P, BuildSnap(sc, sl, mk, onMask, snapSkip), snapThr); P = onMask && R.rot == 0.f ? inCanvas(P) : inOutput(P); }
         float dx = P.x - dragAnchor.x, dy = P.y - dragAnchor.y;
         float lx = dx * co + dy * si, ly = -dx * si + dy * co;   // pointer relative to the anchor, in rect-local axes
         float w = R.w, h = R.h, hx = 0, hy = 0;                  // hx/hy: new centre offset from the anchor, local axes
@@ -1392,7 +1389,8 @@ static void Stage(ImRect r) {
         R.w = w; R.h = h; R.x = cx - w * 0.5f; R.y = cy - h * 0.5f;
       } else if (dragKind == 5) {   // move: an upright rect stays inside the canvas, a rotated one just keeps its centre on it
         float cx = to.x, cy = to.y;
-        if (onMask && R.rot == 0.f && R.w <= A.canvasW && R.h <= A.canvasH) {
+        if (onQuad) { R.x = cx - R.w * 0.5f; R.y = cy - R.h * 0.5f; }   // the output space has no border to keep inside
+        else if (onMask && R.rot == 0.f && R.w <= A.canvasW && R.h <= A.canvasH) {
           R.x = std::clamp(cx - R.w * 0.5f, 0.f, A.canvasW - R.w); R.y = std::clamp(cy - R.h * 0.5f, 0.f, A.canvasH - R.h);
         } else {
           R.x = std::clamp(cx, 0.f, (float)A.canvasW) - R.w * 0.5f; R.y = std::clamp(cy, 0.f, (float)A.canvasH) - R.h * 0.5f;
@@ -1404,8 +1402,9 @@ static void Stage(ImRect r) {
         r -= 360.f * std::floor((r + 180.f) / 360.f);   // keep within -180..180
         R.rot = std::fabs(r) < 0.05f ? 0.f : r;
       }
-      if (snapOn && dragKind == 5) SnapRectMove(R, BuildSnap(sc, sl, mk, onMask, -1), snapThr);
-      if (onMask) { mk->x = R.x; mk->y = R.y; mk->w = R.w; mk->h = R.h; mk->rot = R.rot; MaskRebuild(*mk); }
+      if (snapOn && dragKind == 5) SnapRectMove(R, BuildSnap(sc, sl, mk, onMask, snapSkip), snapThr);
+      if (onQuad) { ImVec2 qc[4]; RectCorners(R, qc); for (int k = 0; k < 4; ++k) sl->q[k] = inOutput(qc[k]); }
+      else if (onMask) { mk->x = R.x; mk->y = R.y; mk->w = R.w; mk->h = R.h; mk->rot = R.rot; MaskRebuild(*mk); }
       else {   // the slice's rect is whole pixels: round the size first, then keep the centre
         float cx = R.x + R.w * 0.5f, cy = R.y + R.h * 0.5f;
         sl->iw = (int)std::lround(R.w); sl->ih = (int)std::lround(R.h);
@@ -1419,33 +1418,9 @@ static void Stage(ImRect r) {
   bool overStage = inArea && ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
   bool clickPending = ImGui::IsMouseClicked(0) && overStage && !dragKind && !A.mapHand;   // the hand tool only pans
 
-  if (A.mpage == 0) {
-    if (!sl) A.cancelMaskPen();
-    // The other slices of this screen show only their input outline (no handles), so it is clear which parts of the source
-    // are already taken while another slice is being edited. Drawn first so the selected slice's frame stays on top.
-    bool frameTookClick = false;   // the selected slice's own frame (handles / rings / body) has first claim on a click
-    if (scVis) for (auto& o : sc->slices) {
-      if (!o.visible || (sl && o.id == sl->id)) continue;
-      ImVec2 oc[4], opx[4]; InputCorners(o, oc);
-      for (int i = 0; i < 4; ++i) opx[i] = toPx(oc[i]);
-      if (A.MapKind() == 1 && A.mapSelCount() > 1 && A.mapIsSel(1, sc->id, o.id, "")) g.dl->AddPolyline(opx, 4, Ca(K(pal::cyan)), ImDrawFlags_Closed, 2.f);   // selected together with the primary: solid
-      else DashedPoly(opx, 4, K(pal::cyan, 0.7f), 1.5f, 8, 5);   // dashed and unnamed: only the selected slice carries its name
-    }
-    // ---- transform frames: the slice's input rect, or — when a mask is selected — that mask ----
-    // Both are edited the same way (like the Preview Cue frame): drag inside to move, the small squares (corners and edge middles)
-    // to resize, the rings around the corners to rotate. Only the SELECTED mask is shown; the others stay hidden until picked in the tree.
-    const bool maskMode = mk != nullptr && A.selKind == 2;
-    if (scVis && sl && sl->visible && A.maskPen) {   // pen: click points, click the first point / Enter / double-click closes
-      frameTookClick = true;
-      if (clickPending) {
-        bool closes = A.penPts.size() >= 3 && std::hypot(m.x - toPx(A.penPts[0]).x, m.y - toPx(A.penPts[0]).y) <= 10.f;
-        if (closes || ImGui::IsMouseDoubleClicked(0)) A.finishMaskPen();
-        else A.penPts.push_back(inCanvas(mo));
-      }
-      if (A.maskPen && ImGui::IsKeyPressed(ImGuiKey_Enter, false)) A.finishMaskPen();
-      if (inArea) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-    }
-    auto frame = [&](const RectXf& R, uint32_t hex, bool onMask) {
+  bool frameTookClick = false;   // the selected slice's own frame (handles / rings / body) has first claim on a click
+    auto frame = [&](const RectXf& R, uint32_t hex, int target, int phase) {   // target: 0 slice input rect, 1 mask, 2 output quad (4-key); phase: -1 both, 0 hit-test only, 1 draw only
+      const bool onMask = target == 1, onQuad = target == 2;
       ImVec2 cp[4]; RectCorners(R, cp);
       ImVec2 cpx[4], mpx[4], mcv[4];
       for (int i = 0; i < 4; ++i) { cpx[i] = toPx(cp[i]); mcv[i] = ImVec2((cp[i].x + cp[(i + 1) % 4].x) * 0.5f, (cp[i].y + cp[(i + 1) % 4].y) * 0.5f); mpx[i] = toPx(mcv[i]); }
@@ -1471,14 +1446,15 @@ static void Stage(ImRect r) {
         bool edge = hot == 2 && hotIdx >= 10 && R.rot == 0.f;   // an upright rect's sides only go one way
         ImGui::SetMouseCursor(hot == 5 ? ImGuiMouseCursor_Hand : edge ? ((hotIdx % 10) % 2 == 0 ? ImGuiMouseCursor_ResizeNS : ImGuiMouseCursor_ResizeEW) : ImGuiMouseCursor_ResizeAll);
       }
-      if (hot && clickPending) {
+      if (hot && clickPending && phase != 1) {
         frameTookClick = true;
-        A.pushHist(); dragKind = hot; dragIdx = hotIdx; dragOnMask = onMask;
+        A.pushHist(); dragKind = hot; dragIdx = hotIdx; dragOnMask = onMask; dragOnQuad = onQuad;
         if (hot == 2) dragAnchor = hotIdx >= 10 ? mcv[(hotIdx % 10 + 2) % 4] : cp[(hotIdx + 2) % 4];   // opposite corner / edge middle
         else if (hot == 5) dragOff = Vsub(ctrCv, mo);
         else { dragAng0 = std::atan2(mo.y - ctrCv.y, mo.x - ctrCv.x); dragRot0 = R.rot; }
       }
-      if (!onMask) {
+      if (phase == 0) return;
+      if (!onMask && !onQuad) {
         if (rClick && live && PointInPoly(m, cpx, 4)) InputRectMenu(m);
         g.dl->AddConvexPolyFilled(cpx, 4, Ca(K(hex, 0.05f)));   // faint on purpose: the source thumbnail underneath has to stay readable
         char dm[64]; int len = snprintf(dm, sizeof dm, "%d \xC3\x97 %d", sl->iw, sl->ih);
@@ -1487,7 +1463,7 @@ static void Stage(ImRect r) {
         TextC(ctrPx.x, ctrPx.y - 7, MONO_B, 11, K(hex), sl->name.c_str());
         TextC(ctrPx.x, ctrPx.y + 7, MONO_R, 9, K(pal::tcc), dm);
       }
-      g.dl->AddPolyline(cpx, 4, Ca(K(hex, onMask ? 0.8f : 1.f)), ImDrawFlags_Closed, onMask ? 1.5f : 2.f);
+      if (!onQuad) g.dl->AddPolyline(cpx, 4, Ca(K(hex, onMask ? 0.8f : 1.f)), ImDrawFlags_Closed, onMask ? 1.5f : 2.f);
       const bool rotating = dragKind == 6 || (dragKind == 0 && hot == 6);
       if (live) for (int i = 0; i < 4; ++i) {
         bool ringHot = rotating && (dragKind == 6 || hotIdx == i);
@@ -1499,6 +1475,31 @@ static void Stage(ImRect r) {
         Border(hr, K(hex), 2, 2);
       }
     };
+  if (A.mpage == 0) {
+    if (!sl) A.cancelMaskPen();
+    // The other slices of this screen show only their input outline (no handles), so it is clear which parts of the source
+    // are already taken while another slice is being edited. Drawn first so the selected slice's frame stays on top.
+    if (scVis) for (auto& o : sc->slices) {
+      if (!o.visible || (sl && o.id == sl->id)) continue;
+      ImVec2 oc[4], opx[4]; InputCorners(o, oc);
+      for (int i = 0; i < 4; ++i) opx[i] = toPx(oc[i]);
+      if (A.MapKind() == 1 && A.mapSelCount() > 1 && A.mapIsSel(1, sc->id, o.id, "")) g.dl->AddPolyline(opx, 4, Ca(K(pal::cyan)), ImDrawFlags_Closed, 2.f);   // selected together with the primary: solid
+      else DashedPoly(opx, 4, K(pal::cyan, 0.7f), 1.5f, 8, 5);   // dashed and unnamed: only the selected slice carries its name
+    }
+    // ---- transform frames: the slice's input rect, or — when a mask is selected — that mask ----
+    // Both are edited the same way (like the Preview Cue frame): drag inside to move, the small squares (corners and edge middles)
+    // to resize, the rings around the corners to rotate. Only the SELECTED mask is shown; the others stay hidden until picked in the tree.
+    const bool maskMode = mk != nullptr && A.selKind == 2;
+    if (scVis && sl && sl->visible && A.maskPen) {   // pen: click points, click the first point / Enter / double-click closes
+      frameTookClick = true;
+      if (clickPending) {
+        bool closes = A.penPts.size() >= 3 && std::hypot(m.x - toPx(A.penPts[0]).x, m.y - toPx(A.penPts[0]).y) <= 10.f;
+        if (closes || ImGui::IsMouseDoubleClicked(0)) A.finishMaskPen();
+        else A.penPts.push_back(inCanvas(mo));
+      }
+      if (A.maskPen && ImGui::IsKeyPressed(ImGuiKey_Enter, false)) A.finishMaskPen();
+      if (inArea) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+    }
     if (sl && sl->visible && scVis) {
       if (maskMode) {
         // the slice is just an outline while its mask is edited; clicking it (outside the mask's frame) goes back to the slice
@@ -1512,9 +1513,9 @@ static void Stage(ImRect r) {
         std::vector<ImVec2> pp(mk->pts.size()); for (size_t i = 0; i < pp.size(); ++i) pp[i] = toPx(mk->pts[i]);
         g.dl->AddConcavePolyFilled(pp.data(), (int)pp.size(), Ca(K(pal::yellow, 0.30f)));   // the mask tone of the design: yellow
         DashedPoly(pp.data(), (int)pp.size(), K(pal::yellow), 2.f, 9, 7);
-        frame(RectOfMask(*mk), pal::yellow, true);
+        frame(RectOfMask(*mk), pal::yellow, 1, -1);
         if (clickPending && !frameTookClick && !A.maskPen && PointInPoly(m, sp4, 4)) { A.selKind = 1; A.selMk.clear(); frameTookClick = true; }
-      } else frame(RectOfSlice(*sl), pal::cyan, false);
+      } else frame(RectOfSlice(*sl), pal::cyan, 0, -1);
     }
     if (A.maskPen && scVis) {   // the shape being drawn, plus a rubber-band segment to the cursor
       std::vector<ImVec2> pp(A.penPts.size()); for (size_t i = 0; i < pp.size(); ++i) pp[i] = toPx(A.penPts[i]);
@@ -1545,6 +1546,16 @@ static void Stage(ImRect r) {
     bool consumed = false;
     auto polyPx = [&](const ImVec2* q, int n, ImVec2* out) { for (int i = 0; i < n; ++i) out[i] = toPx(q[i]); };
     auto outlinePx = [&](const Slice& S) { std::vector<ImVec2> o = SliceOutline(S); for (auto& p : o) p = toPx(p); return o; };
+    if (rClick && inArea && !A.mapHand) {   // right-click a slice: select it and offer the same list as the Input frame's menu
+      for (auto it = sc->slices.rbegin(); it != sc->slices.rend(); ++it) if (it->visible) {
+        auto ol = outlinePx(*it);
+        if (!PointInPoly(m, ol.data(), (int)ol.size())) continue;
+        if (!(sl && it->id == sl->id)) { A.mapMulti.clear(); A.selSc = sc->id; A.selSl = it->id; A.selMk.clear(); A.selKind = 1; sl = A.curSlice(); }
+        InputRectMenu(m, true);
+        break;
+      }
+    }
+    if (sl && sl->visible && sl->warp == 0 && !A.maskPen) { frame(RectOfQuad(sl->q), pal::coral, 2, 0); consumed = frameTookClick; }   // 4-key: hit-test first, drawn on top of the thumbnails below
     // handles keep a fixed on-screen size at any zoom (they used to scale with it and vanish when zoomed out)
     const float kCornerR = 8.f, kMeshR = 5.5f, kGrabPad = 4.f;
     auto nearPt = [&](ImVec2 outPt, float rad) { ImVec2 p = toPx(outPt); return std::hypot(m.x - p.x, m.y - p.y) <= rad; };
@@ -1568,25 +1579,8 @@ static void Stage(ImRect r) {
       haveZoom = true;
     }
     if (clickPending && haveZoom && zoomBtn.Contains(m)) { ZoomToSlice(area, *sl); consumed = true; }
-    if (sl && sl->visible && clickPending && !consumed)
+    if (sl && sl->visible && sl->warp != 0 && clickPending && !consumed)   // free corners belong to Mesh mode; 4-key edits a rectangle
       for (int i = 0; i < 4 && !consumed; ++i) if (nearPt(sl->q[i], kCornerR + kGrabPad)) grab(1, i, sl->q[i]);
-    const float kRingHit = 20.f;   // the ring drawn around each corner turns the quad
-    if (clickPending && !consumed && sl && sl->visible && sl->warp == 0) {
-      for (int i = 0; i < 4 && !consumed; ++i) if (nearPt(sl->q[i], kRingHit)) {
-        ImVec2 c(0, 0); for (int k = 0; k < 4; ++k) { c.x += sl->q[k].x * 0.25f; c.y += sl->q[k].y * 0.25f; }
-        A.mapPts.clear(); A.pushHist(); dragKind = 10; dragIdx = i; dragAng0 = std::atan2(mo.y - c.y, mo.x - c.x); for (int k = 0; k < 4; ++k) dragQ0[k] = sl->q[k]; consumed = true;
-      }
-    }
-    if ((clickPending || (!dragKind && inArea && !A.mapHand && !A.maskPen)) && !consumed && sl && sl->visible && sl->warp == 0) {   // 4-key: grab a whole side (anywhere along it) to move that side
-      for (int i = 0; i < 4 && !consumed; ++i) {
-        ImVec2 a = toPx(sl->q[i]), b = toPx(sl->q[(i + 1) % 4]), ab(b.x - a.x, b.y - a.y);
-        float l2 = ab.x * ab.x + ab.y * ab.y; if (l2 < 1.f) continue;
-        float t = std::clamp(((m.x - a.x) * ab.x + (m.y - a.y) * ab.y) / l2, 0.f, 1.f);
-        if (std::hypot(a.x + ab.x * t - m.x, a.y + ab.y * t - m.y) > 6.f) continue;
-        if (!clickPending) { bool onCorner = false; for (int k = 0; k < 4; ++k) onCorner |= nearPt(sl->q[k], kCornerR + kGrabPad); if (!onCorner) ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll); break; }
-        A.mapPts.clear(); A.pushHist(); dragKind = 8; dragIdx = i; dragMo0 = mo; for (int k = 0; k < 4; ++k) dragQ0[k] = sl->q[k]; consumed = true;
-      }
-    }
     if (clickPending && !consumed && sl && sl->visible && sl->warp != 0) {
       auto gr = MeshGrid(*sl);
       int R = (int)gr.size(), C = (int)gr[0].size();
@@ -1601,7 +1595,6 @@ static void Stage(ImRect r) {
         if (!PointInPoly(m, ol.data(), (int)ol.size())) continue;
         if (MultiMod()) { A.mapToggle(1, {sc->id, it->id, ""}); consumed = true; break; }   // Ctrl / Cmd / Shift: add or remove
         bool wasOn = sl && it->id == sl->id;
-        if (wasOn && it->warp == 0) { A.pushHist(); dragKind = 9; dragIdx = 0; dragMo0 = mo; for (int k = 0; k < 4; ++k) dragQ0[k] = it->q[k]; }   // 4-key: drag inside the selected quad moves all of it
         A.mapMulti.clear();
         A.selSc = sc->id; A.selSl = it->id; A.selMk.clear(); A.selKind = 1; consumed = true;
         ImVec2 l;   // where the click lands in keystone space = the split position for "+ add col / + add row"
@@ -1690,18 +1683,8 @@ static void Stage(ImRect r) {
         Text(p.x - TextW(MONO_B, 10, lb) * 0.5f, p.y + 14 * s + 18, MONO_B, 10, K(pal::mint), lb);
       }
     }
-    if (sl && sl->visible && sl->warp == 0) {   // 4-key: the same handles as the Input frame — corner squares with a turning ring, and a square in the middle of every side
-      for (int i = 0; i < 4; ++i) {
-        ImVec2 p = toPx(sl->q[i]), mp = toPx(ImVec2((sl->q[i].x + sl->q[(i + 1) % 4].x) * 0.5f, (sl->q[i].y + sl->q[(i + 1) % 4].y) * 0.5f));
-        float d = std::hypot(m.x - p.x, m.y - p.y);
-        bool ringHot = dragKind == 10 || (!dragKind && overStage && d > kCornerR + kGrabPad && d <= kRingHit);
-        bool hot = (dragKind == 1 && dragIdx == i) || (!dragKind && overStage && d <= kCornerR + kGrabPad);
-        g.dl->AddCircle(p, 11.f, Ca(K(ringHot ? pal::white : pal::coral)), 24, 1.5f);
-        for (ImVec2 hp : {p, mp}) { ImRect hr(hp.x - 5, hp.y - 5, hp.x + 5, hp.y + 5); Box(hr, K(pal::white), K(pal::coral), 2); Border(hr, K(pal::coral), 2, 2); }
-        if (hot) CursorHand();
-        else if (ringHot && !dragKind) ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
-      }
-    } else if (sl && sl->visible) for (int i = 0; i < 4; ++i) {
+    if (sl && sl->visible && sl->warp == 0) frame(RectOfQuad(sl->q), pal::coral, 2, 1);   // 4-key: the same frame as Input — squares, turning rings, drag inside to move
+    else if (sl && sl->visible) for (int i = 0; i < 4; ++i) {
       ImVec2 p = toPx(sl->q[i]);
       bool hot = (dragKind == 1 && dragIdx == i) || (!dragKind && overStage && nearPt(sl->q[i], kCornerR + kGrabPad));
       g.dl->AddCircleFilled(p, kCornerR + (hot ? 2.f : 0.f), Ca(K(pal::coral)), 24); g.dl->AddCircle(p, kCornerR + (hot ? 2.f : 0.f), Ca(K(pal::white)), 24, 2.5f);
@@ -1735,7 +1718,7 @@ static void Stage(ImRect r) {
           if (A.mpage == 1) {
             std::vector<App::PtRef> hit;
             for (auto& S : sc->slices) if (S.visible) {
-              for (int i = 0; i < 4; ++i) if (mr.Contains(toPx(S.q[i]))) hit.push_back({S.id, i});
+              if (S.warp != 0) for (int i = 0; i < 4; ++i) if (mr.Contains(toPx(S.q[i]))) hit.push_back({S.id, i});
               if (sl && S.id == sl->id && S.warp != 0) {
                 auto gr = MeshGrid(S); int R = (int)gr.size(), C = (int)gr[0].size();
                 for (int rr = 0; rr < R; ++rr) for (int cc = 0; cc < C; ++cc)
