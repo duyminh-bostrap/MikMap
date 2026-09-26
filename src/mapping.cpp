@@ -157,16 +157,71 @@ static std::vector<std::vector<ImVec2>> MeshGrid(const Slice& s) {
   for (auto& row : g) for (auto& p : row) p = k.Fwd(p);
   return g;
 }
-// output-space outline of the slice as the audience sees it (quad, or the mesh border once warped)
+// The warp surface in keystone-local space. Linear: each patch is the bilinear blend of its 4 grid points. Bezier (Point Mode):
+// each patch is a bicubic Bezier patch through its 4 grid points — the edge controls come from each point's tangents (automatic
+// Catmull-Rom-like tangents from the neighbours, or the handles the user dragged), the inner controls use zero twist. With automatic
+// tangents an untouched grid gives exactly the linear surface, so switching the mode changes nothing until points move.
+struct MeshSurface {
+  std::vector<float> us, vs;                 // grid lines incl. 0 and 1
+  std::vector<std::vector<ImVec2>> L;        // grid points (keystone-local)
+  std::vector<std::vector<ImVec2>> TU, TV;   // Bezier tangents per point (per unit of mesh parameter); empty in Linear mode
+  bool bez = false;
+  explicit MeshSurface(const Slice& s) {
+    MeshLines(s, us, vs); L = LocalGrid(s); bez = s.pointMode == 1;
+    if (!bez) return;
+    const int R = (int)vs.size() - 1, C = (int)us.size() - 1;
+    TU.assign(R + 1, std::vector<ImVec2>(C + 1)); TV = TU;
+    for (int r = 0; r <= R; ++r) for (int c = 0; c <= C; ++c) {
+      int c0 = std::max(0, c - 1), c1 = std::min(C, c + 1), r0 = std::max(0, r - 1), r1 = std::min(R, r + 1);
+      float du = std::max(1e-6f, us[c1] - us[c0]), dv = std::max(1e-6f, vs[r1] - vs[r0]);
+      TU[r][c] = ImVec2((L[r][c1].x - L[r][c0].x) / du, (L[r][c1].y - L[r][c0].y) / du);
+      TV[r][c] = ImVec2((L[r1][c].x - L[r0][c].x) / dv, (L[r1][c].y - L[r0][c].y) / dv);
+    }
+    for (auto& h : s.meshHandles) if (h.r >= 0 && h.r <= R && h.c >= 0 && h.c <= C) { TU[h.r][h.c] = h.tu; TV[h.r][h.c] = h.tv; }
+  }
+  int Cols() const { return (int)us.size() - 1; }
+  int Rows() const { return (int)vs.size() - 1; }
+  // 16 control points of patch (ri, ci), b[j * 4 + i]: i along u, j along v
+  void Controls(int ri, int ci, ImVec2 b[16]) const {
+    const float w = us[ci + 1] - us[ci], h = vs[ri + 1] - vs[ri];
+    auto add = [](ImVec2 p, ImVec2 d, float k) { return ImVec2(p.x + d.x * k, p.y + d.y * k); };
+    const ImVec2 p00 = L[ri][ci], p30 = L[ri][ci + 1], p03 = L[ri + 1][ci], p33 = L[ri + 1][ci + 1];
+    b[0] = p00; b[3] = p30; b[12] = p03; b[15] = p33;
+    b[1] = add(p00, TU[ri][ci], w / 3); b[2] = add(p30, TU[ri][ci + 1], -w / 3);
+    b[13] = add(p03, TU[ri + 1][ci], w / 3); b[14] = add(p33, TU[ri + 1][ci + 1], -w / 3);
+    b[4] = add(p00, TV[ri][ci], h / 3); b[8] = add(p03, TV[ri + 1][ci], -h / 3);
+    b[7] = add(p30, TV[ri][ci + 1], h / 3); b[11] = add(p33, TV[ri + 1][ci + 1], -h / 3);
+    auto twist = [](ImVec2 e1, ImVec2 e2, ImVec2 c) { return ImVec2(e1.x + e2.x - c.x, e1.y + e2.y - c.y); };
+    b[5] = twist(b[1], b[4], b[0]); b[6] = twist(b[2], b[7], b[3]); b[9] = twist(b[13], b[8], b[12]); b[10] = twist(b[14], b[11], b[15]);
+  }
+  ImVec2 InPatch(int ri, int ci, float lu, float lv) const {   // lu, lv in 0..1 across the patch
+    if (!bez) return Bilerp(L[ri][ci], L[ri][ci + 1], L[ri + 1][ci + 1], L[ri + 1][ci], lu, lv);
+    ImVec2 b[16]; Controls(ri, ci, b);
+    auto bern = [](float t, float o[4]) { float m = 1 - t; o[0] = m * m * m; o[1] = 3 * t * m * m; o[2] = 3 * t * t * m; o[3] = t * t * t; };
+    float bu[4], bv[4]; bern(lu, bu); bern(lv, bv);
+    ImVec2 p(0, 0);
+    for (int j = 0; j < 4; ++j) for (int i = 0; i < 4; ++i) { float k = bu[i] * bv[j]; p.x += b[j * 4 + i].x * k; p.y += b[j * 4 + i].y * k; }
+    return p;
+  }
+  ImVec2 At(float u, float v) const {   // mesh parameter (0..1) -> keystone-local point
+    int ci = 0, ri = 0;
+    while (ci + 2 < (int)us.size() && u >= us[ci + 1]) ++ci;
+    while (ri + 2 < (int)vs.size() && v >= vs[ri + 1]) ++ri;
+    return InPatch(ri, ci, (u - us[ci]) / std::max(1e-6f, us[ci + 1] - us[ci]), (v - vs[ri]) / std::max(1e-6f, vs[ri + 1] - vs[ri]));
+  }
+};
+
+// output-space outline of the slice as the audience sees it: the grid's border — straight between border points in Linear mode,
+// sampled along the curves in Bezier mode
 std::vector<ImVec2> SliceOutline(const Slice& s) {
   if (s.warp == 0) return {s.q[0], s.q[1], s.q[2], s.q[3]};
-  auto g = MeshGrid(s);
-  int R = (int)g.size(), C = (int)g[0].size();
+  const MeshSurface M(s); const Keystone k(s.q);
+  const int R = M.Rows(), C = M.Cols(), n = M.bez ? 8 : 1;   // samples per patch edge
   std::vector<ImVec2> o;
-  for (int c = 0; c < C; ++c) o.push_back(g[0][c]);
-  for (int r = 1; r < R; ++r) o.push_back(g[r][C - 1]);
-  for (int c = C - 2; c >= 0; --c) o.push_back(g[R - 1][c]);
-  for (int r = R - 2; r > 0; --r) o.push_back(g[r][0]);
+  for (int c = 0; c < C; ++c) for (int i = 0; i < n; ++i) o.push_back(k.Fwd(M.InPatch(0, c, (float)i / n, 0.f)));
+  for (int r = 0; r < R; ++r) for (int i = 0; i < n; ++i) o.push_back(k.Fwd(M.InPatch(r, C - 1, 1.f, (float)i / n)));
+  for (int c = C - 1; c >= 0; --c) for (int i = n; i > 0; --i) o.push_back(k.Fwd(M.InPatch(R - 1, c, (float)i / n, 1.f)));
+  for (int r = R - 1; r >= 0; --r) for (int i = n; i > 0; --i) o.push_back(k.Fwd(M.InPatch(r, 0, 0.f, (float)i / n)));
   return o;
 }
 
@@ -174,15 +229,7 @@ std::vector<ImVec2> SliceOutline(const Slice& s) {
 ImVec2 SliceMapUV(const Slice& s, float u, float v) {
   Keystone k(s.q);
   if (s.warp == 0) return k.Fwd(ImVec2(u, v));
-  std::vector<float> us, vs; MeshLines(s, us, vs);
-  bool stored = LocalSized(s, vs.size(), us.size());
-  auto at = [&](int r, int c) { return stored ? s.meshLocal[r][c] : ImVec2(us[c], vs[r]); };
-  int ci = 0, ri = 0;
-  while (ci + 2 < (int)us.size() && u >= us[ci + 1]) ++ci;
-  while (ri + 2 < (int)vs.size() && v >= vs[ri + 1]) ++ri;
-  float lu = (u - us[ci]) / std::max(1e-6f, us[ci + 1] - us[ci]);
-  float lv = (v - vs[ri]) / std::max(1e-6f, vs[ri + 1] - vs[ri]);
-  return k.Fwd(Bilerp(at(ri, ci), at(ri, ci + 1), at(ri + 1, ci + 1), at(ri + 1, ci), lu, lv));
+  return k.Fwd(MeshSurface(s).At(u, v));
 }
 
 // The mesh parameter (u, v) whose output position is `out`: start from the keystone's own inverse and refine with Newton steps, so on a
@@ -207,7 +254,7 @@ void SliceOutputBounds(const Slice& s, ImVec2& mn, ImVec2& mx) {
   mn = ImVec2(1e9f, 1e9f); mx = ImVec2(-1e9f, -1e9f);
   auto add = [&](ImVec2 p) { mn.x = std::min(mn.x, p.x); mn.y = std::min(mn.y, p.y); mx.x = std::max(mx.x, p.x); mx.y = std::max(mx.y, p.y); };
   for (int i = 0; i < 4; ++i) add(s.q[i]);
-  if (s.warp != 0) for (auto& row : MeshGrid(s)) for (auto& p : row) add(p);   // interior points may bulge past the quad
+  if (s.warp != 0) { for (auto& row : MeshGrid(s)) for (auto& p : row) add(p); for (auto& p : SliceOutline(s)) add(p); }   // points (and Bezier edges) may bulge past the quad
 }
 
 // Edit Points (Resolume): the four big perspective corners always surround the warp grid, each side resting on the grid. They are the
@@ -217,12 +264,22 @@ void SliceOutputBounds(const Slice& s, ImVec2& mn, ImVec2& mx) {
 static void FitCornersToMesh(Slice& s) {
   auto lg = LocalGrid(s);
   float u0 = 1e9f, v0 = 1e9f, u1 = -1e9f, v1 = -1e9f;
-  for (auto& row : lg) for (auto& p : row) { u0 = std::min(u0, p.x); u1 = std::max(u1, p.x); v0 = std::min(v0, p.y); v1 = std::max(v1, p.y); }
+  auto grow = [&](ImVec2 p) { u0 = std::min(u0, p.x); u1 = std::max(u1, p.x); v0 = std::min(v0, p.y); v1 = std::max(v1, p.y); };
+  for (auto& row : lg) for (auto& p : row) grow(p);
+  if (s.pointMode == 1) {   // Bezier: the curves between the points can bulge past them — sample every grid line
+    const MeshSurface M(s);
+    for (int r = 0; r < M.Rows(); ++r) for (int c = 0; c < M.Cols(); ++c) for (int i = 1; i < 16; ++i) {
+      float t = i / 16.f;
+      grow(M.InPatch(r, c, t, 0.f)); grow(M.InPatch(r, c, 0.f, t)); grow(M.InPatch(r, c, t, 1.f)); grow(M.InPatch(r, c, 1.f, t));
+      grow(M.InPatch(r, c, t, 0.5f)); grow(M.InPatch(r, c, 0.5f, t));
+    }
+  }
   if (u1 - u0 < 1e-3f || v1 - v0 < 1e-3f) return;   // a collapsed grid: leave the corners alone
   if (std::fabs(u0) < 1e-5f && std::fabs(v0) < 1e-5f && std::fabs(u1 - 1.f) < 1e-5f && std::fabs(v1 - 1.f) < 1e-5f) return;
   Keystone k(s.q);
   const ImVec2 nq[4] = {k.Fwd(ImVec2(u0, v0)), k.Fwd(ImVec2(u1, v0)), k.Fwd(ImVec2(u1, v1)), k.Fwd(ImVec2(u0, v1))};
   for (auto& row : lg) for (auto& p : row) p = ImVec2((p.x - u0) / (u1 - u0), (p.y - v0) / (v1 - v0));
+  for (auto& h : s.meshHandles) { h.tu = ImVec2(h.tu.x / (u1 - u0), h.tu.y / (v1 - v0)); h.tv = ImVec2(h.tv.x / (u1 - u0), h.tv.y / (v1 - v0)); }   // Bezier tangents live in the same space
   for (int i = 0; i < 4; ++i) s.q[i] = ImVec2(std::clamp(nq[i].x, -4000.f, 8000.f), std::clamp(nq[i].y, -4000.f, 8000.f));
   s.meshLocal = lg;
 }
@@ -231,28 +288,62 @@ void NormalizeWarp(Slice& s) {
   FitCornersToMesh(s);   // older edits could leave grid points outside the big corners
 }
 // The warp grid's own position (keystone-local, before the perspective corners) at mesh parameter (u, v): bilinear inside its patch.
-static ImVec2 LocalAtUV(const Slice& s, float u, float v) {
-  std::vector<float> us, vs; MeshLines(s, us, vs);
-  bool stored = LocalSized(s, vs.size(), us.size());
-  auto at = [&](int r, int c) { return stored ? s.meshLocal[r][c] : ImVec2(us[c], vs[r]); };
-  int ci = 0, ri = 0;
-  while (ci + 2 < (int)us.size() && u >= us[ci + 1]) ++ci;
-  while (ri + 2 < (int)vs.size() && v >= vs[ri + 1]) ++ri;
-  float lu = (u - us[ci]) / std::max(1e-6f, us[ci + 1] - us[ci]), lv = (v - vs[ri]) / std::max(1e-6f, vs[ri + 1] - vs[ri]);
-  return Bilerp(at(ri, ci), at(ri, ci + 1), at(ri + 1, ci + 1), at(ri + 1, ci), lu, lv);
-}
+static ImVec2 LocalAtUV(const Slice& s, float u, float v) { return MeshSurface(s).At(u, v); }
 // Change the grid lines (splits, 0..1 exclusive) and keep the warped shape: every new point is taken from the current surface, so
 // adding a column / row changes nothing on screen and fewer subdivisions keep the outline and corners.
 static void ResampleMesh(Slice& s, std::vector<float> nu, std::vector<float> nv, bool customU, bool customV) {
   std::sort(nu.begin(), nu.end()); std::sort(nv.begin(), nv.end());
   std::vector<float> us = {0}, vs = {0};
   us.insert(us.end(), nu.begin(), nu.end()); us.push_back(1); vs.insert(vs.end(), nv.begin(), nv.end()); vs.push_back(1);
+  const MeshSurface old(s);
   std::vector<std::vector<ImVec2>> g(vs.size(), std::vector<ImVec2>(us.size()));
-  for (size_t r = 0; r < vs.size(); ++r) for (size_t c = 0; c < us.size(); ++c) g[r][c] = LocalAtUV(s, us[c], vs[r]);
+  for (size_t r = 0; r < vs.size(); ++r) for (size_t c = 0; c < us.size(); ++c) g[r][c] = old.At(us[c], vs[r]);
   s.meshU = customU ? nu : std::vector<float>(); s.meshV = customV ? nv : std::vector<float>();
   s.meshCols = (int)us.size() - 1; s.meshRows = (int)vs.size() - 1;
   s.meshLocal = g;
+  s.meshHandles.clear();
+  if (old.bez) {   // Bezier: keep the curvature — a new point whose tangent on the old surface differs from its automatic one keeps it as a handle
+    const MeshSurface fresh(s);
+    auto deriv = [&](float u, float v, bool alongU) {
+      const float e = 1e-3f;
+      float a = std::max(0.f, (alongU ? u : v) - e), b = std::min(1.f, (alongU ? u : v) + e);
+      ImVec2 pa = alongU ? old.At(a, v) : old.At(u, a), pb = alongU ? old.At(b, v) : old.At(u, b);
+      return ImVec2((pb.x - pa.x) / (b - a), (pb.y - pa.y) / (b - a));
+    };
+    for (size_t r = 0; r < vs.size(); ++r) for (size_t c = 0; c < us.size(); ++c) {
+      ImVec2 tu = deriv(us[c], vs[r], true), tv = deriv(us[c], vs[r], false);
+      const ImVec2 au = fresh.TU[r][c], av = fresh.TV[r][c];
+      if (std::hypot(tu.x - au.x, tu.y - au.y) > 1e-3f || std::hypot(tv.x - av.x, tv.y - av.y) > 1e-3f) { MeshHandle h; h.r = (int)r; h.c = (int)c; h.tu = tu; h.tv = tv; s.meshHandles.push_back(h); }
+    }
+  }
   FitCornersToMesh(s);   // fewer lines can pull the grid in from the big corners' edges
+}
+
+// Bezier handles of warp point (r, c), keystone-local: dir 0 towards the next column, 1 the previous one, 2 the next row, 3 the previous
+// one. False where there is no patch on that side.
+static bool BezHandle(const MeshSurface& M, int r, int c, int dir, ImVec2& out) {
+  const int R = M.Rows(), C = M.Cols();
+  if (r < 0 || r > R || c < 0 || c > C || !M.bez) return false;
+  const ImVec2 P = M.L[r][c];
+  float k;
+  if (dir == 0) { if (c >= C) return false; k = (M.us[c + 1] - M.us[c]) / 3; out = ImVec2(P.x + M.TU[r][c].x * k, P.y + M.TU[r][c].y * k); }
+  else if (dir == 1) { if (c <= 0) return false; k = (M.us[c] - M.us[c - 1]) / 3; out = ImVec2(P.x - M.TU[r][c].x * k, P.y - M.TU[r][c].y * k); }
+  else if (dir == 2) { if (r >= R) return false; k = (M.vs[r + 1] - M.vs[r]) / 3; out = ImVec2(P.x + M.TV[r][c].x * k, P.y + M.TV[r][c].y * k); }
+  else { if (r <= 0) return false; k = (M.vs[r] - M.vs[r - 1]) / 3; out = ImVec2(P.x - M.TV[r][c].x * k, P.y - M.TV[r][c].y * k); }
+  return true;
+}
+// Drag handle `dir` of point (r, c) to the keystone-local spot h: the tangent on that axis follows, and the opposite handle mirrors it.
+static void SetBezHandle(Slice& s, int r, int c, int dir, ImVec2 h) {
+  const MeshSurface M(s);
+  if (r < 0 || r > M.Rows() || c < 0 || c > M.Cols() || !M.bez) return;
+  const ImVec2 P = M.L[r][c];
+  float k = dir == 0 ? (M.us[c + 1] - M.us[c]) / 3 : dir == 1 ? -(M.us[c] - M.us[c - 1]) / 3 : dir == 2 ? (M.vs[r + 1] - M.vs[r]) / 3 : -(M.vs[r] - M.vs[r - 1]) / 3;
+  if (std::fabs(k) < 1e-6f) return;
+  ImVec2 t((h.x - P.x) / k, (h.y - P.y) / k);
+  MeshHandle* e = nullptr;
+  for (auto& x : s.meshHandles) if (x.r == r && x.c == c) e = &x;
+  if (!e) { MeshHandle n; n.r = r; n.c = c; n.tu = M.TU[r][c]; n.tv = M.TV[r][c]; s.meshHandles.push_back(n); e = &s.meshHandles.back(); }
+  if (dir <= 1) e->tu = t; else e->tv = t;
 }
 
 // ── Output Transformation > Transform (Resolume): a box around every point of the slice as the audience sees it, turned by orot.
@@ -260,6 +351,7 @@ static void ResampleMesh(Slice& s, std::vector<float> nu, std::vector<float> nv,
 // affine map composed with a homography is again the homography through the moved corners, so the whole warp follows exactly.
 static RectXf OutputBox(const Slice& s) {
   auto g = MeshGrid(s);
+  if (s.pointMode == 1) g.push_back(SliceOutline(s));   // Bezier edges can bulge past the points
   const float r = s.orot * kDegToRad, co = std::cos(r), si = std::sin(r);
   float x0 = 1e9f, y0 = 1e9f, x1 = -1e9f, y1 = -1e9f;
   for (auto& row : g) for (auto& p : row) {
@@ -352,6 +444,38 @@ bool MappingSelfTest(std::string& why) {
     Slice ks0 = ks; FitCornersToMesh(ks);
     for (int i = 0; i < 4; ++i) if (!near2(ks.q[i], ks0.q[i], 0.05f)) { why = "an untouched keystoned grid got new corners"; return false; }
   }
+  // Point Mode Bezier
+  {
+    Slice b; b.q[0] = {200, 150}; b.q[1] = {1500, 120}; b.q[2] = {1600, 900}; b.q[3] = {150, 980}; b.meshCols = 4; b.meshRows = 3;
+    Slice lin = b; b.pointMode = 1;
+    for (float u : {0.1f, 0.37f, 0.5f, 0.88f}) for (float v : {0.05f, 0.5f, 0.93f})
+      if (!near2(SliceMapUV(b, u, v), SliceMapUV(lin, u, v), 0.05f)) { why = "Bezier on an untouched grid differs from Linear"; return false; }
+    b.meshLocal = LocalGrid(b); b.meshLocal[1][2] = {0.56f, 0.42f}; b.meshLocal[2][1] = {0.2f, 0.7f};
+    const MeshSurface M(b);
+    for (int r = 0; r <= M.Rows(); ++r) for (int c = 0; c <= M.Cols(); ++c)
+      if (!near2(M.At(M.us[c], M.vs[r]), M.L[r][c], 1e-4f)) { why = "the Bezier surface does not pass through its points"; return false; }
+    // smooth across a column line: the slope just left and just right of point (1, 2) along u is the same
+    const float e = 1e-3f; ImVec2 pl = M.At(0.5f - e, M.vs[1]), p0 = M.At(0.5f, M.vs[1]), pr = M.At(0.5f + e, M.vs[1]);
+    ImVec2 dl((p0.x - pl.x) / e, (p0.y - pl.y) / e), dr((pr.x - p0.x) / e, (pr.y - p0.y) / e);
+    if (std::fabs(dl.x - dr.x) > 0.02f || std::fabs(dl.y - dr.y) > 0.02f) { why = "the Bezier surface has a kink across a grid line"; return false; }
+    // a handle drag bends the edge, and the opposite handle mirrors
+    ImVec2 before = SliceMapUV(b, 0.625f, M.vs[1]);
+    ImVec2 h0; BezHandle(M, 1, 2, 0, h0);
+    SetBezHandle(b, 1, 2, 0, ImVec2(h0.x, h0.y + 0.08f));
+    const MeshSurface M2(b); ImVec2 h1, h0b; BezHandle(M2, 1, 2, 1, h1); BezHandle(M2, 1, 2, 0, h0b);
+    if (!near2(h0b, ImVec2(h0.x, h0.y + 0.08f), 1e-4f)) { why = "a Bezier handle did not land where it was dragged"; return false; }
+    ImVec2 P = M2.L[1][2];
+    if (std::fabs((h1.x - P.x) * (h0b.y - P.y) - (h1.y - P.y) * (h0b.x - P.x)) > 1e-5f) { why = "the opposite Bezier handle does not mirror"; return false; }
+    if (near2(SliceMapUV(b, 0.625f, M.vs[1]), before, 1.f)) { why = "dragging a Bezier handle did not bend the edge"; return false; }
+    // adding a column keeps the curved surface (close enough to see no change)
+    Slice add = b; std::vector<float> uu, vv; MeshUV(add, uu, vv); uu.push_back(0.61f);
+    ResampleMesh(add, uu, vv, true, !add.meshV.empty());
+    float worst = 0;
+    for (float u : {0.05f, 0.3f, 0.61f, 0.7f, 0.95f}) for (float v : {0.1f, 0.4f, 0.8f}) {
+      ImVec2 a0 = SliceMapUV(add, u, v), b0 = SliceMapUV(b, u, v); worst = std::max(worst, std::hypot(a0.x - b0.x, a0.y - b0.y));
+    }
+    if (worst > 1.5f) { why = "adding a column changed the Bezier surface"; return false; }
+  }
   // Match Input Shape with moved grid corners: the corners the audience sees land exactly on the target
   Slice mv = s; const ImVec2 tgt[4] = {{300, 200}, {1400, 260}, {1350, 950}, {250, 880}};
   SetVisibleCorners(mv, tgt);
@@ -389,11 +513,11 @@ void MigrateAbsoluteMesh(Slice& s, const std::vector<std::vector<ImVec2>>& abs) 
 // the same map as everything else (grid -> perspective corners -> output) and samples the canvas at the matching point of the input
 // rect (its turn and mirrors undone the other way round). Patch borders are exact, so neighbouring patches meet without cracks.
 void DrawSliceTextured(const Slice& s, unsigned tex, float ox, float oy, float sx, float sy, float alpha) {
-  std::vector<float> us, vs; MeshLines(s, us, vs);
-  const auto lg = LocalGrid(s);
+  const MeshSurface M(s);
+  const std::vector<float>& us = M.us; const std::vector<float>& vs = M.vs;
   const Keystone k(s.q);
-  const int C = (int)us.size() - 1, R = (int)vs.size() - 1;
-  const int n = std::clamp(48 / std::max(C, R), 4, 16);   // small quads per patch side: ~48 across the slice
+  const int C = M.Cols(), R = M.Rows();
+  const int n = std::clamp(48 / std::max(C, R), M.bez ? 8 : 4, 16);   // small quads per patch side: ~48 across the slice (Bezier: at least 8)
   const float rw = (float)std::max(1, s.iw), rh = (float)std::max(1, s.ih), icx = s.ix + rw * 0.5f, icy = s.iy + rh * 0.5f;
   const float r = s.irot * 3.14159265f / 180.f, co = std::cos(r), si = std::sin(r);
   const bool fx = s.iflipX != ((s.oflip & 1) != 0), fy = s.iflipY != ((s.oflip & 2) != 0);
@@ -409,11 +533,10 @@ void DrawSliceTextured(const Slice& s, unsigned tex, float ox, float oy, float s
   static std::vector<ImVec2> P, T;
   SetBlendMode(12);
   for (int ri = 0; ri < R; ++ri) for (int ci = 0; ci < C; ++ci) {
-    const ImVec2 p00 = lg[ri][ci], p10 = lg[ri][ci + 1], p11 = lg[ri + 1][ci + 1], p01 = lg[ri + 1][ci];
     P.resize((size_t)(n + 1) * (n + 1)); T.resize(P.size());
     for (int j = 0; j <= n; ++j) for (int i = 0; i <= n; ++i) {
       float lu = (float)i / n, lv = (float)j / n;
-      ImVec2 o = k.Fwd(Bilerp(p00, p10, p11, p01, lu, lv));
+      ImVec2 o = k.Fwd(M.InPatch(ri, ci, lu, lv));
       P[(size_t)j * (n + 1) + i] = ImVec2(ox + o.x * sx, oy + o.y * sy);
       T[(size_t)j * (n + 1) + i] = texAt(us[ci] + (us[ci + 1] - us[ci]) * lu, vs[ri] + (vs[ri + 1] - vs[ri]) * lv);
     }
@@ -575,12 +698,12 @@ void App::deleteSlice() { pushHist();
   selSl = sc->slices[0].id; selMk.clear(); selKind = -1;
 }
 void App::resetWarp() { pushHist(); if (Slice* s = curSlice()) { QuadOf(*s, 0, 0, 1920, 1080); s->orot = 0; } }
-void App::resetMeshWarp() { pushHist(); if (Slice* s = curSlice()) s->meshLocal.clear(); }
+void App::resetMeshWarp() { pushHist(); if (Slice* s = curSlice()) { s->meshLocal.clear(); s->meshHandles.clear(); } }
 void App::resetAllWarping() {
   pushHist(); if (Slice* s = curSlice()) {
     QuadOf(*s, 0, 0, 1920, 1080);
     s->meshLocal.clear(); s->meshU.clear(); s->meshV.clear();
-    s->meshCols = 1; s->meshRows = 1; s->orot = 0;   // back to a new slice: full screen, no subdivisions
+    s->meshCols = 1; s->meshRows = 1; s->orot = 0; s->meshHandles.clear();   // back to a new slice: full screen, no subdivisions
   }
 }
 // Resolume-style explicit match (the old resetWarp behaviour): output quad takes the input rect's shape/position.
@@ -1183,6 +1306,7 @@ static int dragKind = 0, dragIdx = 0;  // 1 perspective corner, 2 frame resize (
 static bool dragOnQuad = false;         // the resize / move / rotate drag edits the Output Transform box of the slice (all its points)
 static ImVec2 dragMo0;                  // pointer (space px) when a frame drag began: Shift locks a move to one axis from here
 static float dragAspect = 1.f;          // w / h of the frame when a corner resize began: Shift keeps it
+static std::string gBezSl; static int gBezR = -1, gBezC = -1;   // Point Mode Bezier: the warp point whose handles are shown (the last one grabbed)
 static ImVec2 dragOff;                  // grabbed point minus cursor (output px), so grabbing off-centre doesn't jump
 static bool dragOnMask = false;          // the input-frame drags (2 resize / 5 move / 6 rotate) edit the selected mask instead of the slice
 static std::vector<PtStart> gGroup;      // the points being dragged together (dragKind 7)
@@ -1616,6 +1740,10 @@ static void Stage(ImRect r) {
         if (rr < (int)lg.size() && cc < (int)lg[rr].size()) { lg[rr][cc] = loc; sl->meshLocal = lg; FitCornersToMesh(*sl); }   // the big corners keep surrounding the grid
       }
     }
+    else if (dragKind == 9) {   // Bezier handle of the active point: the tangent follows, the opposite handle mirrors
+      ImVec2 tp = inOutput(to), loc;
+      if (gBezSl == sl->id && Keystone(sl->q).Inv(tp, loc)) { SetBezHandle(*sl, gBezR, gBezC, dragIdx, loc); FitCornersToMesh(*sl); }   // the big corners keep surrounding the curves
+    }
     else if (dragKind == 8 && mk) {   // Input > Edit Points: one outline point of the selected mask
       ImVec2 tp = inCanvas(to);
       if (snapOn) tp = inCanvas(SnapPoint(tp, BuildSnap(sc, sl, mk, true, -1), snapThr));
@@ -1900,8 +2028,18 @@ static void Stage(ImRect r) {
       // the warp points first (small squares, also the grid's own four corners), then the big perspective corners around them —
       // where the two sit on top of each other the small one is under the pointer and the big one is its outer ring
       auto gr = MeshGrid(*sl);
+      if (sl->pointMode == 1 && gBezSl == sl->id) {   // Bezier: the shown handles come first
+        const MeshSurface M(*sl); const Keystone kk(sl->q);
+        for (int d = 0; d < 4 && !consumed; ++d) { ImVec2 h; if (BezHandle(M, gBezR, gBezC, d, h) && nearPt(kk.Fwd(h), 6.f + kGrabPad)) grab(9, d, kk.Fwd(h)); }
+      }
       for (int rr = 0; rr < (int)gr.size() && !consumed; ++rr) for (int cc = 0; cc < (int)gr[rr].size() && !consumed; ++cc)
-        if (nearPt(gr[rr][cc], kSmallHalf + kGrabPad)) grab(4, rr * 100 + cc, gr[rr][cc]);
+        if (nearPt(gr[rr][cc], kSmallHalf + kGrabPad)) {
+          if (sl->pointMode == 1 && ImGui::IsMouseDoubleClicked(0)) {   // Bezier: double-click a point = its handles back to automatic
+            A.pushHist(); sl->meshHandles.erase(std::remove_if(sl->meshHandles.begin(), sl->meshHandles.end(), [&](const MeshHandle& h) { return h.r == rr && h.c == cc; }), sl->meshHandles.end());
+            consumed = true; break;
+          }
+          grab(4, rr * 100 + cc, gr[rr][cc]); gBezSl = sl->id; gBezR = rr; gBezC = cc;
+        }
       for (int i = 0; i < 4 && !consumed; ++i) if (nearPt(sl->q[i], kBigHalf + kGrabPad)) grab(1, i, sl->q[i]);
     }
     if (clickPending && !consumed) {
@@ -1947,8 +2085,27 @@ static void Stage(ImRect r) {
       auto gr = MeshGrid(*sl);
       int R = (int)gr.size(), C = (int)gr[0].size();
       auto seg = [&](ImVec2 a, ImVec2 b) { ImVec2 p2[2] = {toPx(a), toPx(b)}; DashedPoly(p2, 2, K(pal::coral, 0.55f), 1.5f, 8, 6); };
-      for (int rr = 1; rr + 1 < R; ++rr) for (int cc = 0; cc + 1 < C; ++cc) seg(gr[rr][cc], gr[rr][cc + 1]);
-      for (int cc = 1; cc + 1 < C; ++cc) for (int rr = 0; rr + 1 < R; ++rr) seg(gr[rr][cc], gr[rr + 1][cc]);
+      if (sl->pointMode != 1) {
+        for (int rr = 1; rr + 1 < R; ++rr) for (int cc = 0; cc + 1 < C; ++cc) seg(gr[rr][cc], gr[rr][cc + 1]);
+        for (int cc = 1; cc + 1 < C; ++cc) for (int rr = 0; rr + 1 < R; ++rr) seg(gr[rr][cc], gr[rr + 1][cc]);
+      } else {   // Bezier: the inner grid lines are curves
+        const MeshSurface M(*sl); const Keystone kk(sl->q);
+        std::vector<ImVec2> pl;
+        for (int rr = 1; rr + 1 < R; ++rr) { pl.clear(); for (int cc = 0; cc + 1 < C; ++cc) for (int i = 0; i <= 12; ++i) pl.push_back(toPx(kk.Fwd(M.InPatch(rr, cc, i / 12.f, 0.f)))); g.dl->AddPolyline(pl.data(), (int)pl.size(), Ca(K(pal::coral, 0.5f)), 0, 1.2f); }
+        for (int cc = 1; cc + 1 < C; ++cc) { pl.clear(); for (int rr = 0; rr + 1 < R; ++rr) for (int i = 0; i <= 12; ++i) pl.push_back(toPx(kk.Fwd(M.InPatch(rr, cc, 0.f, i / 12.f)))); g.dl->AddPolyline(pl.data(), (int)pl.size(), Ca(K(pal::coral, 0.5f)), 0, 1.2f); }
+        if (gBezSl == sl->id && gBezR >= 0 && gBezR < R && gBezC >= 0 && gBezC < C) {   // the active point's handles
+          ImVec2 P = toPx(gr[gBezR][gBezC]);
+          for (int d = 0; d < 4; ++d) {
+            ImVec2 h; if (!BezHandle(M, gBezR, gBezC, d, h)) continue;
+            ImVec2 hp = toPx(kk.Fwd(h));
+            bool hot = (dragKind == 9 && dragIdx == d) || (!dragKind && overStage && std::hypot(m.x - hp.x, m.y - hp.y) <= 6.f + kGrabPad);
+            g.dl->AddLine(P, hp, Ca(K(pal::white, 0.7f)), 1.f);
+            g.dl->AddCircleFilled(hp, hot ? 5.5f : 4.5f, Ca(K(hot ? pal::white : pal::cyan)), 16);
+            g.dl->AddCircle(hp, hot ? 5.5f : 4.5f, Ca(K(0x050505)), 16, 1.5f);
+            if (hot) CursorHand();
+          }
+        }
+      }
       for (int i = 0; i < 4; ++i) {   // big perspective corners: hollow squares
         ImVec2 p = toPx(sl->q[i]);
         float d = std::hypot(m.x - p.x, m.y - p.y);
@@ -2305,7 +2462,17 @@ static void PropsPanel(ImRect r) {
       HLine(ox, ox + W, oy + y, K(pal::g2a)); y += 1 + 6;
       Text(x, oy + y + 4.5f, MONO_R, 9, K(pal::t88), "WARPING", 0.09f); y += 9 + 6;
       Text(x, oy + y + 11, UI_S, 10, K(pal::t88), "Point mode");
-      TextR(x + w, oy + y + 11, MONO_B, 10, K(pal::coral), "Linear");
+      {   // Linear | Bezier
+        const char* pm[2] = {"LINEAR", "BEZIER"}; const float bw = 58.f;
+        for (int i = 0; i < 2; ++i) {
+          ImRect br(x + w - (2 - i) * (bw + 3) + 3, oy + y + 1, x + w - (1 - i) * (bw + 3), oy + y + 21);
+          Hit h = HitR(br); bool on = sl->pointMode == i;
+          Box(br, on ? K(pal::coral, 0.2f) : h.hover ? K(pal::ctrlHover) : K(pal::g1c), on ? K(pal::coral) : K(pal::g22), 3);
+          TextC((br.Min.x + br.Max.x) * 0.5f, (br.Min.y + br.Max.y) * 0.5f, MONO_B, 8, K(on ? pal::coral : pal::tcc), pm[i], 0.06f);
+          if (h.hover) CursorHand();
+          if (h.click && !on) { A.pushHist(); sl->pointMode = i; FitCornersToMesh(*sl); }
+        }
+      }
       y += 22;
       std::vector<float> uu, vv; MeshUV(*sl, uu, vv);
       const int sub[2] = {(int)uu.size(), (int)vv.size()};   // subdivisions = the extra grid lines between the borders (0 = a single patch across)
@@ -2341,8 +2508,8 @@ static void PropsPanel(ImRect r) {
         Box(fb, K(pal::g1c), hf.hover ? K(pal::coral) : K(pal::g22), 3); TextC((fb.Min.x + fb.Max.x) * 0.5f, oy + y + 10, MONO_B, 9, K(hf.hover ? pal::coral : pal::t88), "FLATTEN", 0.09f);
         Box(ub, K(pal::g1c), hu.hover ? K(pal::yellow) : K(pal::g22), 3); TextC((ub.Min.x + ub.Max.x) * 0.5f, oy + y + 10, MONO_B, 9, K(hu.hover ? pal::yellow : pal::t88), "UNIFORM", 0.09f);
         if (hf.hover || hu.hover) CursorHand();
-        if (hf.click) { A.pushHist(); sl->meshLocal.clear(); }
-        if (hu.click) { A.pushHist(); sl->meshU.clear(); sl->meshV.clear(); sl->meshLocal.clear(); }
+        if (hf.click) { A.pushHist(); sl->meshLocal.clear(); sl->meshHandles.clear(); }
+        if (hu.click) { A.pushHist(); sl->meshU.clear(); sl->meshV.clear(); sl->meshLocal.clear(); sl->meshHandles.clear(); }
         y += 20 + 6;
       }
       {

@@ -92,6 +92,9 @@ struct Mask {
   std::vector<ImVec2> u;                                // free outline in the unit square (used when shape < 0)
   std::vector<ImVec2> pts = std::vector<ImVec2>(4);     // derived polygon in canvas px (MaskRebuild) — what drawing / masking use
 };
+// Point Mode Bezier: a warp point's tangents (keystone-local units per unit of mesh parameter). The handle towards the next column
+// sits at point + tu * (that patch's width) / 3, the one towards the previous column mirrors it; tv likewise for rows.
+struct MeshHandle { int r = 0, c = 0; ImVec2 tu, tv; };
 struct Slice {
   std::string id, name;
   bool visible = true;
@@ -102,6 +105,8 @@ struct Slice {
   int warp = 1;
   int meshCols = 1, meshRows = 1;   // patches across / down (Subdivisions X / Y + 1)
   float orot = 0;   // Output Transformation > Transform: the turn of the box drawn around the slice (degrees)
+  int pointMode = 0;   // Warping > Point Mode: 0 Linear (straight lines between warp points), 1 Bezier (smooth bicubic surface)
+  std::vector<MeshHandle> meshHandles;   // Bezier handles the user has set; every other point gets smooth automatic tangents
   std::vector<float> meshU, meshV;                 // custom column/row split positions (0..1)
   // Mesh vertices (rows x cols) in the keystone's own unit space, not output pixels: output = keystone(local).
   // That is what makes the warp ride along when a corner pin moves. Empty (or wrong size) = undeformed grid.

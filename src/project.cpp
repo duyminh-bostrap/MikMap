@@ -124,7 +124,10 @@ JsonValue SliceJ(const Slice& s) {
   o.set("srcKind", s.srcKind); o.set("srcRef", s.srcRef);
   o.set("ix", s.ix); o.set("iy", s.iy); o.set("iw", s.iw); o.set("ih", s.ih);
   o.set("maskSpace", 1);   // masks are in composition canvas px (files without this stored output px)
-  o.set("irot", (double)s.irot); o.set("iflipX", s.iflipX); o.set("iflipY", s.iflipY); o.set("softEdge", s.softEdge); o.set("orot", (double)s.orot);
+  o.set("irot", (double)s.irot); o.set("iflipX", s.iflipX); o.set("iflipY", s.iflipY); o.set("softEdge", s.softEdge); o.set("orot", (double)s.orot); o.set("pointMode", s.pointMode);
+  { JsonValue hs = JsonValue::array();
+    for (auto& h : s.meshHandles) { JsonValue e = JsonValue::array(); e.push(h.r); e.push(h.c); e.push((double)h.tu.x); e.push((double)h.tu.y); e.push((double)h.tv.x); e.push((double)h.tv.y); hs.push(e); }
+    o.set("handles", hs); }
   o.set("oflip", s.oflip); o.set("isKey", s.isKey); o.set("blackBg", s.blackBg);
   o.set("sBri", s.brightness); o.set("sCon", s.contrast); o.set("sRed", s.red); o.set("sGrn", s.green); o.set("sBlu", s.blue);
   o.set("seGR", (double)s.seGammaR); o.set("seGG", (double)s.seGammaG); o.set("seGB", (double)s.seGammaB);
@@ -164,6 +167,14 @@ Slice ReadSlice(const JsonValue& o) {
   s.ix = o["ix"].asInt(0); s.iy = o["iy"].asInt(0); s.iw = std::max(20, o["iw"].asInt(1920)); s.ih = std::max(20, o["ih"].asInt(1080));
   s.irot = std::clamp((float)o["irot"].asNumber(0.0), -180.f, 180.f); s.iflipX = o["iflipX"].asBool(false); s.iflipY = o["iflipY"].asBool(false); s.softEdge = o["softEdge"].asBool(false);
   s.orot = std::clamp((float)o["orot"].asNumber(0.0), -180.f, 180.f);
+  s.pointMode = std::clamp(o["pointMode"].asInt(0), 0, 1);
+  if (o["handles"].isArray()) for (size_t i = 0; i < o["handles"].size(); ++i) {
+    const JsonValue& e = o["handles"].at(i);
+    if (!e.isArray() || e.size() < 6) continue;
+    MeshHandle h; h.r = e.at(0).asInt(0); h.c = e.at(1).asInt(0);
+    h.tu = ImVec2((float)e.at(2).asNumber(0.0), (float)e.at(3).asNumber(0.0)); h.tv = ImVec2((float)e.at(4).asNumber(0.0), (float)e.at(5).asNumber(0.0));
+    s.meshHandles.push_back(h);
+  }
   s.oflip = std::clamp(o["oflip"].asInt(0), 0, 3); s.isKey = o["isKey"].asBool(false); s.blackBg = o["blackBg"].asBool(false);
   s.brightness = std::clamp(o["sBri"].asInt(0), -100, 100); s.contrast = std::clamp(o["sCon"].asInt(0), -100, 100);
   s.red = std::clamp(o["sRed"].asInt(0), -100, 100); s.green = std::clamp(o["sGrn"].asInt(0), -100, 100); s.blue = std::clamp(o["sBlu"].asInt(0), -100, 100);
