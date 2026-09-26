@@ -260,62 +260,150 @@ static void ApplyXf(Clip& c, float px, float py, float scalePct, float rotDeg, f
   c.scale *= sc; c.rotation += rotDeg;
 }
 
-// Show TestCard: a full-composition test pattern that TAKES OVER from the deck. It is a source like any other — drawn in
-// canvas pixels — so the Live Output monitor, the Input selection stage and every slice's output (input rect -> keystone/mesh,
-// masks, colour) all show it, each slice getting exactly the part of the card its input rect takes.
-static void DrawTestCard(ImRect canvas, float alpha) {
+// ── Show TestCard (design: "MikMap Test Pattern") ──
+// A test pattern that TAKES OVER from the deck. It is drawn once per frame into a texture that is exactly the composition's
+// resolution (so the pixel grid, the circles and the labels change with Comp > Resolution), and is then a source like any
+// other: the Live Output monitor, the Input selection stage, every slice's output (input rect -> keystone/mesh, masks, colour)
+// and the projector window all sample that texture. Text cannot be bent by a warp any other way.
+static unsigned gTpTex = 0;
+static int gTpW = 0, gTpH = 0;
+static long gTpKey = -1;
+
+static void PaintTestPattern(float W, float H) {
   ImDrawList* dl = g.dl;
+  const float u = std::min(W / 1920.f, H / 1080.f);   // the design is 1920x1080: sizes scale with this, so the layout stays whole at any aspect
+  const float cx = W * 0.5f, cy = H * 0.5f;
+  auto C = [](uint32_t hex, float a = 1.f) { return K(hex, a); };
+  const int gs = 60 * std::max(1, (int)std::lround(H / 1080.f));   // grid pitch, canvas px
+  dl->AddRectFilled(ImVec2(0, 0), ImVec2(W, H), C(0x050505));
+  // checkerboard of the five accent colours (left to right) and near-black
+  static const struct { uint32_t hex; float a; } acc[5] = {{0xFF7F50, .22f}, {0x118AB2, .26f}, {0x06D6A0, .20f}, {0xFFD166, .20f}, {0xEF4444, .22f}};
+  const int cols = (int)std::ceil(W / gs);
+  for (int r = 0; r * gs < H; ++r) for (int c = 0; c < cols; ++c) {
+    ImU32 k = (c + r) % 2 == 0 ? C(acc[c * 5 / cols].hex, acc[c * 5 / cols].a) : C(0x121212);
+    dl->AddRectFilled(ImVec2((float)c * gs, (float)r * gs), ImVec2((float)(c + 1) * gs, (float)(r + 1) * gs), k);
+  }
+  for (int p = gs, i = 1; p < W; p += gs, ++i) dl->AddLine(ImVec2(p + .5f, 0), ImVec2(p + .5f, H), C(0xffffff, i % 4 == 0 ? .18f : .08f), 1.f);
+  for (int p = gs, i = 1; p < H; p += gs, ++i) dl->AddLine(ImVec2(0, p + .5f), ImVec2(W, p + .5f), C(0xffffff, i % 4 == 0 ? .18f : .08f), 1.f);
+  dl->AddLine(ImVec2(0, 0), ImVec2(W, H), C(0xCCCCCC), 1.5f * std::max(1.f, u));
+  dl->AddLine(ImVec2(W, 0), ImVec2(0, H), C(0xCCCCCC), 1.5f * std::max(1.f, u));
+  dl->AddLine(ImVec2(cx, 0), ImVec2(cx, H), C(0x888888), std::max(1.f, u));
+  dl->AddLine(ImVec2(0, cy), ImVec2(W, cy), C(0x888888), std::max(1.f, u));
+  const float lw = std::max(1.f, u);
+  dl->AddCircle(ImVec2(cx, cy), 520 * u, C(0xF3F3F3), 128, 2 * lw);
+  dl->AddCircle(ImVec2(cx, cy), 380 * u, C(0x666666), 128, lw);
+  for (int i = 0; i < 4; ++i)   // one in each corner: proves the corners of the canvas reach the corners of the surface
+    dl->AddCircle(ImVec2(i % 2 ? W - 180 * u : 180 * u, i / 2 ? H - 180 * u : 180 * u), 160 * u, C(0xF3F3F3), 64, 2 * lw);
+  dl->AddCircleFilled(ImVec2(cx, cy), 200 * u, C(0x050505), 96);
+  dl->AddCircle(ImVec2(cx, cy), 200 * u, C(0x2a2a2a), 96, lw);
+  dl->AddRect(ImVec2(1, 1), ImVec2(W - 1, H - 1), C(0xFF7F50), 0.f, 0, 2 * lw);
+
+  // 0..360 degree hue bar with its scale
+  const float bx = cx - 480 * u, bw = 960 * u, hy = cy - 288 * u, hh = 64 * u;
+  Text(bx, hy + 8 * u, MONO_B, 14 * u / kTextScale, C(0x888888), "RGB", 0.12f);
+  const char* hl[4] = {"0\xC2\xB0", "120\xC2\xB0", "240\xC2\xB0", "360\xC2\xB0"};
+  for (int i = 0; i < 4; ++i) {
+    float fx = bx + bw * (1 + i) / 4.f;   // the design spreads the labels with space-between
+    if (i == 3) TextR(bx + bw, hy + 8 * u, MONO_B, 14 * u / kTextScale, C(0x888888), hl[i], 0.12f);
+    else TextC(fx, hy + 8 * u, MONO_B, 14 * u / kTextScale, C(0x888888), hl[i], 0.12f);
+  }
+  const float by = hy + 23 * u;
+  static const uint32_t hue[7] = {0xff0000, 0xffff00, 0x00ff00, 0x00ffff, 0x0000ff, 0xff00ff, 0xff0000};
+  for (int i = 0; i < 6; ++i)
+    dl->AddRectFilledMultiColor(ImVec2(bx + bw * i / 6.f, by), ImVec2(bx + bw * (i + 1) / 6.f, by + hh), C(hue[i]), C(hue[i + 1]), C(hue[i + 1]), C(hue[i]));
+  dl->AddRect(ImVec2(bx, by), ImVec2(bx + bw, by + hh), C(0x2a2a2a), 0.f, 0, lw);
+
+  // 11-step grey ramp, 0..100 %
+  const float gy = cy + 220 * u, cw = bw / 11.f;
+  for (int i = 0; i < 11; ++i) {
+    uint32_t v = (uint32_t)std::lround(i * 25.5); char lb[8]; snprintf(lb, sizeof lb, "%d%%", i * 10);
+    dl->AddRectFilled(ImVec2(bx + cw * i, gy), ImVec2(bx + cw * (i + 1), gy + hh), C((v << 16) | (v << 8) | v));
+    TextC(bx + cw * (i + 0.5f), gy + hh + 15 * u, MONO_B, 14 * u / kTextScale, C(0x888888), lb);
+  }
+  dl->AddRect(ImVec2(bx, gy), ImVec2(bx + bw, gy + hh), C(0x2a2a2a), 0.f, 0, lw);
+
+  // centrepiece: logo, name, and the resolution this pattern was drawn at
+  float ly = cy - 154 * u;
+  if (unsigned lt = LogoTexture()) dl->AddImage((ImTextureID)(intptr_t)lt, ImVec2(cx - 95 * u, ly), ImVec2(cx + 95 * u, ly + 190 * u));
+  TextC(cx, ly + 226 * u, UI_X, 52 * u / kTextScale, C(0xFFFFFF), "MikMap", -0.02f);
+  TextC(cx, ly + 272 * u, MONO_B, 15 * u / kTextScale, C(0x888888), "TEST PATTERN", 0.14f);
+  int iw = (int)W, ih = (int)H, gd = 1;
+  for (int a2 = iw, b2 = ih; b2; ) { int t2 = a2 % b2; a2 = b2; b2 = t2; gd = a2; }
+  char ar[24];
+  if (iw / gd <= 64 && ih / gd <= 64) snprintf(ar, sizeof ar, "%d:%d", iw / gd, ih / gd); else snprintf(ar, sizeof ar, "%.2f:1", W / H);
+  char res[32], tail[40];
+  snprintf(res, sizeof res, "%d\xC3\x97%d", iw, ih); snprintf(tail, sizeof tail, " \xC2\xB7 %s", ar);
+  float rw = TextW(MONO_B, 16 * u / kTextScale, res, 0.06f), tw = TextW(MONO_B, 16 * u / kTextScale, tail, 0.06f), rx = cx - (rw + tw) * 0.5f;
+  Text(rx, ly + 302 * u, MONO_B, 16 * u / kTextScale, C(0xCCCCCC), res, 0.06f);
+  Text(rx + rw, ly + 302 * u, MONO_B, 16 * u / kTextScale, C(0x666666), tail, 0.06f);
+
+  // footer: grid pitch (left) and a running timecode (right)
+  char gl[16], gv[24]; snprintf(gl, sizeof gl, "GRID"); snprintf(gv, sizeof gv, " %d px", gs);
+  Text(24 * u, H - 28 * u, MONO_B, 16 * u / kTextScale, C(0xCCCCCC), gl, 0.06f);
+  Text(24 * u + TextW(MONO_B, 16 * u / kTextScale, gl, 0.06f), H - 28 * u, MONO_B, 16 * u / kTextScale, C(0x666666), gv, 0.06f);
+  double sec = g.time; char tc[32];
+  snprintf(tc, sizeof tc, "%02d:%02d:%02d:%02d", (int)(sec / 3600), (int)std::fmod(sec / 60, 60), (int)std::fmod(sec, 60), (int)std::fmod(sec * 30, 30));
+  TextR(W - 24 * u, H - 28 * u, MONO_B, 16 * u / kTextScale, C(0x06D6A0), tc, 0.06f);
+}
+
+// Once per frame (main context, before the UI is built) while Show TestCard is on: repaint the pattern texture at the comp's resolution.
+void UpdateTestPattern() {
+  if (!A.testCard || !p_glGenFramebuffers || !p_glBindFramebuffer || !p_glFramebufferTexture2D) return;
+  const int W = std::clamp(A.canvasW, 16, 8192), H = std::clamp(A.canvasH, 16, 8192);
+  const long key = (long)(g.time * 30.0);   // the timecode changes at 30 fps; more than one paint per tick would be wasted
+  if (W == gTpW && H == gTpH && key == gTpKey && gTpTex) return;
+  if (!gTpTex || W != gTpW || H != gTpH) {
+    if (!gTpTex) glGenTextures(1, &gTpTex);
+    glBindTexture(GL_TEXTURE_2D, gTpTex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR); glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE); glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, W, H, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    gTpW = W; gTpH = H;
+  }
+  gTpKey = key;
+  static GLuint sFbo = 0;
+  if (!sFbo) p_glGenFramebuffers(1, &sFbo);
+  GLint prevFbo = 0, prevViewport[4];
+  glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevFbo); glGetIntegerv(GL_VIEWPORT, prevViewport);
+  p_glBindFramebuffer(GL_FRAMEBUFFER, sFbo);
+  p_glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, gTpTex, 0);
+  if (!p_glCheckFramebufferStatus || p_glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE) {
+    glViewport(0, 0, W, H);
+    glClearColor(0.02f, 0.02f, 0.02f, 1.f); glClear(GL_COLOR_BUFFER_BIT);
+    ImDrawList dl(ImGui::GetDrawListSharedData());   // standalone list, same as RenderClipThumbnail: cannot leak into the frame being built
+    dl._ResetForNewFrame();
+    dl.PushTexture(ImGui::GetIO().Fonts->TexRef);
+    dl.PushClipRect(ImVec2(0, 0), ImVec2((float)W, (float)H), false);   // not FullScreen: that one is the WINDOW's size and would cut a larger comp off
+    ImDrawList* prevDl = g.dl; const WarpMap* prevWarp = g.warp; float prevAlpha = g.alpha;
+    g.dl = &dl; g.warp = nullptr; g.alpha = 1.f;
+    PaintTestPattern((float)W, (float)H);
+    g.dl = prevDl; g.warp = prevWarp; g.alpha = prevAlpha;
+    dl.PopClipRect(); dl.PopTexture();
+    if (dl.VtxBuffer.Size > 0) {
+      ImDrawData dd; dd.Clear();
+      dd.DisplayPos = ImVec2(0, 0); dd.DisplaySize = ImVec2((float)W, (float)H); dd.FramebufferScale = ImVec2(1, 1);
+      dd.AddDrawList(&dl); dd.Valid = true;
+      static ImVector<ImTextureData*> fontTexList;   // see RenderClipThumbnail: the atlas may not be uploaded yet this early in the frame
+      fontTexList.resize(0); fontTexList.push_back(ImGui::GetIO().Fonts->TexData); dd.Textures = &fontTexList;
+      ImGui_ImplOpenGL3_RenderDrawData(&dd);
+    }
+  }
+  p_glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)prevFbo);
+  glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
+}
+
+static void DrawTestCard(ImRect canvas, float alpha) {
+  if (!gTpTex) return;
   const float W = (float)std::max(1, A.canvasW), H = (float)std::max(1, A.canvasH);
   const bool warped = g.warp != nullptr;
-  const bool mesh = warped && g.warp->slice && g.warp->slice->warp != 0;
   auto P = [&](float x, float y) { return warped ? g.warp->Map(x, y) : ImVec2(canvas.Min.x + x / W * canvas.GetWidth(), canvas.Min.y + y / H * canvas.GetHeight()); };
-  ImVec2 o0 = P(0, 0), o1 = P(W, 0);
-  const float k = std::max(0.05f, std::hypot(o1.x - o0.x, o1.y - o0.y) / W);   // screen px per canvas px, for line weights
-  auto C = [&](uint32_t hex, float al) { return Ca(K(hex, al * alpha)); };
-  const ImDrawListFlags fl = dl->Flags;
-  dl->Flags &= ~ImDrawListFlags_AntiAliasedFill;   // neighbouring fills must not show seams
-  auto quad = [&](float x0, float y0, float x1, float y1, ImU32 c) {
-    int seg = mesh ? 8 : 1;   // a keystone keeps straight edges straight; only a mesh bends them
-    for (int iy = 0; iy < seg; ++iy) for (int ix = 0; ix < seg; ++ix) {
-      float a0 = x0 + (x1 - x0) * ix / seg, a1 = x0 + (x1 - x0) * (ix + 1) / seg, b0 = y0 + (y1 - y0) * iy / seg, b1 = y0 + (y1 - y0) * (iy + 1) / seg;
-      ImVec2 q[4] = {P(a0, b0), P(a1, b0), P(a1, b1), P(a0, b1)};
-      dl->AddConvexPolyFilled(q, 4, c);
-    }
-  };
-  static const uint32_t bars[7] = {0xc0c0c0, 0xc0c000, 0x00c0c0, 0x00c000, 0xc000c0, 0xc00000, 0x0000c0};
-  for (int i = 0; i < 7; ++i) quad(W * i / 7.f, 0, W * (i + 1) / 7.f, H * 0.7f, C(bars[i], 1.f));
-  quad(0, H * 0.7f, W, H, C(0x101010, 1.f));
-  for (int i = 0; i < 8; ++i) {   // grey ramp along the bottom
-    uint32_t v = (uint32_t)(i * 255 / 7); quad(W * (0.1f + 0.1f * i), H * 0.8f, W * (0.2f + 0.1f * i), H * 0.92f, C((v << 16) | (v << 8) | v, 1.f));
+  const int seg = warped ? 12 : 1;   // a keystone bends the picture in perspective, so even it needs the grid of quads
+  const ImU32 tint = Ca(K(0xffffff, alpha));
+  for (int iy = 0; iy < seg; ++iy) for (int ix = 0; ix < seg; ++ix) {
+    float u0 = (float)ix / seg, u1 = (float)(ix + 1) / seg, v0 = (float)iy / seg, v1 = (float)(iy + 1) / seg;
+    g.dl->AddImageQuad((ImTextureID)(intptr_t)gTpTex, P(W * u0, H * v0), P(W * u1, H * v0), P(W * u1, H * v1), P(W * u0, H * v1),
+                       ImVec2(u0, 1.f - v0), ImVec2(u1, 1.f - v0), ImVec2(u1, 1.f - v1), ImVec2(u0, 1.f - v1), tint);   // the FBO texture is stored bottom-up
   }
-  dl->Flags = fl;
-  auto line = [&](float x0, float y0, float x1, float y1, ImU32 c, float w) { dl->AddLine(P(x0, y0), P(x1, y1), c, std::max(1.f, w * k)); };
-  for (int c = 1; c < 16; ++c) line(W * c / 16.f, 0, W * c / 16.f, H, C(0xffffff, 0.35f), 2.f);   // 16 x 9 grid: straight lines show every warp error
-  for (int r = 1; r < 9; ++r) line(0, H * r / 9.f, W, H * r / 9.f, C(0xffffff, 0.35f), 2.f);
-  line(0, 0, W, H, C(pal::cyan, 0.5f), 3.f); line(W, 0, 0, H, C(pal::cyan, 0.5f), 3.f);
-  std::vector<ImVec2> ring; const float rad = std::min(W, H) * 0.25f;
-  for (int i = 0; i < 96; ++i) { float a = i * 6.2831853f / 96.f; ring.push_back(P(W * 0.5f + std::cos(a) * rad, H * 0.5f + std::sin(a) * rad)); }
-  dl->AddPolyline(ring.data(), (int)ring.size(), C(pal::coral, 1.f), ImDrawFlags_Closed, std::max(1.5f, 5.f * k));
-  line(W * 0.5f - 60, H * 0.5f, W * 0.5f + 60, H * 0.5f, C(pal::coral, 1.f), 5.f);
-  line(W * 0.5f, H * 0.5f - 60, W * 0.5f, H * 0.5f + 60, C(pal::coral, 1.f), 5.f);
-  if (unsigned lt = LogoTexture()) {   // the MikMap mark in the middle of the ring, bent by the warp like everything else
-    const float hl = rad * 0.62f; const int seg = mesh ? 8 : 1;
-    for (int iy = 0; iy < seg; ++iy) for (int ix = 0; ix < seg; ++ix) {
-      float u0 = (float)ix / seg, u1 = (float)(ix + 1) / seg, v0 = (float)iy / seg, v1 = (float)(iy + 1) / seg;
-      auto Q = [&](float u, float v) { return P(W * 0.5f - hl + 2 * hl * u, H * 0.5f - hl + 2 * hl * v); };
-      dl->AddImageQuad((ImTextureID)(intptr_t)lt, Q(u0, v0), Q(u1, v0), Q(u1, v1), Q(u0, v1), ImVec2(u0, v0), ImVec2(u1, v0), ImVec2(u1, v1), ImVec2(u0, v1), C(0xffffff, 1.f));
-    }
-  }
-  {   // one differently coloured disc per corner: tells at a glance if the picture is mirrored or turned
-    const uint32_t cc[4] = {0xe63946, 0x2ecc71, 0x3b82f6, 0xf1c40f}; const float m = std::min(W, H) * 0.06f;
-    const ImVec2 at[4] = {{m, m}, {W - m, m}, {W - m, H - m}, {m, H - m}};
-    for (int i = 0; i < 4; ++i) {
-      std::vector<ImVec2> d; for (int j = 0; j < 32; ++j) { float a = j * 6.2831853f / 32.f; d.push_back(P(at[i].x + std::cos(a) * m * 0.55f, at[i].y + std::sin(a) * m * 0.55f)); }
-      dl->AddConvexPolyFilled(d.data(), (int)d.size(), C(cc[i], 1.f)); dl->AddPolyline(d.data(), (int)d.size(), C(0xffffff, 1.f), ImDrawFlags_Closed, std::max(1.5f, 3.f * k));
-    }
-  }
-  ImVec2 fr[4] = {P(4, 4), P(W - 4, 4), P(W - 4, H - 4), P(4, H - 4)};   // border: shows where the canvas ends
-  dl->AddPolyline(fr, 4, C(pal::yellow, 1.f), ImDrawFlags_Closed, std::max(1.5f, 6.f * k));
 }
 
 void DrawSliceSource(const Slice& s, ImRect canvas, float t, float alpha) {

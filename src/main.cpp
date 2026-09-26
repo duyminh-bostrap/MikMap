@@ -1523,6 +1523,7 @@ int main(int argc, char** argv) {
       }
     }
     ImGui::NewFrame();
+    UpdateTestPattern();   // Show TestCard: paint its texture before anything samples it this frame
     {
       static Prefs lastPrefs = A.prefs; static int lastMon = A.outMonitor; static std::string lastTitle;
       if (io.MouseDown[0] || io.MouseDown[1] || io.MouseDown[2] || io.MouseWheel != 0.f || io.MouseWheelH != 0.f || io.InputQueueCharacters.Size > 0 ||

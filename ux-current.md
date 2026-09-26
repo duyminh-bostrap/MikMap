@@ -207,7 +207,7 @@ Cây thư mục: **Media** (✅ ảnh thật trong `~/Documents/MikMap/media`, b
 
 ### 2.5 Hai monitor + Timeline (giữa)
 - **Preview Cue** (cyan) và **Live Output** (coral, có nhãn COMPOSITE): xem hình
-  clip đã cue / toàn bộ composite. Live thay bằng thẻ test khi bật Show TestCard (`DrawTestCard`, `clipart.cpp`).
+  clip đã cue / toàn bộ composite. Live thay bằng thẻ test khi bật Show TestCard (`DrawTestCard`, `clipart.cpp` — theo thiết kế "MikMap Test Pattern", độ phân giải bằng độ phân giải comp).
 - **Thanh dưới hai monitor** (bố cục hiện tại, sau các lần chỉnh 2026-09-22 → 09-24): **khối trái 2 hàng** —
   hàng 1 = **SYSTEM TIME** + giờ hệ thống thật `HH:MM:SS` (cập nhật mỗi khung hình, `localtime_r`/`localtime_s`),
   hàng 2 = **tab deck** (§2.3); **giữa** = cụm nút transport; **khối phải** = nhãn **TIMELINE** + timecode
