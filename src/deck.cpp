@@ -623,6 +623,13 @@ static CellOut ClipCell(ImRect r, Clip& cl, bool selectedCell, bool dragged, boo
     FontId ff = live ? MONO_B : MONO_M;
     Text(cx0 + 10, fy + 8, ff, 9, foot, m.c_str(), 0.1f);
     if (!cl.dur.empty()) TextR(cx1 - 10, fy + 8, ff, 9, foot, Upper(cl.dur).c_str(), 0.1f);
+  } else {
+    // An empty slot has the same two-part structure as a loaded clip — a bar and a body — but only as colour: no name, no
+    // thumbnail, no footer. Selecting an empty cell then shows the same lit bar / tinted body as any clip instead of a lone ring.
+    ImU32 eBar = sel ? K(col, 0.55f) : h.hover ? K(pal::g22) : K(pal::g1c);
+    ImU32 eBody = sel ? mix(0x080808, 0.14f) : K(pal::g0f);
+    g.dl->AddRectFilled(bodyR.Min, bodyR.Max, Ca(eBody), 3, ImDrawFlags_RoundCornersBottom);
+    g.dl->AddRectFilled(barR.Min, ImVec2(cx1, in.Min.y + 22), Ca(eBar), 3, ImDrawFlags_RoundCornersTop);
   }
   Border(r, border, 4);
   // selection outlines from the wrapper
@@ -636,10 +643,10 @@ static CellOut ClipCell(ImRect r, Clip& cl, bool selectedCell, bool dragged, boo
   o.hover = h.hover;
   if (h.hover) {
     if (empty) {
-      // An empty cell draws no name strip, so there is nothing on screen telling the user where "bar" ends and
-      // "body" begins — the bar/body split above only exists once a clip is loaded. Until then, treat the whole
-      // cell as body: any click here stops/clears the layer, from wherever inside the cell it lands. Right-click
-      // still opens the popover (its items are already disabled/no-ops for an empty slot where irrelevant).
+      // An empty cell now draws a colour-only bar and body too, but there is still no name or clip behind either, so it stays
+      // one hit zone: any click, on the bar or the body, stops/clears the layer (the "top edge only cues" surprise that made
+      // us do this must not come back). Right-click still opens the popover (its items are already disabled/no-ops for an
+      // empty slot where irrelevant).
       o.bodyClick = h.click;
       o.barRclick = h.rclick;
     } else {

@@ -92,10 +92,12 @@ Timeline | Properties; **dải dưới** = Deck (lưới layer × cột).
 
 > **Đổi 2026-09-22:** mỗi ô clip **có clip** tách thành hai vùng bấm độc lập —
 > **bar** (dải tên phía trên, cao 22px) và **body** (vùng gradient phía dưới).
-> Không còn khái niệm bấm-đơn/bấm-đúp. **Ô trống thì KHÔNG tách vùng** (không
-> có gì vẽ khác biệt để người dùng biết ranh giới) — toàn bộ ô trống là một
-> vùng "body" duy nhất, bấm ở bất kỳ đâu trong ô cũng dừng layer đó; chuột
-> phải ở bất kỳ đâu vẫn mở popover.
+> Không còn khái niệm bấm-đơn/bấm-đúp. **Ô trống nay cũng vẽ bar + body
+> (2026-09-26), nhưng chỉ là màu** — không tên, không thumbnail, không chữ chân ô —
+> để ô trống đang chọn có cùng cấu trúc (bar sáng lên, body ngả màu) như một clip
+> thay vì chỉ một viền lẻ loi. **Hành vi bấm không đổi:** vì sau bar/body vẫn không
+> có clip nào, ô trống vẫn là **một vùng bấm duy nhất** — bấm bar hay body đều dừng
+> layer đó; chuột phải ở bất kỳ đâu vẫn mở popover.
 
 | Mã | Thao tác | Kết quả | |
 |---|---|---|---|
