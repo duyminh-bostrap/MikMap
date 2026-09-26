@@ -83,6 +83,7 @@ struct Deck {
 struct Mask {
   std::string id, name;
   bool inverted = true;   // Mask properties > Invert: on = cut a hole, off = keep only the inside
+  bool visible = true;    // the eye in the Mapping tree: off = the mask is kept but does not cut the output
   int feather = 4;        // stored only: the output does not feather mask edges yet
   // Every mask is an outline (a preset shape, or a free one) placed by a rotated rectangle in COMPOSITION CANVAS px — it is edited
   // exactly like the input rect (move / resize / rotate frame, X Y Left Top Width Height Rotation).

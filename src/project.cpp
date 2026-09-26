@@ -135,7 +135,7 @@ JsonValue SliceJ(const Slice& s) {
   JsonValue ms = JsonValue::array();
   for (auto& m : s.masks) {
     JsonValue mo = JsonValue::object();
-    mo.set("id", m.id); mo.set("name", m.name); mo.set("inverted", m.inverted); mo.set("feather", m.feather);
+    mo.set("id", m.id); mo.set("name", m.name); mo.set("inverted", m.inverted); mo.set("feather", m.feather); mo.set("visible", m.visible);
     JsonValue pts = JsonValue::array(); for (auto& p : m.pts) pts.push(V2(p));
     mo.set("pts", pts);
     mo.set("shape", m.shape);
@@ -174,7 +174,7 @@ Slice ReadSlice(const JsonValue& o) {
   for (int i = 0; i < 4; ++i) s.q[i] = o["q"].isArray() && o["q"].size() > (size_t)i ? ReadV2(o["q"].at(i), def[i]) : def[i];
   s.maskLegacy = o["maskSpace"].asInt(0) != 1;
   if (o["masks"].isArray()) for (auto& mo : o["masks"].arrayItems()) {
-    Mask m; m.id = mo["id"].asString(); m.name = mo["name"].asString(); m.inverted = mo["inverted"].asBool(true); m.feather = mo["feather"].asInt(4);
+    Mask m; m.id = mo["id"].asString(); m.name = mo["name"].asString(); m.inverted = mo["inverted"].asBool(true); m.feather = mo["feather"].asInt(4); m.visible = mo["visible"].asBool(true);
     m.pts.clear();   // any point count >= 3 (older files always have 4); anything shorter falls back to a default square
     if (mo["pts"].isArray()) for (auto& pp : mo["pts"].arrayItems()) { if (m.pts.size() >= 256) break; m.pts.push_back(ReadV2(pp)); }
     if (m.pts.size() < 3) m.pts = {{620, 380}, {1100, 380}, {1020, 720}, {700, 720}};

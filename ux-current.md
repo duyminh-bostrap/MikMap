@@ -249,7 +249,7 @@ Ba vùng: **cây Screen/Slice/Mask** (trái) | **Stage canvas** (giữa) | **Pro
 | Mã | Thao tác | |
 |---|---|---|
 | M1 | Bấm dòng Screen/Slice/Mask → chọn | ✅ |
-| M2 | ▾ thu gọn Screen; 👁 ẩn/hiện | ✅ |
+| M2 | ▾ thu gọn Screen; 👁 ẩn/hiện Screen, Slice và **Mask** (2026-09-26: mask ẩn vẫn nằm trong slice nhưng **không cắt output**; dòng mờ đi, ở trang Input viền mask vẽ nhạt; chuột phải mask cũng có Hide/Show mask; lưu trong dự án) | ✅ |
 | M3 | **Chuột phải** → menu: Screen (Move up/down, Duplicate, Add slice, Delete) · Slice (Hide/Show, **Solo/Unsolo**, Whole area, Match output to input, Reset warp, Reset mesh warp, Reset all warping, Add mask, Delete) · Mask (Duplicate, Delete) | ✅ |
 | M3b | **Chuột phải khung input** (trang Input selection) → menu kiểu Resolume: Center X/Y · Mirror X/Y · Left/Top/Right/Bottom Half · Whole Area · Match Output Shape · Swap Input Output Shape · Bring Forward/Send Backwards · Duplicate/Copy/Cut/Paste (xem §3.2) | ✅ |
 | M3c | **Chọn nhiều (2026-09-26):** giữ **Ctrl/Cmd hoặc Shift + bấm** trên cây (hoặc bấm slice trên stage) để thêm/bớt vào vùng chọn. Chọn được **nhiều screen, hoặc nhiều slice, hoặc nhiều mask** — **không trộn loại** (đang chọn slice thì Ctrl-bấm screen/mask bị bỏ qua) và không bỏ được phần tử cuối cùng. Slice thuộc nhiều screen khác nhau chọn chung được. Bấm thường (không phím) ở bất cứ đâu → về chọn 1. Nhãn ở đầu panel đổi thành "N Slices/Screens/Masks"; panel vẫn sửa **phần tử chính** (cái chọn sau cùng); các slice/mask chọn kèm được tô sáng (viền liền trên trang Input, tô cam trên trang Output). Ghi chú macOS: Ctrl+bấm là chuột phải, dùng **Cmd** hoặc **Shift** | ✅ |

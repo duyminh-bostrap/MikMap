@@ -945,6 +945,7 @@ int main(int argc, char** argv) {
       A.curSlice()->softEdge = true;
       { Slice& os = *A.curSlice(); os.oflip = 3; os.isKey = true; os.blackBg = true; os.brightness = -20; os.contrast = 15; os.red = 5; os.green = -6; os.blue = 7;
         os.seGammaR = 1.5f; os.seGammaG = 2.5f; os.seGammaB = 3.f; os.seGamma = 1.25f; os.seLum = 0.75f; os.sePower = 3.5f; os.blR = 10; os.blG = 20; os.blB = 30; }
+      pm->visible = false;   // the tree's eye: a hidden mask must stay hidden after save / load
       std::string penId = pm->id; size_t nm = A.curSlice()->masks.size();
       if (!SaveProject(roundtrip, err) || !LoadProject(roundtrip, err)) return fail(err.c_str());
       Slice& ls = A.screens[0].slices[0];
@@ -952,7 +953,7 @@ int main(int argc, char** argv) {
       if (ls.oflip != 3 || !ls.isKey || !ls.blackBg || ls.brightness != -20 || ls.contrast != 15 || ls.red != 5 || ls.green != -6 || ls.blue != 7 ||
           ls.seGammaR != 1.5f || ls.seGammaG != 2.5f || ls.seGammaB != 3.f || ls.seGamma != 1.25f || ls.seLum != 0.75f || ls.sePower != 3.5f ||
           ls.blR != 10 || ls.blG != 20 || ls.blB != 30) return fail("output slice properties (flip / key / colour / soft edge / black level) did not round-trip");
-      bool found = false; for (auto& m : ls.masks) if (m.id == penId) { found = m.pts.size() == 5 && m.pts[3].x == 90.f; }
+      bool found = false; for (auto& m : ls.masks) if (m.id == penId) { found = m.pts.size() == 5 && m.pts[3].x == 90.f; if (m.visible) return fail("a hidden mask came back visible"); }
       if (!found) return fail("a 5-point mask did not round-trip its points");
       // every preset outline must touch all four sides of its rect (the hexagon used to stop short of top and bottom)
       for (auto& m : A.curSlice()->masks) if (m.shape >= 0 && m.rot == 0.f) {

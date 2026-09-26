@@ -870,6 +870,10 @@ std::vector<MenuItem> App::maskMenu(const std::string& scId, const std::string& 
   auto mk = [](const char* l, const char* ic, bool danger, std::function<void()> f) { MenuItem x; x.label = l; x.icon = ic; x.danger = danger; x.run = f; return x; };
   bool inv = true;
   for (auto& sc : screens) if (sc.id == scId) for (auto& sl : sc.slices) if (sl.id == slId) for (auto& k : sl.masks) if (k.id == mkId) inv = k.inverted;
+  bool vis = true;
+  for (auto& sc : screens) if (sc.id == scId) for (auto& sl : sc.slices) if (sl.id == slId) for (auto& k : sl.masks) if (k.id == mkId) vis = k.visible;
+  m.push_back(mk(vis ? "Hide mask" : "Show mask", vis ? "eye-off" : "eye", false, [this, scId, slId, mkId] {
+    for (auto& sc : screens) if (sc.id == scId) for (auto& sl : sc.slices) if (sl.id == slId) for (auto& k : sl.masks) if (k.id == mkId) k.visible = !k.visible; }));
   m.push_back(mk(inv ? "Make additive" : "Invert (cut hole)", "scissors", false, [this, scId, slId, mkId] {
     selSc = scId; selSl = slId; selMk = mkId; if (Mask* k = curMask()) k->inverted = !k->inverted; }));
   m.push_back(mk("Duplicate mask", "copy", false, [this, scId, slId, mkId] {
@@ -931,7 +935,10 @@ static void TreeRow(ImRect r, const Node& n, bool railMode) {
       visHit = true;
       for (auto& s : A.screens) if (s.id == n.sc) {
         if (n.kind == Node::ScreenN) s.visible = !s.visible;
-        else for (auto& l : s.slices) if (l.id == n.sl) l.visible = !l.visible;
+        else for (auto& l : s.slices) if (l.id == n.sl) {
+          if (n.kind == Node::SliceN) l.visible = !l.visible;
+          else for (auto& k : l.masks) if (k.id == n.mk) k.visible = !k.visible;   // a hidden mask stays in the slice but does not cut the output
+        }
       }
     }
     right -= 11 + 6;
@@ -970,7 +977,7 @@ static std::vector<Node> BuildTree(bool onlyScreen, const std::string& only) {
     for (auto& sl : sc.slices) {
       Node s; s.kind = Node::SliceN; s.sc = sc.id; s.sl = sl.id; s.name = sl.name; s.meta = sl.solo ? "SOLO" : ""; s.h = onlyScreen ? 24 : 26; s.pad = onlyScreen ? 6 : 16; s.vis = sl.visible; out.push_back(s);
       for (auto& m : sl.masks) {
-        Node k; k.kind = Node::MaskN; k.sc = sc.id; k.sl = sl.id; k.mk = m.id; k.name = m.name; k.h = 24; k.pad = onlyScreen ? 20 : 28; k.canHide = false; out.push_back(k);
+        Node k; k.kind = Node::MaskN; k.sc = sc.id; k.sl = sl.id; k.mk = m.id; k.name = m.name; k.h = 24; k.pad = onlyScreen ? 20 : 28; k.vis = m.visible; out.push_back(k);
       }
     }
   }
@@ -1704,8 +1711,8 @@ static void Stage(ImRect r) {
           DashedPoly(op.data(), (int)op.size(), K(pal::yellow, 0.8f), 1.5f, 9, 7);
         }
         std::vector<ImVec2> pp(mk->pts.size()); for (size_t i = 0; i < pp.size(); ++i) pp[i] = toPx(mk->pts[i]);
-        g.dl->AddConcavePolyFilled(pp.data(), (int)pp.size(), Ca(K(pal::yellow, 0.30f)));   // the mask tone of the design: yellow
-        DashedPoly(pp.data(), (int)pp.size(), K(pal::yellow), 2.f, 9, 7);
+        g.dl->AddConcavePolyFilled(pp.data(), (int)pp.size(), Ca(K(pal::yellow, mk->visible ? 0.30f : 0.08f)));   // the mask tone of the design: yellow (faint while hidden)
+        DashedPoly(pp.data(), (int)pp.size(), K(pal::yellow, mk->visible ? 1.f : 0.45f), 2.f, 9, 7);
         if (A.inTool == 1) frame(RectOfMask(*mk), pal::yellow, 1, -1);   // Transform: the frame (move / scale / turn)
         else if (!A.maskPen) {   // Edit Points: each outline point on its own; double-click a point to remove it, the outline to add one
           const float kPtHalf = 4.5f, kPad = 4.f;

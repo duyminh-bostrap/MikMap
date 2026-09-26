@@ -140,7 +140,7 @@ void DrawSliceOutput(const Screen& sc, const Slice& sl, float ox, float oy, floa
     // keystone/mesh map as the content, then let the stencil limit everything this slice draws.
     std::vector<std::vector<ImVec2>> keep, holes;
     for (auto& mk : sl.masks) {
-      if (mk.pts.size() < 3) continue;
+      if (mk.pts.size() < 3 || !mk.visible) continue;   // a hidden mask (eye off in the tree) does not cut
       std::vector<ImVec2> pp; pp.reserve(mk.pts.size());
       for (auto& p : mk.pts) pp.push_back(wm.Map(p.x, p.y));
       (mk.inverted ? holes : keep).push_back(std::move(pp));
