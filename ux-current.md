@@ -303,8 +303,8 @@ Ba vùng: **cây Screen/Slice/Mask** (trái) | **Stage canvas** (giữa) | **Pro
   gần nhất, cùng viền khung 1920×1080 (Output) hoặc canvas (Input) và điểm giữa; **chỉ đúng cạnh đã hít sáng trắng** (cạnh của khung/box hoặc đoạn đường giữa trong khung — không kẻ dài ra ngoài stage) hoặc vòng tròn ở điểm đã hít. Ngưỡng 8px màn hình. Giữ **Alt**
   để đặt tự do. Áp cho kéo góc corner pin, điểm mesh, nhóm điểm, co giãn/di chuyển khung input và khung mask (khi di chuyển thì mép/tâm khung hít vào các đường). Cả hai công tắc
   chỉ trong phiên (không lưu). ✅
-- **Kéo thả chọn vùng (marquee, 2026-09-26):** kéo chuột trên vùng trống của stage vẽ khung nét đứt. **Trang Output + Edit Points:** chọn mọi **điểm** (góc phối cảnh của mọi slice
-  đang hiện + mọi điểm warp của slice đang chọn, kể cả 4 góc lưới) nằm trong khung — điểm được chọn hiện ô vuông trắng; **Output + Transform:** chọn các slice mà khung kéo chạm vào; **kéo một điểm đã chọn = kéo cả nhóm** cùng một độ dời (nam châm
+- **Kéo thả chọn vùng (marquee, 2026-09-26):** kéo chuột trên vùng trống của stage vẽ khung nét đứt. **Trang Output + Edit Points:** chọn mọi **điểm của slice đang chọn** (4 góc phối cảnh
+  + mọi điểm warp, kể cả 4 góc lưới) nằm trong khung — **không chọn điểm của slice khác** (2026-09-26); đổi sang slice khác thì các điểm đã chọn được bỏ — điểm được chọn hiện ô vuông trắng; **Output + Transform:** chọn các slice mà khung kéo chạm vào; **kéo một điểm đã chọn = kéo cả nhóm** cùng một độ dời (nam châm
   áp cho điểm cầm, không hít vào chính các điểm đang di chuyển); phím mũi tên cũng dịch cả nhóm; bấm vào chỗ trống thả nhóm. **Trang Input:** chọn mọi slice mà khung input chạm vào
   khung kéo (chọn nhiều slice). Ctrl/Cmd/Shift + kéo = thêm vào vùng chọn hiện có. ✅
 - Menu **Reset** (theo trang đang xem): Input → Whole area; Output → Reset perspective corners · Match output to input · Reset warp points · Reset all warping (về slice mới: toàn màn, lưới 1×1).

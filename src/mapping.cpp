@@ -1789,8 +1789,8 @@ static void Stage(ImRect r) {
     const float kCornerR = 8.f, kMeshR = 5.5f, kGrabPad = 4.f;
     const float kBigHalf = 10.f, kSmallHalf = 4.5f;   // Edit Points handles (Resolume): big squares = perspective corners, small squares = warp points
     auto nearPt = [&](ImVec2 outPt, float rad) { ImVec2 p = toPx(outPt); return std::hypot(m.x - p.x, m.y - p.y) <= rad; };
-    // forget picked points that no longer exist (a slice or mesh point was deleted / re-meshed)
-    A.mapPts.erase(std::remove_if(A.mapPts.begin(), A.mapPts.end(), [&](const App::PtRef& r) { Slice* ps = SliceById(*sc, r.sl); ImVec2 tmp; return !ps || !PointPos(*ps, r.idx, tmp); }), A.mapPts.end());
+    // forget picked points that no longer exist (deleted / re-meshed) or are not the selected slice's: points are only picked on the slice being edited
+    A.mapPts.erase(std::remove_if(A.mapPts.begin(), A.mapPts.end(), [&](const App::PtRef& r) { Slice* ps = SliceById(*sc, r.sl); ImVec2 tmp; return !ps || !sl || ps->id != sl->id || !PointPos(*ps, r.idx, tmp); }), A.mapPts.end());
     auto grab = [&](int kind, int idx, ImVec2 at) { A.mapPts.clear(); A.pushHist(); dragKind = kind; dragIdx = idx; dragOff = Vsub(at, mo); consumed = true; };
     const bool placing = A.meshArm != 0;   // armed by + Add col / + Add row: the next click places the split, even right on top of a point or line
     if (clickPending && !consumed && !placing && editPts && A.mapPts.size() > 1) {   // pressing one of several picked points drags the whole group
@@ -1947,13 +1947,11 @@ static void Stage(ImRect r) {
           ImRect mr(std::min(gMarqueeA.x, m.x), std::min(gMarqueeA.y, m.y), std::max(gMarqueeA.x, m.x), std::max(gMarqueeA.y, m.y));
           if (A.mpage == 1 && A.outTool == 0) {   // Edit Points: pick points
             std::vector<App::PtRef> hit;
-            for (auto& S : sc->slices) if (S.visible) {
-              for (int i = 0; i < 4; ++i) if (mr.Contains(toPx(S.q[i]))) hit.push_back({S.id, i});
-              if (sl && S.id == sl->id) {   // the warp points of the selected slice (all of them, the grid's corners included)
-                auto gr = MeshGrid(S); int R = (int)gr.size(), C = (int)gr[0].size();
-                for (int rr = 0; rr < R; ++rr) for (int cc = 0; cc < C; ++cc)
-                  if (mr.Contains(toPx(gr[rr][cc]))) hit.push_back({S.id, 1000 + rr * 100 + cc});
-              }
+            if (sl && sl->visible) {   // only the selected slice's points: its perspective corners and every warp point (grid corners too)
+              for (int i = 0; i < 4; ++i) if (mr.Contains(toPx(sl->q[i]))) hit.push_back({sl->id, i});
+              auto gr = MeshGrid(*sl); int R = (int)gr.size(), C = (int)gr[0].size();
+              for (int rr = 0; rr < R; ++rr) for (int cc = 0; cc < C; ++cc)
+                if (mr.Contains(toPx(gr[rr][cc]))) hit.push_back({sl->id, 1000 + rr * 100 + cc});
             }
             if (add) { for (auto& h : hit) { bool have = false; for (auto& q : A.mapPts) if (q.sl == h.sl && q.idx == h.idx) have = true; if (!have) A.mapPts.push_back(h); } }
             else A.mapPts = hit;
