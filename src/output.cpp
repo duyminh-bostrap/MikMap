@@ -116,6 +116,46 @@ static void OutputTestCard(ImRect r) {
   dl->AddLine(ImVec2(r.Max.x, r.Min.y), ImVec2(r.Min.x, r.Max.y), Ca(K(pal::cyan, 0.4f)), 1.5f);
 }
 
+// One slice as the projector shows it: input rect -> keystone/mesh, cut by its input masks, Screen opacity + colour correction.
+// (ox, oy, sx, sy) map the screen's 1920x1080 output space to window pixels — the projector window and the Output stage share this.
+void DrawSliceOutput(const Screen& sc, const Slice& sl, float ox, float oy, float sx, float sy, float t) {
+  WarpMap wm;
+  wm.slice = &sl;
+  wm.ox = ox; wm.oy = oy; wm.sx = sx; wm.sy = sy;
+  // clip to the warped slice's bounding box (ImGui clipping is rectangular) — the whole mesh, not just the 4 corners,
+  // or a mesh point bulging past the keystone quad gets cut off on the projector
+  ImVec2 omn, omx; SliceOutputBounds(sl, omn, omx);
+  ImRect bb(ox + omn.x * sx, oy + omn.y * sy, ox + omx.x * sx, oy + omx.y * sy);
+  ImDrawList* dl = g.dl;
+  const WarpMap* prevWarp = g.warp;
+  dl->PushClipRect(bb.Min, bb.Max, true);
+  g.warp = &wm;
+  if (A.testCard) OutputTestCard(bb);
+  else {
+    // Input masks (canvas-space polygons) cut the picture BEFORE it is warped: map each point through the same input-rect ->
+    // keystone/mesh map as the content, then let the stencil limit everything this slice draws.
+    std::vector<std::vector<ImVec2>> keep, holes;
+    for (auto& mk : sl.masks) {
+      if (mk.pts.size() < 3) continue;
+      std::vector<ImVec2> pp; pp.reserve(mk.pts.size());
+      for (auto& p : mk.pts) pp.push_back(wm.Map(p.x, p.y));
+      (mk.inverted ? holes : keep).push_back(std::move(pp));
+    }
+    const bool masked = !keep.empty() || !holes.empty();
+    if (masked) MaskBegin(keep, holes, bb);
+    DrawSliceSource(sl, bb, t, std::clamp(sc.opacity / 100.f, 0.f, 1.f));   // F22: composition, or just the layer/group this slice is routed to; Screen > Opacity scales it
+    // Screen > Brightness / Contrast / Red / Green / Blue over this slice's outline (inside the mask, so cut-out areas stay dark)
+    if (sc.brightness || sc.contrast || sc.red || sc.green || sc.blue) {
+      std::vector<ImVec2> o = SliceOutline(sl);
+      for (auto& p : o) p = ImVec2(ox + p.x * sx, oy + p.y * sy);
+      DrawColorAdjust(o.data(), (int)o.size(), sc.contrast / 100.f, sc.brightness / 100.f, sc.red / 100.f, sc.green / 100.f, sc.blue / 100.f);
+    }
+    if (masked) MaskEnd();
+  }
+  g.warp = prevWarp;
+  dl->PopClipRect();
+}
+
 // Renders the current screen's slices into the output window. Call once per frame, after the UI frame.
 void RenderOutput() {
   if (!gOut) return;
@@ -148,39 +188,7 @@ void RenderOutput() {
     for (auto& sl : sc->slices) if (sl.solo && sl.visible) anySolo = true;
     for (auto& sl : sc->slices) {
       if (!sl.visible || (anySolo && !sl.solo)) continue;
-      WarpMap wm;
-      wm.slice = &sl;
-      wm.ox = 0; wm.oy = 0; wm.sx = sx; wm.sy = sy;
-      // clip to the warped slice's bounding box (ImGui clipping is rectangular) — the whole mesh, not just the 4 corners,
-      // or a mesh point bulging past the keystone quad gets cut off on the projector
-      ImVec2 omn, omx; SliceOutputBounds(sl, omn, omx);
-      ImRect bb(omn.x * sx, omn.y * sy, omx.x * sx, omx.y * sy);
-      dl.PushClipRect(bb.Min, bb.Max, true);
-      g.warp = &wm;
-      if (A.testCard) OutputTestCard(bb);
-      else {
-        // Input masks (canvas-space polygons) cut the picture BEFORE it is warped: map each point through the same input-rect ->
-        // keystone/mesh map as the content, then let the stencil limit everything this slice draws.
-        std::vector<std::vector<ImVec2>> keep, holes;
-        for (auto& mk : sl.masks) {
-          if (mk.pts.size() < 3) continue;
-          std::vector<ImVec2> pp; pp.reserve(mk.pts.size());
-          for (auto& p : mk.pts) pp.push_back(wm.Map(p.x, p.y));
-          (mk.inverted ? holes : keep).push_back(std::move(pp));
-        }
-        const bool masked = !keep.empty() || !holes.empty();
-        if (masked) MaskBegin(keep, holes, bb);
-        DrawSliceSource(sl, bb, t, std::clamp(sc->opacity / 100.f, 0.f, 1.f));   // F22: composition, or just the layer/group this slice is routed to; Screen > Opacity scales it
-        // Screen > Brightness / Contrast / Red / Green / Blue over this slice's outline (inside the mask, so cut-out areas stay dark)
-        if (sc->brightness || sc->contrast || sc->red || sc->green || sc->blue) {
-          std::vector<ImVec2> o = SliceOutline(sl);
-          for (auto& p : o) p = ImVec2(p.x * sx, p.y * sy);
-          DrawColorAdjust(o.data(), (int)o.size(), sc->contrast / 100.f, sc->brightness / 100.f, sc->red / 100.f, sc->green / 100.f, sc->blue / 100.f);
-        }
-        if (masked) MaskEnd();
-      }
-      g.warp = nullptr;
-      dl.PopClipRect();
+      DrawSliceOutput(*sc, sl, 0.f, 0.f, sx, sy, t);
     }
   }
 

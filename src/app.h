@@ -485,6 +485,7 @@ void DrawComposite(ImRect canvas, float t, float alpha);   // all live clips, bo
 // F22: a slice's picture — the whole composition, one layer, or one group's layers (same blend/opacity/dissolve rules).
 // A source whose layer/group no longer exists falls back to the composition (SliceSourceValid tells the UI to warn).
 void DrawSliceSource(const Slice& s, ImRect canvas, float t, float alpha);
+void DrawSliceOutput(const Screen& sc, const Slice& sl, float ox, float oy, float sx, float sy, float t);   // the slice as the projector shows it (output.cpp), also used by the Output stage's thumbnails
 std::vector<ImVec2> SliceOutline(const Slice& s);   // output-space outline of a slice as the audience sees it (quad, or the mesh border)
 // Masks: everything drawn between MaskBegin and MaskEnd is limited to the union of `keep` polygons (the whole `bounds` when there
 // are none) minus the `holes`. Polygons are in window px. Done with the stencil buffer through draw-list callbacks; SetBlendMode(0)

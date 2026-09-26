@@ -1552,11 +1552,20 @@ static void Stage(ImRect r) {
       }
     }
     sl = A.curSlice(); mk = A.curMask();
+    {   // what each slice actually sends out — after its input rect, warp, masks and the Screen's opacity / colour — drawn as its thumbnail
+      bool anySolo = false;
+      for (auto& S : sc->slices) if (S.solo && S.visible) anySolo = true;
+      const float t = (float)g.time * 1.2f;   // same time base as the projector and the Live Output monitor
+      g.dl->PushClipRect(cv.Min, cv.Max, true);   // the projector only shows the 1920x1080 box
+      for (auto& S : sc->slices) if (S.visible && !(anySolo && !S.solo)) DrawSliceOutput(*sc, S, cv.Min.x, cv.Min.y, s, s, t);
+      g.dl->PopClipRect();
+    }
     for (auto& S : sc->slices) {
       if (!S.visible) continue;
       bool on = (sl && S.id == sl->id) || (A.MapKind() == 1 && A.mapSelCount() > 1 && A.mapIsSel(1, sc->id, S.id, ""));
-      ImU32 fill = on ? K(pal::coral, 0.22f) : K(0xffffff, 0.05f);
-      if (S.warp == 0) { ImVec2 pp[4]; polyPx(S.q, 4, pp); FillPoly(pp, 4, fill); }
+      ImU32 fill = on ? K(pal::coral, 0.10f) : 0;   // faint on purpose: the thumbnail underneath has to stay readable
+      if (!fill) {}
+      else if (S.warp == 0) { ImVec2 pp[4]; polyPx(S.q, 4, pp); FillPoly(pp, 4, fill); }
       else {   // a warped mesh may be concave overall — fill it cell by cell
         auto gr = MeshGrid(S);
         for (size_t rr = 0; rr + 1 < gr.size(); ++rr) for (size_t cc = 0; cc + 1 < gr[rr].size(); ++cc) {
