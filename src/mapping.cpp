@@ -913,6 +913,7 @@ static void RailPopover(ImRect rail) {
 
 // ───────────────────────── stage ─────────────────────────
 static int dragKind = 0, dragIdx = 0;  // 1 corner, 2 input resize (0..3 corners, 10..13 edge middles), 3 mask point, 4 mesh point (row*100+col), 5 input move, 6 input rotate
+static ImVec2 dragQ0[4], dragMo0;       // 4-key output: the keystone corners and the cursor (output px) when an edge / whole-quad drag began
 static ImVec2 dragOff;                  // grabbed point minus cursor (output px), so grabbing off-centre doesn't jump
 static bool dragOnMask = false;          // the input-frame drags (2 resize / 5 move / 6 rotate) edit the selected mask instead of the slice
 static std::vector<PtStart> gGroup;      // the points being dragged together (dragKind 7)
@@ -1328,6 +1329,29 @@ static void Stage(ImRect r) {
       }
       MovePointsTo(*sc, gGroup, ImVec2(tp.x - gGrabStart.x, tp.y - gGrabStart.y));
     }
+    else if (dragKind == 8 || dragKind == 9) {   // 4-key output: a whole side, or the whole quad, moves; the mesh follows (keystone-relative)
+      const int ids[4] = {dragIdx, (dragIdx + 1) % 4, 0, 0}; const int nId = dragKind == 8 ? 2 : 4;
+      const int all[4] = {0, 1, 2, 3};
+      const int* mv = dragKind == 8 ? ids : all;
+      ImVec2 d = Vsub(mo, dragMo0);
+      if (snapOn) {   // the moved point that is closest to something to snap to wins; only its guide is shown
+        SnapSet S = BuildSnap(sc, sl, nullptr, false, -1);
+        auto moving = [&](ImVec2 q) { for (int k = 0; k < nId; ++k) { ImVec2 o = dragQ0[mv[k]]; if (std::fabs(o.x - q.x) < 0.01f && std::fabs(o.y - q.y) < 0.01f) return true; } return false; };
+        S.pts.erase(std::remove_if(S.pts.begin(), S.pts.end(), moving), S.pts.end());
+        S.segs.erase(std::remove_if(S.segs.begin(), S.segs.end(), [&](const std::pair<ImVec2, ImVec2>& g2) { return moving(g2.first) || moving(g2.second); }), S.segs.end());
+        float bestLen = 1e9f; ImVec2 bestAdj(0, 0); std::vector<std::pair<ImVec2, ImVec2>> bl; std::vector<ImVec2> bd;
+        for (int k = 0; k < nId; ++k) {
+          ImVec2 cand(dragQ0[mv[k]].x + d.x, dragQ0[mv[k]].y + d.y);
+          size_t nl = gGuideLines.size(), nd = gGuideDots.size();
+          ImVec2 sn = SnapPoint(cand, S, snapThr), adj(sn.x - cand.x, sn.y - cand.y);
+          float len = std::hypot(adj.x, adj.y);
+          if ((adj.x != 0.f || adj.y != 0.f) && len < bestLen) { bestLen = len; bestAdj = adj; bl.assign(gGuideLines.begin() + nl, gGuideLines.end()); bd.assign(gGuideDots.begin() + nd, gGuideDots.end()); }
+          gGuideLines.resize(nl); gGuideDots.resize(nd);
+        }
+        if (bestLen < 1e9f) { d = Vadd(d, bestAdj); gGuideLines.insert(gGuideLines.end(), bl.begin(), bl.end()); gGuideDots.insert(gGuideDots.end(), bd.begin(), bd.end()); }
+      }
+      for (int k = 0; k < nId; ++k) sl->q[mv[k]] = inOutput(ImVec2(dragQ0[mv[k]].x + d.x, dragQ0[mv[k]].y + d.y));
+    }
     else if (dragKind == 1) {   // the mesh follows on its own — it is keystone-relative
       ImVec2 tp = inOutput(to);
       if (snapOn) tp = inOutput(SnapPoint(tp, BuildSnap(sc, sl, nullptr, false, dragIdx), snapThr));
@@ -1538,6 +1562,16 @@ static void Stage(ImRect r) {
     if (clickPending && haveZoom && zoomBtn.Contains(m)) { ZoomToSlice(area, *sl); consumed = true; }
     if (sl && sl->visible && clickPending && !consumed)
       for (int i = 0; i < 4 && !consumed; ++i) if (nearPt(sl->q[i], kCornerR + kGrabPad)) grab(1, i, sl->q[i]);
+    if ((clickPending || (!dragKind && inArea && !A.mapHand && !A.maskPen)) && !consumed && sl && sl->visible && sl->warp == 0) {   // 4-key: grab a whole side (anywhere along it) to move that side
+      for (int i = 0; i < 4 && !consumed; ++i) {
+        ImVec2 a = toPx(sl->q[i]), b = toPx(sl->q[(i + 1) % 4]), ab(b.x - a.x, b.y - a.y);
+        float l2 = ab.x * ab.x + ab.y * ab.y; if (l2 < 1.f) continue;
+        float t = std::clamp(((m.x - a.x) * ab.x + (m.y - a.y) * ab.y) / l2, 0.f, 1.f);
+        if (std::hypot(a.x + ab.x * t - m.x, a.y + ab.y * t - m.y) > 6.f) continue;
+        if (!clickPending) { bool onCorner = false; for (int k = 0; k < 4; ++k) onCorner |= nearPt(sl->q[k], kCornerR + kGrabPad); if (!onCorner) ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll); break; }
+        A.mapPts.clear(); A.pushHist(); dragKind = 8; dragIdx = i; dragMo0 = mo; for (int k = 0; k < 4; ++k) dragQ0[k] = sl->q[k]; consumed = true;
+      }
+    }
     if (clickPending && !consumed && sl && sl->visible && sl->warp != 0) {
       auto gr = MeshGrid(*sl);
       int R = (int)gr.size(), C = (int)gr[0].size();
@@ -1552,6 +1586,7 @@ static void Stage(ImRect r) {
         if (!PointInPoly(m, ol.data(), (int)ol.size())) continue;
         if (MultiMod()) { A.mapToggle(1, {sc->id, it->id, ""}); consumed = true; break; }   // Ctrl / Cmd / Shift: add or remove
         bool wasOn = sl && it->id == sl->id;
+        if (wasOn && it->warp == 0) { A.pushHist(); dragKind = 9; dragIdx = 0; dragMo0 = mo; for (int k = 0; k < 4; ++k) dragQ0[k] = it->q[k]; }   // 4-key: drag inside the selected quad moves all of it
         A.mapMulti.clear();
         A.selSc = sc->id; A.selSl = it->id; A.selMk.clear(); A.selKind = 1; consumed = true;
         ImVec2 l;   // where the click lands in keystone space = the split position for "+ add col / + add row"
