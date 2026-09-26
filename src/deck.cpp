@@ -88,7 +88,7 @@ void App::init() {
     s.q[0] = {x, y}; s.q[1] = {x + w, y}; s.q[2] = {x + w, y + h}; s.q[3] = {x, y + h};
   };
   auto mask = [](const char* id, const char* n, bool inv, int f, ImVec2 a, ImVec2 b, ImVec2 c, ImVec2 d) {
-    Mask m; m.id = id; m.name = n; m.inverted = inv; m.feather = f; m.pts[0] = a; m.pts[1] = b; m.pts[2] = c; m.pts[3] = d; return m;
+    Mask m; m.id = id; m.name = n; m.inverted = inv; m.feather = f; MaskFromPolygon(m, {a, b, c, d}); return m;
   };
   auto slice = [&](const char* id, const char* n, int warp, int ix, int iy, int iw, int ih) {
     Slice s; s.id = id; s.name = n; s.warp = warp; s.ix = ix; s.iy = iy; s.iw = iw; s.ih = ih; quad(s, (float)ix, (float)iy, (float)iw, (float)ih); return s;

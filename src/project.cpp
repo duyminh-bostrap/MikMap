@@ -134,7 +134,8 @@ JsonValue SliceJ(const Slice& s) {
     JsonValue pts = JsonValue::array(); for (auto& p : m.pts) pts.push(V2(p));
     mo.set("pts", pts);
     mo.set("shape", m.shape);
-    if (m.shape >= 0) { JsonValue bx = JsonValue::array(); for (int i = 0; i < 4; ++i) bx.push(V2(m.box[i])); mo.set("box", bx); }
+    mo.set("x", (double)m.x); mo.set("y", (double)m.y); mo.set("w", (double)m.w); mo.set("h", (double)m.h); mo.set("rot", (double)m.rot);
+    if (m.shape < 0) { JsonValue uu = JsonValue::array(); for (auto& p : m.u) uu.push(V2(p)); mo.set("u", uu); }
     ms.push(mo);
   }
   o.set("masks", ms);
@@ -166,10 +167,22 @@ Slice ReadSlice(const JsonValue& o) {
     if (mo["pts"].isArray()) for (auto& pp : mo["pts"].arrayItems()) { if (m.pts.size() >= 256) break; m.pts.push_back(ReadV2(pp)); }
     if (m.pts.size() < 3) m.pts = {{620, 380}, {1100, 380}, {1020, 720}, {700, 720}};
     m.shape = mo["shape"].asInt(-1);
-    if (m.shape >= 0 && m.shape <= App::MS_HEXAGON && mo["box"].isArray() && mo["box"].size() == 4) {
-      for (int i = 0; i < 4; ++i) m.box[i] = ReadV2(mo["box"].at(i));
-      MaskRebuild(m);   // pts follow the box, so the two can never disagree after a load
-    } else m.shape = -1;
+    if (m.shape > App::MS_HEXAGON) m.shape = -1;
+    if (mo["w"].isNumber() && mo["h"].isNumber()) {   // current format: unit outline + rotated rect
+      m.x = (float)mo["x"].asNumber(0); m.y = (float)mo["y"].asNumber(0);
+      m.w = std::max(4.f, (float)mo["w"].asNumber(100)); m.h = std::max(4.f, (float)mo["h"].asNumber(100));
+      m.rot = std::clamp((float)mo["rot"].asNumber(0), -180.f, 180.f);
+      m.u.clear();
+      if (m.shape < 0 && mo["u"].isArray()) for (auto& up : mo["u"].arrayItems()) { if (m.u.size() >= 256) break; m.u.push_back(ReadV2(up)); }
+      if (m.shape < 0 && m.u.size() < 3) m.shape = App::MS_SQUARE;
+      MaskRebuild(m);
+    } else {   // older files: a polygon in `pts` (a short-lived build also wrote shape + box)
+      int shp = m.shape;
+      if (shp >= 0 && mo["box"].isArray() && mo["box"].size() == 4) {
+        std::vector<ImVec2> bx; for (int i = 0; i < 4; ++i) bx.push_back(ReadV2(mo["box"].at(i)));
+        MaskFromPolygon(m, bx); m.shape = shp; MaskRebuild(m);
+      } else MaskFromPolygon(m, m.pts);
+    }
     s.masks.push_back(m);
   }
   // files/presets from before meshLocal: absolute output-pixel mesh, converted once here (needs q, so after reading it)
@@ -196,7 +209,7 @@ static void ConvertLegacyMasks(Screen& sc, int canvasW, int canvasH) {
     if (!sl.maskLegacy) continue;
     sl.maskLegacy = false;
     if (canvasW == 1920 && canvasH == 1080) continue;
-    for (auto& m : sl.masks) for (auto& p : m.pts) { p.x *= kx; p.y *= ky; }
+    for (auto& m : sl.masks) { m.x *= kx; m.y *= ky; m.w *= kx; m.h *= ky; MaskRebuild(m); }
   }
 }
 Screen ReadScreen(const JsonValue& so) {

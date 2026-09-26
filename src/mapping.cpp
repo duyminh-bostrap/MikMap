@@ -33,12 +33,17 @@ static void QuadOf(Slice& s, float x, float y, float w, float h) {
 // exchanged with the output quad ("Match output shape" / "Swap"): the input lives in canvas px, the quad in the
 // screen's 1920x1080 output px, so the two spaces are scaled per axis.
 static constexpr float kDegToRad = 3.14159265f / 180.f;
-static void InputCorners(const Slice& s, ImVec2 c[4]) {   // canvas px: tl, tr, br, bl
-  float cx = s.ix + s.iw * 0.5f, cy = s.iy + s.ih * 0.5f, hw = s.iw * 0.5f, hh = s.ih * 0.5f;
-  float co = std::cos(s.irot * kDegToRad), si = std::sin(s.irot * kDegToRad);
+// A rotated rectangle in canvas px: what the slice's input rect and a mask both are, so one editor (the on-stage frame) serves both.
+struct RectXf { float x, y, w, h, rot; };   // Left/Top of the unrotated rect, size, degrees
+static RectXf RectOfSlice(const Slice& s) { return {(float)s.ix, (float)s.iy, (float)s.iw, (float)s.ih, s.irot}; }
+static RectXf RectOfMask(const Mask& m) { return {m.x, m.y, m.w, m.h, m.rot}; }
+static void RectCorners(const RectXf& r, ImVec2 c[4]) {   // canvas px: tl, tr, br, bl
+  float cx = r.x + r.w * 0.5f, cy = r.y + r.h * 0.5f, hw = r.w * 0.5f, hh = r.h * 0.5f;
+  float co = std::cos(r.rot * kDegToRad), si = std::sin(r.rot * kDegToRad);
   static const float sx[4] = {-1, 1, 1, -1}, sy[4] = {-1, -1, 1, 1};
   for (int i = 0; i < 4; ++i) { float lx = sx[i] * hw, ly = sy[i] * hh; c[i] = ImVec2(cx + lx * co - ly * si, cy + lx * si + ly * co); }
 }
+static void InputCorners(const Slice& s, ImVec2 c[4]) { RectCorners(RectOfSlice(s), c); }
 static void InputAsOutputQuad(const Slice& s, ImVec2 q[4]) {
   ImVec2 c[4]; InputCorners(s, c);
   float kx = 1920.f / std::max(1, A.canvasW), ky = 1080.f / std::max(1, A.canvasH);
@@ -259,16 +264,25 @@ static std::vector<ImVec2> MaskUnitPts(int shape) {
   }
   return p;
 }
-// A shape mask's polygon is its unit outline mapped through the 4 corners (bilinear): dragging any corner reshapes the whole shape.
+// A mask's polygon = its unit outline placed by the rotated rectangle (the same placement the input rect uses).
 void MaskRebuild(Mask& m) {
-  if (m.shape < 0) return;
-  std::vector<ImVec2> u = MaskUnitPts(m.shape);
-  m.pts.resize(u.size());
-  for (size_t i = 0; i < u.size(); ++i) {
-    float a = u[i].x, b = u[i].y;
-    m.pts[i] = ImVec2((1 - a) * (1 - b) * m.box[0].x + a * (1 - b) * m.box[1].x + a * b * m.box[2].x + (1 - a) * b * m.box[3].x,
-                      (1 - a) * (1 - b) * m.box[0].y + a * (1 - b) * m.box[1].y + a * b * m.box[2].y + (1 - a) * b * m.box[3].y);
+  std::vector<ImVec2> uu = m.shape >= 0 ? MaskUnitPts(m.shape) : m.u;
+  if (uu.size() < 3) uu = MaskUnitPts(App::MS_SQUARE);
+  float cx = m.x + m.w * 0.5f, cy = m.y + m.h * 0.5f, co = std::cos(m.rot * 3.14159265f / 180.f), si = std::sin(m.rot * 3.14159265f / 180.f);
+  m.pts.resize(uu.size());
+  for (size_t i = 0; i < uu.size(); ++i) {
+    float lx = (uu[i].x - 0.5f) * m.w, ly = (uu[i].y - 0.5f) * m.h;
+    m.pts[i] = ImVec2(cx + lx * co - ly * si, cy + lx * si + ly * co);
   }
+}
+void MaskFromPolygon(Mask& m, const std::vector<ImVec2>& poly) {
+  if (poly.size() < 3) { m.shape = App::MS_SQUARE; MaskRebuild(m); return; }
+  ImVec2 mn = poly[0], mx = poly[0];
+  for (auto& p : poly) { mn.x = std::min(mn.x, p.x); mn.y = std::min(mn.y, p.y); mx.x = std::max(mx.x, p.x); mx.y = std::max(mx.y, p.y); }
+  m.shape = -1; m.rot = 0; m.x = mn.x; m.y = mn.y; m.w = std::max(4.f, mx.x - mn.x); m.h = std::max(4.f, mx.y - mn.y);
+  m.u.clear();
+  for (auto& p : poly) m.u.push_back(ImVec2((p.x - m.x) / m.w, (p.y - m.y) / m.h));
+  MaskRebuild(m);
 }
 // The shape buttons draw the same outline, fitted to a box centred on c.
 static std::vector<ImVec2> MaskShapePts(int shape, ImVec2 c, float hw, float hh) {
@@ -278,27 +292,37 @@ static std::vector<ImVec2> MaskShapePts(int shape, ImVec2 c, float hw, float hh)
 }
 void App::addMask(int shape) { pushHist();
   Slice* sl = curSlice(); if (!sl) return;
-  // A mask is a half-size shape in the middle of the slice's INPUT rect (composition canvas px); it cuts the picture the slice takes.
+  // A new mask is a half-size shape in the middle of the slice's INPUT rect (composition canvas px); it cuts the picture the slice takes.
   Mask m; m.id = uid("mask"); m.name = "Mask " + std::to_string(sl->masks.size() + 1); m.inverted = true; m.feather = 4;
-  float cx = sl->ix + sl->iw * 0.5f, cy = sl->iy + sl->ih * 0.5f, hw = std::max(40.f, sl->iw * 0.25f), hh = std::max(40.f, sl->ih * 0.25f);
-  auto cl = [&](ImVec2 p) { return ImVec2(std::clamp(p.x, 0.f, (float)canvasW), std::clamp(p.y, 0.f, (float)canvasH)); };
-  m.shape = shape;
-  m.box[0] = cl({cx - hw, cy - hh}); m.box[1] = cl({cx + hw, cy - hh}); m.box[2] = cl({cx + hw, cy + hh}); m.box[3] = cl({cx - hw, cy + hh});
+  m.w = std::max(80.f, sl->iw * 0.5f); m.h = std::max(80.f, sl->ih * 0.5f);
+  m.x = sl->ix + sl->iw * 0.5f - m.w * 0.5f; m.y = sl->iy + sl->ih * 0.5f - m.h * 0.5f; m.rot = 0; m.shape = shape;
   MaskRebuild(m);
   selSl = sl->id; selMk = m.id; selKind = 2;
   sl->masks.push_back(m);
-  mpage = 0;   // masks are drawn and edited on the Input stage — show it
+  mpage = 0;   // masks are edited on the Input stage — show it
 }
-void App::startMaskPen() { if (!curSlice()) return; maskPen = true; penPts.clear(); mpage = 0; selMk.clear(); selKind = 1; }
-void App::cancelMaskPen() { maskPen = false; penPts.clear(); }
+void App::setMaskShape(int shape) {   // Mask properties > Input Mask: the shape buttons re-shape the selected mask
+  Mask* mk = curMask(); if (!mk) return;
+  pushHist(); mk->shape = shape; MaskRebuild(*mk);
+}
+void App::startMaskPen(bool replaceSelected) {
+  if (!curSlice()) return;
+  penReplace = replaceSelected && curMask() != nullptr;
+  maskPen = true; penPts.clear(); mpage = 0;
+  if (!penReplace) { selMk.clear(); selKind = 1; }
+}
+void App::cancelMaskPen() { maskPen = false; penReplace = false; penPts.clear(); }
 void App::finishMaskPen() {
   Slice* sl = curSlice();
   if (sl && penPts.size() >= 3) {
     pushHist();
-    Mask m; m.id = uid("mask"); m.name = "Mask " + std::to_string(sl->masks.size() + 1); m.inverted = true; m.feather = 4;
-    m.pts = penPts; m.shape = -1;   // free polygon: every point stays its own handle
-    selSl = sl->id; selMk = m.id; selKind = 2;
-    sl->masks.push_back(m);
+    if (penReplace && curMask()) MaskFromPolygon(*curMask(), penPts);   // redraw the selected mask's outline (rect resets to the drawing's box)
+    else {
+      Mask m; m.id = uid("mask"); m.name = "Mask " + std::to_string(sl->masks.size() + 1); m.inverted = true; m.feather = 4;
+      MaskFromPolygon(m, penPts);
+      selSl = sl->id; selMk = m.id; selKind = 2;
+      sl->masks.push_back(m);
+    }
   }
   cancelMaskPen();
 }
@@ -681,6 +705,7 @@ static void RailPopover(ImRect rail) {
 // ───────────────────────── stage ─────────────────────────
 static int dragKind = 0, dragIdx = 0;  // 1 corner, 2 input resize (0..3 corners, 10..13 edge middles), 3 mask point, 4 mesh point (row*100+col), 5 input move, 6 input rotate
 static ImVec2 dragOff;                  // grabbed point minus cursor (output px), so grabbing off-centre doesn't jump
+static bool dragOnMask = false;          // the input-frame drags (2 resize / 5 move / 6 rotate) edit the selected mask instead of the slice
 static ImVec2 dragAnchor;               // input rect drags: the fixed corner/edge-middle (resize) in canvas px
 static float dragAng0 = 0.f, dragRot0 = 0.f;   // input rect rotate: pointer angle and rect rotation when the drag began
 
@@ -967,46 +992,49 @@ static void Stage(ImRect r) {
       }
     }
     else if (dragKind == 1) sl->q[dragIdx] = inOutput(to);   // the mesh follows on its own — it is keystone-relative
-    else if (dragKind == 3 && mk) {   // mask: a preset shape moves by its 4 box corners, a free (pen) polygon by any point
-      if (mk->shape >= 0) { mk->box[dragIdx & 3] = inCanvas(to); MaskRebuild(*mk); }
-      else if (dragIdx < (int)mk->pts.size()) mk->pts[dragIdx] = inCanvas(to);
-    }
-    else if (dragKind == 2) {   // resize in the rect's own (rotated) frame; the opposite corner / edge middle stays put
-      float co = std::cos(sl->irot * kDegToRad), si = std::sin(sl->irot * kDegToRad);
-      ImVec2 P = sl->irot == 0.f ? mu : ImVec2(std::round(mo.x), std::round(mo.y));   // upright rects stay inside the canvas; rotated ones may reach past it
-      float dx = P.x - dragAnchor.x, dy = P.y - dragAnchor.y;
-      float lx = dx * co + dy * si, ly = -dx * si + dy * co;   // pointer relative to the anchor, in rect-local axes
-      float w = (float)sl->iw, h = (float)sl->ih, hx = 0, hy = 0;   // hx/hy: new centre offset from the anchor, local axes
-      int k = dragIdx % 10;
-      if (dragIdx >= 10) {
-        if (k == 0) { h = std::max(20.f, -ly); hy = -h * 0.5f; }
-        else if (k == 1) { w = std::max(20.f, lx); hx = w * 0.5f; }
-        else if (k == 2) { h = std::max(20.f, ly); hy = h * 0.5f; }
-        else { w = std::max(20.f, -lx); hx = -w * 0.5f; }
-      } else {
-        float sx = (k == 1 || k == 2) ? 1.f : -1.f, sy = (k == 2 || k == 3) ? 1.f : -1.f;
-        w = std::max(20.f, sx * lx); h = std::max(20.f, sy * ly); hx = sx * w * 0.5f; hy = sy * h * 0.5f;
+    else if (dragKind == 2 || dragKind == 5 || dragKind == 6) {
+      // one editor for both the slice's input rect and a mask: read the rect, edit it in its own rotated frame, write it back
+      const bool onMask = dragOnMask && mk;
+      RectXf R = onMask ? RectOfMask(*mk) : RectOfSlice(*sl);
+      const float minSz = onMask ? 8.f : 20.f;
+      if (dragKind == 2) {   // resize: the opposite corner / edge middle stays put
+        float co = std::cos(R.rot * kDegToRad), si = std::sin(R.rot * kDegToRad);
+        ImVec2 P = R.rot == 0.f ? mu : ImVec2(std::round(mo.x), std::round(mo.y));   // upright rects stay inside the canvas; rotated ones may reach past it
+        float dx = P.x - dragAnchor.x, dy = P.y - dragAnchor.y;
+        float lx = dx * co + dy * si, ly = -dx * si + dy * co;   // pointer relative to the anchor, in rect-local axes
+        float w = R.w, h = R.h, hx = 0, hy = 0;                  // hx/hy: new centre offset from the anchor, local axes
+        int k = dragIdx % 10;
+        if (dragIdx >= 10) {
+          if (k == 0) { h = std::max(minSz, -ly); hy = -h * 0.5f; }
+          else if (k == 1) { w = std::max(minSz, lx); hx = w * 0.5f; }
+          else if (k == 2) { h = std::max(minSz, ly); hy = h * 0.5f; }
+          else { w = std::max(minSz, -lx); hx = -w * 0.5f; }
+        } else {
+          float sx = (k == 1 || k == 2) ? 1.f : -1.f, sy = (k == 2 || k == 3) ? 1.f : -1.f;
+          w = std::max(minSz, sx * lx); h = std::max(minSz, sy * ly); hx = sx * w * 0.5f; hy = sy * h * 0.5f;
+        }
+        float cx = dragAnchor.x + hx * co - hy * si, cy = dragAnchor.y + hx * si + hy * co;
+        R.w = w; R.h = h; R.x = cx - w * 0.5f; R.y = cy - h * 0.5f;
+      } else if (dragKind == 5) {   // move: an upright rect stays inside the canvas, a rotated one just keeps its centre on it
+        float cx = to.x, cy = to.y;
+        if (R.rot == 0.f && R.w <= A.canvasW && R.h <= A.canvasH) {
+          R.x = std::clamp(cx - R.w * 0.5f, 0.f, A.canvasW - R.w); R.y = std::clamp(cy - R.h * 0.5f, 0.f, A.canvasH - R.h);
+        } else {
+          R.x = std::clamp(cx, 0.f, (float)A.canvasW) - R.w * 0.5f; R.y = std::clamp(cy, 0.f, (float)A.canvasH) - R.h * 0.5f;
+        }
+      } else {   // rotate about the centre; Shift snaps to 15 degrees
+        float ccx = R.x + R.w * 0.5f, ccy = R.y + R.h * 0.5f;
+        float r = dragRot0 + (std::atan2(mo.y - ccy, mo.x - ccx) - dragAng0) / kDegToRad;
+        if (ImGui::GetIO().KeyShift) r = std::round(r / 15.f) * 15.f;
+        r -= 360.f * std::floor((r + 180.f) / 360.f);   // keep within -180..180
+        R.rot = std::fabs(r) < 0.05f ? 0.f : r;
       }
-      float cx = dragAnchor.x + hx * co - hy * si, cy = dragAnchor.y + hx * si + hy * co;
-      sl->iw = (int)std::lround(w); sl->ih = (int)std::lround(h);
-      sl->ix = (int)std::lround(cx - sl->iw * 0.5f); sl->iy = (int)std::lround(cy - sl->ih * 0.5f);
-    }
-    else if (dragKind == 5) {   // move: an upright rect stays inside the canvas, a rotated one just keeps its centre on it
-      float cx = to.x, cy = to.y;
-      if (sl->irot == 0.f && sl->iw <= A.canvasW && sl->ih <= A.canvasH) {
-        sl->ix = std::clamp((int)std::lround(cx - sl->iw * 0.5f), 0, A.canvasW - sl->iw);
-        sl->iy = std::clamp((int)std::lround(cy - sl->ih * 0.5f), 0, A.canvasH - sl->ih);
-      } else {
-        sl->ix = (int)std::lround(std::clamp(cx, 0.f, (float)A.canvasW) - sl->iw * 0.5f);
-        sl->iy = (int)std::lround(std::clamp(cy, 0.f, (float)A.canvasH) - sl->ih * 0.5f);
+      if (onMask) { mk->x = R.x; mk->y = R.y; mk->w = R.w; mk->h = R.h; mk->rot = R.rot; MaskRebuild(*mk); }
+      else {   // the slice's rect is whole pixels: round the size first, then keep the centre
+        float cx = R.x + R.w * 0.5f, cy = R.y + R.h * 0.5f;
+        sl->iw = (int)std::lround(R.w); sl->ih = (int)std::lround(R.h);
+        sl->ix = (int)std::lround(cx - sl->iw * 0.5f); sl->iy = (int)std::lround(cy - sl->ih * 0.5f); sl->irot = R.rot;
       }
-    }
-    else if (dragKind == 6) {   // rotate about the centre; Shift snaps to 15 degrees
-      float ccx = sl->ix + sl->iw * 0.5f, ccy = sl->iy + sl->ih * 0.5f;
-      float r = dragRot0 + (std::atan2(mo.y - ccy, mo.x - ccx) - dragAng0) / kDegToRad;
-      if (ImGui::GetIO().KeyShift) r = std::round(r / 15.f) * 15.f;
-      r -= 360.f * std::floor((r + 180.f) / 360.f);   // keep within -180..180
-      sl->irot = std::fabs(r) < 0.05f ? 0.f : r;
     }
   }
 
@@ -1026,58 +1054,30 @@ static void Stage(ImRect r) {
       for (int i = 0; i < 4; ++i) opx[i] = toPx(oc[i]);
       DashedPoly(opx, 4, K(pal::cyan, 0.7f), 1.5f, 8, 5);   // dashed and unnamed: only the selected slice carries its name
     }
-    // ---- Input masks of the selected slice (composition canvas px) ----
-    // A preset shape has 4 handles (its bounding box corners); only a pen mask exposes every point. Masks cut the picture the slice
-    // takes, so they are edited here on the Input stage, over the source.
+    // ---- transform frames: the slice's input rect, or — when a mask is selected — that mask ----
+    // Both are edited the same way (like the Preview Cue frame): drag inside to move, the small squares (corners and edge middles)
+    // to resize, the rings around the corners to rotate. Only the SELECTED mask is shown; the others stay hidden until picked in the tree.
     const bool maskMode = mk != nullptr && A.selKind == 2;
-    bool maskTookClick = false;
-    const float kMaskR = 7.f, kMaskPad = 4.f;
-    auto maskHandles = [&](const Mask& M) { std::vector<ImVec2> h; if (M.shape >= 0) h.assign(M.box, M.box + 4); else h = M.pts; return h; };
-    if (scVis && sl && sl->visible) {
-      if (A.maskPen) {   // pen: click points, click the first point / Enter / double-click closes; the stage belongs to the pen meanwhile
-        maskTookClick = true;
-        if (clickPending) {
-          bool closes = A.penPts.size() >= 3 && std::hypot(m.x - toPx(A.penPts[0]).x, m.y - toPx(A.penPts[0]).y) <= 10.f;
-          if (closes || ImGui::IsMouseDoubleClicked(0)) A.finishMaskPen();
-          else A.penPts.push_back(inCanvas(mo));
-        }
-        if (A.maskPen && ImGui::IsKeyPressed(ImGuiKey_Enter, false)) A.finishMaskPen();
-        if (inArea) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-      } else if (clickPending && maskMode) {   // handles of the selected mask first
-        std::vector<ImVec2> hs = maskHandles(*mk);
-        for (int i = 0; i < (int)hs.size() && !maskTookClick; ++i) {
-          ImVec2 p = toPx(hs[i]);
-          if (std::hypot(m.x - p.x, m.y - p.y) <= kMaskR + kMaskPad) { A.pushHist(); dragKind = 3; dragIdx = i; dragOff = Vsub(hs[i], mo); maskTookClick = true; }
-        }
+    if (scVis && sl && sl->visible && A.maskPen) {   // pen: click points, click the first point / Enter / double-click closes
+      frameTookClick = true;
+      if (clickPending) {
+        bool closes = A.penPts.size() >= 3 && std::hypot(m.x - toPx(A.penPts[0]).x, m.y - toPx(A.penPts[0]).y) <= 10.f;
+        if (closes || ImGui::IsMouseDoubleClicked(0)) A.finishMaskPen();
+        else A.penPts.push_back(inCanvas(mo));
       }
-      if (clickPending && !maskTookClick) {   // then any mask polygon under the pointer (topmost = last) selects that mask
-        for (auto it = sl->masks.rbegin(); it != sl->masks.rend(); ++it) {
-          std::vector<ImVec2> pp(it->pts.size()); for (size_t i = 0; i < pp.size(); ++i) pp[i] = toPx(it->pts[i]);
-          if (PointInPoly(m, pp.data(), (int)pp.size())) { A.selMk = it->id; A.selKind = 2; maskTookClick = true; break; }
-        }
-      }
-      if (maskTookClick) frameTookClick = true;
-      for (auto& M : sl->masks) {
-        bool on = mk && mk->id == M.id && A.selKind == 2;
-        std::vector<ImVec2> pp(M.pts.size()); for (size_t i = 0; i < pp.size(); ++i) pp[i] = toPx(M.pts[i]);
-        uint32_t hx = on ? pal::yellow : (M.inverted ? pal::red : pal::mint);   // red = cuts a hole, mint = keeps only inside
-        g.dl->AddConcavePolyFilled(pp.data(), (int)pp.size(), Ca(K(hx, on ? 0.30f : 0.20f)));
-        DashedPoly(pp.data(), (int)pp.size(), K(hx), 2.f, 9, 7);
-      }
+      if (A.maskPen && ImGui::IsKeyPressed(ImGuiKey_Enter, false)) A.finishMaskPen();
+      if (inArea) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
     }
-    if (sl && sl->visible && scVis) {
-      // The input rect is edited like the Preview Cue transform frame: drag inside to move, the small squares (corners and
-      // edge middles) to resize, the rings around the corners to rotate. Right-click for the quick placement menu.
-      ImVec2 cp[4]; InputCorners(*sl, cp);
+    auto frame = [&](const RectXf& R, uint32_t hex, bool onMask) {
+      ImVec2 cp[4]; RectCorners(R, cp);
       ImVec2 cpx[4], mpx[4], mcv[4];
       for (int i = 0; i < 4; ++i) { cpx[i] = toPx(cp[i]); mcv[i] = ImVec2((cp[i].x + cp[(i + 1) % 4].x) * 0.5f, (cp[i].y + cp[(i + 1) % 4].y) * 0.5f); mpx[i] = toPx(mcv[i]); }
-      ImVec2 ctrCv(sl->ix + sl->iw * 0.5f, sl->iy + sl->ih * 0.5f), ctrPx = toPx(ctrCv);
+      ImVec2 ctrCv(R.x + R.w * 0.5f, R.y + R.h * 0.5f), ctrPx = toPx(ctrCv);
       const float kSqR = 8.f, kRingR = 16.f;
       auto dist = [&](ImVec2 a2, ImVec2 b2) { return std::hypot(a2.x - b2.x, a2.y - b2.y); };
+      const bool live = !A.maskPen;
       int hot = 0, hotIdx = 0;   // what the pointer is over: 2 resize, 6 rotate, 5 move
-      const bool frameLive = !maskMode && !A.maskPen;   // while a mask (or the pen) is being edited the rect is just an outline
-      if (maskMode && !A.maskPen && !maskTookClick && clickPending && PointInPoly(m, cpx, 4)) { A.selKind = 1; A.selMk.clear(); frameTookClick = true; }   // click the rect itself -> back to the slice
-      if (inArea && dragKind == 0 && frameLive && !maskTookClick) {
+      if (inArea && dragKind == 0 && live && !frameTookClick) {
         for (int i = 0; i < 4 && !hot; ++i) if (dist(m, cpx[i]) <= kSqR) { hot = 2; hotIdx = i; }
         for (int i = 0; i < 4 && !hot; ++i) if (dist(m, mpx[i]) <= kSqR) { hot = 2; hotIdx = 10 + i; }
         for (int i = 0; i < 4 && !hot; ++i) if (dist(m, cpx[i]) <= kRingR) { hot = 6; hotIdx = i; }
@@ -1086,49 +1086,54 @@ static void Stage(ImRect r) {
       if (hot) ImGui::SetMouseCursor(hot == 5 ? ImGuiMouseCursor_Hand : ImGuiMouseCursor_ResizeAll);
       if (hot && clickPending) {
         frameTookClick = true;
-        A.pushHist(); dragKind = hot; dragIdx = hotIdx;
+        A.pushHist(); dragKind = hot; dragIdx = hotIdx; dragOnMask = onMask;
         if (hot == 2) dragAnchor = hotIdx >= 10 ? mcv[(hotIdx % 10 + 2) % 4] : cp[(hotIdx + 2) % 4];   // opposite corner / edge middle
         else if (hot == 5) dragOff = Vsub(ctrCv, mo);
-        else { dragAng0 = std::atan2(mo.y - ctrCv.y, mo.x - ctrCv.x); dragRot0 = sl->irot; }
+        else { dragAng0 = std::atan2(mo.y - ctrCv.y, mo.x - ctrCv.x); dragRot0 = R.rot; }
       }
-      if (rClick && frameLive && PointInPoly(m, cpx, 4)) InputRectMenu(m);
-      g.dl->AddConvexPolyFilled(cpx, 4, Ca(K(pal::cyan, 0.05f)));   // faint on purpose: the source thumbnail underneath has to stay readable
-      g.dl->AddPolyline(cpx, 4, Ca(K(pal::cyan)), ImDrawFlags_Closed, 2.f);
-      char dm[64]; int len = snprintf(dm, sizeof dm, "%d \xC3\x97 %d", sl->iw, sl->ih);
-      if (sl->irot != 0.f) len += snprintf(dm + len, sizeof dm - len, " \xC2\xB7 %.0f\xC2\xB0", sl->irot);
-      if (sl->iflipX || sl->iflipY) snprintf(dm + len, sizeof dm - len, " \xC2\xB7 flip %s%s", sl->iflipX ? "X" : "", sl->iflipY ? "Y" : "");
-      TextC(ctrPx.x, ctrPx.y - 7, MONO_B, 11, K(pal::cyan), sl->name.c_str());
-      TextC(ctrPx.x, ctrPx.y + 7, MONO_R, 9, K(pal::tcc), dm);
+      if (!onMask) {
+        if (rClick && live && PointInPoly(m, cpx, 4)) InputRectMenu(m);
+        g.dl->AddConvexPolyFilled(cpx, 4, Ca(K(hex, 0.05f)));   // faint on purpose: the source thumbnail underneath has to stay readable
+        char dm[64]; int len = snprintf(dm, sizeof dm, "%d \xC3\x97 %d", sl->iw, sl->ih);
+        if (sl->irot != 0.f) len += snprintf(dm + len, sizeof dm - len, " \xC2\xB7 %.0f\xC2\xB0", sl->irot);
+        if (sl->iflipX || sl->iflipY) snprintf(dm + len, sizeof dm - len, " \xC2\xB7 flip %s%s", sl->iflipX ? "X" : "", sl->iflipY ? "Y" : "");
+        TextC(ctrPx.x, ctrPx.y - 7, MONO_B, 11, K(hex), sl->name.c_str());
+        TextC(ctrPx.x, ctrPx.y + 7, MONO_R, 9, K(pal::tcc), dm);
+      }
+      g.dl->AddPolyline(cpx, 4, Ca(K(hex, onMask ? 0.8f : 1.f)), ImDrawFlags_Closed, onMask ? 1.5f : 2.f);
       const bool rotating = dragKind == 6 || (dragKind == 0 && hot == 6);
-      if (frameLive) for (int i = 0; i < 4; ++i) {
+      if (live) for (int i = 0; i < 4; ++i) {
         bool ringHot = rotating && (dragKind == 6 || hotIdx == i);
-        g.dl->AddCircle(cpx[i], 11.f, Ca(K(ringHot ? pal::white : pal::cyan)), 24, 1.5f);
+        g.dl->AddCircle(cpx[i], 11.f, Ca(K(ringHot ? pal::white : hex)), 24, 1.5f);
       }
-      if (frameLive) for (const ImVec2* set : {cpx, mpx}) for (int i = 0; i < 4; ++i) {
+      if (live) for (const ImVec2* set : {cpx, mpx}) for (int i = 0; i < 4; ++i) {
         ImRect hr(set[i].x - 5, set[i].y - 5, set[i].x + 5, set[i].y + 5);
-        Box(hr, K(pal::white), K(pal::cyan), 2);
-        Border(hr, K(pal::cyan), 2, 2);
+        Box(hr, K(pal::white), K(hex), 2);
+        Border(hr, K(hex), 2, 2);
       }
+    };
+    if (sl && sl->visible && scVis) {
+      if (maskMode) {
+        // the slice is just an outline while its mask is edited; clicking it (outside the mask's frame) goes back to the slice
+        ImVec2 sc4[4], sp4[4]; InputCorners(*sl, sc4); for (int i = 0; i < 4; ++i) sp4[i] = toPx(sc4[i]);
+        g.dl->AddPolyline(sp4, 4, Ca(K(pal::cyan, 0.8f)), ImDrawFlags_Closed, 1.5f);
+        std::vector<ImVec2> pp(mk->pts.size()); for (size_t i = 0; i < pp.size(); ++i) pp[i] = toPx(mk->pts[i]);
+        uint32_t hx = mk->inverted ? pal::red : pal::mint;   // red = cuts a hole, mint = keeps only the inside
+        g.dl->AddConcavePolyFilled(pp.data(), (int)pp.size(), Ca(K(hx, 0.28f)));
+        DashedPoly(pp.data(), (int)pp.size(), K(hx), 2.f, 9, 7);
+        frame(RectOfMask(*mk), pal::mint, true);
+        if (clickPending && !frameTookClick && !A.maskPen && PointInPoly(m, sp4, 4)) { A.selKind = 1; A.selMk.clear(); frameTookClick = true; }
+      } else frame(RectOfSlice(*sl), pal::cyan, false);
     }
-    if (A.maskPen) {   // the shape being drawn, plus a rubber-band segment to the cursor
+    if (A.maskPen && scVis) {   // the shape being drawn, plus a rubber-band segment to the cursor
       std::vector<ImVec2> pp(A.penPts.size()); for (size_t i = 0; i < pp.size(); ++i) pp[i] = toPx(A.penPts[i]);
-      for (size_t i = 0; i + 1 < pp.size(); ++i) g.dl->AddLine(pp[i], pp[i + 1], Ca(K(pal::yellow)), 2.f);
-      if (!pp.empty()) g.dl->AddLine(pp.back(), m, Ca(K(pal::yellow, 0.6f)), 1.5f);
+      for (size_t i = 0; i + 1 < pp.size(); ++i) g.dl->AddLine(pp[i], pp[i + 1], Ca(K(pal::mint)), 2.f);
+      if (!pp.empty()) g.dl->AddLine(pp.back(), m, Ca(K(pal::mint, 0.6f)), 1.5f);
       for (size_t i = 0; i < pp.size(); ++i) {
         bool first = i == 0 && pp.size() >= 3 && std::hypot(m.x - pp[0].x, m.y - pp[0].y) <= 10.f;
-        g.dl->AddCircleFilled(pp[i], first ? 8.f : 5.f, Ca(K(first ? pal::white : pal::yellow)), 20);
+        g.dl->AddCircleFilled(pp[i], first ? 8.f : 5.f, Ca(K(first ? pal::white : pal::mint)), 20);
       }
-      TextC((area.Min.x + area.Max.x) * 0.5f, area.Min.y + 16, MONO_R, 10, K(pal::yellow), "PEN \xC2\xB7 click points \xC2\xB7 click the first point / Enter / double-click to close \xC2\xB7 Esc cancels");
-    }
-    if (maskMode && scVis && sl && sl->visible) {   // the selected mask's handles: 4 box corners for a shape, every point for a pen mask
-      std::vector<ImVec2> hs = maskHandles(*mk);
-      if (mk->shape >= 0) { std::vector<ImVec2> bp(4); for (int i = 0; i < 4; ++i) bp[i] = toPx(mk->box[i]); DashedPoly(bp.data(), 4, K(pal::yellow, 0.55f), 1.f, 5, 5); }
-      for (int i = 0; i < (int)hs.size(); ++i) {
-        ImVec2 p = toPx(hs[i]);
-        bool hotH = (dragKind == 3 && dragIdx == i) || (!dragKind && inArea && std::hypot(m.x - p.x, m.y - p.y) <= kMaskR + kMaskPad);
-        g.dl->AddCircleFilled(p, kMaskR + (hotH ? 1.5f : 0.f), Ca(K(pal::yellow)), 24); g.dl->AddCircle(p, kMaskR + (hotH ? 1.5f : 0.f), Ca(K(pal::white)), 24, 2.f);
-        if (hotH) CursorHand();
-      }
+      TextC((area.Min.x + area.Max.x) * 0.5f, area.Min.y + 16, MONO_R, 10, K(pal::mint), "PEN \xC2\xB7 click points \xC2\xB7 click the first point / Enter / double-click to close \xC2\xB7 Esc cancels");
     }
     // Clicking inside another slice's dashed outline selects it (the topmost one when they overlap).
     if (scVis && inArea && dragKind == 0 && !frameTookClick) {
@@ -1337,6 +1342,35 @@ static bool MarkerSlider(uint32_t id, ImRect tr, float& v, float mn, float mx, u
   return ch;
 }
 
+// The INPUT MASK bar with the 6 shape buttons (heart, square, circle, triangle, hexagon, pen). With a slice selected they ADD a mask;
+// with a mask selected (forMask) they RE-SHAPE it (the pen redraws its outline). Returns the y below the bar.
+static float InputMaskBar(float ox, float oy, float W, float x, float w, float y, bool forMask) {
+  Fill(ImRect(ox, oy + y, ox + W, oy + y + 22), K(pal::g18));
+  HLine(ox, ox + W, oy + y, K(pal::g2a)); HLine(ox, ox + W, oy + y + 21, K(pal::g2a));
+  Text(x, oy + y + 11, UI_B, 9, K(pal::t88), "INPUT MASK", 0.14f);
+  y += 22 + 8;
+  const int shapes[5] = {App::MS_HEART, App::MS_SQUARE, App::MS_CIRCLE, App::MS_TRIANGLE, App::MS_HEXAGON};
+  const Mask* cur = forMask ? A.curMask() : nullptr;
+  const float bw = 34.f, gap = (w - 6 * bw) / 5.f;
+  for (int i = 0; i < 6; ++i) {
+    ImRect br(x + i * (bw + gap), oy + y, x + i * (bw + gap) + bw, oy + y + 30);
+    Hit h = HitR(br);
+    bool on = i == 5 ? (A.maskPen || (cur && cur->shape < 0)) : (cur && cur->shape == shapes[i]);
+    Box(br, h.hover ? K(pal::ctrlHover) : K(pal::g1c), on ? K(pal::mint) : h.hover ? K(pal::g33) : K(pal::g22), 3);
+    ImVec2 c((br.Min.x + br.Max.x) * 0.5f, (br.Min.y + br.Max.y) * 0.5f);
+    ImU32 col = Ca(K(on ? pal::mint : h.hover ? pal::white : pal::tcc));
+    if (i == 5) Icon("pencil", c, 15, col);
+    else { auto gp = MaskShapePts(shapes[i], c, 7.f, 7.f); g.dl->AddPolyline(gp.data(), (int)gp.size(), col, ImDrawFlags_Closed, 1.6f); }
+    if (h.hover) CursorHand();
+    if (h.click) {
+      if (i == 5) A.startMaskPen(forMask);
+      else if (forMask) A.setMaskShape(shapes[i]);
+      else A.addMask(shapes[i]);
+    }
+  }
+  return y + 30 + 6;
+}
+
 static void PropsPanel(ImRect r) {
   Fill(r, K(pal::g12));
   VLine(r.Min.x, r.Min.y, r.Max.y, K(pal::g2a));
@@ -1487,75 +1521,43 @@ static void PropsPanel(ImRect r) {
       if (sh.click) sl->softEdge = !sl->softEdge;
       y += 26 + 4;
     }
-    // Input Mask: pick a shape to add a mask around this slice (pen = click your own points). Masks live on the Output stage.
-    {
-      Fill(ImRect(ox, oy + y, ox + W, oy + y + 22), K(pal::g18));
-      HLine(ox, ox + W, oy + y, K(pal::g2a)); HLine(ox, ox + W, oy + y + 21, K(pal::g2a));
-      Text(x, oy + y + 11, UI_B, 9, K(pal::t88), "INPUT MASK", 0.14f);
-      y += 22 + 8;
-      const int shapes[5] = {App::MS_HEART, App::MS_SQUARE, App::MS_CIRCLE, App::MS_TRIANGLE, App::MS_HEXAGON};
-      const float bw = 34.f, gap = (w - 6 * bw) / 5.f;
-      for (int i = 0; i < 6; ++i) {
-        ImRect br(x + i * (bw + gap), oy + y, x + i * (bw + gap) + bw, oy + y + 30);
-        Hit h = HitR(br);
-        bool on = i == 5 && A.maskPen;
-        Box(br, h.hover ? K(pal::ctrlHover) : K(pal::g1c), on ? K(pal::yellow) : h.hover ? K(pal::g33) : K(pal::g22), 3);
-        ImVec2 c((br.Min.x + br.Max.x) * 0.5f, (br.Min.y + br.Max.y) * 0.5f);
-        ImU32 col = Ca(K(on ? pal::yellow : h.hover ? pal::white : pal::tcc));
-        if (i == 5) Icon("pencil", c, 15, col);
-        else { auto gp = MaskShapePts(shapes[i], c, 7.f, 7.f); g.dl->AddPolyline(gp.data(), (int)gp.size(), col, ImDrawFlags_Closed, 1.6f); }
-        if (h.hover) CursorHand();
-        if (h.click) { if (i == 5) A.startMaskPen(); else A.addMask(shapes[i]); }
-      }
-      y += 30 + 6;
-      Text(x, oy + y + 6, UI_S, 9, K(pal::t66), "Masks are edited here and cut the picture sent to output.", 0.01f);
-      y += 16 + 6;
-    }
+    // Input Mask: pick a shape to add a mask to this slice (pen = draw your own outline). Masks are edited on this Input stage.
+    y = InputMaskBar(ox, oy, W, x, w, y, false);
+    Text(x, oy + y + 6, UI_S, 9, K(pal::t66), "Pick a shape to add a mask; it cuts the picture sent to output.", 0.01f);
+    y += 16 + 6;
   }
-  if (kind == 2) {
-    Label(x, oy + y, "Mask name"); y += 9 + 6;
+  if (kind == 2) {   // Resolume's mask panel: name, the same rows as the input rect, Invert, and the shape buttons (they RE-SHAPE this mask)
     TextField("##maskname", Rc(x, oy + y, w, 28), mk->name);
-    y += 28 + 6;
-    HLine(x, x + w, oy + y, K(pal::g2a)); y += 1 + 4;
-    ImRect ir(x, oy + y, x + w, oy + y + 24);
-    Hit ih = HitR(ir);
-    Text(x, ir.Min.y + 12, UI_S, 10, K(pal::te0), "Cut hole (off: keep only inside)");
-    ImRect cb(ir.Max.x - 14, ir.Min.y + 5, ir.Max.x, ir.Min.y + 19);
-    Box(cb, mk->inverted ? K(pal::yellow) : K(pal::g050), mk->inverted ? K(pal::yellow) : K(pal::g22), 2);
-    if (mk->inverted) Check(ImVec2((cb.Min.x + cb.Max.x) * 0.5f, (cb.Min.y + cb.Max.y) * 0.5f), 12, K(0x0f0f0f));
-    if (ih.hover) CursorHand();
-    if (ih.click) mk->inverted = !mk->inverted;
-    y += 24 + 6;
-    Text(x, oy + y + 5, UI_S, 10, K(pal::t88), "Feather");
-    char fb[16]; snprintf(fb, sizeof fb, "%dpx", mk->feather);
-    TextR(x + w, oy + y + 5, MONO_B, 10, K(pal::yellow), fb);
-    y += 10 + 6;
-    float fv = mk->feather / 40.f * 100.f;
-    if (Slider(0x3001, Rc(x, oy + y + 4, w, 6), fv, pal::yellow)) mk->feather = (int)std::round(fv / 100.f * 40.f);
-    y += 14 + 6;
-    {
-      HLine(x, x + w, oy + y, K(pal::g2a)); y += 1 + 4;
-      const bool isShape = mk->shape >= 0;
-      Label(x, oy + y, isShape ? "Corners (canvas px)" : "Mask points (canvas px)"); y += 9 + 4;
-      if (!isShape && mk->pts.size() > 8) {   // a long pen outline: too many rows to list
-        char np[48]; snprintf(np, sizeof np, "%d points \xC2\xB7 drag them on the stage", (int)mk->pts.size());
-        Text(x, oy + y + 8, MONO_R, 10, K(pal::tcc), np); y += 22 + 6;
-      } else {
-        int nrows = isShape ? 4 : (int)mk->pts.size();
-        for (int i = 0; i < nrows; ++i) {
-          ImVec2 pt = isShape ? mk->box[i] : mk->pts[i];
-          ImRect cr(x, oy + y, x + w, oy + y + 22);
-          Box(cr, K(pal::g18), K(pal::g2a), 3);
-          char k[8]; snprintf(k, sizeof k, "P%d", i + 1);
-          Text(cr.Min.x + 8, cr.Min.y + 11, MONO_B, 10, K(pal::yellow), k);
-          char v[64]; snprintf(v, sizeof v, "X: %d  |  Y: %d", (int)pt.x, (int)pt.y);
-          TextR(cr.Max.x - 8, cr.Min.y + 11, MONO_R, 10, K(pal::tcc), v);
-          y += 22 + 6;
-        }
-      }
-      Text(x, oy + y + 6, UI_S, 9, K(pal::t66), isShape ? "Drag the 4 corners on Input selection." : "Drag each point on Input selection.", 0.01f);
-      y += 16 + 4;
+    y += 28 + 8;
+    HLine(ox + 8, ox + 8 + w, oy + y, K(pal::g2a)); y += 1 + 8;
+    const float LWd = 62.f;
+    auto row = [&](const char* label, const char* id, float& v, float lo, float hi) {
+      bool c = StepRow(x, oy + y, w, LWd, label, id, v, lo, hi, 1.f, 2); y += 24 + 4; return c;
+    };
+    float vx = mk->x + mk->w * 0.5f, vy = mk->y + mk->h * 0.5f, vl = mk->x, vt = mk->y, vw = mk->w, vh = mk->h, vr = mk->rot;
+    bool ch = false;
+    if (row("X", "##mk_x", vx, -16384, 16384)) { mk->x = vx - mk->w * 0.5f; ch = true; }
+    if (row("Y", "##mk_y", vy, -16384, 16384)) { mk->y = vy - mk->h * 0.5f; ch = true; }
+    if (row("Left", "##mk_l", vl, -16384, 16384)) { mk->x = vl; ch = true; }
+    if (row("Top", "##mk_t", vt, -16384, 16384)) { mk->y = vt; ch = true; }
+    if (row("Width", "##mk_w", vw, 4, 16384)) { float cx = mk->x + mk->w * 0.5f; mk->w = vw; mk->x = cx - vw * 0.5f; ch = true; }
+    if (row("Height", "##mk_h", vh, 4, 16384)) { float cy = mk->y + mk->h * 0.5f; mk->h = vh; mk->y = cy - vh * 0.5f; ch = true; }
+    if (row("Rotation", "##mk_r", vr, -180, 180)) { mk->rot = std::fabs(vr) < 0.005f ? 0.f : vr; ch = true; }
+    if (ch) MaskRebuild(*mk);
+    {   // Invert: on = cut a hole (the default), off = keep only the inside
+      ImRect ir(x, oy + y, x + w, oy + y + 26);
+      Hit ih = HitR(ir);
+      Text(x, ir.Min.y + 13, UI_S, 10, K(pal::te0), "Invert");
+      ImRect cb(x + LWd, ir.Min.y + 6, x + LWd + 14, ir.Min.y + 20);
+      Box(cb, mk->inverted ? K(pal::mint) : K(pal::g050), mk->inverted ? K(pal::mint) : K(pal::g22), 2);
+      if (mk->inverted) Check(ImVec2((cb.Min.x + cb.Max.x) * 0.5f, (cb.Min.y + cb.Max.y) * 0.5f), 12, K(0x0f0f0f));
+      Text(cb.Max.x + 10, ir.Min.y + 13, UI_S, 9, K(pal::t66), mk->inverted ? "cuts a hole" : "keeps only the inside", 0.01f);
+      if (ih.hover) CursorHand();
+      if (ih.click) mk->inverted = !mk->inverted;
+      y += 26 + 4;
     }
+    y = InputMaskBar(ox, oy, W, x, w, y, true);
+    y += 6;
     ImRect dr(x, oy + y, x + w, oy + y + 28);
     Hit dh = HitR(dr);
     Box(dr, K(pal::red, 0.14f), K(pal::red, 0.5f), 3);

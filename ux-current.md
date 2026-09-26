@@ -273,12 +273,11 @@ Ba vùng: **cây Screen/Slice/Mask** (trái) | **Stage canvas** (giữa) | **Pro
   (giữ `Shift` = bước ×10) · ô tick **Soft Edge** · thanh **INPUT MASK** với 6 nút: **tim · vuông · tròn · tam giác · lục giác · bút**.
   Bấm một hình = thêm mask cỡ nửa **khung input** của slice, ngay giữa khung, và chọn mask vừa tạo.
   **Mask nằm trong không gian composition canvas (như khung input), sửa ở trang Input và cắt hình gửi ra output thật** (2026-09-26):
-  - **Hình có sẵn (tim/vuông/tròn/tam giác/lục giác) chỉ có 4 tay nắm ở 4 góc hộp bao** — kéo một góc là biến dạng cả hình (nét đứt mảnh vẽ hộp bao).
-    **Chỉ mask vẽ bằng bút** mới có tay nắm ở từng điểm. Mask 4 điểm cũ (file cũ, vd DJ Console Cutout) cũng kéo từng điểm như bút.
-  - **Bút:** bấm từng điểm trên stage; bấm lại điểm đầu / `Enter` / bấm đúp để đóng (cần ≥3 điểm, ít hơn thì bỏ), `Esc` hoặc đổi trang để huỷ.
-  - Bấm vào trong một mask = chọn nó (tay nắm hiện ra, khung input chỉ còn viền); bấm vào khung input bên ngoài mask = quay về chọn slice. Bấm mask ở cây bên trái tự nhảy sang trang Input.
-  - **Trang Output routing không còn vẽ hay sửa mask.** Panel Mask (2 trang đều có): **Cut hole** bật = khoét lỗ (đỏ), tắt = chỉ giữ phần bên trong (xanh mint); nhiều mask cùng slice: phần được giữ là hợp các mask "chỉ giữ trong" (không có thì cả hình) trừ đi các lỗ.
-  - **Ảnh hưởng output:** `output.cpp` đưa từng điểm mask qua cùng phép ánh xạ khung input → keystone/mesh với hình rồi dùng stencil buffer (`MaskBegin/MaskEnd`, `clipart.cpp`) để giới hạn mọi thứ slice đó vẽ (kể cả chỉnh màu của Screen). Đã xem trên cửa sổ output: mask tim khoét lỗ hình tim trong hình; tắt Cut hole thì chỉ còn phần trong tim. **Độ mờ viền (Feather) mới chỉ lưu, chưa làm mờ thật.** Chỉ có ở cửa sổ máy chiếu, không có ở Live Output trong workspace.
+  - **Mask chỉnh y hệt khung input** (khung kiểu Preview Cue): kéo **trong khung** = di chuyển, **ô vuông ở góc / giữa cạnh** = co giãn, **vòng tròn quanh 4 góc** = xoay (giữ `Shift` = nhảy 15°). Mọi mask — hình có sẵn hay bút — đều là một đường viền đơn vị đặt bằng một hình chữ nhật xoay (`Mask::x/y/w/h/rot` + `shape` hoặc `u`), nên cùng một bộ điều khiển.
+  - **Chỉ mask đang được chọn mới hiện** (kèm khung); các mask khác ẩn cho tới khi chọn ở cây bên trái (bấm mask ở cây tự nhảy sang trang Input). Đang sửa mask thì khung slice chỉ còn viền; bấm vào khung slice (ngoài khung mask) = quay về chọn slice.
+  - **Panel Mask** (theo mẫu Resolume): ô tên · `X · Y · Left · Top · Width · Height · Rotation` (ô gõ số 2 số lẻ + nút −/+, Shift ×10) · **Invert** (bật = khoét lỗ, tắt = chỉ giữ phần bên trong) · thanh **INPUT MASK** — **bấm một hình = đổi shape của mask đang chọn** (giữ nguyên khung/góc xoay; hình hiện tại được tô sáng), nút **bút** = vẽ lại đường viền mask đang chọn (bấm từng điểm, bấm lại điểm đầu / `Enter` / bấm đúp để đóng, `Esc` huỷ; khung tự vừa với nét vẽ) · **Delete mask**. Độ mờ viền (Feather) đã bỏ khỏi panel vì output chưa làm mờ viền (dữ liệu vẫn lưu). Khi chọn **slice** (không phải mask), cùng thanh INPUT MASK ở panel slice **thêm** mask mới (nửa khung input, ở giữa khung).
+  - Nhiều mask cùng slice: phần được giữ là hợp các mask "chỉ giữ trong" (không có thì cả hình) trừ đi các lỗ.
+  - **Ảnh hưởng output:** `output.cpp` đưa từng điểm mask qua cùng phép ánh xạ khung input → keystone/mesh với hình rồi dùng stencil buffer (`MaskBegin/MaskEnd`, `clipart.cpp`) để giới hạn mọi thứ slice đó vẽ (kể cả chỉnh màu của Screen). Đã xem trên cửa sổ output: mask tim khoét lỗ hình tim; đổi sang tam giác và xoay 15° thì lỗ đổi theo. Chỉ có ở cửa sổ máy chiếu, không có ở Live Output trong workspace.
   - File cũ lưu mask theo px output 1920×1080: tự quy đổi sang px canvas khi mở (đúng theo tỉ lệ canvas/1920×1080; ở canvas mặc định số giữ nguyên).
   Hàng X…Rotation chỉ ở trang Input; Soft Edge và Input Mask hiện ở cả hai trang.
   **Soft Edge chỉ là công tắc lưu theo slice — output máy chiếu CHƯA làm mờ viền** (giống công tắc edge blending của Screen). ✅
@@ -301,7 +300,7 @@ Ba vùng: **cây Screen/Slice/Mask** (trái) | **Stage canvas** (giữa) | **Pro
 |---|---|---|
 | M6 | Kéo **góc slice** (vùng bấm ~16px) → keystone | ✅ |
 | M7 | Kéo **điểm mesh** (viền vàng = biên, coral = trong) | ✅ |
-| M8 | Kéo **4 góc hộp bao** của mask hình có sẵn (biến dạng cả hình); mask bút/mask 4 điểm cũ kéo từng điểm — làm ở trang **Input** | ✅ |
+| M8 | **Khung chỉnh mask** như khung input: di chuyển / co giãn / xoay; chỉ mask đang chọn hiện — làm ở trang **Input** | ✅ |
 | M9 | Bấm trong slice → chọn slice trên cùng; bấm vào mask → chọn mask | ✅ |
 | M10 | Với slice đang chọn ở chế độ mesh: bấm lại để đặt "điểm cắt", rồi dùng nút thêm cột/hàng | ✅ |
 | M11 | Chip 🔍 cạnh tên slice → zoom vào slice | ✅ |

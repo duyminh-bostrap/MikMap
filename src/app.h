@@ -82,14 +82,14 @@ struct Deck {
 // ───────────── mapping model ─────────────
 struct Mask {
   std::string id, name;
-  bool inverted = true;
-  int feather = 4;
-  std::vector<ImVec2> pts = std::vector<ImVec2>(4);   // polygon in COMPOSITION CANVAS px (like the input rect), 3+ points (square 4, triangle 3, hexagon 6, circle/heart many, pen = any)
-  // Preset shapes (App::MaskShape) are edited by their 4 bounding-box corners only: `box` (tl, tr, br, bl, canvas px) is the truth
-  // and `pts` is the shape's unit outline mapped through it (MaskRebuild). shape < 0 = a free polygon (the pen, or an old file):
-  // every point is its own handle and `box` is unused.
-  int shape = -1;
-  ImVec2 box[4];
+  bool inverted = true;   // Mask properties > Invert: on = cut a hole, off = keep only the inside
+  int feather = 4;        // stored only: the output does not feather mask edges yet
+  // Every mask is an outline (a preset shape, or a free one) placed by a rotated rectangle in COMPOSITION CANVAS px — it is edited
+  // exactly like the input rect (move / resize / rotate frame, X Y Left Top Width Height Rotation).
+  int shape = -1;                                       // App::MaskShape preset, or -1 = the free outline in `u` (pen, old files)
+  float x = 560, y = 320, w = 800, h = 440, rot = 0;    // Left/Top of the unrotated rect, its size, degrees
+  std::vector<ImVec2> u;                                // free outline in the unit square (used when shape < 0)
+  std::vector<ImVec2> pts = std::vector<ImVec2>(4);     // derived polygon in canvas px (MaskRebuild) — what drawing / masking use
 };
 struct Slice {
   std::string id, name;
@@ -352,7 +352,9 @@ struct App {
   void addMask(int shape = MS_SQUARE);
   // Pen: click points on the Output stage, click the first point (or Enter / double-click) to close, Esc cancels. Runtime only.
   bool maskPen = false; std::vector<ImVec2> penPts;
-  void startMaskPen(); void finishMaskPen(); void cancelMaskPen();
+  bool penReplace = false;   // the pen redraws the SELECTED mask instead of adding a new one
+  void startMaskPen(bool replaceSelected = false); void finishMaskPen(); void cancelMaskPen();
+  void setMaskShape(int shape);   // Mask properties: change the selected mask's shape (rect and rotation stay)
   // Slice clipboard + stacking order (Advanced Mapping > right-click the input rect). The clipboard is runtime-only.
   Slice sliceClip; bool hasSliceClip = false;
   void duplicateSlice(); void copySlice(); void cutSlice(); void pasteSlice();
@@ -461,7 +463,8 @@ std::vector<ImVec2> SliceOutline(const Slice& s);   // output-space outline of a
 // re-arms the stencil test after the backend's ResetRenderState (which disables it). No feathering yet.
 void MaskBegin(const std::vector<std::vector<ImVec2>>& keep, const std::vector<std::vector<ImVec2>>& holes, ImRect bounds);
 void MaskEnd();
-void MaskRebuild(struct Mask& m);   // shape masks: regenerate pts from box
+void MaskRebuild(Mask& m);                                        // regenerate pts from shape/u + the rect (call after changing any of them)
+void MaskFromPolygon(Mask& m, const std::vector<ImVec2>& poly);   // make m a free outline that fits a canvas-px polygon
 // Brightness/contrast/RGB (each -1..1) on what is already drawn inside `poly` (window px): contrast pivots on mid-grey, RGB scale
 // that channel, brightness shifts all. Done with GL multiply / gain (dst*(1+c)) / add / subtract passes, so it needs no shader.
 void DrawColorAdjust(const ImVec2* poly, int n, float contrast, float brightness, float r, float gch, float b);

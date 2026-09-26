@@ -931,14 +931,26 @@ int main(int argc, char** argv) {
       if (ls.masks.size() != nm || !ls.softEdge) return fail("masks / soft edge did not round-trip");
       bool found = false; for (auto& m : ls.masks) if (m.id == penId) { found = m.pts.size() == 5 && m.pts[3].x == 90.f; }
       if (!found) return fail("a 5-point mask did not round-trip its points");
-      // preset shapes persist as shape + 4 box corners and are rebuilt from them; the pen mask stays a free polygon
-      int nShape = 0; for (auto& m : ls.masks) if (m.shape >= 0) { ++nShape; std::vector<ImVec2> before = m.pts; MaskRebuild(m); if (before.size() != m.pts.size() || before[0].x != m.pts[0].x) return fail("a shape mask's pts must equal its box rebuilt"); }
+      // preset shapes persist as shape + rect and are rebuilt from them; the pen mask stays a free outline
+      int nShape = 0; for (auto& m : ls.masks) if (m.shape >= 0) { ++nShape; std::vector<ImVec2> before = m.pts; MaskRebuild(m); if (before.size() != m.pts.size() || before[0].x != m.pts[0].x) return fail("a shape mask's pts must equal its rect rebuilt"); }
       if (nShape != 5) return fail("the five preset shapes must keep their shape id across save/load");
-      // dragging one box corner reshapes the whole shape (all points move), a pen mask keeps every point independent
-      Mask& hm = ls.masks[0].shape == App::MS_HEART ? ls.masks[0] : ls.masks[ls.masks.size() - 6];
-      std::vector<ImVec2> b4 = hm.pts; hm.box[0].x -= 50; MaskRebuild(hm);
-      int moved = 0; for (size_t i = 0; i < hm.pts.size(); ++i) if (std::fabs(hm.pts[i].x - b4[i].x) > 0.01f) ++moved;
-      if (moved < (int)hm.pts.size() / 2) return fail("moving one box corner must reshape most of the shape's points");
+      auto bboxW = [](const Mask& m) { float lo = m.pts[0].x, hi = lo; for (auto& p : m.pts) { lo = std::min(lo, p.x); hi = std::max(hi, p.x); } return hi - lo; };
+      auto bboxH = [](const Mask& m) { float lo = m.pts[0].y, hi = lo; for (auto& p : m.pts) { lo = std::min(lo, p.y); hi = std::max(hi, p.y); } return hi - lo; };
+      Mask* hm = nullptr; for (auto& m : ls.masks) if (m.shape == App::MS_SQUARE) hm = &m;
+      if (!hm) return fail("fixture: expected the square mask");
+      float w0 = bboxW(*hm), h0 = bboxH(*hm);
+      hm->w *= 2.f; MaskRebuild(*hm);
+      if (std::fabs(bboxW(*hm) - 2.f * w0) > 0.5f || std::fabs(bboxH(*hm) - h0) > 0.5f) return fail("doubling a mask's width must double only its width");
+      hm->w /= 2.f; hm->rot = 90.f; MaskRebuild(*hm);
+      if (std::fabs(bboxW(*hm) - h0) > 0.5f || std::fabs(bboxH(*hm) - w0) > 0.5f) return fail("a 90 degree rotation must swap the mask's bounding width and height");
+      // Mask properties: the shape buttons re-shape the SELECTED mask and keep its rect
+      A.selSl = ls.id; A.selMk = hm->id; A.selKind = 2;
+      float mx0 = hm->x, mw0 = hm->w; A.setMaskShape(App::MS_TRIANGLE);
+      if (hm->shape != App::MS_TRIANGLE || hm->pts.size() != 3 || hm->x != mx0 || hm->w != mw0) return fail("setMaskShape must swap the outline but keep the rect");
+      // the pen can redraw the selected mask (replace) instead of adding one
+      size_t nmask = ls.masks.size();
+      A.startMaskPen(true); A.penPts = {{100, 100}, {400, 100}, {250, 300}}; A.finishMaskPen();
+      if (ls.masks.size() != nmask || hm->shape != -1 || hm->pts.size() != 3 || std::fabs(hm->w - 300.f) > 0.01f) return fail("pen replace must redraw the selected mask in place, fitting its rect to the drawing");
     }
     NewProject(); {   // files from before masks lived in canvas px stored output px: converted on load by the canvas/1920x1080 ratio
       Slice& s0 = A.screens[0].slices[0];
