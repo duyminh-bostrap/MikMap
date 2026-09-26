@@ -385,6 +385,46 @@ void MigrateAbsoluteMesh(Slice& s, const std::vector<std::vector<ImVec2>>& abs) 
   s.meshLocal = loc;
 }
 
+// The slice's source texture drawn through the warp: every patch of the grid is cut into n x n small quads; each corner goes through
+// the same map as everything else (grid -> perspective corners -> output) and samples the canvas at the matching point of the input
+// rect (its turn and mirrors undone the other way round). Patch borders are exact, so neighbouring patches meet without cracks.
+void DrawSliceTextured(const Slice& s, unsigned tex, float ox, float oy, float sx, float sy, float alpha) {
+  std::vector<float> us, vs; MeshLines(s, us, vs);
+  const auto lg = LocalGrid(s);
+  const Keystone k(s.q);
+  const int C = (int)us.size() - 1, R = (int)vs.size() - 1;
+  const int n = std::clamp(48 / std::max(C, R), 4, 16);   // small quads per patch side: ~48 across the slice
+  const float rw = (float)std::max(1, s.iw), rh = (float)std::max(1, s.ih), icx = s.ix + rw * 0.5f, icy = s.iy + rh * 0.5f;
+  const float r = s.irot * 3.14159265f / 180.f, co = std::cos(r), si = std::sin(r);
+  const bool fx = s.iflipX != ((s.oflip & 1) != 0), fy = s.iflipY != ((s.oflip & 2) != 0);
+  const float W = (float)std::max(1, A.canvasW), H = (float)std::max(1, A.canvasH);
+  auto texAt = [&](float u, float v) {   // mesh parameter -> canvas point in the input rect -> texture coordinate (the texture is bottom-up)
+    float uu = fx ? 1.f - u : u, vv = fy ? 1.f - v : v, dx = (uu - 0.5f) * rw, dy = (vv - 0.5f) * rh;
+    float cx = icx + dx * co - dy * si, cy = icy + dx * si + dy * co;
+    return ImVec2(cx / W, 1.f - cy / H);
+  };
+  const float a = std::clamp(alpha * g.alpha, 0.f, 1.f);
+  const int ai = (int)std::lround(a * 255.f);
+  const ImU32 tint = IM_COL32(ai, ai, ai, ai);   // premultiplied: scale colour and alpha alike
+  static std::vector<ImVec2> P, T;
+  SetBlendMode(12);
+  for (int ri = 0; ri < R; ++ri) for (int ci = 0; ci < C; ++ci) {
+    const ImVec2 p00 = lg[ri][ci], p10 = lg[ri][ci + 1], p11 = lg[ri + 1][ci + 1], p01 = lg[ri + 1][ci];
+    P.resize((size_t)(n + 1) * (n + 1)); T.resize(P.size());
+    for (int j = 0; j <= n; ++j) for (int i = 0; i <= n; ++i) {
+      float lu = (float)i / n, lv = (float)j / n;
+      ImVec2 o = k.Fwd(Bilerp(p00, p10, p11, p01, lu, lv));
+      P[(size_t)j * (n + 1) + i] = ImVec2(ox + o.x * sx, oy + o.y * sy);
+      T[(size_t)j * (n + 1) + i] = texAt(us[ci] + (us[ci + 1] - us[ci]) * lu, vs[ri] + (vs[ri + 1] - vs[ri]) * lv);
+    }
+    for (int j = 0; j < n; ++j) for (int i = 0; i < n; ++i) {
+      size_t a0 = (size_t)j * (n + 1) + i, a1 = a0 + 1, b0 = a0 + n + 1, b1 = b0 + 1;
+      g.dl->AddImageQuad((ImTextureID)(intptr_t)tex, P[a0], P[a1], P[b1], P[b0], T[a0], T[a1], T[b1], T[b0], tint);
+    }
+  }
+  SetBlendMode(0);
+}
+
 ImVec2 WarpMap::Map(float canvasX, float canvasY) const {
   if (!slice) return ImVec2(ox + canvasX * sx, oy + canvasY * sy);
   // canvas pixels → the slice's input rect in unit coordinates (undo the rect's rotation about its centre, then mirror)

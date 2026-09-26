@@ -501,7 +501,10 @@ void DrawComposite(ImRect canvas, float t, float alpha);   // all live clips, bo
 // A source whose layer/group no longer exists falls back to the composition (SliceSourceValid tells the UI to warn).
 void DrawSliceSource(const Slice& s, ImRect canvas, float t, float alpha);
 void UpdateTestPattern();   // repaint the Show TestCard texture at the comp's resolution (once per frame, main context)
-unsigned LogoTexture();   // GL texture of the MikMap mark (0 until the assets are loaded)
+unsigned LogoTexture();
+unsigned SliceSourceTexture(const Slice& s, float t);   // the slice's source drawn once this frame into a canvas-sized texture (0 = unavailable)
+void SliceSourcesRenderable(bool ok);                  // false while drawing in the projector window's context (no FBO there)
+void DrawSliceTextured(const Slice& s, unsigned tex, float ox, float oy, float sx, float sy, float alpha);   // that texture through the warp   // GL texture of the MikMap mark (0 until the assets are loaded)
 void DrawSliceOutput(const Screen& sc, const Slice& sl, float ox, float oy, float sx, float sy, float t);   // the slice as the projector shows it (output.cpp), also used by the Output stage's thumbnails
 std::vector<ImVec2> SliceOutline(const Slice& s);   // output-space outline of a slice as the audience sees it (quad, or the mesh border)
 // Everything drawn between MaskBegin and MaskEnd is limited to the slice's `outline`, then to the union of the `keep` mask polygons (when

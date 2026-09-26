@@ -120,6 +120,7 @@ static void ApplyBlendGL(int mode) {
     case 9: glBlendFunc(GL_DST_COLOR, GL_ONE); break;                          // gain: dst * (1 + colour)
     case 10: glBlendFunc(GL_ONE, GL_ONE); break;                               // add the colour
     case 11: if (p_glBlendEquation) p_glBlendEquation(GL_FUNC_REVERSE_SUBTRACT); glBlendFunc(GL_ONE, GL_ONE); break;   // subtract it
+    case 12: glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA); break;                // premultiplied alpha: a slice source texture (see SliceSourceTexture)
     default: glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); break;         // Normal
   }
 }
@@ -294,11 +295,10 @@ static void PaintTestPattern(float W, float H) {
   auto C = [](uint32_t hex, float a = 1.f) { return K(hex, a); };
   const int gs = 60 * std::max(1, (int)std::lround(H / 1080.f));   // grid pitch, canvas px
   dl->AddRectFilled(ImVec2(0, 0), ImVec2(W, H), C(0x050505));
-  // checkerboard of the five accent colours (left to right) and near-black
-  static const struct { uint32_t hex; float a; } acc[5] = {{0xFF7F50, .22f}, {0x118AB2, .26f}, {0x06D6A0, .20f}, {0xFFD166, .20f}, {0xEF4444, .22f}};
+  // checkerboard in two tones only: MikMap orange and near-black grey
   const int cols = (int)std::ceil(W / gs);
   for (int r = 0; r * gs < H; ++r) for (int c = 0; c < cols; ++c) {
-    ImU32 k = (c + r) % 2 == 0 ? C(acc[c * 5 / cols].hex, acc[c * 5 / cols].a) : C(0x121212);
+    ImU32 k = (c + r) % 2 == 0 ? C(0xFF7F50, .22f) : C(0x121212);
     dl->AddRectFilled(ImVec2((float)c * gs, (float)r * gs), ImVec2((float)(c + 1) * gs, (float)(r + 1) * gs), k);
   }
   for (int p = gs, i = 1; p < W; p += gs, ++i) dl->AddLine(ImVec2(p + .5f, 0), ImVec2(p + .5f, H), C(0xffffff, i % 4 == 0 ? .18f : .08f), 1.f);
@@ -365,6 +365,72 @@ static void PaintTestPattern(float W, float H) {
 }
 
 // Once per frame (main context, before the UI is built) while Show TestCard is on: repaint the pattern texture at the comp's resolution.
+// ── slice sources as textures (the warp samples them) ──
+// Each source (the composition, one layer, one group) is drawn ONCE per frame into a texture of the composition's size, and every
+// slice then samples it through a fine triangle mesh that follows the warp (DrawSliceTextured, mapping.cpp). Drawing the vector art
+// straight through the warp only moved its vertices: a long line stayed straight on a curved mesh and a circle stayed round under
+// perspective. The texture holds premultiplied colour (the ImGui backend blends alpha with ONE, ONE_MINUS_SRC_ALPHA), so it is drawn
+// with blend mode 12. Framebuffers are per GL context: textures are only rendered in the main window's context — RenderOutput asks for
+// them before it switches to the projector's context, and inside that context only cached ones are handed out.
+#ifndef GL_CLAMP_TO_BORDER
+#define GL_CLAMP_TO_BORDER 0x812D
+#endif
+struct SrcTex { unsigned tex = 0; int w = 0, h = 0, frame = -1; };
+static std::map<std::string, SrcTex> gSrcTex;
+static bool gSrcRenderOk = true;
+void SliceSourcesRenderable(bool ok) { gSrcRenderOk = ok; }
+unsigned SliceSourceTexture(const Slice& s, float t) {
+  if (!p_glGenFramebuffers || !p_glBindFramebuffer || !p_glFramebufferTexture2D) return 0;
+  const int kind = SliceSourceValid(s) ? s.srcKind : (int)Slice::SrcComp;
+  const std::string key = kind == Slice::SrcComp ? std::string("C") : (kind == Slice::SrcLayer ? "L:" : "G:") + s.srcRef;
+  const int W = std::clamp(A.canvasW, 16, 8192), H = std::clamp(A.canvasH, 16, 8192), frame = ImGui::GetFrameCount();
+  SrcTex& st = gSrcTex[key];
+  if (st.tex && st.w == W && st.h == H && st.frame == frame) return st.tex;
+  if (!gSrcRenderOk) return 0;   // not in this context: the caller falls back to drawing the source directly
+  if (!st.tex || st.w != W || st.h != H) {
+    if (!st.tex) glGenTextures(1, &st.tex);
+    glBindTexture(GL_TEXTURE_2D, st.tex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR); glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER); glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);   // outside the canvas = transparent
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, W, H, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    st.w = W; st.h = H;
+  }
+  st.frame = frame;
+  static GLuint sFbo = 0;
+  if (!sFbo) p_glGenFramebuffers(1, &sFbo);
+  GLint prevFbo = 0, prevViewport[4];
+  glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevFbo); glGetIntegerv(GL_VIEWPORT, prevViewport);
+  p_glBindFramebuffer(GL_FRAMEBUFFER, sFbo);
+  p_glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, st.tex, 0);
+  if (!p_glCheckFramebufferStatus || p_glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE) {
+    glViewport(0, 0, W, H);
+    glClearColor(0, 0, 0, 0); glClear(GL_COLOR_BUFFER_BIT);
+    const bool stencilWas = gStencilOn; gStencilOn = false;   // a mask being built in the caller's list is not this list's business
+    ImDrawList dl(ImGui::GetDrawListSharedData());
+    dl._ResetForNewFrame();
+    dl.PushTexture(ImGui::GetIO().Fonts->TexRef);
+    dl.PushClipRect(ImVec2(0, 0), ImVec2((float)W, (float)H), false);
+    ImDrawList* prevDl = g.dl; const WarpMap* prevWarp = g.warp; float prevAlpha = g.alpha;
+    g.dl = &dl; g.warp = nullptr; g.alpha = 1.f;
+    DrawSliceSource(s, ImRect(0, 0, (float)W, (float)H), t, 1.f);
+    g.dl = prevDl; g.warp = prevWarp; g.alpha = prevAlpha;
+    gStencilOn = stencilWas;
+    dl.PopClipRect(); dl.PopTexture();
+    if (dl.VtxBuffer.Size > 0) {
+      ImDrawData dd; dd.Clear();
+      dd.DisplayPos = ImVec2(0, 0); dd.DisplaySize = ImVec2((float)W, (float)H); dd.FramebufferScale = ImVec2(1, 1);
+      dd.AddDrawList(&dl); dd.Valid = true;
+      static ImVector<ImTextureData*> fontTexList;   // see RenderClipThumbnail
+      fontTexList.resize(0); fontTexList.push_back(ImGui::GetIO().Fonts->TexData); dd.Textures = &fontTexList;
+      ImGui_ImplOpenGL3_RenderDrawData(&dd);
+    }
+  }
+  p_glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)prevFbo);
+  glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
+  glFlush();   // the projector window's context samples this texture too
+  return st.tex;
+}
+
 void UpdateTestPattern() {
   if (!A.testCard || !p_glGenFramebuffers || !p_glBindFramebuffer || !p_glFramebufferTexture2D) return;
   const int W = std::clamp(A.canvasW, 16, 8192), H = std::clamp(A.canvasH, 16, 8192);

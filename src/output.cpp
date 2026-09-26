@@ -133,6 +133,7 @@ void DrawSliceOutput(const Screen& sc, const Slice& sl, float ox, float oy, floa
   ImRect bb(ox + omn.x * sx, oy + omn.y * sy, ox + omx.x * sx, oy + omx.y * sy);
   ImDrawList* dl = g.dl;
   const WarpMap* prevWarp = g.warp;
+  const unsigned srcTex = SliceSourceTexture(sl, t);   // before any mask is armed: the source is drawn into its own texture
   dl->PushClipRect(bb.Min, bb.Max, true);
   g.warp = &wm;
   {
@@ -151,7 +152,9 @@ void DrawSliceOutput(const Screen& sc, const Slice& sl, float ox, float oy, floa
     for (auto& p : outline) p = ImVec2(ox + p.x * sx, oy + p.y * sy);
     MaskBegin(outline, keep, holes);
     if (sl.blackBg) { std::vector<ImVec2> o = SliceOutline(sl); for (auto& p : o) p = ImVec2(ox + p.x * sx, oy + p.y * sy); g.dl->AddConcavePolyFilled(o.data(), (int)o.size(), IM_COL32(0, 0, 0, 255)); }   // Black BG: opaque black behind the picture
-    DrawSliceSource(sl, bb, t, std::clamp(sc.opacity / 100.f, 0.f, 1.f));   // F22: composition, or just the layer/group this slice is routed to; Screen > Opacity scales it
+    const float op = std::clamp(sc.opacity / 100.f, 0.f, 1.f);   // Screen > Opacity scales the slice
+    if (srcTex) DrawSliceTextured(sl, srcTex, ox, oy, sx, sy, op);   // F22: composition, or the layer / group routed here, sampled through the warp
+    else { g.warp = &wm; DrawSliceSource(sl, bb, t, op); }          // no texture (no FBO support): draw the vector art through the warp map
     // Screen > Brightness / Contrast / Red / Green / Blue over this slice's outline (inside the mask, so cut-out areas stay dark)
     if (sl.colorActive()) {   // the slice's own colour correction, then the Screen's on top
       std::vector<ImVec2> o = SliceOutline(sl);
@@ -177,6 +180,9 @@ void RenderOutput() {
   int fw = 0, fh = 0;
   glfwGetFramebufferSize(gOut, &fw, &fh);
   if (fw <= 0 || fh <= 0) return;
+  // the slice sources are drawn into textures in the MAIN context (framebuffers are per context); the projector then only samples them
+  if (Screen* ps = A.curScreen()) for (auto& sl : ps->slices) if (sl.visible) SliceSourceTexture(sl, (float)g.time * 1.2f);
+  SliceSourcesRenderable(false);
   glfwMakeContextCurrent(gOut);
   glViewport(0, 0, fw, fh);
   glClearColor(0, 0, 0, 1);
@@ -244,4 +250,5 @@ void RenderOutput() {
   }
   glfwSwapBuffers(gOut);
   if (gMain) glfwMakeContextCurrent(gMain);
+  SliceSourcesRenderable(true);
 }
