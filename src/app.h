@@ -84,7 +84,7 @@ struct Mask {
   std::string id, name;
   bool inverted = true;
   int feather = 4;
-  ImVec2 pts[4];
+  std::vector<ImVec2> pts = std::vector<ImVec2>(4);   // polygon, 3+ points (square 4, triangle 3, hexagon 6, circle/heart many, pen = any)
 };
 struct Slice {
   std::string id, name;
@@ -105,6 +105,7 @@ struct Slice {
   // transform. ix..ih stay the UNROTATED rect, so rotating never moves the centre or changes the numeric fields.
   float irot = 0;
   bool iflipX = false, iflipY = false;
+  bool softEdge = false;   // Slice properties > Soft Edge. A saved switch only: the projector output does not feather edges yet
   ImVec2 q[4];   // tl, tr, br, bl — keystone corners (perspective, like Resolume / engine WarpCornerPin)
   std::vector<Mask> masks;
 };
@@ -335,7 +336,13 @@ struct App {
   void stepFireColumn(int dir);   // Timeline ⏮/⏭: navigate AND play, unlike stepSel()
   void moveClip(int fl, int fc, int tl, int tc);
   // mapping actions
-  void addScreen(); void addSlice(); void addMask(); void deleteMask(); void deleteSlice();
+  void addScreen(); void addSlice(); void deleteMask(); void deleteSlice();
+  // Input Mask shapes (Slice Properties): 0 heart, 1 square, 2 circle, 3 triangle, 4 hexagon. Created around the slice's output quad.
+  enum MaskShape { MS_HEART, MS_SQUARE, MS_CIRCLE, MS_TRIANGLE, MS_HEXAGON };
+  void addMask(int shape = MS_SQUARE);
+  // Pen: click points on the Output stage, click the first point (or Enter / double-click) to close, Esc cancels. Runtime only.
+  bool maskPen = false; std::vector<ImVec2> penPts;
+  void startMaskPen(); void finishMaskPen(); void cancelMaskPen();
   // Slice clipboard + stacking order (Advanced Mapping > right-click the input rect). The clipboard is runtime-only.
   Slice sliceClip; bool hasSliceClip = false;
   void duplicateSlice(); void copySlice(); void cutSlice(); void pasteSlice();

@@ -123,14 +123,14 @@ JsonValue SliceJ(const Slice& s) {
   o.set("meshLocal", mp);
   o.set("srcKind", s.srcKind); o.set("srcRef", s.srcRef);
   o.set("ix", s.ix); o.set("iy", s.iy); o.set("iw", s.iw); o.set("ih", s.ih);
-  o.set("irot", (double)s.irot); o.set("iflipX", s.iflipX); o.set("iflipY", s.iflipY);
+  o.set("irot", (double)s.irot); o.set("iflipX", s.iflipX); o.set("iflipY", s.iflipY); o.set("softEdge", s.softEdge);
   JsonValue q = JsonValue::array(); for (int i = 0; i < 4; ++i) q.push(V2(s.q[i]));
   o.set("q", q);
   JsonValue ms = JsonValue::array();
   for (auto& m : s.masks) {
     JsonValue mo = JsonValue::object();
     mo.set("id", m.id); mo.set("name", m.name); mo.set("inverted", m.inverted); mo.set("feather", m.feather);
-    JsonValue pts = JsonValue::array(); for (int i = 0; i < 4; ++i) pts.push(V2(m.pts[i]));
+    JsonValue pts = JsonValue::array(); for (auto& p : m.pts) pts.push(V2(p));
     mo.set("pts", pts);
     ms.push(mo);
   }
@@ -153,12 +153,14 @@ Slice ReadSlice(const JsonValue& o) {
   // layer/group (e.g. an undo) restores the routing
   s.srcKind = std::clamp(o["srcKind"].asInt(0), 0, 2); s.srcRef = o["srcRef"].asString();
   s.ix = o["ix"].asInt(0); s.iy = o["iy"].asInt(0); s.iw = std::max(20, o["iw"].asInt(1920)); s.ih = std::max(20, o["ih"].asInt(1080));
-  s.irot = std::clamp((float)o["irot"].asNumber(0.0), -180.f, 180.f); s.iflipX = o["iflipX"].asBool(false); s.iflipY = o["iflipY"].asBool(false);
+  s.irot = std::clamp((float)o["irot"].asNumber(0.0), -180.f, 180.f); s.iflipX = o["iflipX"].asBool(false); s.iflipY = o["iflipY"].asBool(false); s.softEdge = o["softEdge"].asBool(false);
   ImVec2 def[4] = {{(float)s.ix, (float)s.iy}, {(float)(s.ix + s.iw), (float)s.iy}, {(float)(s.ix + s.iw), (float)(s.iy + s.ih)}, {(float)s.ix, (float)(s.iy + s.ih)}};
   for (int i = 0; i < 4; ++i) s.q[i] = o["q"].isArray() && o["q"].size() > (size_t)i ? ReadV2(o["q"].at(i), def[i]) : def[i];
   if (o["masks"].isArray()) for (auto& mo : o["masks"].arrayItems()) {
     Mask m; m.id = mo["id"].asString(); m.name = mo["name"].asString(); m.inverted = mo["inverted"].asBool(true); m.feather = mo["feather"].asInt(4);
-    for (int i = 0; i < 4; ++i) m.pts[i] = mo["pts"].isArray() && mo["pts"].size() > (size_t)i ? ReadV2(mo["pts"].at(i)) : ImVec2(0, 0);
+    m.pts.clear();   // any point count >= 3 (older files always have 4); anything shorter falls back to a default square
+    if (mo["pts"].isArray()) for (auto& pp : mo["pts"].arrayItems()) { if (m.pts.size() >= 256) break; m.pts.push_back(ReadV2(pp)); }
+    if (m.pts.size() < 3) m.pts = {{620, 380}, {1100, 380}, {1020, 720}, {700, 720}};
     s.masks.push_back(m);
   }
   // files/presets from before meshLocal: absolute output-pixel mesh, converted once here (needs q, so after reading it)

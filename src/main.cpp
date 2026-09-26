@@ -601,7 +601,7 @@ void DrawOverlays(ImVec2 disp) {
     A.rename.fresh = false;
     g.blocked = true;
   }
-  if (ImGui::IsKeyPressed(ImGuiKey_Escape)) { A.pop.open = A.ctx.open = A.blendDD.open = A.projectMenu = A.rename.open = A.openDialog = A.helpOpen = A.deckMenu.open = false; }
+  if (ImGui::IsKeyPressed(ImGuiKey_Escape)) { A.cancelMaskPen(); A.pop.open = A.ctx.open = A.blendDD.open = A.projectMenu = A.rename.open = A.openDialog = A.helpOpen = A.deckMenu.open = false; }
   g.dl = rootDl;
 }
 
@@ -906,6 +906,29 @@ int main(int argc, char** argv) {
       // the clipboard survives being pasted twice, each time with fresh ids
       A.pasteSlice(); bool dup2 = false; for (auto& x : A.screens[0].slices) for (auto& y : A.screens[0].slices) if (&x != &y && x.id == y.id) dup2 = true;
       if (dup2) return fail("pasting twice produced a repeated slice id");
+    }
+    NewProject(); {   // Input Mask shapes are N-point polygons; the pen builds one point by point; soft edge is saved per slice
+      Screen& sc0 = A.screens[0]; A.selSc = sc0.id; A.selSl = sc0.slices[0].id;
+      size_t m0 = A.curSlice()->masks.size();
+      const int want[5][2] = {{App::MS_HEART, 36}, {App::MS_SQUARE, 4}, {App::MS_CIRCLE, 32}, {App::MS_TRIANGLE, 3}, {App::MS_HEXAGON, 6}};
+      for (auto& w : want) {
+        A.addMask(w[0]);
+        Mask* mk = A.curMask();
+        if (!mk || (int)mk->pts.size() != w[1]) return fail("mask shape has the wrong point count");
+        for (auto& p : mk->pts) if (p.x < 0 || p.x > 1920 || p.y < 0 || p.y > 1080) return fail("mask shape must stay inside the output box");
+      }
+      if (A.curSlice()->masks.size() != m0 + 5) return fail("each shape button must add exactly one mask");
+      A.startMaskPen(); A.penPts = {{100, 100}, {300, 120}}; A.finishMaskPen();
+      if (A.maskPen || A.curSlice()->masks.size() != m0 + 5) return fail("a pen shape with < 3 points must be dropped, not saved");
+      A.startMaskPen(); A.penPts = {{100, 100}, {300, 120}, {200, 300}, {90, 250}, {60, 180}}; A.finishMaskPen();
+      Mask* pm = A.curMask(); if (!pm || pm->pts.size() != 5 || A.maskPen) return fail("pen must create a mask with exactly the clicked points");
+      A.curSlice()->softEdge = true;
+      std::string penId = pm->id; size_t nm = A.curSlice()->masks.size();
+      if (!SaveProject(roundtrip, err) || !LoadProject(roundtrip, err)) return fail(err.c_str());
+      Slice& ls = A.screens[0].slices[0];
+      if (ls.masks.size() != nm || !ls.softEdge) return fail("masks / soft edge did not round-trip");
+      bool found = false; for (auto& m : ls.masks) if (m.id == penId) { found = m.pts.size() == 5 && m.pts[3].x == 90.f; }
+      if (!found) return fail("a 5-point mask did not round-trip its points");
     }
     // Timeline: tlLayout lays clips back-to-back by real duration; tlSync flips exactly the clip under the playhead live.
     NewProject();

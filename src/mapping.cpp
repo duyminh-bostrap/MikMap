@@ -240,12 +240,47 @@ void App::addSlice() { pushHist();
   selSl = sl.id; selMk.clear(); selKind = -1;
   sc->slices.push_back(sl);
 }
-void App::addMask() { pushHist();
+// Points of an Input Mask shape centred on c with half-extents hw/hh, in output px.
+static std::vector<ImVec2> MaskShapePts(int shape, ImVec2 c, float hw, float hh) {
+  std::vector<ImVec2> p;
+  const float kPi = 3.14159265f;
+  switch (shape) {
+    case App::MS_TRIANGLE: p = {{c.x, c.y - hh}, {c.x + hw, c.y + hh}, {c.x - hw, c.y + hh}}; break;
+    case App::MS_HEXAGON: for (int i = 0; i < 6; ++i) { float a = i * kPi / 3.f; p.push_back({c.x + hw * std::cos(a), c.y + hh * std::sin(a)}); } break;
+    case App::MS_CIRCLE: for (int i = 0; i < 32; ++i) { float a = i * 2.f * kPi / 32.f; p.push_back({c.x + hw * std::cos(a), c.y + hh * std::sin(a)}); } break;
+    case App::MS_HEART:   // the classic parametric heart, x in [-16,16], y in [-17,12] -> fitted to the box
+      for (int i = 0; i < 36; ++i) {
+        float t = i * 2.f * kPi / 36.f, x = 16.f * std::pow(std::sin(t), 3.f);
+        float y = 13.f * std::cos(t) - 5.f * std::cos(2 * t) - 2.f * std::cos(3 * t) - std::cos(4 * t);
+        p.push_back({c.x + x / 16.f * hw, c.y - (y + 2.5f) / 14.5f * hh});
+      }
+      break;
+    default: p = {{c.x - hw, c.y - hh}, {c.x + hw, c.y - hh}, {c.x + hw, c.y + hh}, {c.x - hw, c.y + hh}}; break;
+  }
+  return p;
+}
+void App::addMask(int shape) { pushHist();
   Slice* sl = curSlice(); if (!sl) return;
+  ImVec2 mn, mx; SliceOutputBounds(*sl, mn, mx);   // a mask starts as a half-size shape in the middle of the slice's output
   Mask m; m.id = uid("mask"); m.name = "Mask " + std::to_string(sl->masks.size() + 1); m.inverted = true; m.feather = 4;
-  m.pts[0] = {620, 380}; m.pts[1] = {1100, 380}; m.pts[2] = {1020, 720}; m.pts[3] = {700, 720};
-  selSl = sl->id; selMk = m.id;
+  m.pts = MaskShapePts(shape, ImVec2((mn.x + mx.x) * 0.5f, (mn.y + mx.y) * 0.5f), std::max(40.f, (mx.x - mn.x) * 0.25f), std::max(40.f, (mx.y - mn.y) * 0.25f));
+  for (auto& q : m.pts) { q.x = std::clamp(q.x, 0.f, 1920.f); q.y = std::clamp(q.y, 0.f, 1080.f); }   // mask points stay inside the output box, like dragging them
+  selSl = sl->id; selMk = m.id; selKind = 2;
   sl->masks.push_back(m);
+  mpage = 1;   // masks are drawn and edited on the Output stage — show it
+}
+void App::startMaskPen() { if (!curSlice()) return; maskPen = true; penPts.clear(); mpage = 1; selMk.clear(); }
+void App::cancelMaskPen() { maskPen = false; penPts.clear(); }
+void App::finishMaskPen() {
+  Slice* sl = curSlice();
+  if (sl && penPts.size() >= 3) {
+    pushHist();
+    Mask m; m.id = uid("mask"); m.name = "Mask " + std::to_string(sl->masks.size() + 1); m.inverted = true; m.feather = 4;
+    m.pts = penPts;
+    selSl = sl->id; selMk = m.id; selKind = 2;
+    sl->masks.push_back(m);
+  }
+  cancelMaskPen();
 }
 void App::deleteMask() { pushHist();
   Slice* sl = curSlice(); Mask* mk = curMask(); if (!sl || !mk) return;
@@ -539,9 +574,9 @@ static void TreePanel(ImRect r) {
   ImRect fr(r.Min.x, r.Max.y - footH, r.Max.x - 1, r.Max.y);
   Fill(fr, K(pal::g14));
   HLine(fr.Min.x, fr.Max.x, fr.Min.y, K(pal::g2a));
-  float bw = (fr.GetWidth() - 12 - 12) / 3.f;
-  struct Ac { const char* l; const char* ic; uint32_t fg; bool primary; } acts[3] = {{"Screen", "monitor", pal::coral, true}, {"Slice", "plus", pal::white, false}, {"Mask", "scissors", pal::yellow, false}};
-  for (int i = 0; i < 3; ++i) {
+  float bw = (fr.GetWidth() - 12 - 6) / 2.f;   // Mask moved to Slice Properties > Input Mask
+  struct Ac { const char* l; const char* ic; uint32_t fg; bool primary; } acts[2] = {{"Screen", "monitor", pal::coral, true}, {"Slice", "plus", pal::white, false}};
+  for (int i = 0; i < 2; ++i) {
     ImRect br(fr.Min.x + 6 + i * (bw + 6), fr.Min.y + 9, fr.Min.x + 6 + i * (bw + 6) + bw, fr.Min.y + 9 + 28);
     Hit h = HitR(br);
     Box(br, acts[i].primary ? K(pal::coral, 0.15f) : h.hover ? K(pal::ctrlHover) : K(pal::g1c), acts[i].primary ? K(pal::coral, 0.4f) : K(pal::g22), 3);
@@ -549,7 +584,7 @@ static void TreePanel(ImRect r) {
     Icon(acts[i].ic, ImVec2(cx - tw * 0.5f - 8, cy), 11, K(acts[i].fg));
     Text(cx - tw * 0.5f + 4, cy, UI_B, 10, K(acts[i].fg), acts[i].l);
     if (h.hover) CursorHand();
-    if (h.click) { if (i == 0) A.addScreen(); else if (i == 1) A.addSlice(); else A.addMask(); }
+    if (h.click) { if (i == 0) A.addScreen(); else A.addSlice(); }
   }
 }
 
@@ -613,14 +648,13 @@ static void RailPopover(ImRect rail) {
   }
   ImRect fr(r.Min.x + 1, r.Max.y - 43, r.Max.x - 1, r.Max.y - 1);
   Fill(fr, K(pal::g14)); HLine(fr.Min.x, fr.Max.x, fr.Min.y, K(pal::g2a));
-  for (int i = 0; i < 2; ++i) {
-    float bw = (fr.GetWidth() - 18) / 2.f;
-    ImRect br(fr.Min.x + 6 + i * (bw + 6), fr.Min.y + 9, fr.Min.x + 6 + i * (bw + 6) + bw, fr.Min.y + 9 + 24);
+  {
+    ImRect br(fr.Min.x + 6, fr.Min.y + 9, fr.Max.x - 6, fr.Min.y + 9 + 24);
     Hit h = HitR(br);
     Box(br, h.hover ? K(pal::ctrlHover) : K(pal::g1c), K(pal::g22), 3);
-    TextC((br.Min.x + br.Max.x) * 0.5f, (br.Min.y + br.Max.y) * 0.5f, UI_B, 10, K(i ? pal::yellow : pal::white), i ? "Mask" : "Slice");
+    TextC((br.Min.x + br.Max.x) * 0.5f, (br.Min.y + br.Max.y) * 0.5f, UI_B, 10, K(pal::white), "Slice");
     if (h.hover) CursorHand();
-    if (h.click) { if (i) A.addMask(); else A.addSlice(); }
+    if (h.click) A.addSlice();
   }
 }
 
@@ -960,6 +994,7 @@ static void Stage(ImRect r) {
   bool clickPending = ImGui::IsMouseClicked(0) && overStage && !dragKind;
 
   if (A.mpage == 0) {
+    A.cancelMaskPen();   // the pen only draws on the Output stage
     // The other slices of this screen show only their input outline (no handles), so it is clear which parts of the source
     // are already taken while another slice is being edited. Drawn first so the selected slice's frame stays on top.
     bool frameTookClick = false;   // the selected slice's own frame (handles / rings / body) has first claim on a click
@@ -1032,6 +1067,16 @@ static void Stage(ImRect r) {
     const float kCornerR = 8.f, kMaskR = 7.f, kMeshR = 5.5f, kGrabPad = 4.f;
     auto nearPt = [&](ImVec2 outPt, float rad) { ImVec2 p = toPx(outPt); return std::hypot(m.x - p.x, m.y - p.y) <= rad; };
     auto grab = [&](int kind, int idx, ImVec2 at) { A.pushHist(); dragKind = kind; dragIdx = idx; dragOff = Vsub(at, mo); consumed = true; };
+    if (A.maskPen) {   // Input Mask > pen: the stage belongs to the pen until the shape is closed or cancelled
+      consumed = true;
+      if (clickPending) {
+        bool closes = A.penPts.size() >= 3 && std::hypot(m.x - toPx(A.penPts[0]).x, m.y - toPx(A.penPts[0]).y) <= 10.f;
+        if (closes || ImGui::IsMouseDoubleClicked(0)) A.finishMaskPen();
+        else A.penPts.push_back(inCanvas(mo));
+      }
+      if (A.maskPen && ImGui::IsKeyPressed(ImGuiKey_Enter, false)) A.finishMaskPen();
+      if (inArea) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+    }
     // zoom-to-zone chip next to the selected slice label
     ImRect zoomBtn; bool haveZoom = false; ImVec2 labelAt; float labelW = 0;
     if (sl && sl->visible) {
@@ -1046,7 +1091,7 @@ static void Stage(ImRect r) {
     if (sl && sl->visible && clickPending && !consumed)
       for (int i = 0; i < 4 && !consumed; ++i) if (nearPt(sl->q[i], kCornerR + kGrabPad)) grab(1, i, sl->q[i]);
     if (mk && clickPending && !consumed)
-      for (int i = 0; i < 4 && !consumed; ++i) if (nearPt(mk->pts[i], kMaskR + kGrabPad)) grab(3, i, mk->pts[i]);
+      for (int i = 0; i < (int)mk->pts.size() && !consumed; ++i) if (nearPt(mk->pts[i], kMaskR + kGrabPad)) grab(3, i, mk->pts[i]);
     if (clickPending && !consumed && sl && sl->visible && sl->warp != 0) {
       auto gr = MeshGrid(*sl);
       int R = (int)gr.size(), C = (int)gr[0].size();
@@ -1056,8 +1101,8 @@ static void Stage(ImRect r) {
       }
     }
     if (clickPending && !consumed) {
-      ImVec2 pp[4];
-      for (auto& S : sc->slices) if (S.visible) for (auto& M : S.masks) { polyPx(M.pts, 4, pp); if (!consumed && PointInPoly(m, pp, 4)) { A.selSc = sc->id; A.selSl = S.id; A.selMk = M.id; A.selKind = 2; consumed = true; } }
+      std::vector<ImVec2> pp;
+      for (auto& S : sc->slices) if (S.visible) for (auto& M : S.masks) { pp.resize(M.pts.size()); polyPx(M.pts.data(), (int)M.pts.size(), pp.data()); if (!consumed && PointInPoly(m, pp.data(), (int)pp.size())) { A.selSc = sc->id; A.selSl = S.id; A.selMk = M.id; A.selKind = 2; consumed = true; } }
       for (auto it = sc->slices.rbegin(); it != sc->slices.rend() && !consumed; ++it) if (it->visible) {
         auto ol = outlinePx(*it);
         if (!PointInPoly(m, ol.data(), (int)ol.size())) continue;
@@ -1121,10 +1166,20 @@ static void Stage(ImRect r) {
       if (!S.visible) continue;
       for (auto& M : S.masks) {
         bool on = mk && mk->id == M.id;
-        ImVec2 pp[4]; polyPx(M.pts, 4, pp);
-        FillPoly(pp, 4, on ? K(pal::yellow, 0.30f) : K(pal::red, 0.20f));
-        DashedPoly(pp, 4, on ? K(pal::yellow) : K(pal::red), 2.f, 9, 7);
+        std::vector<ImVec2> pp(M.pts.size()); polyPx(M.pts.data(), (int)M.pts.size(), pp.data());
+        g.dl->AddConcavePolyFilled(pp.data(), (int)pp.size(), Ca(on ? K(pal::yellow, 0.30f) : K(pal::red, 0.20f)));   // heart / pen shapes are concave
+        DashedPoly(pp.data(), (int)pp.size(), on ? K(pal::yellow) : K(pal::red), 2.f, 9, 7);
       }
+    }
+    if (A.maskPen) {   // the shape being drawn, plus a rubber-band segment to the cursor
+      std::vector<ImVec2> pp(A.penPts.size()); polyPx(A.penPts.data(), (int)pp.size(), pp.data());
+      for (size_t i = 0; i + 1 < pp.size(); ++i) g.dl->AddLine(pp[i], pp[i + 1], Ca(K(pal::yellow)), 2.f);
+      if (!pp.empty()) g.dl->AddLine(pp.back(), m, Ca(K(pal::yellow, 0.6f)), 1.5f);
+      for (size_t i = 0; i < pp.size(); ++i) {
+        bool first = i == 0 && pp.size() >= 3 && std::hypot(m.x - pp[0].x, m.y - pp[0].y) <= 10.f;
+        g.dl->AddCircleFilled(pp[i], first ? 8.f : 5.f, Ca(K(first ? pal::white : pal::yellow)), 20);
+      }
+      TextC((area.Min.x + area.Max.x) * 0.5f, area.Min.y + 16, MONO_R, 10, K(pal::yellow), "PEN \xC2\xB7 click points \xC2\xB7 click the first point / Enter / double-click to close \xC2\xB7 Esc cancels");
     }
     if (sl && sl->visible && haveZoom) {
       TextEll(labelAt.x, labelAt.y, labelW, MONO_B, 11, K(pal::coral), sl->name.c_str());
@@ -1149,7 +1204,7 @@ static void Stage(ImRect r) {
         Text(p.x - TextW(MONO_B, 10, lb) * 0.5f, p.y + 14 * s + 18, MONO_B, 10, K(pal::mint), lb);
       }
     }
-    if (mk) for (int i = 0; i < 4; ++i) {
+    if (mk) for (int i = 0; i < (int)mk->pts.size(); ++i) {
       ImVec2 p = toPx(mk->pts[i]);
       bool hot = (dragKind == 3 && dragIdx == i) || (!dragKind && overStage && nearPt(mk->pts[i], kMaskR + kGrabPad));
       g.dl->AddCircleFilled(p, kMaskR + (hot ? 1.5f : 0.f), Ca(K(pal::yellow)), 24); g.dl->AddCircle(p, kMaskR + (hot ? 1.5f : 0.f), Ca(K(pal::white)), 24, 2.f);
@@ -1193,6 +1248,48 @@ static void Stage(ImRect r) {
 // ───────────────────────── properties ─────────────────────────
 static void Label(float x, float y, const char* t, uint32_t hex = pal::t88) {
   Text(x, y + 4.5f, MONO_R, 9, K(hex), Upper(t).c_str(), 0.09f);
+}
+
+// Resolume-style number row: LABEL | value | - | +. Shift steps by 10. Returns true when the value changed (already clamped).
+static bool StepRow(float x, float y, float w, float labelW, const char* label, const char* id, float& v, float lo, float hi,
+                    float step, int decimals, float valW = 84.f, const char* unit = nullptr) {
+  (void)w;
+  const float H = 24.f, bh = 22.f;
+  Text(x, y + H * 0.5f, UI_S, 10, K(pal::t88), label);
+  float fx = x + labelW;
+  bool ch = FloatField(id, Rc(fx, y, valW, H), v, decimals);
+  float ux = fx + valW + 4;
+  if (unit) { Text(ux, y + H * 0.5f, MONO_R, 10, K(pal::t66), unit); ux += TextW(MONO_R, 10, unit) + 6; }
+  const bool big = ImGui::GetIO().KeyShift;
+  for (int i = 0; i < 2; ++i) {
+    ImRect b(ux + i * (bh + 4), y + 1, ux + i * (bh + 4) + bh, y + H - 1);
+    Hit h = HitR(b);
+    Box(b, h.hover ? K(pal::ctrlHover) : K(pal::g1c), h.hover ? K(pal::g33) : K(pal::g22), 3);
+    TextC((b.Min.x + b.Max.x) * 0.5f, (b.Min.y + b.Max.y) * 0.5f, MONO_B, 11, K(h.hover ? pal::white : pal::tcc), i ? "+" : "\xE2\x88\x92");
+    if (h.hover) CursorHand();
+    if (h.click) { v += (i ? step : -step) * (big ? 10.f : 1.f); ch = true; }
+  }
+  if (ch) v = std::clamp(v, lo, hi);
+  return ch;
+}
+// A thin bar with a marker at the value (Resolume's colour sliders); dragging sets the value, rounded to a whole number.
+static bool MarkerSlider(uint32_t id, ImRect tr, float& v, float mn, float mx, uint32_t hex) {
+  static uint32_t act = 0;
+  Box(tr, K(pal::g050), K(pal::g22), 2);
+  if (mn < 0.f) VLine(std::floor((tr.Min.x + tr.Max.x) * 0.5f), tr.Min.y + 2, tr.Max.y - 2, K(pal::g33));
+  Hit h = HitR(ImRect(tr.Min.x - 3, tr.Min.y - 4, tr.Max.x + 3, tr.Max.y + 4));
+  if (h.hover) CursorHand();
+  if (h.click) act = id;
+  bool ch = false;
+  if (act == id) {
+    if (ImGui::IsMouseDown(0)) {
+      float nv = std::round(mn + std::clamp((ImGui::GetIO().MousePos.x - tr.Min.x) / std::max(1.f, tr.GetWidth()), 0.f, 1.f) * (mx - mn));
+      if (nv != v) { v = nv; ch = true; }
+    } else act = 0;
+  }
+  float px = tr.Min.x + std::clamp((v - mn) / (mx - mn), 0.f, 1.f) * tr.GetWidth();
+  Fill(ImRect(std::clamp(px - 1.5f, tr.Min.x, tr.Max.x - 3.f), tr.Min.y + 1, std::clamp(px + 1.5f, tr.Min.x + 3.f, tr.Max.x), tr.Max.y - 1), K(hex));
+  return ch;
 }
 
 static void PropsPanel(ImRect r) {
@@ -1314,28 +1411,60 @@ static void PropsPanel(ImRect r) {
       }
       y += 4;
     } else {
-      HLine(ox + 8, ox + 8 + w, oy + y, K(pal::g2a)); y += 1 + 6;
-      Label(x, oy + y, "Input rectangle (px)"); y += 9 + 4;
-      const char* fl[4] = {"X", "Y", "Width", "Height"};
-      int* vals[4] = {&sl->ix, &sl->iy, &sl->iw, &sl->ih};
-      float fw = (w - 6) / 2.f;
-      for (int i = 0; i < 4; ++i) {
-        float fx = x + (i % 2) * (fw + 6), fy = y + (i / 2) * (35 + 6);
-        Text(fx, oy + fy + 4.5f, MONO_R, 9, K(pal::t66), fl[i]);
-        char id[32]; snprintf(id, sizeof id, "##rect%d", i);
-        IntField(id, Rc(fx, oy + fy + 11, fw, 24), *vals[i]);
+      HLine(ox + 8, ox + 8 + w, oy + y, K(pal::g2a)); y += 1 + 8;
+      // Resolume's slice rows. X/Y are the rect's centre, Left/Top its unrotated top-left corner (what the stage frame edits).
+      const float LWd = 62.f;
+      auto row = [&](const char* label, const char* id, float& v, float lo, float hi, int dec) {
+        bool c = StepRow(x, oy + y, w, LWd, label, id, v, lo, hi, 1.f, dec); y += 24 + 4; return c;
+      };
+      float vx = (float)(sl->ix + sl->iw / 2), vy = (float)(sl->iy + sl->ih / 2);
+      if (row("X", "##sp_x", vx, -16384, 16384, 0)) sl->ix = (int)std::lround(vx) - sl->iw / 2;
+      if (row("Y", "##sp_y", vy, -16384, 16384, 0)) sl->iy = (int)std::lround(vy) - sl->ih / 2;
+      float vl = (float)sl->ix, vt = (float)sl->iy, vw = (float)sl->iw, vh = (float)sl->ih;
+      if (row("Left", "##sp_l", vl, -16384, 16384, 0)) sl->ix = (int)std::lround(vl);
+      if (row("Top", "##sp_t", vt, -16384, 16384, 0)) sl->iy = (int)std::lround(vt);
+      if (row("Width", "##sp_w", vw, 20, 16384, 0)) sl->iw = (int)std::lround(vw);
+      if (row("Height", "##sp_h", vh, 20, 16384, 0)) sl->ih = (int)std::lround(vh);
+      float vr = sl->irot;
+      if (row("Rotation", "##sp_r", vr, -180, 180, 1)) sl->irot = std::fabs(vr) < 0.05f ? 0.f : vr;
+      y += 4;
+    }
+    // Soft Edge: a saved per-slice switch. The projector output does not feather slice edges yet (see features.md F20).
+    {
+      HLine(ox, ox + W, oy + y, K(pal::g2a)); y += 1 + 4;
+      ImRect se(x, oy + y, x + w, oy + y + 26);
+      Hit sh = HitR(se);
+      ImRect cb(x, oy + y + 6, x + 14, oy + y + 20);
+      Box(cb, sl->softEdge ? K(pal::mint) : K(pal::g050), sl->softEdge ? K(pal::mint) : K(pal::g22), 2);
+      if (sl->softEdge) Check(ImVec2((cb.Min.x + cb.Max.x) * 0.5f, (cb.Min.y + cb.Max.y) * 0.5f), 12, K(0x0f0f0f));
+      Text(x + 24, oy + y + 13, UI_S, 10, K(pal::te0), "Soft Edge");
+      if (sh.hover) CursorHand();
+      if (sh.click) sl->softEdge = !sl->softEdge;
+      y += 26 + 4;
+    }
+    // Input Mask: pick a shape to add a mask around this slice (pen = click your own points). Masks live on the Output stage.
+    {
+      Fill(ImRect(ox, oy + y, ox + W, oy + y + 22), K(pal::g18));
+      HLine(ox, ox + W, oy + y, K(pal::g2a)); HLine(ox, ox + W, oy + y + 21, K(pal::g2a));
+      Text(x, oy + y + 11, UI_B, 9, K(pal::t88), "INPUT MASK", 0.14f);
+      y += 22 + 8;
+      const int shapes[5] = {App::MS_HEART, App::MS_SQUARE, App::MS_CIRCLE, App::MS_TRIANGLE, App::MS_HEXAGON};
+      const float bw = 34.f, gap = (w - 6 * bw) / 5.f;
+      for (int i = 0; i < 6; ++i) {
+        ImRect br(x + i * (bw + gap), oy + y, x + i * (bw + gap) + bw, oy + y + 30);
+        Hit h = HitR(br);
+        bool on = i == 5 && A.maskPen;
+        Box(br, h.hover ? K(pal::ctrlHover) : K(pal::g1c), on ? K(pal::yellow) : h.hover ? K(pal::g33) : K(pal::g22), 3);
+        ImVec2 c((br.Min.x + br.Max.x) * 0.5f, (br.Min.y + br.Max.y) * 0.5f);
+        ImU32 col = Ca(K(on ? pal::yellow : h.hover ? pal::white : pal::tcc));
+        if (i == 5) Icon("pencil", c, 15, col);
+        else { auto gp = MaskShapePts(shapes[i], c, 7.f, 7.f); g.dl->AddPolyline(gp.data(), (int)gp.size(), col, ImDrawFlags_Closed, 1.6f); }
+        if (h.hover) CursorHand();
+        if (h.click) { if (i == 5) A.startMaskPen(); else A.addMask(shapes[i]); }
       }
-      y += 35 * 2 + 6 + 8;
-      // rotation about the rect's centre — the same value the rings on the stage edit (double-click resets)
-      Text(x, oy + y + 5, UI_S, 10, K(pal::t88), "Rotation");
-      char rb[16]; snprintf(rb, sizeof rb, "%.0f\xC2\xB0", sl->irot);
-      Hit rh = HitR(ImRect(x, oy + y, x + w, oy + y + 10));
-      TextR(x + w, oy + y + 5, MONO_B, 10, K(pal::cyan), rb);
-      y += 10 + 6;
-      float rv = sl->irot;
-      if (Slider(0x3010, Rc(x, oy + y + 4, w, 6), rv, pal::cyan, -180.f, 180.f)) sl->irot = std::fabs(rv) < 0.5f ? 0.f : std::round(rv);
-      if (rh.dbl) sl->irot = 0.f;
-      y += 14 + 8;
+      y += 30 + 6;
+      Text(x, oy + y + 6, UI_S, 9, K(pal::t66), "Masks are drawn and edited on Output routing.", 0.01f);
+      y += 16 + 6;
     }
   }
   if (kind == 2) {
@@ -1362,7 +1491,11 @@ static void PropsPanel(ImRect r) {
     if (output) {
       HLine(x, x + w, oy + y, K(pal::g2a)); y += 1 + 4;
       Label(x, oy + y, "Mask points (output)"); y += 9 + 4;
-      for (int i = 0; i < 4; ++i) {
+      if (mk->pts.size() > 8) {   // circles / hearts / pen shapes: too many rows to list, drag the points on the stage
+        char np[48]; snprintf(np, sizeof np, "%d points \xC2\xB7 drag them on the stage", (int)mk->pts.size());
+        Text(x, oy + y + 8, MONO_R, 10, K(pal::tcc), np); y += 22 + 6;
+      } else
+      for (int i = 0; i < (int)mk->pts.size(); ++i) {
         ImRect cr(x, oy + y, x + w, oy + y + 22);
         Box(cr, K(pal::g18), K(pal::g2a), 3);
         char k[8]; snprintf(k, sizeof k, "P%d", i + 1);

@@ -250,7 +250,7 @@ Ba vùng: **cây Screen/Slice/Mask** (trái) | **Stage canvas** (giữa) | **Pro
 | M2 | ▾ thu gọn Screen; 👁 ẩn/hiện | ✅ |
 | M3 | **Chuột phải** → menu: Screen (Move up/down, Duplicate, Add slice, Delete) · Slice (Hide/Show, **Solo/Unsolo**, Whole area, Match output to input, Reset warp, Reset mesh warp, Reset all warping, Add mask, Delete) · Mask (Duplicate, Delete) | ✅ |
 | M3b | **Chuột phải khung input** (trang Input selection) → menu kiểu Resolume: Center X/Y · Mirror X/Y · Left/Top/Right/Bottom Half · Whole Area · Match Output Shape · Swap Input Output Shape · Bring Forward/Send Backwards · Duplicate/Copy/Cut/Paste (xem §3.2) | ✅ |
-| M4 | Nút thêm **Screen / Slice / Mask** | ✅ |
+| M4 | Nút thêm **Screen / Slice** ở chân cây (nút **Mask** đã chuyển vào Slice Properties → Input Mask, 2026-09-26) | ✅ |
 | M5 | Thu gọn cây thành rail; bấm tên Screen trong rail để mở tạm | ✅ |
 
 ### 3.2 Stage canvas (giữa)
@@ -268,6 +268,14 @@ Ba vùng: **cây Screen/Slice/Mask** (trái) | **Stage canvas** (giữa) | **Pro
   nguồn bên dưới vẫn rõ; các slice **khác cùng screen** (đang hiện) chỉ vẽ **viền nét đứt** (không tên, không tay nắm) phần input của chúng, để biết
   vùng nào của nguồn đã được lấy khi chuyển sang slice khác. Slice ẩn (👁 tắt) không vẽ. **Bấm vào bên trong khung nét đứt = chọn slice đó** (nhiều khung chồng nhau thì lấy khung trên cùng; khung của slice đang chọn được ưu tiên trước — kéo/xoay/co giãn vẫn như cũ). Con trỏ hiện bàn tay khi rê vào. ✅
 - **Không còn lưới nền** (ô 40px mờ) ở cả trang Input lẫn Output routing (2026-09-26) — khung canvas chỉ còn nền tối phẳng.
+- **Slice Properties theo mẫu Resolume (2026-09-26):** từ trên xuống — tên slice · **Input source** · các hàng
+  `X · Y` (tâm khung) · `Left · Top` (góc trên-trái chưa xoay) · `Width · Height` · `Rotation` (1 số lẻ), mỗi hàng có ô gõ số và nút **− / +**
+  (giữ `Shift` = bước ×10) · ô tick **Soft Edge** · thanh **INPUT MASK** với 6 nút: **tim · vuông · tròn · tam giác · lục giác · bút**.
+  Bấm một hình = thêm mask cỡ nửa slice ở giữa quad output của slice đó, tự chuyển sang trang **Output routing** và chọn mask vừa tạo
+  (mask vẫn vẽ/sửa ở trang Output như cũ). **Bút:** bấm từng điểm trên stage; bấm lại điểm đầu / `Enter` / bấm đúp để đóng
+  (cần ≥3 điểm, ít hơn thì bỏ), `Esc` hoặc đổi sang trang Input để huỷ. Hàng X…Rotation chỉ ở trang Input; Soft Edge và Input Mask hiện ở cả hai trang.
+  **Soft Edge chỉ là công tắc lưu theo slice — output máy chiếu CHƯA làm mờ viền** (giống công tắc edge blending của Screen). Mask cũng
+  **chưa che hình ở output thật** (F12). ✅ UI · ⛔ hiệu ứng thật
 - **Nền trang Input = nội dung thật của nguồn (2026-09-26):** khung canvas hiện hình đang phát của đúng
   **nguồn mà slice đang chọn nhận** (*Input source*: Composition / Layer / Group — cùng `DrawSliceSource` với
   cửa sổ output, nên solo/bypass/opacity/transform khớp), chạy động cùng nhịp Live Output; đổi Input source là nền đổi theo.
@@ -287,7 +295,7 @@ Ba vùng: **cây Screen/Slice/Mask** (trái) | **Stage canvas** (giữa) | **Pro
 |---|---|---|
 | M6 | Kéo **góc slice** (vùng bấm ~16px) → keystone | ✅ |
 | M7 | Kéo **điểm mesh** (viền vàng = biên, coral = trong) | ✅ |
-| M8 | Kéo **4 điểm mask** | ✅ |
+| M8 | Kéo **các điểm của mask** (số điểm tuỳ hình: vuông 4, tam giác 3, lục giác 6, tròn 32, tim 36, bút = bao nhiêu điểm bạn bấm) | ✅ |
 | M9 | Bấm trong slice → chọn slice trên cùng; bấm vào mask → chọn mask | ✅ |
 | M10 | Với slice đang chọn ở chế độ mesh: bấm lại để đặt "điểm cắt", rồi dùng nút thêm cột/hàng | ✅ |
 | M11 | Chip 🔍 cạnh tên slice → zoom vào slice | ✅ |

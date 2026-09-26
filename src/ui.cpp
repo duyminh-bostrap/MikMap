@@ -453,6 +453,32 @@ bool IntField(const char* id, ImRect r, int& v) {
   return ch;
 }
 
+bool FloatField(const char* id, ImRect r, float& v, int decimals) {
+  static std::string edit;
+  ImGuiID gid = ImGui::GetID(id);
+  if (ImGui::GetActiveID() != gid) {
+    char b[32]; snprintf(b, sizeof b, "%.*f", std::max(0, decimals), v);
+    std::string t = b;
+    if (decimals > 0 && t.find('.') != std::string::npos) { while (!t.empty() && t.back() == '0') t.pop_back(); if (!t.empty() && t.back() == '.') t.pop_back(); }
+    if (t == "-0") t = "0";
+    edit = t;
+  }
+  ImGui::SetCursorScreenPos(r.Min);
+  ImGui::PushFont(F(MONO_R), TextPx(11));
+  ImGui::PushStyleColor(ImGuiCol_FrameBg, K(pal::g050));
+  ImGui::PushStyleColor(ImGuiCol_Border, K(pal::g22));
+  ImGui::PushStyleColor(ImGuiCol_Text, K(pal::tf3));
+  ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(6, std::max(0.f, (r.GetHeight() - TextPx(11)) * 0.5f)));
+  ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 3.f);
+  ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.f);
+  ImGui::SetNextItemWidth(r.GetWidth());
+  char buf[32]; snprintf(buf, sizeof buf, "%s", edit.c_str());
+  bool ch = ImGui::InputText(id, buf, sizeof buf, ImGuiInputTextFlags_CharsDecimal);
+  ImGui::PopStyleVar(3); ImGui::PopStyleColor(3); ImGui::PopFont();
+  if (ch) { edit = buf; v = (float)atof(buf); }
+  return ch;
+}
+
 }  // namespace ui
 
 

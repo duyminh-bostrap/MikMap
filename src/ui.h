@@ -108,6 +108,7 @@ bool Slider(uint32_t id, ImRect track, float& v, uint32_t hex, float mn = 0, flo
 void PropertyRow(ImRect r, const char* label, const char* value, const char* unit = nullptr, uint32_t hex = pal::tcc);
 bool TextField(const char* id, ImRect r, std::string& v, FontId f = UI_S, float sz = 10.f, ImU32 textCol = 0);
 bool IntField(const char* id, ImRect r, int& v);
+bool FloatField(const char* id, ImRect r, float& v, int decimals = 1);   // decimal number field (trailing zeros trimmed when not editing)
 
 // ---- overlay menus ----
 struct MenuItem {
