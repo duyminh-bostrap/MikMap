@@ -50,7 +50,9 @@ int ClipStyleOf(const std::string& n) {
 }
 
 static float Hash(int i, int k = 0) {
-  unsigned x = (unsigned)(i * 374761393 + k * 668265263);
+  // Unsigned arithmetic on purpose: the same product in int overflows (undefined behaviour), and GCC at -O3 uses that to
+  // turn the callers' loops into endless ones. Wrap-around is what a hash wants anyway.
+  unsigned x = (unsigned)i * 374761393u + (unsigned)k * 668265263u;
   x = (x ^ (x >> 13)) * 1274126177u;
   return ((x ^ (x >> 16)) & 0xffff) / 65535.f;
 }
@@ -375,6 +377,11 @@ static void PaintTestPattern(float W, float H) {
 #ifndef GL_CLAMP_TO_BORDER
 #define GL_CLAMP_TO_BORDER 0x812D
 #endif
+// Not in the GL 1.1 header Windows ships (<GL/gl.h>); used by the test-pattern texture below and the image sources,
+// so it must be defined before the first use, not next to the image sources.
+#ifndef GL_CLAMP_TO_EDGE
+#define GL_CLAMP_TO_EDGE 0x812F
+#endif
 struct SrcTex { unsigned tex = 0; int w = 0, h = 0, frame = -1; };
 static std::map<std::string, SrcTex> gSrcTex;
 static bool gSrcRenderOk = true;
@@ -532,9 +539,6 @@ void DrawSliceSource(const Slice& s, ImRect canvas, float t, float alpha) {
 }
 
 // ── image sources (B2) ──
-#ifndef GL_CLAMP_TO_EDGE
-#define GL_CLAMP_TO_EDGE 0x812F
-#endif
 struct MediaTex { unsigned tex = 0; int w = 0, h = 0; bool failed = false; };
 static std::map<std::string, MediaTex> gMedia;
 static const MediaTex* GetMedia(const std::string& path) {
