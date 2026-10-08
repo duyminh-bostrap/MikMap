@@ -102,7 +102,8 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
-        run: gh release upload "$GITHUB_REF_NAME" MikMap-*.* --repo "$RELEASES_REPO" --clobber
+        # The package folder is called MikMap-v0.1.0-<os> and also matches MikMap-*.*, so name the archive extension.
+        run: gh release upload "$GITHUB_REF_NAME" MikMap-*.${{ matrix.archive }} --repo "$RELEASES_REPO" --clobber
 
   publish:
     name: publish
