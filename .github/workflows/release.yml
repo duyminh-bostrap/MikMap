@@ -1,0 +1,105 @@
+# Build, test and package MikMap for Windows, macOS and Linux.
+#
+#   push a tag v*      -> build + test + package, then publish a GitHub Release in
+#                         duyminh-bostrap/MikMap-releases (needs the RELEASES_TOKEN secret, see below)
+#   manual "Run"       -> build + test + package only; the packages are kept as workflow artifacts
+#
+# RELEASES_TOKEN: GITHUB_TOKEN can only write to THIS repo, and the releases live in another one. Create a
+# fine-grained personal access token limited to MikMap-releases with "Contents: Read and write", and add it under
+# Settings > Secrets and variables > Actions > RELEASES_TOKEN.
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: windows-x64, os: windows-latest, archive: zip }
+          - { name: macos-arm64, os: macos-latest,   archive: tar.gz }
+          - { name: linux-x64,   os: ubuntu-latest,  archive: tar.gz }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Linux dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libgl-dev libglfw3-dev xvfb
+
+      - name: Engine tests
+        shell: bash
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release --target mikmap_tests -j
+          ctest --test-dir build -C Release --output-on-failure
+
+      - name: Build app
+        shell: bash
+        run: |
+          cmake -S src -B src/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build src/build --config Release -j
+
+      - name: App test (project round-trip)
+        shell: bash
+        run: ctest --test-dir src/build -C Release --output-on-failure
+
+      # The Release build once hung only at -O3 (signed overflow in Hash()), so run the real binary and make sure it
+      # reaches a rendered frame, with a time limit — a hang must fail the job instead of burning runner minutes.
+      - name: Smoke test (render one frame)
+        shell: bash
+        run: |
+          cd src/build
+          EXE=./mikmap; [ -f ./mikmap.exe ] && EXE=./mikmap.exe
+          RUN="$EXE --shot smoke.png --size 1440 900 --frames 12"
+          if [ "$RUNNER_OS" = "Linux" ]; then RUN="xvfb-run -a $RUN"; fi
+          if [ "$RUNNER_OS" = "macOS" ]; then TO="perl -e 'alarm shift; exec @ARGV' 60"; else TO="timeout 60"; fi
+          eval "$TO $RUN"
+          test -s smoke.png
+
+      - name: Package
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME}"; [ "$GITHUB_REF_TYPE" = "tag" ] || VERSION="dev-${GITHUB_SHA::7}"
+          DIR="MikMap-${VERSION}-${{ matrix.name }}"
+          mkdir "$DIR"
+          if [ -f src/build/mikmap.exe ]; then cp src/build/mikmap.exe "$DIR/"; else cp src/build/mikmap "$DIR/"; fi
+          cp -r src/build/assets "$DIR/assets"
+          cp README.md "$DIR/"
+          if [ "${{ matrix.archive }}" = "zip" ]; then 7z a "$DIR.zip" "$DIR" >/dev/null; else tar -czf "$DIR.tar.gz" "$DIR"; fi
+          ls -la MikMap-*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: MikMap-*.*
+          if-no-files-found: error
+
+  publish:
+    name: publish to MikMap-releases
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then echo "::error::RELEASES_TOKEN secret is missing (see the comment at the top of this file)"; exit 1; fi
+          ls -la dist
+          gh release create "$TAG" dist/* --repo duyminh-bostrap/MikMap-releases --title "MikMap $TAG" \
+            --notes "MikMap $TAG, built from https://github.com/${{ github.repository }}/commit/${{ github.sha }}"
