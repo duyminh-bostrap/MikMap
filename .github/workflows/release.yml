@@ -111,16 +111,42 @@ jobs:
     if: ${{ !cancelled() && startsWith(github.ref, 'refs/tags/v') && needs.draft.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Publish
+      - uses: actions/checkout@v4
+
+      - name: Checksums, notes and publish
         env:
           GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
         run: |
           N=$(gh release view "$GITHUB_REF_NAME" --repo "$RELEASES_REPO" --json assets --jq '.assets|length')
           if [ "$N" -eq 0 ]; then echo "::error::no package was built, leaving the release as a draft"; exit 1; fi
+
+          # SHA256SUMS.txt: one line per package, "<64 hex>  <file name>" (two spaces), computed from the files as
+          # they sit on the release, so the sums describe exactly what users download.
+          mkdir dist
+          gh release download "$GITHUB_REF_NAME" --repo "$RELEASES_REPO" --dir dist --pattern 'MikMap-*'
+          (cd dist && sha256sum MikMap-* > SHA256SUMS.txt && cat SHA256SUMS.txt)
+          gh release upload "$GITHUB_REF_NAME" dist/SHA256SUMS.txt --repo "$RELEASES_REPO" --clobber
+
           MISSING=""
           for p in windows-x64 macos-arm64 linux-x64; do
-            gh release view "$GITHUB_REF_NAME" --repo "$RELEASES_REPO" --json assets --jq '.assets[].name' | grep -q -- "-$p\." || MISSING="$MISSING $p"
+            grep -q -- "-$p\." dist/SHA256SUMS.txt || MISSING="$MISSING $p"
           done
-          NOTES="MikMap $GITHUB_REF_NAME, built from https://github.com/${{ github.repository }}/commit/${{ github.sha }}"
-          [ -n "$MISSING" ] && NOTES="$NOTES"$'\n\n'"Not included in this release (build failed or did not run):$MISSING"
-          gh release edit "$GITHUB_REF_NAME" --repo "$RELEASES_REPO" --notes "$NOTES" --draft=false
+
+          # Release body: plain Markdown, no images, no HTML. Hand-written notes live in store/release-notes/<tag>.md
+          # (optional); otherwise the sections below carry the minimum.
+          NOTES_FILE="store/release-notes/$GITHUB_REF_NAME.md"
+          {
+            if [ -f "$NOTES_FILE" ]; then cat "$NOTES_FILE"; else
+              echo "### What's new"; echo; echo "See the commit history for this tag."; echo
+              echo "### Fixes"; echo; echo "None recorded for this tag."; echo
+              echo "### Known issues"; echo; echo "- No video, NDI, Spout or live sensor input yet; the Sensor I/O page runs on simulated devices."
+            fi
+            echo; echo "### Installation"; echo
+            echo "These are portable archives, not installers. Unpack the archive and keep the assets folder next to the program."
+            echo "The packages are **not code-signed**: Windows SmartScreen and macOS Gatekeeper will warn on first launch."
+            echo "Verify downloads against SHA256SUMS.txt."
+            echo; echo "Built from https://github.com/${{ github.repository }}/commit/${{ github.sha }}"
+            if [ -n "$MISSING" ]; then echo; echo "Not included in this release (build failed or did not run):$MISSING"; fi
+          } > notes.md
+          test "$(wc -c < notes.md)" -lt 20000
+          gh release edit "$GITHUB_REF_NAME" --repo "$RELEASES_REPO" --notes-file notes.md --draft=false
