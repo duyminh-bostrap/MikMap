@@ -47,9 +47,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: windows-x64, os: windows-latest, archive: zip }
-          - { name: macos-arm64, os: macos-latest,   archive: tar.gz }
-          - { name: linux-x64,   os: ubuntu-latest,  archive: tar.gz }
+          - { name: windows-x64, os: windows-latest, archive: zip,    installers: "MikMap-Setup.exe" }
+          - { name: macos-arm64, os: macos-latest,   archive: tar.gz, installers: "MikMap-Setup.pkg MikMap.dmg" }
+          - { name: linux-x64,   os: ubuntu-latest,  archive: tar.gz, installers: "" }
     steps:
       - uses: actions/checkout@v4
 
@@ -97,13 +97,32 @@ jobs:
           if [ "${{ matrix.archive }}" = "zip" ]; then 7z a "$DIR.zip" "$DIR" >/dev/null; else tar -czf "$DIR.tar.gz" "$DIR"; fi
           ls -la MikMap-*.*
 
+      # Installers. Names are fixed by the store: MikMap-Setup.exe (Windows), MikMap-Setup.pkg and MikMap.dmg (macOS).
+      # Both are unsigned. Built on every run (manual ones too) so a broken installer is caught before a tag.
+      - name: Windows installer
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME}"; [ "$GITHUB_REF_TYPE" = "tag" ] || VERSION="0.0.0-dev"
+          choco install innosetup --no-progress -y
+          ISCC="/c/Program Files (x86)/Inno Setup 6/ISCC.exe"
+          "$ISCC" "//DAppVersion=${VERSION#v}" "//DSourceDir=$(cygpath -w "$PWD/src/build")" "//DOutDir=$(cygpath -w "$PWD")" installer/windows/mikmap.iss
+          ls -la MikMap-Setup.exe
+
+      - name: macOS installers
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME}"; [ "$GITHUB_REF_TYPE" = "tag" ] || VERSION="0.0.0-dev"
+          installer/macos/make-installers.sh src/build "$VERSION" "$PWD"
+
       - name: Attach to the release
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
         # The package folder is called MikMap-v0.1.0-<os> and also matches MikMap-*.*, so name the archive extension.
-        run: gh release upload "$GITHUB_REF_NAME" MikMap-*.${{ matrix.archive }} --repo "$RELEASES_REPO" --clobber
+        run: gh release upload "$GITHUB_REF_NAME" MikMap-*.${{ matrix.archive }} ${{ matrix.installers }} --repo "$RELEASES_REPO" --clobber
 
   publish:
     name: publish
@@ -124,15 +143,15 @@ jobs:
           # SHA256SUMS.txt: one line per package, "<64 hex>  <file name>" (two spaces), computed from the files as
           # they sit on the release, so the sums describe exactly what users download.
           mkdir dist
-          gh release download "$GITHUB_REF_NAME" --repo "$RELEASES_REPO" --dir dist --pattern 'MikMap-*'
-          (cd dist && sha256sum MikMap-* > SHA256SUMS.txt && cat SHA256SUMS.txt)
+          gh release download "$GITHUB_REF_NAME" --repo "$RELEASES_REPO" --dir dist --pattern 'MikMap*'
+          (cd dist && sha256sum MikMap* > SHA256SUMS.txt && cat SHA256SUMS.txt)
           gh release upload "$GITHUB_REF_NAME" dist/SHA256SUMS.txt --repo "$RELEASES_REPO" --clobber
 
           MISSING=""
-          for p in windows-x64 macos-arm64 linux-x64; do
-            grep -q -- "-$p\." dist/SHA256SUMS.txt || MISSING="$MISSING $p"
-          done
-
+          grep -q 'MikMap-Setup\.exe' dist/SHA256SUMS.txt || MISSING="$MISSING windows-x64"
+          grep -q 'MikMap-Setup\.pkg' dist/SHA256SUMS.txt || MISSING="$MISSING macos-pkg"
+          grep -q 'MikMap\.dmg' dist/SHA256SUMS.txt || MISSING="$MISSING macos-dmg"
+          grep -q -- '-linux-x64\.' dist/SHA256SUMS.txt || MISSING="$MISSING linux-x64"
           # Release body: plain Markdown, no images, no HTML. Hand-written notes live in store/release-notes/<tag>.md
           # (optional); otherwise the sections below carry the minimum.
           NOTES_FILE="store/release-notes/$GITHUB_REF_NAME.md"
@@ -143,8 +162,9 @@ jobs:
               echo "### Known issues"; echo; echo "- No video, NDI, Spout or live sensor input yet; the Sensor I/O page runs on simulated devices."
             fi
             echo; echo "### Installation"; echo
-            echo "These are portable archives, not installers. Unpack the archive and keep the assets folder next to the program."
-            echo "The packages are **not code-signed**: Windows SmartScreen and macOS Gatekeeper will warn on first launch."
+            echo "Windows: run MikMap-Setup.exe. macOS: open MikMap.dmg and drag MikMap to Applications, or run MikMap-Setup.pkg."
+            echo "Linux: unpack the .tar.gz and keep the assets folder next to the program. The .zip is a portable Windows build (keep assets next to mikmap.exe)."
+            echo "The installers and packages are **not code-signed**: Windows SmartScreen and macOS Gatekeeper will warn on first launch."
             echo "Verify downloads against SHA256SUMS.txt."
             echo; echo "Built from https://github.com/${{ github.repository }}/commit/${{ github.sha }}"
             if [ -n "$MISSING" ]; then echo; echo "Not included in this release (build failed or did not run):$MISSING"; fi
