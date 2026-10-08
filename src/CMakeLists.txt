@@ -69,6 +69,12 @@ find_package(Threads REQUIRED)
 
 add_executable(mikmap ${NEWUI_SOURCES} ${ENGINE_SOURCES} ${IMGUI_SOURCES})
 
+# BUILD_DATE: fixed when CMake configures (UTC, YYYY-MM-DD; string(TIMESTAMP) honours SOURCE_DATE_EPOCH, so builds can
+# be reproducible). The licence check compares it with the entitlement's `updates_until`, so it must be a
+# compile-time constant, never read from the machine clock at run time. Shown in the About message.
+string(TIMESTAMP MIKMAP_BUILD_DATE "%Y-%m-%d" UTC)
+target_compile_definitions(mikmap PRIVATE "BUILD_DATE=\"${MIKMAP_BUILD_DATE}\"")
+
 target_include_directories(mikmap PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR} ${REPO}/engine ${IMGUI_DIR} ${IMGUI_DIR}/backends third_party/stb)
 

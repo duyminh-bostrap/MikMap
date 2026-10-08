@@ -222,7 +222,7 @@ static void RunProjectItem(int i) {
     case 5: A.showMode = true; A.notify("Show Mode \xE2\x80\x94 press Esc or Tab to leave", 3); break;
     case 6: A.settingsOpen = true; break;
     case 7: A.helpOpen = true; A.openDialog = false; break;
-    case 8: A.notify("MikMap v1.0.0 \xE2\x80\x94 projection mapping engine"); break;
+    case 8: A.notify("MikMap v1.0.0 (build " BUILD_DATE ") \xE2\x80\x94 projection mapping engine"); break;
     case 9: GuardedDiscard("reload the demo", [] { NewProject(); A.notify("Demo project reloaded"); }); break;
     default: A.notify("Not available yet"); break;
   }
