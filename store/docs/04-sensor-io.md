@@ -25,7 +25,3 @@ Bấm lên radar để giả lập một điểm chạm. Điểm đó được c
 ## Parameter Routing
 
 Mỗi dây nối một sự kiện với một đích. Dây `touch.down` đang bật sẽ phát clip đích khi bạn bấm radar. Các dây khác mới là hiển thị, chưa tác động. Hai thanh **Noise threshold** và **Min blob size** chỉ lưu giá trị.
-
-## Gửi tín hiệu ra ngoài
-
-MikMap chưa gửi tín hiệu sensor và chưa gửi NDI ra ngoài. Khi có, các chức năng này thuộc phần có license, xem [Phiên bản và license](/store/mikmap/docs/editions-and-licensing).

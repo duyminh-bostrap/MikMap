@@ -20,6 +20,4 @@ Dự án mô tả một buổi diễn, nên mang theo khi chép sang máy khác.
 
 ## Mạng
 
-Tại thời điểm viết, ứng dụng không có mã kết nối mạng để gửi dữ liệu của bạn đi. Ứng dụng chưa nhận hay gửi tín hiệu OSC, TUIO hay NDI.
-
-TODO(owner): khi bổ sung đăng nhập và kiểm tra license, cần cập nhật bài này: dữ liệu nào gửi lên máy chủ (email, mã máy, trạng thái license), gửi khi nào và lưu bao lâu.
+Ứng dụng không kết nối mạng và không gửi dữ liệu của bạn đi đâu.

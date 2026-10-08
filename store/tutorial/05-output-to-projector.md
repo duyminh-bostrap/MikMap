@@ -33,4 +33,3 @@ Nhấn `F11` hoặc `Esc` khi cửa sổ output đang được chọn. Có thể
 
 Nhấn `Tab` để ẩn toàn bộ giao diện điều khiển và chỉ còn hình toàn màn hình. Nhấn `Esc` hoặc `Tab` để thoát.
 
-> Chỉ màn hình vật lý có cửa sổ output. Các thiết bị NDI, Spout và Virtual trong danh sách chưa gửi tín hiệu.

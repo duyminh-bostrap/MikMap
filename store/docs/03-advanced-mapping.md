@@ -37,7 +37,7 @@ Sáu hình có sẵn: tim, vuông, tròn, tam giác, lục giác và bút. Mask 
 
 ## Screen và thiết bị đầu ra
 
-Mỗi screen có thiết bị đầu ra và độ phân giải. Màn hình vật lý hiện tên và độ phân giải thật. NDI, Spout và Virtual chưa gửi tín hiệu. Nút **MỞ OUTPUT (F11)** mở cửa sổ máy chiếu cho mọi screen đã gán màn hình.
+Mỗi screen có thiết bị đầu ra và độ phân giải. Màn hình vật lý hiện tên và độ phân giải thật. Nút **MỞ OUTPUT (F11)** mở cửa sổ máy chiếu cho mọi screen đã gán màn hình.
 
 ## Phím tắt của trang
 
