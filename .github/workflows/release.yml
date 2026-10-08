@@ -1,12 +1,15 @@
 # Build, test and package MikMap for Windows, macOS and Linux.
 #
-#   push a tag v*      -> build + test + package, then publish a GitHub Release in
-#                         duyminh-bostrap/MikMap-releases (needs the RELEASES_TOKEN secret, see below)
-#   manual "Run"       -> build + test + package only; the packages are kept as workflow artifacts
+#   push a tag v*  -> build + test + package on every OS, attach the packages to a draft release in
+#                     duyminh-bostrap/MikMap-releases, then publish it (needs the RELEASES_TOKEN secret, see below)
+#   manual "Run"   -> build + test only (nothing is uploaded)
 #
 # RELEASES_TOKEN: GITHUB_TOKEN can only write to THIS repo, and the releases live in another one. Create a
 # fine-grained personal access token limited to MikMap-releases with "Contents: Read and write", and add it under
 # Settings > Secrets and variables > Actions > RELEASES_TOKEN.
+#
+# Packages are uploaded straight to the release by each job instead of passing through workflow artifacts, so this
+# does not depend on the account's artifact storage quota.
 name: release
 
 on:
@@ -17,9 +20,28 @@ on:
 permissions:
   contents: read
 
+env:
+  RELEASES_REPO: duyminh-bostrap/MikMap-releases
+
 jobs:
+  draft:
+    name: draft release
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create the draft
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then echo "::error::RELEASES_TOKEN secret is missing (see the comment at the top of this file)"; exit 1; fi
+          gh release create "$GITHUB_REF_NAME" --repo "$RELEASES_REPO" --draft --title "MikMap $GITHUB_REF_NAME" \
+            --notes "MikMap $GITHUB_REF_NAME, built from https://github.com/${{ github.repository }}/commit/${{ github.sha }}"
+
   build:
     name: ${{ matrix.name }}
+    needs: draft
+    # run for manual builds too, where `draft` is skipped
+    if: ${{ !cancelled() && (needs.draft.result == 'success' || needs.draft.result == 'skipped') }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -59,10 +81,14 @@ jobs:
         run: |
           cd src/build
           EXE=./mikmap; [ -f ./mikmap.exe ] && EXE=./mikmap.exe
-          RUN="$EXE --shot smoke.png --size 1440 900 --frames 12"
-          if [ "$RUNNER_OS" = "Linux" ]; then RUN="xvfb-run -a $RUN"; fi
-          if [ "$RUNNER_OS" = "macOS" ]; then TO="perl -e 'alarm shift; exec @ARGV' 60"; else TO="timeout 60"; fi
-          eval "$TO $RUN"
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            timeout 90 xvfb-run -a "$EXE" --shot smoke.png --size 1440 900 --frames 12
+          elif [ "$RUNNER_OS" = "macOS" ]; then
+            perl -e 'alarm shift; exec @ARGV' 90 "$EXE" --shot smoke.png --size 1440 900 --frames 12
+          else
+            # Git Bash on Windows: plain `timeout` can resolve to cmd's own timeout.exe
+            /usr/bin/timeout 90 "$EXE" --shot smoke.png --size 1440 900 --frames 12
+          fi
           test -s smoke.png
 
       - name: Package
@@ -75,31 +101,32 @@ jobs:
           cp -r src/build/assets "$DIR/assets"
           cp README.md "$DIR/"
           if [ "${{ matrix.archive }}" = "zip" ]; then 7z a "$DIR.zip" "$DIR" >/dev/null; else tar -czf "$DIR.tar.gz" "$DIR"; fi
-          ls -la MikMap-*
+          ls -la MikMap-*.*
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.name }}
-          path: MikMap-*.*
-          if-no-files-found: error
-
-  publish:
-    name: publish to MikMap-releases
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          path: dist
-          merge-multiple: true
-
-      - name: Create the release
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
-          TAG: ${{ github.ref_name }}
+        run: gh release upload "$GITHUB_REF_NAME" MikMap-*.* --repo "$RELEASES_REPO" --clobber
+
+  publish:
+    name: publish
+    needs: [draft, build]
+    # Publish whatever was built; the notes say which platforms are missing instead of hiding it.
+    if: ${{ !cancelled() && startsWith(github.ref, 'refs/tags/v') && needs.draft.result == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
         run: |
-          if [ -z "$GH_TOKEN" ]; then echo "::error::RELEASES_TOKEN secret is missing (see the comment at the top of this file)"; exit 1; fi
-          ls -la dist
-          gh release create "$TAG" dist/* --repo duyminh-bostrap/MikMap-releases --title "MikMap $TAG" \
-            --notes "MikMap $TAG, built from https://github.com/${{ github.repository }}/commit/${{ github.sha }}"
+          N=$(gh release view "$GITHUB_REF_NAME" --repo "$RELEASES_REPO" --json assets --jq '.assets|length')
+          if [ "$N" -eq 0 ]; then echo "::error::no package was built, leaving the release as a draft"; exit 1; fi
+          MISSING=""
+          for p in windows-x64 macos-arm64 linux-x64; do
+            gh release view "$GITHUB_REF_NAME" --repo "$RELEASES_REPO" --json assets --jq '.assets[].name' | grep -q -- "-$p\." || MISSING="$MISSING $p"
+          done
+          NOTES="MikMap $GITHUB_REF_NAME, built from https://github.com/${{ github.repository }}/commit/${{ github.sha }}"
+          [ -n "$MISSING" ] && NOTES="$NOTES"$'\n\n'"Not included in this release (build failed or did not run):$MISSING"
+          gh release edit "$GITHUB_REF_NAME" --repo "$RELEASES_REPO" --notes "$NOTES" --draft=false
