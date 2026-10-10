@@ -554,6 +554,13 @@ bool DeviceResolution(const std::string& dev, int& w, int& h);   // that display
 void SyncScreenResolutions();                   // screens on a physical display take its real resolution (once per frame)
 void SetOutputCapture(const char* path);
 void LoadAllFonts(ImGuiIO& io, const std::string& assets);
+// licence gate (license.cpp). The answer is three bits the render thread reads for free; "no licence" is the default.
+// LicenseForce is the --license test aid: none | licensed | trial | expired | other_machine | revoked | invalid.
+bool LicenseWatermark();   // true = draw the watermark
+bool LicenseSensorOut();   // true = sending sensor data out is allowed
+bool LicenseNdiOut();      // true = sending NDI is allowed
+void LicenseForce(const std::string& stateName);
+void DrawWatermark(ImRect area);   // app mark + name, over the whole area; call last, after the picture
 void FitAffine(float out[9], float* rms);
 // G5 homography + G9 perf
 bool FitHomography(const std::vector<Calib>& pts, float H[9], float* rms);

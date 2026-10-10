@@ -295,6 +295,8 @@ static void RenderOneOutput(OutWin& ow, bool capture) {
       if (!sl.visible || (anySolo && !sl.solo)) continue;
       DrawSliceOutput(*sc, sl, 0.f, 0.f, sx, sy, t);
     }
+    // no licence: the app mark over the whole projector picture, after every slice (never inside one: it would be warped and masked)
+    if (LicenseWatermark()) DrawWatermark(ImRect(0.f, 0.f, (float)fw, (float)fh));
   }
 
   // G13: sensor touches through H_s, drawn straight in output space (only the first screen: that is what was calibrated)

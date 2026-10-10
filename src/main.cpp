@@ -629,7 +629,7 @@ int main(int argc, char** argv) {
   OsDrop dropTest;   // --drop: injected at frame 8 of a --shot run, standing in for a real Explorer drag
   bool openOut = false; std::string outShot;
   bool outKeyTest = false, scriptCtrl = false, startSnap = false, startHand = false, startCard = false; int startTool = -1, startInTool = -1;
-  std::string roundtrip; std::vector<int> fxTest;
+  std::string roundtrip, licenseArg; std::vector<int> fxTest;
   std::string shot; int startScreen = 0, frames = 12, W = 1440, H = 900, tab = -1, page = -1;
   bool sel = false, scaleGiven = false; int selLi = 0, selCi = 0, ctxTest = 0, cliScale = 100;
   for (int i = 1; i < argc; ++i) {
@@ -660,6 +660,7 @@ int main(int argc, char** argv) {
       for (auto& k : keys) if (c == k.n) sc.key = (int)k.k;
       script.push_back(sc);
     }
+    else if (a == "--license" && i + 1 < argc) licenseArg = argv[++i];   // test aid: force a licence state (none | licensed | trial | expired | other_machine | revoked | invalid)
     else if (a == "--ctx") ctxTest = 1;
     else if (a == "--testcard") startCard = true;
     else if (a == "--tool" && i + 1 < argc) startTool = atoi(argv[++i]);     // test aid: Output tool, 0 Edit Points / 1 Transform
@@ -686,6 +687,7 @@ int main(int argc, char** argv) {
     }
   }
   if (!shot.empty() || !roundtrip.empty()) SetSettingsPersistence(false);
+  if (!licenseArg.empty()) LicenseForce(licenseArg);
   if (!roundtrip.empty()) {
     // Headless self-check of project persistence: save -> edit -> load must restore the saved state exactly.
     auto fail = [](const char* w) { std::fprintf(stderr, "roundtrip FAILED: %s\n", w); return 1; };
@@ -1357,6 +1359,20 @@ int main(int argc, char** argv) {
       A.mediaExtra.clear(); A.mediaStale = true;
       for (auto* f : {&f1, &f2, &f3}) std::remove(f->c_str());
     }
+    // Licence gate: no licence is the default and blocks sensor / NDI output and shows the watermark; only a granting state opens them.
+    {
+      LicenseForce("none");
+      if (!LicenseWatermark() || LicenseSensorOut() || LicenseNdiOut()) return fail("no licence must show the watermark and block sensor / NDI output");
+      LicenseForce("licensed");
+      if (LicenseWatermark() || !LicenseSensorOut() || !LicenseNdiOut()) return fail("a licence must drop the watermark and allow sensor / NDI output");
+      LicenseForce("trial");
+      if (LicenseWatermark() || !LicenseSensorOut()) return fail("a trial counts as licensed");
+      for (const char* s : {"expired", "other_machine", "revoked", "invalid", "not-a-state"}) {
+        LicenseForce(s);
+        if (!LicenseWatermark() || LicenseSensorOut() || LicenseNdiOut()) return fail("only licensed / trial may open the gate");
+      }
+      LicenseForce("none");
+    }
     std::printf("roundtrip OK\n"); return 0;
   }
   gAssets = FindAssets(argv[0]);
@@ -1618,7 +1634,7 @@ int main(int argc, char** argv) {
       // Show Mode: nothing to click, nothing to mis-drag — just the composite the audience sees, letterboxed to the canvas.
       Fill(ImRect(0, 0, disp.x, disp.y), K(0x000000));
       ImRect cv = CanvasRect(ImRect(0, 0, disp.x, disp.y));
-      if (!A.blackout) { g.dl->PushClipRect(cv.Min, cv.Max, true); DrawComposite(cv, (float)g.time, 1.f); g.dl->PopClipRect(); }
+      if (!A.blackout) { g.dl->PushClipRect(cv.Min, cv.Max, true); DrawComposite(cv, (float)g.time, 1.f); if (LicenseWatermark()) DrawWatermark(cv); g.dl->PopClipRect(); }
       if (g.time < A.toastUntil && !A.toast.empty()) TextC(disp.x * 0.5f, disp.y - 18, MONO_M, 10, K(pal::t66), A.toast.c_str());
     } else {
       switch (A.screen) {

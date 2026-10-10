@@ -35,6 +35,10 @@ TODO(owner): tên các phiên bản (ví dụ Free, Pro) và từng phiên bản
 | Hết hạn, bản cũ hơn, ngoại tuyến, bị thu hồi | **Chưa có** hành vi nào |
 | Ngày build nhúng vào bản build | **Có.** Hằng `BUILD_DATE` (UTC, `YYYY-MM-DD`) được CMake gán lúc configure và hiện trong mục Giới thiệu |
 
+Kế hoạch và các quyết định đã chốt: `store/license-plan.md`. Hợp đồng gọi sang web (bản nháp để chép sang repo web): `store/license-web-contract.md`.
+
+**Cập nhật 2026-10-10:** đã có cổng license và watermark ở app (Pha 1 và 2, nhánh `claude/license-gate`): mặc định không license thì hiện watermark và `LicenseSensorOut()` / `LicenseNdiOut()` trả `false`. Chưa có nguồn license thật (nhập key, gọi web), chưa có bộ gửi sensor/NDI, nên bảng "Ứng dụng làm gì hiện tại" bên dưới về watermark đã cũ: xem kế hoạch.
+
 ## Việc cần làm ở ứng dụng khi hợp đồng được cung cấp
 
 1. Đọc hợp đồng license và triển khai đúng phía ứng dụng, không thiết kế cơ chế thứ hai.

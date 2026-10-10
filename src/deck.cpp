@@ -934,6 +934,7 @@ static void Monitor(ImRect r, bool live) {
       Fill(cv, K(0x0a0a0a));
       g.dl->PushClipRect(cv.Min, cv.Max, true);
       DrawComposite(cv, (float)g.time * 1.2f, 1.f);
+      if (LicenseWatermark()) DrawWatermark(cv);
       g.dl->PopClipRect();
       Border(cv, K(pal::g2a));
       Text(well.Min.x + 6, well.Max.y - 10, MONO_M, 10, K(pal::coral), "COMPOSITE", 0.09f);
