@@ -135,9 +135,9 @@
 | [x] | **F16** | Slice enable / disable / solo | S | 🟠 P1 |
 | [~] | **F17** | Multi-screen (nhiều máy chiếu) | M | 🟠 P1 |
 | [ ] | **F18** | Polygon slice (không chỉ hình chữ nhật) | L | 🟡 P2 |
-| [~] | **F19** | Color correction per-slice (brightness/gamma/RGB) | M | 🟡 P2 |
+| [x] | **F19** | Color correction per-slice (brightness/gamma/RGB) | M | 🟡 P2 |
 | [x] | **F20** | **Soft edge blending** (ghép nhiều máy chiếu) | L | 🟡 P2 |
-| [~] | **F21** | Snapping / đường gióng khi kéo | M | 🟡 P2 |
+| [x] | **F21** | Snapping / đường gióng khi kéo | M | 🟡 P2 |
 | [x] | **F22** | Slice input từ Layer / Group cụ thể | M | 🟡 P2 |
 | [ ] | **F23** | Output ra Spout / NDI (screen ảo) | M | 🟡 P2 |
 | [ ] | **F24** | LED mapping qua Art-Net / sACN | XL | ⚪ P3 |
@@ -690,3 +690,7 @@ Nay khung input sửa giống khung transform của Preview Cue: **kéo trong kh
 - Đếm mới: 57 `[x]` · 16 `[~]` · 62 `[ ]`.
 - **F15 `[~]` → `[x]` — X/Y của điểm đang chọn (2026-10-18, theo yêu cầu):** trang Output, công cụ **Edit Points**: khi chọn đúng **một** điểm (góc phối cảnh hoặc điểm warp), đầu khối **WARPING** hiện tên điểm (`Corner TL/TR/BR/BL` hoặc `Warp point R,C`) và hai ô số **X / Y** (px output) — gõ số chỉ dời đúng điểm đó, giống kéo chuột (`OutputPointPos`/`SetOutputPointPos`, `mapping.cpp`). Không chọn điểm nào hoặc chọn nhiều điểm thì ẩn. Bấm đơn vào một điểm nay **chọn** điểm đó (trước đây xoá vùng chọn); Ctrl/Shift+bấm thêm điểm vào vùng chọn. Khối "Corner pins" luôn hiện cũ vẫn bỏ. Kiểm: `--roundtrip` (góc, điểm warp 1101 trên lưới 3×2 không kéo điểm khác, tham chiếu sai bị từ chối).
 - Đếm mới: 58 `[x]` · 15 `[~]` · 62 `[ ]`.
+- **F17 (vẫn `[~]`) — cửa sổ Virtual Output (2026-10-18, theo yêu cầu "tự tạo các màn virtual window để output thử"):** screen đặt thiết bị **Virtual Output** giờ mở một cửa sổ thường (có viền, kéo giãn được, tối đa 960×540 theo tỉ lệ screen, xếp bậc thang) khi bật output — thử nhiều máy chiếu trên một màn hình (`MakeVirtualWindow`, `output.cpp`). NDI / Spout vẫn không có cửa sổ. `--outshot` nay chụp mọi cửa sổ output (`tên.png`, `tên-1.png`…); `--vout N` (test) dựng N screen Virtual Output chồng 20 % có Soft edge, `--blacklevel`/`--gamma` kèm theo. **Đã chụp thật:** hai cửa sổ cho thấy mép phải screen 1 và mép trái screen 2 mờ ngược chiều, nội dung vùng chồng khớp đúng pixel; black level chỉ nâng phần ngoài dải chồng (F20 nay đã nhìn bằng mắt, vẫn chưa thử máy chiếu thật). Còn thiếu cho `[x]`: công tắc **Edge blending** cấp screen chưa làm gì, chưa thử nhiều màn hình vật lý.
+- **F19 `[~]` → `[x]` — gamma từng slice (2026-10-18):** khối Picture của slice có thêm **Gamma** (0.20–3.00, mặc định 1; `Slice::gamma`, lưu `sGam`, file cũ = 1). Vẽ bằng shader GLSL nhỏ thay chỗ shader của ImGui cho texture nguồn của slice (`SetSliceGamma`, `clipart.cpp`): màu^(1/gamma), trên 1 là sáng vùng trung tính, đen vẫn đen. Áp lên màu premultiplied (trên nền đen của máy chiếu đó chính là màu hiển thị). Máy không có shader (hoặc slice vẽ bằng đường vector dự phòng khi không có FBO) thì gamma bị bỏ qua. Đã chụp: `--vout 2 --gamma 2.5` cửa sổ 1 sáng hẳn vùng tối giữa so với cửa sổ 2.
+- **F21 `[~]` → `[x]` — nam châm (2026-10-18):** xoay (input rect, mask, hộp Transform) khi bật nam châm khoá vào bội số 45° nếu cách ≤ 3° (`SnapAngle`; Shift vẫn ép bước 45°, Alt bỏ hít). `MappingSelfTest` (`--roundtrip`) nay kiểm: hít vào góc slice khác, vào cạnh khung output, trượt lên cạnh **xiên** của slice khác, góc không bao giờ hít vào chính nó, và góc xoay. Kiểm bằng test, chưa chụp từng trường hợp.
+- Đếm mới: 60 `[x]` · 13 `[~]` · 62 `[ ]`.

@@ -627,7 +627,7 @@ int main(int argc, char** argv) {
   bool hoverTest = false; float hoverX = 0, hoverY = 0;
   std::string compTest, clipTest, pvTest; std::vector<std::string> layerTest, clipColors;
   OsDrop dropTest;   // --drop: injected at frame 8 of a --shot run, standing in for a real Explorer drag
-  bool openOut = false; std::string outShot;
+  bool openOut = false; std::string outShot; int vout = 0, voutBl = 0; float voutGamma = 1.f;
   bool outKeyTest = false, scriptCtrl = false, startSnap = false, startHand = false, startCard = false; int startTool = -1, startInTool = -1;
   std::string roundtrip; std::vector<int> fxTest;
   std::string shot; int startScreen = 0, frames = 12, W = 1440, H = 900, tab = -1, page = -1;
@@ -651,6 +651,9 @@ int main(int argc, char** argv) {
     }
     else if (a == "--shift") scriptCtrl = true;   // test aid: hold Shift through the whole scripted run (multi-selection screenshots; Ctrl+click is a right click on macOS)
     else if (a == "--outshot" && i + 1 < argc) { openOut = true; outShot = argv[++i]; }
+    else if (a == "--vout" && i + 1 < argc) vout = std::clamp(atoi(argv[++i]), 1, 4);   // test aid: N Virtual Output screens blending one canvas
+    else if (a == "--blacklevel" && i + 1 < argc) voutBl = std::clamp(atoi(argv[++i]), 0, 100);   // test aid: black level on every --vout slice
+    else if (a == "--gamma" && i + 1 < argc) voutGamma = std::clamp((float)atof(argv[++i]), 0.2f, 3.f);   // test aid: gamma on the first --vout slice only
     else if (a == "--scale" && i + 1 < argc) { A.prefs.scale = atoi(argv[++i]); cliScale = A.prefs.scale; scaleGiven = true; }
     else if (a == "--press" && i + 1 < argc) {   // test aid: a key chord, e.g. ctrl+c, delete, shift+left (Ctrl here is io.KeyCtrl = Cmd on macOS)
       std::string c = argv[++i]; Script sc{}; sc.kind = 3;
@@ -944,7 +947,7 @@ int main(int argc, char** argv) {
       Mask* pm = A.curMask(); if (!pm || pm->pts.size() != 5 || A.maskPen) return fail("pen must create a mask with exactly the clicked points");
       A.curSlice()->softEdge = true;
       { Slice& os = *A.curSlice(); os.oflip = 3; os.isKey = true; os.blackBg = true; os.brightness = -20; os.contrast = 15; os.red = 5; os.green = -6; os.blue = 7;
-        os.seGammaR = 1.5f; os.seGammaG = 2.5f; os.seGammaB = 3.f; os.seGamma = 1.25f; os.seLum = 0.75f; os.sePower = 3.5f; os.blR = 10; os.blG = 20; os.blB = 30; }
+        os.seGammaR = 1.5f; os.seGammaG = 2.5f; os.seGammaB = 3.f; os.seGamma = 1.25f; os.seLum = 0.75f; os.sePower = 3.5f; os.blR = 10; os.blG = 20; os.blB = 30; os.gamma = 1.75f; }
       pm->visible = false;   // the tree's eye: a hidden mask must stay hidden after save / load
       pm->pointMode = 1; pm->feather = 120; { MaskHandle mh; mh.i = 2; mh.t = ImVec2(0.25f, -0.5f); pm->handles = {mh}; }
       { Slice& bs = *A.curSlice(); bs.pointMode = 1; bs.meshCols = 3; bs.meshRows = 2; MeshHandle h; h.r = 1; h.c = 2; h.tu = ImVec2(0.5f, 0.25f); h.tv = ImVec2(-0.125f, 1.5f); bs.meshHandles = {h}; }
@@ -955,7 +958,7 @@ int main(int argc, char** argv) {
       if (ls.pointMode != 1 || ls.meshHandles.size() != 1 || ls.meshHandles[0].r != 1 || ls.meshHandles[0].c != 2 || ls.meshHandles[0].tu.x != 0.5f || ls.meshHandles[0].tv.y != 1.5f) return fail("Bezier point mode / handles did not round-trip");
       if (ls.oflip != 3 || !ls.isKey || !ls.blackBg || ls.brightness != -20 || ls.contrast != 15 || ls.red != 5 || ls.green != -6 || ls.blue != 7 ||
           ls.seGammaR != 1.5f || ls.seGammaG != 2.5f || ls.seGammaB != 3.f || ls.seGamma != 1.25f || ls.seLum != 0.75f || ls.sePower != 3.5f ||
-          ls.blR != 10 || ls.blG != 20 || ls.blB != 30) return fail("output slice properties (flip / key / colour / soft edge / black level) did not round-trip");
+          ls.blR != 10 || ls.blG != 20 || ls.blB != 30 || ls.gamma != 1.75f) return fail("output slice properties (flip / key / colour / gamma / soft edge / black level) did not round-trip");
       bool found = false; for (auto& m : ls.masks) if (m.id == penId) { found = m.pts.size() == 5 && m.pts[3].x == 90.f; if (m.visible) return fail("a hidden mask came back visible"); if (m.pointMode != 1 || m.feather != 120 || m.handles.size() != 1 || m.handles[0].i != 2 || m.handles[0].t.y != -0.5f) return fail("Bezier mask / feather did not round-trip"); }
       if (!found) return fail("a 5-point mask did not round-trip its points");
       // every preset outline must touch all four sides of its rect (the hexagon used to stop short of top and bottom)
@@ -1514,6 +1517,19 @@ int main(int argc, char** argv) {
   if (startTool >= 0) A.outTool = startTool; if (startInTool >= 0) A.inTool = startInTool;   // (NewProject just reset the app state)
   if (tab >= 0) A.tab = tab;
   if (page >= 0) A.mpage = page;
+  if (vout > 0) {   // N projectors side by side, 20 % overlap, soft edge on, each in its own Virtual Output window
+    const float ov = 0.2f, iw = 1920.f / (vout - (vout - 1) * ov);
+    std::vector<Screen> scs;
+    for (int k = 0; k < vout; ++k) {
+      Screen sc = A.screens[0]; sc.id = "vscreen" + std::to_string(k + 1); sc.name = "Virtual " + std::to_string(k + 1); sc.outDev = "Virtual Output"; sc.w = 1920; sc.h = 1080;
+      Slice sl = A.screens[0].slices[0]; sl.id = "vslice" + std::to_string(k + 1); sl.name = sc.name; sl.masks.clear();
+      sl.ix = (int)std::lround(k * iw * (1 - ov)); sl.iy = 0; sl.iw = (int)std::lround(iw); sl.ih = 1080; sl.irot = 0;
+      sl.q[0] = {0, 0}; sl.q[1] = {1920, 0}; sl.q[2] = {1920, 1080}; sl.q[3] = {0, 1080}; sl.meshCols = sl.meshRows = 1; sl.meshLocal.clear();
+      sl.softEdge = vout > 1; sl.blR = sl.blG = sl.blB = voutBl; sl.gamma = k == 0 ? voutGamma : 1.f;
+      sc.slices = {sl}; scs.push_back(sc);
+    }
+    A.screens = scs; A.screen = 0;
+  }
   if (outKeyTest) {   // headless check that the output window's own key callback is really installed and closes it
     OpenOutput(win, A.outMonitor);
     bool ok = OutputKeyWiringOk();
@@ -1721,7 +1737,7 @@ int main(int argc, char** argv) {
     }
     if (ImGui::IsKeyPressed(ImGuiKey_F11, false)) {
       ToggleOutput(win, A.outMonitor);   // F17: every screen routed to a display opens on it
-      if (OutputOpen() && OutputWindowCount() == 0) A.notify("No screen is routed to a display");
+      if (OutputOpen() && OutputWindowCount() == 0) A.notify("No screen is routed to a display or Virtual Output");
     }
     ImGui::End();
 

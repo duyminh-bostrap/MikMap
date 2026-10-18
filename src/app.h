@@ -131,6 +131,7 @@ struct Slice {
   int oflip = 0;                       // 0 none, 1 mirror X, 2 mirror Y, 3 both — combined with the input rect's own mirror (WarpMap::Map)
   bool isKey = false, blackBg = false;
   int brightness = 0, contrast = 0, red = 0, green = 0, blue = 0;   // per-slice colour correction, -100..100, on top of the Screen's
+  float gamma = 1.f;   // F19: picture^(1/gamma) per channel, 0.2..3 (above 1 lifts the mid-tones); drawn by a shader (SetSliceGamma)
   float seGammaR = 2.f, seGammaG = 2.f, seGammaB = 2.f, seGamma = 1.f, seLum = 0.5f, sePower = 2.f;
   int blR = 0, blG = 0, blB = 0;       // black level compensation, 0..100
   bool colorActive() const { return brightness || contrast || red || green || blue; }
@@ -536,12 +537,14 @@ void MaskFromPolygon(Mask& m, const std::vector<ImVec2>& poly);   // make m a fr
 // Brightness/contrast/RGB (each -1..1) on what is already drawn inside `poly` (window px): contrast pivots on mid-grey, RGB scale
 // that channel, brightness shifts all. Done with GL multiply / gain (dst*(1+c)) / add / subtract passes, so it needs no shader.
 void DrawColorAdjust(const ImVec2* poly, int n, float contrast, float brightness, float r, float gch, float b);
+// F19: the textured draws that follow (until SetBlendMode(0)) go through a gamma shader; without shader support they draw unchanged.
+void SetSliceGamma(float gamma);
 bool SliceSourceValid(const Slice& s);
 std::string SliceSourceName(const Slice& s);
 void EnsureLayerIds(std::vector<Layer>& layers);            // give every layer a unique id (new, loaded or duplicated)
 // projector output window (F2/I1)
 bool OutputOpen();                          // outputs switched on (F11)
-int OutputWindowCount();                    // projector windows actually open (one per screen on a physical display)
+int OutputWindowCount();                    // output windows actually open (one per screen on a physical display or Virtual Output)
 int OutputMonitorOf(const std::string& screenId);   // the display a screen's window is on, or -1
 void OpenOutput(struct GLFWwindow* share, int monitorIdx);
 void CloseOutput();

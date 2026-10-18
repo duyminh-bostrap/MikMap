@@ -28,8 +28,10 @@ using namespace ui;
 
 // F17: one projector window per screen that is routed to a physical display. Outputs are switched on and off together (F11 / the
 // Screen panel's button); while on, the windows follow the screens every frame — a screen moved to another display moves its window,
-// a screen set to a virtual device loses it. One display shows one screen: the first screen in the list that asks for it.
+// a screen set to NDI / Spout loses it. One display shows one screen: the first screen in the list that asks for it.
+// A screen on "Virtual Output" gets an ordinary resizable window instead (mon = -1): several projectors tried out on one monitor.
 struct OutWin { std::string sc; int mon = -1; GLFWwindow* w = nullptr; };
+static bool IsWindowDevice(const std::string& dev) { return dev.rfind("Virtual", 0) == 0; }
 static std::vector<OutWin> gOuts;
 static bool gOutputsOn = false;
 static GLFWwindow* gMain = nullptr;
@@ -84,9 +86,27 @@ static GLFWwindow* MakeOutWindow(int monitorIdx, bool first) {   // borderless, 
   if (gMain) glfwMakeContextCurrent(gMain);
   return w;
 }
+// A Virtual Output screen's window: decorated and resizable, at most 960x540 with the screen's aspect, cascaded so several don't stack.
+static GLFWwindow* MakeVirtualWindow(const Screen& sc, int nth, bool first) {
+  const float k = std::min(960.f / std::max(1, sc.w), 540.f / std::max(1, sc.h));
+  const int ww = std::max(160, (int)(sc.w * k)), wh = std::max(90, (int)(sc.h * k));
+  glfwWindowHint(GLFW_FOCUS_ON_SHOW, GLFW_FALSE);
+  glfwWindowHint(GLFW_VISIBLE, GLFW_TRUE);
+  const std::string title = "MikMap Output \xC2\xB7 " + sc.name;
+  GLFWwindow* w = glfwCreateWindow(ww, wh, title.c_str(), nullptr, gMain);
+  glfwWindowHint(GLFW_FOCUS_ON_SHOW, GLFW_TRUE);
+  if (!w) return nullptr;
+  glfwSetWindowPos(w, 60 + 40 * nth, 80 + 40 * nth);
+  glfwSetKeyCallback(w, OutputKeyCb);
+  glfwMakeContextCurrent(w);
+  glfwSwapInterval(first ? 1 : 0);
+  if (gMain) glfwMakeContextCurrent(gMain);
+  return w;
+}
 static void SyncOutputWindows() {
-  std::vector<std::pair<std::string, int>> want;   // screen -> display, each display once
+  std::vector<std::pair<std::string, int>> want;   // screen -> display (-1 = its own Virtual Output window), each display once
   if (gOutputsOn) for (auto& sc : A.screens) {
+    if (IsWindowDevice(sc.outDev)) { want.push_back({sc.id, -1}); continue; }
     int m = DeviceMonitor(sc.outDev);
     bool taken = false; for (auto& w : want) if (w.second == m) taken = true;
     if (m >= 0 && !taken) want.push_back({sc.id, m});
@@ -96,10 +116,14 @@ static void SyncOutputWindows() {
     if (keep) { ++i; continue; }
     glfwDestroyWindow(gOuts[i].w); gOuts.erase(gOuts.begin() + i);
   }
+  int nVirt = 0;
+  for (auto& o : gOuts) if (o.mon < 0) ++nVirt;
   for (auto& w : want) {
     bool have = false; for (auto& o : gOuts) if (o.sc == w.first) have = true;
     if (have) continue;
-    if (GLFWwindow* win = MakeOutWindow(w.second, gOuts.empty())) gOuts.push_back({w.first, w.second, win});
+    const Screen* sc = nullptr; for (auto& s : A.screens) if (s.id == w.first) sc = &s;
+    GLFWwindow* win = w.second >= 0 ? MakeOutWindow(w.second, gOuts.empty()) : sc ? MakeVirtualWindow(*sc, nVirt++, gOuts.empty()) : nullptr;
+    if (win) gOuts.push_back({w.first, w.second, win});
   }
   if (gMain) glfwMakeContextCurrent(gMain);
 }
@@ -338,7 +362,7 @@ void DrawSliceOutput(const Screen& sc, const Slice& sl, float ox, float oy, floa
 }
 
 // Renders every open output window with its own screen. Call once per frame, after the UI frame.
-static void RenderOneOutput(OutWin& ow, bool capture);
+static void RenderOneOutput(OutWin& ow, const std::string& capture);
 void RenderOutput() {
   if (!gOutputsOn) return;
   for (auto& o : gOuts) if (glfwWindowShouldClose(o.w)) { CloseOutput(); return; }   // Esc / F11 / Ctrl+W on any output: all off
@@ -348,12 +372,17 @@ void RenderOutput() {
   const float t = (float)g.time * 1.2f;
   for (auto& o : gOuts) for (auto& ps : A.screens) if (ps.id == o.sc) for (auto& sl : ps.slices) if (sl.visible) SliceSourceTexture(sl, t);
   SliceSourcesRenderable(false);
-  for (size_t i = 0; i < gOuts.size(); ++i) RenderOneOutput(gOuts[i], i == 0);
+  for (size_t i = 0; i < gOuts.size(); ++i) {   // a capture writes every window: the first to the given path, the rest to name-N.png
+    std::string path = gCapture;
+    if (i > 0 && !path.empty()) { size_t dot = path.rfind('.'); path.insert(dot == std::string::npos ? path.size() : dot, "-" + std::to_string(i)); }
+    RenderOneOutput(gOuts[i], path);
+  }
+  gCapture.clear();
   if (gMain) glfwMakeContextCurrent(gMain);
   SliceSourcesRenderable(true);
 }
 
-static void RenderOneOutput(OutWin& ow, bool capture) {
+static void RenderOneOutput(OutWin& ow, const std::string& capture) {
   GLFWwindow* gOut = ow.w;
   int fw = 0, fh = 0;
   glfwGetFramebufferSize(gOut, &fw, &fh);
@@ -415,13 +444,12 @@ static void RenderOneOutput(OutWin& ow, bool capture) {
   dd.AddDrawList(&dl);
   ImGui_ImplOpenGL3_RenderDrawData(&dd);
 
-  if (capture && !gCapture.empty()) {
+  if (!capture.empty()) {
     std::vector<unsigned char> px((size_t)fw * fh * 4), flip((size_t)fw * fh * 4);
     glReadPixels(0, 0, fw, fh, GL_RGBA, GL_UNSIGNED_BYTE, px.data());
     for (int y = 0; y < fh; ++y) memcpy(&flip[(size_t)y * fw * 4], &px[(size_t)(fh - 1 - y) * fw * 4], (size_t)fw * 4);
     for (size_t i = 3; i < flip.size(); i += 4) flip[i] = 255;
-    stbi_write_png(gCapture.c_str(), fw, fh, 4, flip.data(), fw * 4);
-    gCapture.clear();
+    stbi_write_png(capture.c_str(), fw, fh, 4, flip.data(), fw * 4);
   }
   glfwSwapBuffers(gOut);
 }

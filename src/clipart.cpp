@@ -90,12 +90,100 @@ static PFN_glCheckFramebufferStatus p_glCheckFramebufferStatus = nullptr;
 #define GL_FRAMEBUFFER_BINDING 0x8CA6
 #endif
 
+// ── F19: per-slice gamma. Fixed-function blending cannot raise to a power, so a slice texture with gamma is drawn through a small
+// shader of our own (GL 2.0 entry points, loaded like the ones above).
+typedef GLuint(APIENTRY* PFN_glCreateShader)(GLenum);
+typedef void(APIENTRY* PFN_glShaderSource)(GLuint, GLsizei, const char* const*, const GLint*);
+typedef void(APIENTRY* PFN_glCompileShader)(GLuint);
+typedef void(APIENTRY* PFN_glGetShaderiv)(GLuint, GLenum, GLint*);
+typedef GLuint(APIENTRY* PFN_glCreateProgram)();
+typedef void(APIENTRY* PFN_glAttachShader)(GLuint, GLuint);
+typedef void(APIENTRY* PFN_glBindAttribLocation)(GLuint, GLuint, const char*);
+typedef void(APIENTRY* PFN_glLinkProgram)(GLuint);
+typedef void(APIENTRY* PFN_glGetProgramiv)(GLuint, GLenum, GLint*);
+typedef void(APIENTRY* PFN_glUseProgram)(GLuint);
+typedef GLint(APIENTRY* PFN_glGetAttribLocation)(GLuint, const char*);
+typedef GLint(APIENTRY* PFN_glGetUniformLocation)(GLuint, const char*);
+typedef void(APIENTRY* PFN_glGetUniformfv)(GLuint, GLint, GLfloat*);
+typedef void(APIENTRY* PFN_glUniformMatrix4fv)(GLint, GLsizei, GLboolean, const GLfloat*);
+typedef void(APIENTRY* PFN_glUniform1i)(GLint, GLint);
+typedef void(APIENTRY* PFN_glUniform1f)(GLint, GLfloat);
+static PFN_glCreateShader p_glCreateShader; static PFN_glShaderSource p_glShaderSource; static PFN_glCompileShader p_glCompileShader;
+static PFN_glGetShaderiv p_glGetShaderiv; static PFN_glCreateProgram p_glCreateProgram; static PFN_glAttachShader p_glAttachShader;
+static PFN_glBindAttribLocation p_glBindAttribLocation; static PFN_glLinkProgram p_glLinkProgram; static PFN_glGetProgramiv p_glGetProgramiv;
+static PFN_glUseProgram p_glUseProgram; static PFN_glGetAttribLocation p_glGetAttribLocation; static PFN_glGetUniformLocation p_glGetUniformLocation;
+static PFN_glGetUniformfv p_glGetUniformfv; static PFN_glUniformMatrix4fv p_glUniformMatrix4fv; static PFN_glUniform1i p_glUniform1i;
+static PFN_glUniform1f p_glUniform1f;
+#ifndef GL_CURRENT_PROGRAM
+#define GL_CURRENT_PROGRAM 0x8B8D
+#define GL_VERTEX_SHADER 0x8B31
+#define GL_FRAGMENT_SHADER 0x8B30
+#define GL_COMPILE_STATUS 0x8B81
+#define GL_LINK_STATUS 0x8B82
+#endif
+
 void InitBlendModes(void* (*getProc)(const char*)) {
   p_glBlendEquation = (PFN_glBlendEquation)getProc("glBlendEquation");
   p_glGenFramebuffers = (PFN_glGenFramebuffers)getProc("glGenFramebuffers");
   p_glBindFramebuffer = (PFN_glBindFramebuffer)getProc("glBindFramebuffer");
   p_glFramebufferTexture2D = (PFN_glFramebufferTexture2D)getProc("glFramebufferTexture2D");
   p_glCheckFramebufferStatus = (PFN_glCheckFramebufferStatus)getProc("glCheckFramebufferStatus");
+  p_glCreateShader = (PFN_glCreateShader)getProc("glCreateShader"); p_glShaderSource = (PFN_glShaderSource)getProc("glShaderSource");
+  p_glCompileShader = (PFN_glCompileShader)getProc("glCompileShader"); p_glGetShaderiv = (PFN_glGetShaderiv)getProc("glGetShaderiv");
+  p_glCreateProgram = (PFN_glCreateProgram)getProc("glCreateProgram"); p_glAttachShader = (PFN_glAttachShader)getProc("glAttachShader");
+  p_glBindAttribLocation = (PFN_glBindAttribLocation)getProc("glBindAttribLocation"); p_glLinkProgram = (PFN_glLinkProgram)getProc("glLinkProgram");
+  p_glGetProgramiv = (PFN_glGetProgramiv)getProc("glGetProgramiv"); p_glUseProgram = (PFN_glUseProgram)getProc("glUseProgram");
+  p_glGetAttribLocation = (PFN_glGetAttribLocation)getProc("glGetAttribLocation"); p_glGetUniformLocation = (PFN_glGetUniformLocation)getProc("glGetUniformLocation");
+  p_glGetUniformfv = (PFN_glGetUniformfv)getProc("glGetUniformfv"); p_glUniformMatrix4fv = (PFN_glUniformMatrix4fv)getProc("glUniformMatrix4fv");
+  p_glUniform1i = (PFN_glUniform1i)getProc("glUniform1i"); p_glUniform1f = (PFN_glUniform1f)getProc("glUniform1f");
+}
+
+// The gamma program takes the ImGui backend's place for the slice's textured quads: same attribute locations (read from the backend's
+// program, which is current when the callback runs) and the backend's projection matrix copied over. Built once, on first use.
+static GLuint gGammaProg = 0;
+static GLint gGammaProj = -1, gGammaTex = -1, gGammaVal = -1;
+static bool gGammaTried = false;
+static GLuint BuildGammaProgram(GLuint backend) {
+  if (!p_glCreateShader || !p_glUseProgram || !p_glGetUniformfv || !p_glUniform1f || !backend) return 0;
+#ifdef __APPLE__
+  const char* ver = "#version 150\n";
+#else
+  const char* ver = "#version 130\n";
+#endif
+  const char* vs = "uniform mat4 ProjMtx; in vec2 Position; in vec2 UV; in vec4 Color; out vec2 Frag_UV; out vec4 Frag_Color;\n"
+                   "void main() { Frag_UV = UV; Frag_Color = Color; gl_Position = ProjMtx * vec4(Position.xy, 0.0, 1.0); }\n";
+  // The curve goes on the premultiplied colour as it is: over the projector's black that IS the visible colour. (Un-premultiplying
+  // is not safe: the composition's blend modes write alpha with the colour factors, so rgb / a would be wrong.)
+  const char* fs = "uniform sampler2D Texture; uniform float Gamma; in vec2 Frag_UV; in vec4 Frag_Color; out vec4 Out_Color;\n"
+                   "void main() { vec4 c = texture(Texture, Frag_UV);\n"
+                   "  Out_Color = Frag_Color * vec4(pow(clamp(c.rgb, 0.0, 1.0), vec3(1.0 / Gamma)), c.a); }\n";
+  auto compile = [&](GLenum kind, const char* body) -> GLuint {
+    GLuint s = p_glCreateShader(kind); const char* src[2] = {ver, body};
+    p_glShaderSource(s, 2, src, nullptr); p_glCompileShader(s);
+    GLint ok = 0; p_glGetShaderiv(s, GL_COMPILE_STATUS, &ok); return ok ? s : 0;
+  };
+  GLuint v = compile(GL_VERTEX_SHADER, vs), f = compile(GL_FRAGMENT_SHADER, fs);
+  if (!v || !f) return 0;
+  GLuint p = p_glCreateProgram(); p_glAttachShader(p, v); p_glAttachShader(p, f);
+  const char* attrs[3] = {"Position", "UV", "Color"};
+  for (const char* a : attrs) { GLint loc = p_glGetAttribLocation(backend, a); if (loc >= 0) p_glBindAttribLocation(p, (GLuint)loc, a); }
+  p_glLinkProgram(p);
+  GLint ok = 0; p_glGetProgramiv(p, GL_LINK_STATUS, &ok); if (!ok) return 0;
+  gGammaProj = p_glGetUniformLocation(p, "ProjMtx"); gGammaTex = p_glGetUniformLocation(p, "Texture"); gGammaVal = p_glGetUniformLocation(p, "Gamma");
+  return p;
+}
+static void CbGammaOn(const ImDrawList*, const ImDrawCmd* cmd) {
+  GLint cur = 0; glGetIntegerv(GL_CURRENT_PROGRAM, &cur);
+  if (!gGammaTried) { gGammaTried = true; gGammaProg = BuildGammaProgram((GLuint)cur); }
+  if (!gGammaProg || cur <= 0 || (GLuint)cur == gGammaProg) return;   // no shader support: the slice is drawn without its gamma
+  float proj[16]; p_glGetUniformfv((GLuint)cur, p_glGetUniformLocation((GLuint)cur, "ProjMtx"), proj);
+  uint32_t bits = (uint32_t)(uintptr_t)cmd->UserCallbackData; float gm; std::memcpy(&gm, &bits, sizeof gm);
+  p_glUseProgram(gGammaProg);
+  p_glUniformMatrix4fv(gGammaProj, 1, GL_FALSE, proj); p_glUniform1i(gGammaTex, 0); p_glUniform1f(gGammaVal, gm);
+}
+void SetSliceGamma(float gamma) {   // following textured draws go through the gamma shader; SetBlendMode(0) puts the backend's back
+  uint32_t bits; std::memcpy(&bits, &gamma, sizeof bits);
+  g.dl->AddCallback(CbGammaOn, (void*)(uintptr_t)bits);
 }
 
 int BlendIndex(const std::string& name) {

@@ -394,10 +394,11 @@ static void SetVisibleCorners(Slice& s, const ImVec2 target[4]) {
 
 // --roundtrip checks for the Resolume-style tools (the helpers are private to this file).
 static bool GroupMoveSelfTest(std::string& why);
+static bool SnapSelfTest(std::string& why);
 static ImVec2 MaskTanToCanvas(const Mask& m, ImVec2 t);
 static ImVec2 MaskTanToUnit(const Mask& m, ImVec2 c);
 bool MappingSelfTest(std::string& why) {
-  if (!GroupMoveSelfTest(why)) return false;
+  if (!GroupMoveSelfTest(why) || !SnapSelfTest(why)) return false;
   auto near2 = [](ImVec2 a, ImVec2 b, float tol) { return std::fabs(a.x - b.x) <= tol && std::fabs(a.y - b.y) <= tol; };
   Slice s; s.q[0] = {200, 150}; s.q[1] = {1500, 120}; s.q[2] = {1600, 900}; s.q[3] = {150, 980};
   s.meshCols = 3; s.meshRows = 2;
@@ -551,6 +552,7 @@ void DrawSliceTextured(const Slice& s, unsigned tex, float ox, float oy, float s
   const ImU32 tint = IM_COL32(ai, ai, ai, ai);   // premultiplied: scale colour and alpha alike
   static std::vector<ImVec2> P, T;
   SetBlendMode(12);
+  if (std::fabs(s.gamma - 1.f) > 1e-3f) SetSliceGamma(s.gamma);   // F19
   for (int ri = 0; ri < R; ++ri) for (int ci = 0; ci < C; ++ci) {
     P.resize((size_t)(n + 1) * (n + 1)); T.resize(P.size());
     for (int j = 0; j <= n; ++j) for (int i = 0; i <= n; ++i) {
@@ -1477,6 +1479,31 @@ static void SnapRectMove(RectXf& R, const SnapSet& S, float thr) {
   if (sx) GuideAxis(S, true, gx, srcX);
   if (sy) GuideAxis(S, false, gy, srcY);
 }
+// Turning with the magnet on: within thr degrees of a multiple of 45 it locks there (Shift still forces 45 degree steps).
+static float SnapAngle(float deg, float thr) {
+  const float k = std::round(deg / 45.f) * 45.f;
+  return std::fabs(deg - k) <= thr ? k : deg;
+}
+
+static bool SnapSelfTest(std::string& why) {
+  const int page = A.mpage; A.mpage = 1;   // BuildSnap reads the page: Output targets
+  Screen sc; Slice own, other;
+  own.id = "own"; own.q[0] = {137, 211}; own.q[1] = {900, 100}; own.q[2] = {900, 700}; own.q[3] = {100, 700};
+  other.id = "other"; other.q[0] = {1000, 100}; other.q[1] = {1600, 300}; other.q[2] = {1600, 900}; other.q[3] = {1000, 900};
+  sc.slices = {own, other};
+  auto near2 = [](ImVec2 a, ImVec2 b) { return std::fabs(a.x - b.x) < 0.01f && std::fabs(a.y - b.y) < 0.01f; };
+  const SnapSet S = BuildSnap(&sc, &sc.slices[0], nullptr, false, 0);
+  bool ok = false;
+  if (!near2(SnapPoint({1004, 96}, S, 8), {1000, 100})) why = "magnet: a point near another slice's corner must land on it";
+  else if (!near2(SnapPoint({1915, 500}, S, 8), {1920, 500})) why = "magnet: a point near the output box's edge must land on it";
+  else if (ImVec2 e = SnapPoint({1300, 205}, S, 8); std::fabs(e.y - (100 + (e.x - 1000) / 3.f)) > 0.01f || near2(e, {1300, 205}))
+    why = "magnet: a point near another slice's slanted edge must slide onto it";
+  else if (!near2(SnapPoint({140, 214}, S, 8), {140, 214})) why = "magnet: a corner must never snap onto itself";
+  else if (SnapAngle(88.5f, 3.f) != 90.f || SnapAngle(-46.f, 3.f) != -45.f || SnapAngle(80.f, 3.f) != 80.f) why = "magnet: turning must lock near multiples of 45 degrees only";
+  else ok = true;
+  gGuideLines.clear(); gGuideDots.clear(); A.mpage = page;
+  return ok;
+}
 
 // ── stage view ──
 // Corner pins and mesh points can sit far outside the 1920x1080 output (-4000..8000), so the stage is a free pan/zoom
@@ -1890,6 +1917,7 @@ static void Stage(ImRect r) {
         float ccx = R.x + R.w * 0.5f, ccy = R.y + R.h * 0.5f;
         float r = dragRot0 + (std::atan2(mo.y - ccy, mo.x - ccx) - dragAng0) / kDegToRad;
         if (shift) r = std::round(r / 45.f) * 45.f;
+        else if (snapOn) r = SnapAngle(r, 3.f);
         r -= 360.f * std::floor((r + 180.f) / 360.f);   // keep within -180..180
         R.rot = std::fabs(r) < 0.05f ? 0.f : r;
       }
@@ -2566,6 +2594,7 @@ static void PropsPanel(ImRect r) {
       }
       intRow("Brightness", sl->brightness, -100, 100, 0x3201, pal::yellow);
       intRow("Contrast", sl->contrast, -100, 100, 0x3202, pal::yellow);
+      fltRow("Gamma", sl->gamma, 0.2f, 3.f, 0x3206, pal::yellow, false);
       intRow("Red", sl->red, -100, 100, 0x3203, pal::red);
       intRow("Green", sl->green, -100, 100, 0x3204, pal::mint);
       intRow("Blue", sl->blue, -100, 100, 0x3205, pal::cyan);
@@ -2871,7 +2900,8 @@ static void PropsPanel(ImRect r) {
       std::string st; uint32_t sth = pal::t66;
       int dm = DeviceMonitor(sc->outDev), onMon = OutputMonitorOf(sc->id);
       std::string owner; if (dm >= 0) for (auto& o : A.screens) { if (DeviceMonitor(o.outDev) == dm) { owner = o.id == sc->id ? "" : o.name; break; } }
-      if (virt) st = "Virtual output: no display window (NDI / Spout sender not built yet).";
+      if (sc->outDev.rfind("Virtual", 0) == 0) { st = OutputOpen() ? "Showing in its own window." : "Opens in its own window when the outputs are open."; if (OutputOpen()) sth = pal::mint; }
+      else if (virt) st = "NDI / Spout: no display window (sender not built yet).";
       else if (dm < 0) st = "No display found for this device.";
       else if (!owner.empty()) { st = "Display already used by " + owner + " \xE2\x80\x94 this screen is not shown."; sth = pal::red; }
       else if (onMon >= 0) { st = "Showing on " + MonitorName(onMon) + "."; sth = pal::mint; }

@@ -129,7 +129,7 @@ JsonValue SliceJ(const Slice& s) {
     for (auto& h : s.meshHandles) { JsonValue e = JsonValue::array(); e.push(h.r); e.push(h.c); e.push((double)h.tu.x); e.push((double)h.tu.y); e.push((double)h.tv.x); e.push((double)h.tv.y); hs.push(e); }
     o.set("handles", hs); }
   o.set("oflip", s.oflip); o.set("isKey", s.isKey); o.set("blackBg", s.blackBg);
-  o.set("sBri", s.brightness); o.set("sCon", s.contrast); o.set("sRed", s.red); o.set("sGrn", s.green); o.set("sBlu", s.blue);
+  o.set("sBri", s.brightness); o.set("sCon", s.contrast); o.set("sRed", s.red); o.set("sGrn", s.green); o.set("sBlu", s.blue); o.set("sGam", (double)s.gamma);
   o.set("seGR", (double)s.seGammaR); o.set("seGG", (double)s.seGammaG); o.set("seGB", (double)s.seGammaB);
   o.set("seGamma", (double)s.seGamma); o.set("seLum", (double)s.seLum); o.set("sePow", (double)s.sePower);
   o.set("blR", s.blR); o.set("blG", s.blG); o.set("blB", s.blB);
@@ -179,6 +179,7 @@ Slice ReadSlice(const JsonValue& o) {
   s.oflip = std::clamp(o["oflip"].asInt(0), 0, 3); s.isKey = o["isKey"].asBool(false); s.blackBg = o["blackBg"].asBool(false);
   s.brightness = std::clamp(o["sBri"].asInt(0), -100, 100); s.contrast = std::clamp(o["sCon"].asInt(0), -100, 100);
   s.red = std::clamp(o["sRed"].asInt(0), -100, 100); s.green = std::clamp(o["sGrn"].asInt(0), -100, 100); s.blue = std::clamp(o["sBlu"].asInt(0), -100, 100);
+  s.gamma = std::clamp((float)o["sGam"].asNumber(1.0), 0.2f, 3.f);   // (older files: no key, gamma 1 = unchanged)
   s.seGammaR = std::clamp((float)o["seGR"].asNumber(2.0), 0.1f, 4.f); s.seGammaG = std::clamp((float)o["seGG"].asNumber(2.0), 0.1f, 4.f); s.seGammaB = std::clamp((float)o["seGB"].asNumber(2.0), 0.1f, 4.f);
   s.seGamma = std::clamp((float)o["seGamma"].asNumber(1.0), 0.1f, 4.f); s.seLum = std::clamp((float)o["seLum"].asNumber(0.5), 0.f, 1.f); s.sePower = std::clamp((float)o["sePow"].asNumber(2.0), 0.1f, 8.f);
   s.blR = std::clamp(o["blR"].asInt(0), 0, 100); s.blG = std::clamp(o["blG"].asInt(0), 0, 100); s.blB = std::clamp(o["blB"].asInt(0), 0, 100);
