@@ -1505,19 +1505,40 @@ int main(int argc, char** argv) {
       if (DeletePolyPoint(e, 0) || e.pin.size() != 3) return fail("polygon delete: a triangle must keep its 3 points");
       MakePolygonSlice(e, 5);
       const std::vector<ImVec2> before = e.pout;
-      const App::PtRef top{e.id, 2000};
+      const App::PtRef top{e.id, kPolyOut};
       ImVec2 at;
-      if (!OutputPointPos(A.screens[0], top, at) || !closeTo(at, e.pout[0], 0.f)) return fail("polygon point: id 2000 must be pout[0]");
+      if (!OutputPointPos(A.screens[0], top, at) || !closeTo(at, e.pout[0], 0.f)) return fail("polygon point: id kPolyOut must be pout[0]");
       if (SetOutputPointPos(A.screens[0], top, ImVec2(before[0].x, before[3].y + 200))) return fail("polygon point: a move that crosses an edge must be refused");
       for (int i = 0; i < 5; ++i) if (!closeTo(e.pout[i], before[i], 0.f)) return fail("polygon point: a refused move must leave pout unchanged");
       if (A.toast != "Shape would cross itself") return fail("polygon point: a refused move must say \"Shape would cross itself\"");
       if (!SetOutputPointPos(A.screens[0], top, ImVec2(before[0].x + 10, before[0].y - 20)) || !closeTo(e.pout[0], ImVec2(std::round(before[0].x + 10), std::round(before[0].y - 20)), 0.01f))
         return fail("polygon point: a legal X/Y move must land");
-      if (!OutputPointPos(A.screens[0], {e.id, 3001}, at) || !closeTo(at, e.pin[1], 0.f)) return fail("polygon point: id 3001 must be pin[1]");
-      A.mpage = 1; A.mapPts = {{e.id, 2001}, {e.id, 2002}};
+      if (!OutputPointPos(A.screens[0], {e.id, kPolyIn + 1}, at) || !closeTo(at, e.pin[1], 0.f)) return fail("polygon point: id kPolyIn + 1 must be pin[1]");
+      A.mpage = 1; A.mapPts = {{e.id, kPolyOut + 1}, {e.id, kPolyOut + 2}};
       if (!A.deletePickedPoints() || e.pout.size() != 3 || A.screens[0].slices.size() < 2) return fail("polygon Delete key: must delete the picked points, not the slice");
       A.mapPts.clear();
       if (A.deletePickedPoints()) return fail("polygon Delete key: with no point picked the slice selection is deleted as before");
+      // grid warp-point ids (1000 + row*100 + col) pass 2000 / 3000 from row 10 / 20: they must stay grid points, never polygon ids
+      for (int rows : {10, 20}) {
+        NewProject();
+        Screen& gsc = A.screens[0]; Slice& gs = gsc.slices[0];
+        gs.kind = 0; gs.meshCols = 2; gs.meshRows = rows; gs.meshLocal.clear(); gs.meshU.clear(); gs.meshV.clear(); gs.meshHandles.clear();
+        for (int r : {10, 19, 20}) {
+          if (r > rows) continue;
+          const App::PtRef wp{gs.id, 1000 + r * 100 + 1};
+          char want[40]; std::snprintf(want, sizeof want, "Warp point %d,2", r + 1);
+          ImVec2 p0, p1;
+          if (!OutputPointPos(gsc, wp, p0)) return fail("grid with many rows: a warp point in row 10+ must be found");
+          if (PtOnInputPage(wp.idx)) return fail("grid with many rows: a warp point must stay on the Output page");
+          if (PointLabel(wp.idx) != want) return fail("grid with many rows: the point's label must be \"Warp point R,C\"");
+          const ImVec2 to(std::round(p0.x + 7), std::round(p0.y - 5));
+          if (!SetOutputPointPos(gsc, wp, to) || !OutputPointPos(gsc, wp, p1) || !closeTo(p1, to, 0.6f)) return fail("grid with many rows: X/Y must move a warp point in row 10+");
+          A.mpage = 1; A.mapPts = {wp}; A.nudgeSelection(3.f, 0.f);
+          if (!OutputPointPos(gsc, wp, p0) || !closeTo(p0, ImVec2(to.x + 3, to.y), 0.6f)) return fail("grid with many rows: arrows must move a picked warp point in row 10+");
+          A.mapPts.clear();
+        }
+      }
+      if (!PtOnInputPage(kPolyIn) || PtOnInputPage(kPolyOut) || PointLabel(kPolyOut + 4) != "Point 5" || PointLabel(kPolyIn) != "Point 1") return fail("polygon ids: page / label must still work");
       NewProject();
     }
     std::printf("roundtrip OK\n"); return 0;

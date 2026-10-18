@@ -914,7 +914,7 @@ bool App::deletePickedPoints() {
   for (auto& s : sc->slices) {
     if (s.kind != 1) continue;
     std::vector<int> del;   // the picked points of the page being shown, highest index first so the lower ones keep their place
-    for (auto& r : mapPts) if (r.sl == s.id && r.idx >= 2000 && (mpage == 1) == (r.idx < 3000)) del.push_back(r.idx % 1000);
+    for (auto& r : mapPts) if (r.sl == s.id && r.idx >= kPolyOut && (mpage == 0) == PtOnInputPage(r.idx)) del.push_back(r.idx % kPolyOut);
     if (del.empty()) continue;
     any = true;
     std::sort(del.rbegin(), del.rend()); del.erase(std::unique(del.begin(), del.end()), del.end());
@@ -962,9 +962,9 @@ static int SliceIndex(const Screen& sc, const std::string& id) { for (int i = 0;
 struct PtStart { std::string sl; int idx; ImVec2 out; };   // where a point was (output px) when the group move began
 static Slice* SliceById(Screen& sc, const std::string& id) { for (auto& s : sc.slices) if (s.id == id) return &s; return nullptr; }
 static bool PointPos(const Slice& s, int idx, ImVec2& out) {
-  if (s.kind == 1 || idx >= 2000) {   // polygon: 2000 + i = pout[i], 3000 + i = pin[i]; grid ids mean nothing here (and vice versa)
-    const std::vector<ImVec2>& P = idx >= 3000 ? s.pin : s.pout; const int i = idx - (idx >= 3000 ? 3000 : 2000);
-    if (s.kind != 1 || idx < 2000 || i < 0 || i >= (int)P.size()) return false;
+  if (s.kind == 1 || idx >= kPolyOut) {   // polygon: kPolyOut + i = pout[i], kPolyIn + i = pin[i]; grid ids mean nothing here (and vice versa)
+    const std::vector<ImVec2>& P = idx >= kPolyIn ? s.pin : s.pout; const int i = idx - (idx >= kPolyIn ? kPolyIn : kPolyOut);
+    if (s.kind != 1 || idx < kPolyOut || i < 0 || i >= (int)P.size()) return false;
     out = P[i]; return true;
   }
   if (idx < 1000) { if (idx < 0 || idx > 3) return false; out = s.q[idx]; return true; }
@@ -982,7 +982,7 @@ static std::vector<PtStart> CapturePoints(Screen& sc, const std::vector<App::PtR
 // NOT in the group keep their place on screen (moving a picked perspective corner must not drag the rest of the grid along), and the
 // big corners are refit around the grid afterwards. A slice with only perspective corners in the group is a perspective edit: its
 // grid follows the new corners, as when one corner is dragged on its own.
-// Polygon points (2000+ / 3000+) are set on a copy first: if pin or pout would cross itself that slice keeps its last valid shape and the
+// Polygon points (kPolyOut+ / kPolyIn+) are set on a copy first: if pin or pout would cross itself that slice keeps its last valid shape and the
 // call returns false ("Shape would cross itself" on the status line).
 static bool MovePointsTo(Screen& sc, const std::vector<PtStart>& st, ImVec2 delta) {
   auto clampOut = [](ImVec2 p) { return ImVec2(std::clamp(std::round(p.x + 0.f), -4000.f, 8000.f), std::clamp(std::round(p.y + 0.f), -4000.f, 8000.f)); };
@@ -990,8 +990,8 @@ static bool MovePointsTo(Screen& sc, const std::vector<PtStart>& st, ImVec2 delt
   for (auto& s : sc.slices) {
     if (s.kind != 1) continue;
     auto pin = s.pin, pout = s.pout; bool any = false;
-    for (auto& p : st) if (p.sl == s.id && p.idx >= 2000) {
-      auto& P = p.idx >= 3000 ? pin : pout; const int i = p.idx - (p.idx >= 3000 ? 3000 : 2000);
+    for (auto& p : st) if (p.sl == s.id && p.idx >= kPolyOut) {
+      auto& P = p.idx >= kPolyIn ? pin : pout; const int i = p.idx - (p.idx >= kPolyIn ? kPolyIn : kPolyOut);
       if (i >= 0 && i < (int)P.size()) { P[i] = clampOut(ImVec2(p.out.x + delta.x, p.out.y + delta.y)); any = true; }
     }
     if (!any) continue;
@@ -1000,7 +1000,7 @@ static bool MovePointsTo(Screen& sc, const std::vector<PtStart>& st, ImVec2 delt
   }
   if (!ok) A.notify(kCrossMsg);
   std::map<std::string, std::vector<std::vector<ImVec2>>> pinned;   // slice id -> its grid on screen before this move
-  for (auto& s : sc.slices) for (auto& p : st) if (p.idx >= 1000 && p.idx < 2000 && p.sl == s.id) { pinned[s.id] = MeshGrid(s); break; }
+  for (auto& s : sc.slices) for (auto& p : st) if (p.idx >= 1000 && p.idx < kPolyOut && p.sl == s.id) { pinned[s.id] = MeshGrid(s); break; }
   for (auto& p : st) if (p.idx < 1000) if (Slice* s = SliceById(sc, p.sl)) s->q[p.idx] = clampOut(ImVec2(p.out.x + delta.x, p.out.y + delta.y));
   for (auto& s : sc.slices) {
     auto it = pinned.find(s.id); if (it == pinned.end()) continue;
@@ -1019,6 +1019,14 @@ static bool MovePointsTo(Screen& sc, const std::vector<PtStart>& st, ImVec2 delt
 bool OutputPointPos(const Screen& sc, const App::PtRef& r, ImVec2& out) {
   for (auto& s : sc.slices) if (s.id == r.sl) return PointPos(s, r.idx, out);
   return false;
+}
+std::string PointLabel(int idx) {
+  static const char* kCorner[4] = {"TL", "TR", "BR", "BL"};
+  char nm[40];
+  if (idx >= kPolyOut) snprintf(nm, sizeof nm, "Point %d", idx % kPolyOut + 1);
+  else if (idx >= 0 && idx < 4) snprintf(nm, sizeof nm, "Corner %s", kCorner[idx]);
+  else snprintf(nm, sizeof nm, "Warp point %d,%d", (idx - 1000) / 100 + 1, (idx - 1000) % 100 + 1);
+  return nm;
 }
 // F15: the point's X/Y fields — the same move as dragging that one point (then the big corners refit, as nudgeSelection does)
 bool SetOutputPointPos(Screen& sc, const App::PtRef& r, ImVec2 pos) {
@@ -1212,7 +1220,7 @@ void App::pasteClip() {
 }
 void App::nudgeSelection(float dx, float dy) {
   std::vector<MapRef> sel = mapSelection();
-  const bool pts = !mapPts.empty() && (mpage == 1) == (mapPts[0].idx < 3000);   // points picked on the page being shown (3000+ = Input)
+  const bool pts = !mapPts.empty() && (mpage == 0) == PtOnInputPage(mapPts[0].idx);   // points picked on the page being shown (kPolyIn+ = Input)
   if ((sel.empty() && !pts) || maskPen) return;
   int kind = MapKind();
   auto slice = [&](const MapRef& r) -> Slice* { for (auto& sc : screens) if (sc.id == r.sc) for (auto& sl : sc.slices) if (sl.id == r.sl) return &sl; return nullptr; };
@@ -2072,8 +2080,8 @@ static void Stage(ImRect r) {
     dragKind = 0;
   }
   gGuideLines.clear(); gGuideDots.clear();
-  // picked points belong to their page: polygon input points (3000+) to the Input page, every other kind to the Output page
-  A.mapPts.erase(std::remove_if(A.mapPts.begin(), A.mapPts.end(), [](const App::PtRef& r) { return (A.mpage == 1) != (r.idx < 3000); }), A.mapPts.end());
+  // picked points belong to their page: polygon input points (kPolyIn+) to the Input page, every other kind to the Output page
+  A.mapPts.erase(std::remove_if(A.mapPts.begin(), A.mapPts.end(), [](const App::PtRef& r) { return (A.mpage == 0) != PtOnInputPage(r.idx); }), A.mapPts.end());
   const bool snapOn = A.mapSnap && !io.KeyAlt;   // magnet on; hold Alt to place freely
   const float snapThr = 8.f / std::max(0.05f, s);   // 8 screen px, in stage px
   if (dragKind && sl) {
@@ -2247,14 +2255,14 @@ static void Stage(ImRect r) {
         Border(hr, K(hex), 2, 2);
       }
     };
-  // F18: the selected polygon slice's points on the page shown (pout on Output, pin on Input; picked ids 2000 + i / 3000 + i). Click picks
+  // F18: the selected polygon slice's points on the page shown (pout on Output, pin on Input; picked ids kPolyOut + i / kPolyIn + i). Click picks
   // and drags them (Ctrl/Cmd/Shift adds; pressing a picked point drags every picked one), double-click an edge adds a point there,
   // right-click a point offers Delete point. phase 0: hit-test (true = it took the click), 1: draw.
   auto polyEdit = [&](int phase) -> bool {
     if (!sl || sl->kind != 1) return false;
     const bool input = A.mpage == 0;
     const std::vector<ImVec2>& P = input ? sl->pin : sl->pout;
-    const int base = input ? 3000 : 2000, n = (int)P.size();
+    const int base = input ? kPolyIn : kPolyOut, n = (int)P.size();
     const float kHalf = 4.5f, kPad = 4.f;
     int hotPt = -1, hotSeg = -1; float segT = 0;
     if (inArea && !dragKind && !A.mapHand && !A.maskPen) {
@@ -2421,7 +2429,7 @@ static void Stage(ImRect r) {
             CursorHand();
             if (rClick) InputRectMenu(m);
             else if (clickPending) {
-              std::vector<App::PtRef> all; for (int i = 0; i < n; ++i) all.push_back({sl->id, 3000 + i});
+              std::vector<App::PtRef> all; for (int i = 0; i < n; ++i) all.push_back({sl->id, kPolyIn + i});
               A.pushHist(); gGroup = CapturePoints(*sc, all); gGrabStart = sl->pin[0]; dragOff = Vsub(sl->pin[0], mo); dragKind = 7; dragIdx = 0; frameTookClick = true;
             }
           }
@@ -2669,10 +2677,10 @@ static void Stage(ImRect r) {
           ImRect mr(std::min(gMarqueeA.x, m.x), std::min(gMarqueeA.y, m.y), std::max(gMarqueeA.x, m.x), std::max(gMarqueeA.y, m.y));
           std::vector<App::PtRef> pinHit;
           if (A.mpage == 0 && sl && sl->visible && sl->kind == 1)
-            for (int i = 0; i < (int)sl->pin.size(); ++i) if (mr.Contains(toPx(sl->pin[i]))) pinHit.push_back({sl->id, 3000 + i});
+            for (int i = 0; i < (int)sl->pin.size(); ++i) if (mr.Contains(toPx(sl->pin[i]))) pinHit.push_back({sl->id, kPolyIn + i});
           if (A.mpage == 1 && A.outTool == 0) {   // Edit Points: pick points
             std::vector<App::PtRef> hit;
-            if (sl && sl->visible && sl->kind == 1) { for (int i = 0; i < (int)sl->pout.size(); ++i) if (mr.Contains(toPx(sl->pout[i]))) hit.push_back({sl->id, 2000 + i}); }
+            if (sl && sl->visible && sl->kind == 1) { for (int i = 0; i < (int)sl->pout.size(); ++i) if (mr.Contains(toPx(sl->pout[i]))) hit.push_back({sl->id, kPolyOut + i}); }
             else if (sl && sl->visible) {   // only the selected slice's points: its perspective corners and every warp point (grid corners too)
               for (int i = 0; i < 4; ++i) if (mr.Contains(toPx(sl->q[i]))) hit.push_back({sl->id, i});
               auto gr = MeshGrid(*sl); int R = (int)gr.size(), C = (int)gr[0].size();
@@ -2952,12 +2960,7 @@ static void PropsPanel(ImRect r) {
       ImVec2 pp;   // F15: X/Y of the one picked point (hidden when none or several are picked)
       if (sc && A.mapPts.size() == 1 && A.mapPts[0].sl == sl->id && OutputPointPos(*sc, A.mapPts[0], pp)) {
         const App::PtRef pr = A.mapPts[0];
-        static const char* kCorner[4] = {"TL", "TR", "BR", "BL"};
-        char nm[40];
-        if (pr.idx >= 2000) snprintf(nm, sizeof nm, "Point %d", pr.idx % 1000 + 1);
-        else if (pr.idx < 4) snprintf(nm, sizeof nm, "Corner %s", kCorner[pr.idx]);
-        else snprintf(nm, sizeof nm, "Warp point %d,%d", (pr.idx - 1000) / 100 + 1, (pr.idx - 1000) % 100 + 1);
-        Text(x, oy + y + 11, UI_S, 10, K(pal::t88), nm); y += 22;
+        Text(x, oy + y + 11, UI_S, 10, K(pal::t88), PointLabel(pr.idx).c_str()); y += 22;
         float fw = (w - 6) / 2.f, vx = pp.x, vy = pp.y;
         bool cx = NumCellInline(x, oy + y, fw, "X", "##ptx", vx, 0);
         bool cy = NumCellInline(x + fw + 6, oy + y, fw, "Y", "##pty", vy, 0);

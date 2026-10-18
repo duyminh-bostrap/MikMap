@@ -158,6 +158,10 @@ struct Screen {
 
 // Maps a canvas pixel through a slice (input rect → warped output quad) into projector pixels.
 // Used by the output window so the generated art is drawn already warped, with no intermediate texture.
+// Picked-point ids of a polygon slice (App::PtRef::idx): pout i = kPolyOut + i, pin i = kPolyIn + i. Far above every grid id
+// (1000 + row*100 + col, rows/cols <= 64, so at most 7464), so the two ranges can never overlap.
+constexpr int kPolyOut = 100000, kPolyIn = 200000;
+inline bool PtOnInputPage(int idx) { return idx >= kPolyIn; }   // a picked point is kept on the Input page only if it is a polygon pin point
 struct WarpMap {
   const Slice* slice = nullptr;
   float ox = 0, oy = 0, sx = 1, sy = 1;  // output space (1920x1080) → window pixels
@@ -405,7 +409,7 @@ struct App {
   // Advanced Output tools (Resolume): 0 = Edit Points, 1 = Transform. outTool = Output Transformation; inTool = Input Selection masks.
   int outTool = 1, inTool = 1;
   // Output points picked together (marquee drag, Ctrl/Cmd/Shift-click): idx 0..3 = a slice's corner pin, 1000 + row*100 + col = a mesh point,
-  // 2000 + i = point i of a polygon slice's pout (Output page), 3000 + i = point i of its pin (Input page, the only ids kept there).
+  // kPolyOut + i = point i of a polygon slice's pout (Output page), kPolyIn + i = point i of its pin (Input page, the only ids kept there).
   // Dragging any of them, or the arrow keys, moves the whole group. Runtime only.
   struct PtRef { std::string sl; int idx; };
   std::vector<PtRef> mapPts;
@@ -546,10 +550,11 @@ void DrawSliceOutput(const Screen& sc, const Slice& sl, float ox, float oy, floa
 mikmap::edgeblend::Rect SliceInputBounds(const Slice& s);   // input rect in canvas px (its bounding box when irot != 0)
 std::vector<mikmap::edgeblend::Band> SliceSoftEdgeBands(const Slice& s);   // fade bands vs every visible soft-edge slice on any screen
 bool SliceBlackLevelArea(const Slice& s, mikmap::edgeblend::Rect& out);   // input rect minus its soft-edge bands; false when nothing is left
-// F15: one point (idx 0..3 = perspective corner, 1000 + row*100 + col = warp point, 2000 + i polygon pout, 3000 + i polygon pin, canvas px).
+// F15: one point (idx 0..3 = perspective corner, 1000 + row*100 + col = warp point, kPolyOut + i polygon pout, kPolyIn + i polygon pin, canvas px).
 // A polygon edit that would cross itself is refused (false, nothing changes, status "Shape would cross itself").
 bool OutputPointPos(const Screen& sc, const App::PtRef& r, ImVec2& out);   // false if the slice or point does not exist
-bool SetOutputPointPos(Screen& sc, const App::PtRef& r, ImVec2 pos);       // moves exactly that point, as a drag does
+bool SetOutputPointPos(Screen& sc, const App::PtRef& r, ImVec2 pos);
+std::string PointLabel(int idx);   // the F15 name of a point id: "Corner TL", "Warp point R,C" (1-based), "Point N" (polygon)       // moves exactly that point, as a drag does
 std::vector<ImVec2> SliceOutline(const Slice& s);   // output-space outline of a slice as the audience sees it (quad, or the mesh border)
 // Everything drawn between MaskBegin and MaskEnd is limited to the slice's `outline`, then to the union of the `keep` mask polygons (when
 // there are any), minus the `holes`. Polygons are in window px. Done with the stencil buffer through draw-list callbacks; SetBlendMode(0)
