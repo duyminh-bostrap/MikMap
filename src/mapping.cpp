@@ -2601,7 +2601,7 @@ static void PropsPanel(ImRect r) {
         float fw = (w - 6) / 2.f, vx = pp.x, vy = pp.y;
         bool cx = NumCellInline(x, oy + y, fw, "X", "##ptx", vx, 0);
         bool cy = NumCellInline(x + fw + 6, oy + y, fw, "Y", "##pty", vy, 0);
-        if (cx || cy) { A.pushHist(); SetOutputPointPos(*sc, pr, ImVec2(std::round(vx), std::round(vy))); }
+        if (cx || cy) { A.pushHist(); SetOutputPointPos(*sc, pr, ImVec2(cx ? std::round(vx) : pp.x, cy ? std::round(vy) : pp.y)); }   // round only the edited axis
         y += 27;
       }
       Text(x, oy + y + 11, UI_S, 10, K(pal::t88), "Point mode");

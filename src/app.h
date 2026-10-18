@@ -127,7 +127,7 @@ struct Slice {
   bool maskLegacy = false;   // runtime: masks came from a file that stored them in output px; converted to canvas px right after load
   bool softEdge = false;   // Slice properties > Soft Edge: fades where this input rect overlaps another soft-edge slice (DrawSliceOutput)
   // Output-side slice properties (Output routing page). oflip / blackBg / the colour block are drawn by DrawSliceOutput; the soft-edge
-  // curve too; isKey and the black-level compensation are saved and edited but not rendered yet.
+  // curve and the black-level compensation too; only isKey is saved and edited but not rendered yet.
   int oflip = 0;                       // 0 none, 1 mirror X, 2 mirror Y, 3 both — combined with the input rect's own mirror (WarpMap::Map)
   bool isKey = false, blackBg = false;
   int brightness = 0, contrast = 0, red = 0, green = 0, blue = 0;   // per-slice colour correction, -100..100, on top of the Screen's

@@ -27,9 +27,17 @@ Ba vùng: cây **Screen / Slice / Mask** ở trái, sân khấu (stage) ở gi�
 
 ## Slice Properties
 
-Tên slice, **Input source**, **Input rectangle** (X, Y, Left, Top, Width, Height, Rotation), **Soft edge**, **INPUT MASK** và các nhóm Picture, Soft edge, Black level.
+Tên slice, **Input source**, **Input rectangle** (X, Y, Left, Top, Width, Height, Rotation), **Soft edge**, **INPUT MASK** và các nhóm Picture, Soft edge, Black level compensation.
 
-> **Soft edge** hiện chỉ là công tắc lưu theo slice. Cửa sổ output chưa làm mờ viền.
+**Soft edge** ghép mép giữa các máy chiếu. Bật nó ở hai slice có input rect chồng lên nhau (trên cùng screen hay khác screen đều được): mỗi slice tự làm mờ dải chồng ở cửa sổ output và trên sân khấu. Nhóm Soft edge chỉnh đường mờ bằng **Gamma red**, **Gamma green**, **Gamma blue**, **Gamma**, **Luminance** và **Power**. Bật mà không chồng với slice nào thì nhóm hiện `NO OVERLAP`.
+
+**Black level compensation** (**Red**, **Green**, **Blue**) nâng màu đen ở phần nằm ngoài dải chồng, tối đa xám 20 %, để phần chỉ có một máy chiếu khớp với màu đen gấp đôi ở chỗ chồng.
+
+> Input rect có xoay được tính theo khung bao. Công tắc **Edge blending** của screen chưa có tác dụng. Soft edge chưa được thử trên máy chiếu thật.
+
+## Nhập toạ độ điểm
+
+Ở trang **Output routing** với công cụ **Edit Points**, chọn đúng một điểm (góc phối cảnh hoặc điểm warp): đầu khối **WARPING** hiện tên điểm và hai ô **X**, **Y** (px đầu ra). Gõ số để đặt chính xác điểm đó. Chọn nhiều điểm hoặc không chọn điểm nào thì hai ô này ẩn.
 
 ## Mask
 
