@@ -1388,6 +1388,25 @@ int main(int argc, char** argv) {
       if (std::fabs(rb.x - 250) > 0.5 || std::fabs(rb.y + 250) > 0.5 || std::fabs(rb.w - 500) > 0.5 || std::fabs(rb.h - 1000) > 0.5) return fail("rotated input rect uses its bounding box");
       NewProject();
     }
+    // Black level compensation lifts only the part of the slice outside its soft-edge bands
+    {
+      auto setRect = [](Slice& s, int x, int y, int w, int h, bool se) { s.ix = x; s.iy = y; s.iw = w; s.ih = h; s.irot = 0; s.visible = true; s.softEdge = se; };
+      auto is = [](const mikmap::edgeblend::Rect& r, double x, double y, double w, double h) { return r.x == x && r.y == y && r.w == w && r.h == h; };
+      mikmap::edgeblend::Rect r;
+      NewProject();
+      Slice& L = A.screens[0].slices[0]; Slice& R = A.screens[0].slices[1];
+      setRect(L, 0, 0, 1000, 500, true); setRect(R, 800, 0, 1000, 500, true);
+      if (!SliceBlackLevelArea(L, r) || !is(r, 0, 0, 800, 500)) return fail("black level area: left slice stops at its band (0,0,800,500)");
+      if (!SliceBlackLevelArea(R, r) || !is(r, 1000, 0, 800, 500)) return fail("black level area: right slice starts after its band (1000,0,800,500)");
+      NewProject();
+      setRect(A.screens[0].slices[0], 0, 0, 1000, 500, false); setRect(A.screens[0].slices[1], 800, 0, 1000, 500, false);
+      if (!SliceBlackLevelArea(A.screens[0].slices[0], r) || !is(r, 0, 0, 1000, 500)) return fail("no soft edge: black level covers the whole input rect");
+      NewProject();
+      setRect(A.screens[0].slices[0], 0, 0, 300, 500, true); setRect(A.screens[0].slices[1], 100, 0, 1000, 500, true);
+      setRect(A.screens[1].slices[0], -1000, 0, 1200, 500, true);
+      if (SliceBlackLevelArea(A.screens[0].slices[0], r)) return fail("empty black level area: bands that cross leave nothing to lift");
+      NewProject();
+    }
     std::printf("roundtrip OK\n"); return 0;
   }
   gAssets = FindAssets(argv[0]);

@@ -2562,7 +2562,7 @@ static void PropsPanel(ImRect r) {
         fltRow("Power", sl->sePower, 0.1f, 8.f, 0x3216, pal::yellow, !sl->softEdge);
         y += 4;
       }
-      if (section(2, "Black level compensation", "NOT RENDERED YET")) {
+      if (section(2, "Black level compensation", nullptr)) {
         intRow("Red", sl->blR, 0, 100, 0x3221, pal::red);
         intRow("Green", sl->blG, 0, 100, 0x3222, pal::mint);
         intRow("Blue", sl->blB, 0, 100, 0x3223, pal::cyan);

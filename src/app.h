@@ -517,6 +517,7 @@ void DrawSliceTextured(const Slice& s, unsigned tex, float ox, float oy, float s
 void DrawSliceOutput(const Screen& sc, const Slice& sl, float ox, float oy, float sx, float sy, float t);   // the slice as the projector shows it (output.cpp), also used by the Output stage's thumbnails
 mikmap::edgeblend::Rect SliceInputBounds(const Slice& s);   // input rect in canvas px (its bounding box when irot != 0)
 std::vector<mikmap::edgeblend::Band> SliceSoftEdgeBands(const Slice& s);   // fade bands vs every visible soft-edge slice on any screen
+bool SliceBlackLevelArea(const Slice& s, mikmap::edgeblend::Rect& out);   // input rect minus its soft-edge bands; false when nothing is left
 std::vector<ImVec2> SliceOutline(const Slice& s);   // output-space outline of a slice as the audience sees it (quad, or the mesh border)
 // Everything drawn between MaskBegin and MaskEnd is limited to the slice's `outline`, then to the union of the `keep` mask polygons (when
 // there are any), minus the `holes`. Polygons are in window px. Done with the stencil buffer through draw-list callbacks; SetBlendMode(0)

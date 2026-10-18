@@ -173,6 +173,23 @@ std::vector<mikmap::edgeblend::Band> SliceSoftEdgeBands(const Slice& s) {
   return out;
 }
 
+bool SliceBlackLevelArea(const Slice& s, mikmap::edgeblend::Rect& out) {
+  using mikmap::edgeblend::Side;
+  const auto r = SliceInputBounds(s);
+  double x0 = r.x, y0 = r.y, x1 = r.x + r.w, y1 = r.y + r.h;
+  for (auto& b : SliceSoftEdgeBands(s)) {
+    if (b.side == Side::Left) x0 = std::max(x0, b.end);
+    else if (b.side == Side::Right) x1 = std::min(x1, b.start);
+    else if (b.side == Side::Top) y0 = std::max(y0, b.end);
+    else y1 = std::min(y1, b.start);
+  }
+  out = {x0, y0, x1 - x0, y1 - y0};
+  return out.w > 0 && out.h > 0;
+}
+
+// Full black level slider = this much grey added (0.2 = 20 %), enough to match a second projector's black in the overlap.
+constexpr float kBlackLevelMax = 0.2f;
+
 // One slice as the projector shows it: input rect -> keystone/mesh, cut by its input masks, Screen opacity + colour correction.
 // (ox, oy, sx, sy) map the screen's 1920x1080 output space to window pixels — the projector window and the Output stage share this.
 void DrawSliceOutput(const Screen& sc, const Slice& sl, float ox, float oy, float sx, float sy, float t) {
@@ -230,10 +247,24 @@ void DrawSliceOutput(const Screen& sc, const Slice& sl, float ox, float oy, floa
     }
     // F20 soft edge: multiply the picture by the blend curve over each overlap band (canvas px, through the warp). One multiply pass
     // per band, so where two bands cross (a corner) their fades multiply.
+    const ImVec2 wuv = ImGui::GetDrawListSharedData()->TexUvWhitePixel;
+    // nx x ny vertex-coloured quads over a canvas-px rect, each corner mapped through the warp and coloured by col(x, y)
+    auto gridQuads = [&](const mikmap::edgeblend::Rect& a, int nx, int ny, auto col) {
+      const double cw = a.w / nx, chh = a.h / ny;
+      for (int j = 0; j < ny; ++j)
+        for (int i = 0; i < nx; ++i) {
+          const double x0 = a.x + i * cw, y0 = a.y + j * chh, x1 = x0 + cw, y1 = y0 + chh;
+          const double px[4] = {x0, x1, x1, x0}, py[4] = {y0, y0, y1, y1};
+          dl->PrimReserve(6, 4);
+          ImDrawIdx base = (ImDrawIdx)dl->_VtxCurrentIdx;
+          for (int k = 0; k < 4; ++k) dl->PrimWriteVtx(wm.Map((float)px[k], (float)py[k]), wuv, col(px[k], py[k]));
+          dl->PrimWriteIdx(base); dl->PrimWriteIdx((ImDrawIdx)(base + 1)); dl->PrimWriteIdx((ImDrawIdx)(base + 2));
+          dl->PrimWriteIdx(base); dl->PrimWriteIdx((ImDrawIdx)(base + 2)); dl->PrimWriteIdx((ImDrawIdx)(base + 3));
+        }
+    };
     const auto bands = SliceSoftEdgeBands(sl);
     if (!bands.empty()) {
       SetBlendMode(8);
-      const ImVec2 uv = ImGui::GetDrawListSharedData()->TexUvWhitePixel;
       auto shade = [&](const mikmap::edgeblend::Band& b, double x, double y) {
         const double t = mikmap::edgeblend::bandT(b, x, y);
         auto ch = [&](float gm) { return (int)std::lround(std::clamp(mikmap::edgeblend::gammaRamp(t, sl.seLum, sl.sePower, gm * sl.seGamma), 0.0, 1.0) * 255); };
@@ -241,19 +272,18 @@ void DrawSliceOutput(const Screen& sc, const Slice& sl, float ox, float oy, floa
       };
       for (auto& b : bands) {
         const bool alongX = b.side == mikmap::edgeblend::Side::Left || b.side == mikmap::edgeblend::Side::Right;
-        const int nx = alongX ? 24 : 8, ny = alongX ? 8 : 24;
-        const double cw = b.area.w / nx, chh = b.area.h / ny;
-        for (int j = 0; j < ny; ++j)
-          for (int i = 0; i < nx; ++i) {
-            const double x0 = b.area.x + i * cw, y0 = b.area.y + j * chh, x1 = x0 + cw, y1 = y0 + chh;
-            const double px[4] = {x0, x1, x1, x0}, py[4] = {y0, y0, y1, y1};
-            dl->PrimReserve(6, 4);
-            ImDrawIdx base = (ImDrawIdx)dl->_VtxCurrentIdx;
-            for (int k = 0; k < 4; ++k) dl->PrimWriteVtx(wm.Map((float)px[k], (float)py[k]), uv, shade(b, px[k], py[k]));
-            dl->PrimWriteIdx(base); dl->PrimWriteIdx((ImDrawIdx)(base + 1)); dl->PrimWriteIdx((ImDrawIdx)(base + 2));
-            dl->PrimWriteIdx(base); dl->PrimWriteIdx((ImDrawIdx)(base + 2)); dl->PrimWriteIdx((ImDrawIdx)(base + 3));
-          }
+        gridQuads(b.area, alongX ? 24 : 8, alongX ? 8 : 24, [&](double x, double y) { return shade(b, x, y); });
       }
+      SetBlendMode(0);
+    }
+    // Black level compensation: add a flat grey outside the overlap bands, so the single-projector part matches the overlap's
+    // doubled black. Applies with or without soft edge (without, the area is the whole input rect).
+    mikmap::edgeblend::Rect blArea;
+    if ((sl.blR > 0 || sl.blG > 0 || sl.blB > 0) && SliceBlackLevelArea(sl, blArea)) {
+      auto lift = [](int v) { return (int)std::lround(v / 100.f * kBlackLevelMax * 255); };
+      const ImU32 blCol = IM_COL32(lift(sl.blR), lift(sl.blG), lift(sl.blB), 255);
+      SetBlendMode(10);
+      gridQuads(blArea, 8, 8, [&](double, double) { return blCol; });
       SetBlendMode(0);
     }
     // Feather: a band along each mask edge on the visible side, black at the edge fading to clear over `feather` canvas px — the picture
