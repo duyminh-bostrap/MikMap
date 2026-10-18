@@ -628,7 +628,7 @@ int main(int argc, char** argv) {
   bool hoverTest = false; float hoverX = 0, hoverY = 0;
   std::string compTest, clipTest, pvTest; std::vector<std::string> layerTest, clipColors;
   OsDrop dropTest;   // --drop: injected at frame 8 of a --shot run, standing in for a real Explorer drag
-  bool openOut = false; std::string outShot; int vout = 0, voutBl = 0; float voutGamma = 1.f;
+  bool openOut = false; std::string outShot; int vout = 0, voutBl = 0, voutPoly = 0; float voutGamma = 1.f;
   bool outKeyTest = false, scriptCtrl = false, startSnap = false, startHand = false, startCard = false; int startTool = -1, startInTool = -1;
   std::string roundtrip; std::vector<int> fxTest;
   std::string shot; int startScreen = 0, frames = 12, W = 1440, H = 900, tab = -1, page = -1;
@@ -654,6 +654,7 @@ int main(int argc, char** argv) {
     else if (a == "--outshot" && i + 1 < argc) { openOut = true; outShot = argv[++i]; }
     else if (a == "--vout" && i + 1 < argc) vout = std::clamp(atoi(argv[++i]), 1, 4);   // test aid: N Virtual Output screens blending one canvas
     else if (a == "--blacklevel" && i + 1 < argc) voutBl = std::clamp(atoi(argv[++i]), 0, 100);   // test aid: black level on every --vout slice
+    else if (a == "--poly" && i + 1 < argc) voutPoly = std::clamp(atoi(argv[++i]), 3, 12);   // test aid: every --vout slice becomes an N-point polygon with a notch
     else if (a == "--gamma" && i + 1 < argc) voutGamma = std::clamp((float)atof(argv[++i]), 0.2f, 3.f);   // test aid: gamma on the first --vout slice only
     else if (a == "--scale" && i + 1 < argc) { A.prefs.scale = atoi(argv[++i]); cliScale = A.prefs.scale; scaleGiven = true; }
     else if (a == "--press" && i + 1 < argc) {   // test aid: a key chord, e.g. ctrl+c, delete, shift+left (Ctrl here is io.KeyCtrl = Cmd on macOS)
@@ -1463,6 +1464,12 @@ int main(int argc, char** argv) {
       if (!PolyForward(s, c, o) || !closeTo(o, c, 0.01f)) return fail("polygon identity: pout == pin must map the centroid to itself");
       auto b = SliceInputBounds(s);
       if (std::fabs(b.x - mn.x) > 0.01 || std::fabs(b.y - mn.y) > 0.01 || std::fabs(b.w - (mx.x - mn.x)) > 0.01 || std::fabs(b.h - (mx.y - mn.y)) > 0.01) return fail("polygon bounds: SliceInputBounds must be pin's bounding box");
+      for (int f = 0; f < 4; ++f) {   // output Flip mirrors where the picture is sampled inside pin's bounding box; the shape stays
+        s.oflip = f; const ImVec2 p = s.pin[1], t = PolyTexCanvas(s, p);
+        const ImVec2 want((f & 1) ? mn.x + mx.x - p.x : p.x, (f & 2) ? mn.y + mx.y - p.y : p.y);
+        if (!closeTo(t, want, 0.01f)) return fail("polygon flip: oflip must mirror the texture point inside pin's bounding box");
+      }
+      s.oflip = 0;
       s.pout[2].x += 40; s.pout[2].y -= 30;
       const ImVec2 moved = s.pout[2];
       for (int i = 0; i < 5; ++i) {
@@ -1565,6 +1572,10 @@ int main(int argc, char** argv) {
       sl.ix = (int)std::lround(k * iw * (1 - ov)); sl.iy = 0; sl.iw = (int)std::lround(iw); sl.ih = 1080; sl.irot = 0;
       sl.q[0] = {0, 0}; sl.q[1] = {1920, 0}; sl.q[2] = {1920, 1080}; sl.q[3] = {0, 1080}; sl.meshCols = sl.meshRows = 1; sl.meshLocal.clear();
       sl.softEdge = vout > 1; sl.blR = sl.blG = sl.blB = voutBl; sl.gamma = k == 0 ? voutGamma : 1.f;
+      if (voutPoly && MakePolygonSlice(sl, voutPoly)) {   // pout fills the output like the grid slice does; last point pulled 15 % to the centre
+        for (auto& p : sl.pout) p = ImVec2((p.x - sl.ix) * 1920.f / sl.iw, p.y * 1080.f / sl.ih);
+        ImVec2& l = sl.pout.back(); l = ImVec2(l.x + (960.f - l.x) * 0.15f, l.y + (540.f - l.y) * 0.15f);
+      }
       sc.slices = {sl}; scs.push_back(sc);
     }
     A.screens = scs; A.screen = 0;

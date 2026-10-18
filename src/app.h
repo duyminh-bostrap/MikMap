@@ -2,6 +2,7 @@
 #pragma once
 #include "ui.h"
 #include "core/math/EdgeBlend.h"
+#include "core/math/Triangulate.h"
 #include <algorithm>
 #include <array>
 #include <map>
@@ -162,6 +163,7 @@ struct WarpMap {
   float ox = 0, oy = 0, sx = 1, sy = 1;  // output space (1920x1080) → window pixels
   ImVec2 Map(float canvasX, float canvasY) const;
   mutable std::vector<std::array<int, 3>> tris;   // polygon slice: triangulated on the first Map, so one WarpMap must not outlive a pin edit
+  mutable std::vector<mikmap::tri::P> pinPts;      // pin converted once alongside tris, so Map allocates nothing per call
   mutable bool trisDone = false;
 };
 ImVec2 SliceMapUV(const Slice& s, float u, float v);  // unit square → output-space point
@@ -176,6 +178,7 @@ bool PolyTris(const Slice& s, std::vector<std::array<int, 3>>& out);
 bool PolyForward(const Slice& s, ImVec2 canvas, ImVec2& out);
 bool PolyInverse(const Slice& s, ImVec2 outPx, ImVec2& canvas);
 bool MakePolygonSlice(Slice& s, int points);
+ImVec2 PolyTexCanvas(const Slice& s, ImVec2 p);   // canvas point the picture is sampled from: oflip mirrors it inside pin's bounding box
 namespace mikmap { class JsonValue; }
 mikmap::JsonValue SliceJ(const Slice& s);    // project.cpp: one slice <-> JSON (shared by the project file and output presets)
 Slice ReadSlice(const mikmap::JsonValue& o);

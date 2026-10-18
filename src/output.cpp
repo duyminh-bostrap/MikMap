@@ -231,6 +231,28 @@ bool SliceBlackLevelArea(const Slice& s, mikmap::edgeblend::Rect& out) {
 // Full black level slider = this much grey added (0.2 = 20 %), enough to match a second projector's black in the overlap.
 constexpr float kBlackLevelMax = 0.2f;
 
+// Sutherland-Hodgman: convex polygon `in` (n <= 4) cut to triangle t; returns the vertex count written to out (room for 8), 0 if empty.
+static int ClipToTri(const ImVec2* in, int n, const ImVec2 t[3], ImVec2* out) {
+  const float area = (t[1].x - t[0].x) * (t[2].y - t[0].y) - (t[1].y - t[0].y) * (t[2].x - t[0].x);
+  if (std::fabs(area) < 1e-6f) return 0;
+  const float sg = area > 0 ? 1.f : -1.f;
+  ImVec2 buf[8]; int m = n;
+  for (int i = 0; i < n; ++i) out[i] = in[i];
+  for (int e = 0; e < 3 && m >= 3; ++e) {
+    const ImVec2 a = t[e], b = t[(e + 1) % 3];
+    auto side = [&](ImVec2 p) { return sg * ((b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x)); };
+    for (int i = 0; i < m; ++i) buf[i] = out[i];
+    int k = 0;
+    for (int i = 0; i < m; ++i) {
+      const ImVec2 P = buf[i], Q = buf[(i + 1) % m]; const float sp = side(P), sq = side(Q);
+      if (sp >= 0) out[k++] = P;
+      if ((sp >= 0) != (sq >= 0)) { const float f = sp / (sp - sq); out[k++] = ImVec2(P.x + (Q.x - P.x) * f, P.y + (Q.y - P.y) * f); }
+    }
+    m = k;
+  }
+  return m >= 3 ? m : 0;
+}
+
 // One slice as the projector shows it: input rect -> keystone/mesh, cut by its input masks, Screen opacity + colour correction.
 // (ox, oy, sx, sy) map the screen's 1920x1080 output space to window pixels — the projector window and the Output stage share this.
 void DrawSliceOutput(const Screen& sc, const Slice& sl, float ox, float oy, float sx, float sy, float t) {
@@ -290,12 +312,34 @@ void DrawSliceOutput(const Screen& sc, const Slice& sl, float ox, float oy, floa
     // per band, so where two bands cross (a corner) their fades multiply.
     const ImVec2 wuv = ImGui::GetDrawListSharedData()->TexUvWhitePixel;
     // nx x ny vertex-coloured quads over a canvas-px rect, each corner mapped through the warp and coloured by col(x, y)
+    // Polygon slice: a canvas point outside pin has no exact map (the extrapolation differs per triangle and folds), so each quad is cut
+    // to pin's triangles (mirrored by oflip, as WarpMap does) and every piece mapped by its own triangle.
+    std::vector<std::array<int, 3>> ptris; std::vector<ImVec2> fpin;
+    if (sl.kind == 1 && PolyTris(sl, ptris)) for (auto& p : sl.pin) fpin.push_back(PolyTexCanvas(sl, p));
     auto gridQuads = [&](const mikmap::edgeblend::Rect& a, int nx, int ny, auto col) {
       const double cw = a.w / nx, chh = a.h / ny;
       for (int j = 0; j < ny; ++j)
         for (int i = 0; i < nx; ++i) {
           const double x0 = a.x + i * cw, y0 = a.y + j * chh, x1 = x0 + cw, y1 = y0 + chh;
           const double px[4] = {x0, x1, x1, x0}, py[4] = {y0, y0, y1, y1};
+          if (sl.kind == 1) {
+            const ImVec2 qd[4] = {ImVec2((float)x0, (float)y0), ImVec2((float)x1, (float)y0), ImVec2((float)x1, (float)y1), ImVec2((float)x0, (float)y1)};
+            for (const auto& tr : ptris) {
+              const ImVec2 tp[3] = {fpin[tr[0]], fpin[tr[1]], fpin[tr[2]]};
+              ImVec2 c[8]; const int m = ClipToTri(qd, 4, tp, c);
+              if (!m) continue;
+              dl->PrimReserve((m - 2) * 3, m);
+              ImDrawIdx base = (ImDrawIdx)dl->_VtxCurrentIdx;
+              for (int k = 0; k < m; ++k) {
+                double u = 1, v = 0, w = 0;
+                mikmap::tri::barycentric({tp[0].x, tp[0].y}, {tp[1].x, tp[1].y}, {tp[2].x, tp[2].y}, {c[k].x, c[k].y}, u, v, w);
+                const ImVec2 &A0 = sl.pout[tr[0]], &B0 = sl.pout[tr[1]], &C0 = sl.pout[tr[2]];
+                dl->PrimWriteVtx(ImVec2(ox + (float)(u * A0.x + v * B0.x + w * C0.x) * sx, oy + (float)(u * A0.y + v * B0.y + w * C0.y) * sy), wuv, col(c[k].x, c[k].y));
+              }
+              for (int k = 1; k + 1 < m; ++k) { dl->PrimWriteIdx(base); dl->PrimWriteIdx((ImDrawIdx)(base + k)); dl->PrimWriteIdx((ImDrawIdx)(base + k + 1)); }
+            }
+            continue;
+          }
           dl->PrimReserve(6, 4);
           ImDrawIdx base = (ImDrawIdx)dl->_VtxCurrentIdx;
           for (int k = 0; k < 4; ++k) dl->PrimWriteVtx(wm.Map((float)px[k], (float)py[k]), wuv, col(px[k], py[k]));

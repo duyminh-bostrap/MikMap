@@ -223,9 +223,10 @@ bool PolyTris(const Slice& s, std::vector<std::array<int, 3>>& out) {
   return s.pin.size() >= 3 && s.pin.size() == s.pout.size() && mikmap::tri::triangulate(TriPts(s.pin), out);
 }
 // `T` = PolyTris(s), passed in so a caller mapping many points (WarpMap) triangulates once
-static bool PolyForwardT(const Slice& s, const std::vector<std::array<int, 3>>& T, ImVec2 c, ImVec2& out) {
+// `in` = TriPts(s.pin), also passed in so the per-vertex path allocates nothing
+static bool PolyForwardT(const Slice& s, const std::vector<mikmap::tri::P>& in, const std::vector<std::array<int, 3>>& T, ImVec2 c, ImVec2& out) {
   if (T.empty()) return false;
-  const auto in = TriPts(s.pin); const mikmap::tri::P p{c.x, c.y};
+  const mikmap::tri::P p{c.x, c.y};
   int t = -1; double u = 0, v = 0, w = 0;
   if (!mikmap::tri::locate(in, T, p, t, u, v, w)) {   // outside pin: extrapolate with the triangle whose centroid is nearest
     double best = 1e300; t = -1;
@@ -243,7 +244,14 @@ static bool PolyForwardT(const Slice& s, const std::vector<std::array<int, 3>>& 
 }
 bool PolyForward(const Slice& s, ImVec2 canvas, ImVec2& out) {
   std::vector<std::array<int, 3>> T;
-  return PolyTris(s, T) && PolyForwardT(s, T, canvas, out);
+  return PolyTris(s, T) && PolyForwardT(s, TriPts(s.pin), T, canvas, out);
+}
+ImVec2 PolyTexCanvas(const Slice& s, ImVec2 p) {
+  if (!s.oflip) return p;
+  const auto b = SliceInputBounds(s);   // kind 1: pin's bounding box
+  if (s.oflip & 1) p.x = (float)(2 * b.x + b.w) - p.x;
+  if (s.oflip & 2) p.y = (float)(2 * b.y + b.h) - p.y;
+  return p;
 }
 bool PolyInverse(const Slice& s, ImVec2 outPx, ImVec2& canvas) {
   std::vector<std::array<int, 3>> T; if (!PolyTris(s, T)) return false;
@@ -588,7 +596,37 @@ void MigrateAbsoluteMesh(Slice& s, const std::vector<std::vector<ImVec2>>& abs) 
 // The slice's source texture drawn through the warp: every patch of the grid is cut into n x n small quads; each corner goes through
 // the same map as everything else (grid -> perspective corners -> output) and samples the canvas at the matching point of the input
 // rect (its turn and mirrors undone the other way round). Patch borders are exact, so neighbouring patches meet without cracks.
+static void DrawPolyTextured(const Slice& s, unsigned tex, float ox, float oy, float sx, float sy, ImU32 tint) {
+  static std::vector<std::array<int, 3>> T;   // render path: reused, no per-frame allocation once grown
+  if (!PolyTris(s, T)) return;
+  const float W = (float)std::max(1, A.canvasW), H = (float)std::max(1, A.canvasH);
+  constexpr int n = 4;   // each triangle cut into n x n sub-triangles on a barycentric grid
+  g.dl->PushTexture(ImTextureRef((ImTextureID)(intptr_t)tex));
+  for (const auto& t : T) {
+    const ImVec2 &i0 = s.pin[t[0]], &i1 = s.pin[t[1]], &i2 = s.pin[t[2]], &o0 = s.pout[t[0]], &o1 = s.pout[t[1]], &o2 = s.pout[t[2]];
+    auto vtx = [&](int i, int j) {   // barycentric (i/n, j/n, rest) -> output position + texture coordinate of the (flipped) pin point
+      const float b1 = (float)i / n, b2 = (float)j / n, b0 = 1.f - b1 - b2;
+      const ImVec2 c = PolyTexCanvas(s, ImVec2(b0 * i0.x + b1 * i1.x + b2 * i2.x, b0 * i0.y + b1 * i1.y + b2 * i2.y));
+      g.dl->PrimVtx(ImVec2(ox + (b0 * o0.x + b1 * o1.x + b2 * o2.x) * sx, oy + (b0 * o0.y + b1 * o1.y + b2 * o2.y) * sy), ImVec2(c.x / W, 1.f - c.y / H), tint);
+    };
+    g.dl->PrimReserve(3 * n * n, 3 * n * n);
+    for (int j = 0; j < n; ++j) for (int i = 0; i + j < n; ++i) {
+      vtx(i, j); vtx(i + 1, j); vtx(i, j + 1);
+      if (i + j < n - 1) { vtx(i + 1, j); vtx(i + 1, j + 1); vtx(i, j + 1); }
+    }
+  }
+  g.dl->PopTexture();
+}
+
 void DrawSliceTextured(const Slice& s, unsigned tex, float ox, float oy, float sx, float sy, float alpha) {
+  if (s.kind == 1) {   // F18 polygon: one affine map per triangle of pin; irot / iflip / input rect do not apply
+    const int ai = (int)std::lround(std::clamp(alpha * g.alpha, 0.f, 1.f) * 255.f);
+    SetBlendMode(12);
+    if (std::fabs(s.gamma - 1.f) > 1e-3f) SetSliceGamma(s.gamma);   // F19
+    DrawPolyTextured(s, tex, ox, oy, sx, sy, IM_COL32(ai, ai, ai, ai));
+    SetBlendMode(0);
+    return;
+  }
   const MeshSurface M(s);
   const std::vector<float>& us = M.us; const std::vector<float>& vs = M.vs;
   const Keystone k(s.q);
@@ -628,9 +666,9 @@ void DrawSliceTextured(const Slice& s, unsigned tex, float ox, float oy, float s
 ImVec2 WarpMap::Map(float canvasX, float canvasY) const {
   if (!slice) return ImVec2(ox + canvasX * sx, oy + canvasY * sy);
   if (slice->kind == 1) {   // polygon slice: input rect, irot and iflip do not apply
-    if (!trisDone) { PolyTris(*slice, tris); trisDone = true; }
+    if (!trisDone) { PolyTris(*slice, tris); pinPts = TriPts(slice->pin); trisDone = true; }
     ImVec2 o(canvasX, canvasY);
-    if (!PolyForwardT(*slice, tris, o, o)) o = ImVec2(canvasX, canvasY);   // untriangulable shape: canvas point unwarped
+    if (!PolyForwardT(*slice, pinPts, tris, PolyTexCanvas(*slice, o), o)) o = ImVec2(canvasX, canvasY);   // untriangulable shape: canvas point unwarped
     return ImVec2(ox + o.x * sx, oy + o.y * sy);
   }
   // canvas pixels → the slice's input rect in unit coordinates (undo the rect's rotation about its centre, then mirror)
