@@ -396,7 +396,7 @@ void App::groupSelectedLayer() {
 }
 void App::toggleSync() {
   quantize = !quantize; pending.clear();
-  notify(quantize ? "Sync on â triggers wait for the next beat" : "Sync off â triggers fire immediately", 2.5);
+  notify(quantize ? "Sync on \xE2\x80\x94 triggers wait for the next beat" : "Sync off \xE2\x80\x94 triggers fire immediately", 2.5);
 }
 // Files dropped from the OS onto a clip cell: the first goes into that cell, each further file into the next
 // empty cell of the same layer (so dropping a folder's worth of stills fills a row); files with no free cell
