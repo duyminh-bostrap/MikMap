@@ -1493,6 +1493,31 @@ int main(int argc, char** argv) {
       if (og.kind != 0 || !og.pin.empty()) return fail("old file: a slice without kind must load as a grid slice");
       for (int i = 0; i < 4; ++i) if (!closeTo(og.q[i], gridCopy.q[i], 1e-3f)) return fail("old file: the grid corners must be unchanged");
       if (og.meshCols != gridCopy.meshCols || og.meshRows != gridCopy.meshRows) return fail("old file: the grid must be unchanged");
+      // editing: insert / delete keep pin and pout in step; a point move that would cross an edge is refused
+      NewProject();
+      Slice& e = A.screens[0].slices[0];
+      MakePolygonSlice(e, 5); e.pout[3].x += 25;   // pout differs from pin, so the two midpoints are checked separately
+      const std::vector<ImVec2> pin0 = e.pin, pout0 = e.pout;
+      if (!InsertPolyPoint(e, 0, 0.5f) || e.pin.size() != 6 || e.pout.size() != 6 || !closeTo(e.pin[1], mix(pin0[0], pin0[1], 0.5f), 0.01f) ||
+          !closeTo(e.pout[1], mix(pout0[0], pout0[1], 0.5f), 0.01f)) return fail("polygon insert: edge 0 at t 0.5 must add the midpoint to pin and pout");
+      for (int k = 0; k < 3; ++k) if (!DeletePolyPoint(e, 0)) return fail("polygon delete: must delete down to 3 points");
+      if (e.pin.size() != 3 || e.pout.size() != 3) return fail("polygon delete: pin and pout must lose the same point");
+      if (DeletePolyPoint(e, 0) || e.pin.size() != 3) return fail("polygon delete: a triangle must keep its 3 points");
+      MakePolygonSlice(e, 5);
+      const std::vector<ImVec2> before = e.pout;
+      const App::PtRef top{e.id, 2000};
+      ImVec2 at;
+      if (!OutputPointPos(A.screens[0], top, at) || !closeTo(at, e.pout[0], 0.f)) return fail("polygon point: id 2000 must be pout[0]");
+      if (SetOutputPointPos(A.screens[0], top, ImVec2(before[0].x, before[3].y + 200))) return fail("polygon point: a move that crosses an edge must be refused");
+      for (int i = 0; i < 5; ++i) if (!closeTo(e.pout[i], before[i], 0.f)) return fail("polygon point: a refused move must leave pout unchanged");
+      if (A.toast != "Shape would cross itself") return fail("polygon point: a refused move must say \"Shape would cross itself\"");
+      if (!SetOutputPointPos(A.screens[0], top, ImVec2(before[0].x + 10, before[0].y - 20)) || !closeTo(e.pout[0], ImVec2(std::round(before[0].x + 10), std::round(before[0].y - 20)), 0.01f))
+        return fail("polygon point: a legal X/Y move must land");
+      if (!OutputPointPos(A.screens[0], {e.id, 3001}, at) || !closeTo(at, e.pin[1], 0.f)) return fail("polygon point: id 3001 must be pin[1]");
+      A.mpage = 1; A.mapPts = {{e.id, 2001}, {e.id, 2002}};
+      if (!A.deletePickedPoints() || e.pout.size() != 3 || A.screens[0].slices.size() < 2) return fail("polygon Delete key: must delete the picked points, not the slice");
+      A.mapPts.clear();
+      if (A.deletePickedPoints()) return fail("polygon Delete key: with no point picked the slice selection is deleted as before");
       NewProject();
     }
     std::printf("roundtrip OK\n"); return 0;

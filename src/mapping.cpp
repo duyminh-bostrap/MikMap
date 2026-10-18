@@ -272,6 +272,38 @@ bool MakePolygonSlice(Slice& s, int points) {
   s.pout = s.pin; s.kind = 1;
   return true;
 }
+static bool PolySimple(const std::vector<ImVec2>& v) { return v.size() >= 3 && v.size() <= 64 && mikmap::tri::simple(TriPts(v)); }
+static const char* const kCrossMsg = "Shape would cross itself";
+bool InsertPolyPoint(Slice& s, int edge, float t) {
+  const int n = (int)s.pin.size();
+  if (s.kind != 1 || n != (int)s.pout.size() || edge < 0 || edge >= n) return false;
+  auto ins = [&](std::vector<ImVec2> v) {
+    const ImVec2 a = v[edge], b = v[(edge + 1) % n];
+    v.insert(v.begin() + edge + 1, ImVec2(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t));
+    return v;
+  };
+  auto pin = ins(s.pin), pout = ins(s.pout);
+  if (!PolySimple(pin) || !PolySimple(pout)) return false;
+  s.pin = std::move(pin); s.pout = std::move(pout);
+  return true;
+}
+bool DeletePolyPoint(Slice& s, int i) {
+  const int n = (int)s.pin.size();
+  if (s.kind != 1 || n != (int)s.pout.size() || n <= 3 || i < 0 || i >= n) return false;
+  auto pin = s.pin, pout = s.pout;
+  pin.erase(pin.begin() + i); pout.erase(pout.begin() + i);
+  if (!PolySimple(pin) || !PolySimple(pout)) return false;
+  s.pin = std::move(pin); s.pout = std::move(pout);
+  return true;
+}
+// a polygon's points placed so their bounding box fills (x, y, w, h): the input-side quick placements (halves, whole area)
+static void FitPts(std::vector<ImVec2>& P, float x, float y, float w, float h) {
+  if (P.empty()) return;
+  ImVec2 mn = P[0], mx = P[0];
+  for (auto& p : P) { mn = ImVec2(std::min(mn.x, p.x), std::min(mn.y, p.y)); mx = ImVec2(std::max(mx.x, p.x), std::max(mx.y, p.y)); }
+  const float kx = w / std::max(1e-3f, mx.x - mn.x), ky = h / std::max(1e-3f, mx.y - mn.y);
+  for (auto& p : P) p = ImVec2(x + (p.x - mn.x) * kx, y + (p.y - mn.y) * ky);
+}
 
 // output-space outline of the slice as the audience sees it: the grid's border — straight between border points in Linear mode,
 // sampled along the curves in Bezier mode (a polygon slice: its output polygon)
@@ -414,8 +446,9 @@ static void SetBezHandle(Slice& s, int r, int c, int dir, ImVec2 h) {
 // Moving / scaling / turning the box is one affine map applied to the perspective corners; the grid is keystone-relative and an
 // affine map composed with a homography is again the homography through the moved corners, so the whole warp follows exactly.
 static RectXf OutputBox(const Slice& s) {
-  auto g = MeshGrid(s);
-  if (s.pointMode == 1) g.push_back(SliceOutline(s));   // Bezier edges can bulge past the points
+  std::vector<std::vector<ImVec2>> g;
+  if (s.kind == 1) g = {s.pout};   // a polygon slice: the box of its output points
+  else { g = MeshGrid(s); if (s.pointMode == 1) g.push_back(SliceOutline(s)); }   // Bezier edges can bulge past the points
   const float r = s.orot * kDegToRad, co = std::cos(r), si = std::sin(r);
   float x0 = 1e9f, y0 = 1e9f, x1 = -1e9f, y1 = -1e9f;
   for (auto& row : g) for (auto& p : row) {
@@ -430,10 +463,15 @@ static void ApplyBox(Slice& s, const RectXf& from, const RectXf& to) {
   const float fr = from.rot * kDegToRad, tr = to.rot * kDegToRad, fc = std::cos(fr), fs = std::sin(fr), tc = std::cos(tr), ts = std::sin(tr);
   const float fcx = from.x + from.w * 0.5f, fcy = from.y + from.h * 0.5f, tcx = to.x + to.w * 0.5f, tcy = to.y + to.h * 0.5f;
   const float kx = to.w / std::max(1e-3f, from.w), ky = to.h / std::max(1e-3f, from.h);
-  for (auto& q : s.q) {
+  auto map = [&](ImVec2& q) {
     float dx = q.x - fcx, dy = q.y - fcy, lx = (dx * fc + dy * fs) * kx, ly = (-dx * fs + dy * fc) * ky;
     q = ImVec2(std::clamp(tcx + lx * tc - ly * ts, -4000.f, 8000.f), std::clamp(tcy + lx * ts + ly * tc, -4000.f, 8000.f));
-  }
+  };
+  if (s.kind == 1) {   // polygon: every output point; the -4000..8000 clamp could fold it, so a crossing result is refused
+    auto P = s.pout; for (auto& p : P) map(p);
+    if (!PolySimple(P)) { A.notify(kCrossMsg); return; }
+    s.pout = std::move(P);
+  } else for (auto& q : s.q) map(q);
   s.orot = std::fabs(to.rot) < 0.05f ? 0.f : to.rot;
 }
 // Place the slice's box at an upright rectangle (the Output right-click presets), keeping its warp.
@@ -853,6 +891,25 @@ void App::deleteSlice() { pushHist();
   sc->slices.erase(std::remove_if(sc->slices.begin(), sc->slices.end(), [&](const Slice& s) { return s.id == id; }), sc->slices.end());
   selSl = sc->slices[0].id; selMk.clear(); selKind = -1;
 }
+void App::addPolygonSlice() { addSlice(); if (Slice* s = curSlice()) MakePolygonSlice(*s, 5); }
+bool App::deletePickedPoints() {
+  Screen* sc = curScreen(); if (!sc) return false;
+  bool any = false; const char* why = nullptr;
+  for (auto& s : sc->slices) {
+    if (s.kind != 1) continue;
+    std::vector<int> del;   // the picked points of the page being shown, highest index first so the lower ones keep their place
+    for (auto& r : mapPts) if (r.sl == s.id && r.idx >= 2000 && (mpage == 1) == (r.idx < 3000)) del.push_back(r.idx % 1000);
+    if (del.empty()) continue;
+    any = true;
+    std::sort(del.rbegin(), del.rend()); del.erase(std::unique(del.begin(), del.end()), del.end());
+    Slice t = s; bool good = true;
+    for (int i : del) if (!DeletePolyPoint(t, i)) { why = t.pin.size() <= 3 ? "A polygon slice needs at least 3 points" : kCrossMsg; good = false; break; }
+    if (good) s = std::move(t);
+  }
+  if (!any) return false;
+  if (why) notify(why); else mapPts.clear();
+  return true;
+}
 void App::resetWarp() { pushHist(); if (Slice* s = curSlice()) { QuadOf(*s, 0, 0, 1920, 1080); s->orot = 0; } }
 void App::resetMeshWarp() { pushHist(); if (Slice* s = curSlice()) { s->meshLocal.clear(); s->meshHandles.clear(); } }
 void App::resetAllWarping() {
@@ -886,6 +943,11 @@ static int SliceIndex(const Screen& sc, const std::string& id) { for (int i = 0;
 struct PtStart { std::string sl; int idx; ImVec2 out; };   // where a point was (output px) when the group move began
 static Slice* SliceById(Screen& sc, const std::string& id) { for (auto& s : sc.slices) if (s.id == id) return &s; return nullptr; }
 static bool PointPos(const Slice& s, int idx, ImVec2& out) {
+  if (s.kind == 1 || idx >= 2000) {   // polygon: 2000 + i = pout[i], 3000 + i = pin[i]; grid ids mean nothing here (and vice versa)
+    const std::vector<ImVec2>& P = idx >= 3000 ? s.pin : s.pout; const int i = idx - (idx >= 3000 ? 3000 : 2000);
+    if (s.kind != 1 || idx < 2000 || i < 0 || i >= (int)P.size()) return false;
+    out = P[i]; return true;
+  }
   if (idx < 1000) { if (idx < 0 || idx > 3) return false; out = s.q[idx]; return true; }
   auto gr = MeshGrid(s); int rr = (idx - 1000) / 100, cc = (idx - 1000) % 100;
   if (s.warp == 0 || rr < 0 || rr >= (int)gr.size() || cc < 0 || cc >= (int)gr[rr].size()) return false;
@@ -901,10 +963,25 @@ static std::vector<PtStart> CapturePoints(Screen& sc, const std::vector<App::PtR
 // NOT in the group keep their place on screen (moving a picked perspective corner must not drag the rest of the grid along), and the
 // big corners are refit around the grid afterwards. A slice with only perspective corners in the group is a perspective edit: its
 // grid follows the new corners, as when one corner is dragged on its own.
-static void MovePointsTo(Screen& sc, const std::vector<PtStart>& st, ImVec2 delta) {
+// Polygon points (2000+ / 3000+) are set on a copy first: if pin or pout would cross itself that slice keeps its last valid shape and the
+// call returns false ("Shape would cross itself" on the status line).
+static bool MovePointsTo(Screen& sc, const std::vector<PtStart>& st, ImVec2 delta) {
   auto clampOut = [](ImVec2 p) { return ImVec2(std::clamp(std::round(p.x + 0.f), -4000.f, 8000.f), std::clamp(std::round(p.y + 0.f), -4000.f, 8000.f)); };
+  bool ok = true;
+  for (auto& s : sc.slices) {
+    if (s.kind != 1) continue;
+    auto pin = s.pin, pout = s.pout; bool any = false;
+    for (auto& p : st) if (p.sl == s.id && p.idx >= 2000) {
+      auto& P = p.idx >= 3000 ? pin : pout; const int i = p.idx - (p.idx >= 3000 ? 3000 : 2000);
+      if (i >= 0 && i < (int)P.size()) { P[i] = clampOut(ImVec2(p.out.x + delta.x, p.out.y + delta.y)); any = true; }
+    }
+    if (!any) continue;
+    if (PolySimple(pin) && PolySimple(pout)) { s.pin = std::move(pin); s.pout = std::move(pout); }
+    else ok = false;
+  }
+  if (!ok) A.notify(kCrossMsg);
   std::map<std::string, std::vector<std::vector<ImVec2>>> pinned;   // slice id -> its grid on screen before this move
-  for (auto& s : sc.slices) for (auto& p : st) if (p.idx >= 1000 && p.sl == s.id) { pinned[s.id] = MeshGrid(s); break; }
+  for (auto& s : sc.slices) for (auto& p : st) if (p.idx >= 1000 && p.idx < 2000 && p.sl == s.id) { pinned[s.id] = MeshGrid(s); break; }
   for (auto& p : st) if (p.idx < 1000) if (Slice* s = SliceById(sc, p.sl)) s->q[p.idx] = clampOut(ImVec2(p.out.x + delta.x, p.out.y + delta.y));
   for (auto& s : sc.slices) {
     auto it = pinned.find(s.id); if (it == pinned.end()) continue;
@@ -918,6 +995,7 @@ static void MovePointsTo(Screen& sc, const std::vector<PtStart>& st, ImVec2 delt
     s.meshLocal = lg;
     FitCornersToMesh(s);   // the big corners keep surrounding the grid
   }
+  return ok;
 }
 bool OutputPointPos(const Screen& sc, const App::PtRef& r, ImVec2& out) {
   for (auto& s : sc.slices) if (s.id == r.sl) return PointPos(s, r.idx, out);
@@ -927,8 +1005,8 @@ bool OutputPointPos(const Screen& sc, const App::PtRef& r, ImVec2& out) {
 bool SetOutputPointPos(Screen& sc, const App::PtRef& r, ImVec2 pos) {
   Slice* s = SliceById(sc, r.sl); ImVec2 cur;
   if (!s || !PointPos(*s, r.idx, cur)) return false;
-  MovePointsTo(sc, CapturePoints(sc, {r}), ImVec2(pos.x - cur.x, pos.y - cur.y));
-  FitCornersToMesh(*s);
+  if (!MovePointsTo(sc, CapturePoints(sc, {r}), ImVec2(pos.x - cur.x, pos.y - cur.y))) return false;
+  if (s->kind == 0) FitCornersToMesh(*s);
   return true;
 }
 // --roundtrip: moving a group of top points (two perspective corners among them) leaves every other warp point where it was.

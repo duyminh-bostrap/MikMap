@@ -178,6 +178,10 @@ bool PolyTris(const Slice& s, std::vector<std::array<int, 3>>& out);
 bool PolyForward(const Slice& s, ImVec2 canvas, ImVec2& out);
 bool PolyInverse(const Slice& s, ImVec2 outPx, ImVec2& canvas);
 bool MakePolygonSlice(Slice& s, int points);
+// F18 editing: a new point at parameter t on edge `edge` (pin[edge] -> pin[edge+1]) of BOTH pin and pout; delete point i of both (keeps
+// >= 3). Both change nothing and return false when the result would cross itself (mikmap::tri::simple) or break the 3..64 limit.
+bool InsertPolyPoint(Slice& s, int edge, float t);
+bool DeletePolyPoint(Slice& s, int i);
 ImVec2 PolyTexCanvas(const Slice& s, ImVec2 p);   // canvas point the picture is sampled from: oflip mirrors it inside pin's bounding box
 namespace mikmap { class JsonValue; }
 mikmap::JsonValue SliceJ(const Slice& s);    // project.cpp: one slice <-> JSON (shared by the project file and output presets)
@@ -390,6 +394,8 @@ struct App {
   void moveClip(int fl, int fc, int tl, int tc);
   // mapping actions
   void addScreen(); void addSlice(); void deleteMask(); void deleteSlice();
+  void addPolygonSlice();   // F18: addSlice() made a 5-point polygon (pout == pin)
+  bool deletePickedPoints(); // Delete key: removes the picked polygon points; false (nothing done) when none are picked
   // Input Mask shapes (Slice Properties): 0 heart, 1 square, 2 circle, 3 triangle, 4 hexagon. Created around the slice's output quad.
   enum MaskShape { MS_HEART, MS_SQUARE, MS_CIRCLE, MS_TRIANGLE, MS_HEXAGON };
   void addMask(int shape = MS_SQUARE);
@@ -398,7 +404,8 @@ struct App {
   bool mapHand = false, mapSnap = false;
   // Advanced Output tools (Resolume): 0 = Edit Points, 1 = Transform. outTool = Output Transformation; inTool = Input Selection masks.
   int outTool = 1, inTool = 1;
-  // Output points picked together (marquee drag, Ctrl/Cmd/Shift-click): idx 0..3 = a slice's corner pin, 1000 + row*100 + col = a mesh point.
+  // Output points picked together (marquee drag, Ctrl/Cmd/Shift-click): idx 0..3 = a slice's corner pin, 1000 + row*100 + col = a mesh point,
+  // 2000 + i = point i of a polygon slice's pout (Output page), 3000 + i = point i of its pin (Input page, the only ids kept there).
   // Dragging any of them, or the arrow keys, moves the whole group. Runtime only.
   struct PtRef { std::string sl; int idx; };
   std::vector<PtRef> mapPts;
@@ -539,7 +546,8 @@ void DrawSliceOutput(const Screen& sc, const Slice& sl, float ox, float oy, floa
 mikmap::edgeblend::Rect SliceInputBounds(const Slice& s);   // input rect in canvas px (its bounding box when irot != 0)
 std::vector<mikmap::edgeblend::Band> SliceSoftEdgeBands(const Slice& s);   // fade bands vs every visible soft-edge slice on any screen
 bool SliceBlackLevelArea(const Slice& s, mikmap::edgeblend::Rect& out);   // input rect minus its soft-edge bands; false when nothing is left
-// F15: one output point (idx 0..3 = perspective corner, 1000 + row*100 + col = warp point) in the screen's output px (mapping.cpp).
+// F15: one point (idx 0..3 = perspective corner, 1000 + row*100 + col = warp point, 2000 + i polygon pout, 3000 + i polygon pin, canvas px).
+// A polygon edit that would cross itself is refused (false, nothing changes, status "Shape would cross itself").
 bool OutputPointPos(const Screen& sc, const App::PtRef& r, ImVec2& out);   // false if the slice or point does not exist
 bool SetOutputPointPos(Screen& sc, const App::PtRef& r, ImVec2 pos);       // moves exactly that point, as a drag does
 std::vector<ImVec2> SliceOutline(const Slice& s);   // output-space outline of a slice as the audience sees it (quad, or the mesh border)
