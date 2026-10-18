@@ -50,7 +50,7 @@ Slice đa giác có hình bất kỳ từ 3 đến 64 điểm, thay cho bốn g�
 - Chọn đúng một điểm: khối **OUTPUT POINTS** (hoặc **INPUT POINTS**) hiện **Point N** với hai ô **X**, **Y**.
 - **Flip** lật hình ảnh bên trong, giữ nguyên hình dạng. Soft edge, Black level compensation, màu, gamma và mask dùng được như slice thường. Slice đa giác được lưu trong dự án.
 
-> **Match Input Shape**, **Match Output Shape** và **Swap Input Output Shape** chép điểm theo thứ tự, một đổi một. Phím mũi tên dời cả slice đa giác không kiểm tra tự cắt. Phần mask nằm ngoài hình đa giác được ánh xạ gần đúng. Slice đa giác chưa được thử trên máy chiếu thật.
+> Vùng chồng của Soft edge được tính theo khung chữ nhật bao quanh các điểm input, nên hai slice đa giác có cạnh chéo vẫn có thể mờ ở chỗ hai hình không chồng lên nhau. Phím mũi tên dời cả slice đa giác không kiểm tra tự cắt. Phần mask nằm ngoài hình đa giác được ánh xạ gần đúng. Slice đa giác chưa được thử trên máy chiếu thật.
 
 ## Mask
 

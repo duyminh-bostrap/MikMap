@@ -301,6 +301,19 @@ bool DeletePolyPoint(Slice& s, int i) {
   s.pin = std::move(pin); s.pout = std::move(pout);
   return true;
 }
+// canvas px <-> the 1920x1080 output, per axis (InputAsOutputQuad / SetInputFromQuad do the same for a grid slice)
+static std::vector<ImVec2> ScalePts(std::vector<ImVec2> P, bool toOutput) {
+  const float kx = 1920.f / std::max(1, A.canvasW), ky = 1080.f / std::max(1, A.canvasH);
+  for (auto& p : P) p = toOutput ? ImVec2(p.x * kx, p.y * ky) : ImVec2(p.x / kx, p.y / ky);
+  return P;
+}
+static bool SetPolyShapes(Slice& s, std::vector<ImVec2> pin, std::vector<ImVec2> pout) {
+  if (s.kind != 1 || !PolySimple(pin) || !PolySimple(pout) || pin.size() != pout.size()) { A.notify(kCrossMsg); return false; }
+  s.pin = std::move(pin); s.pout = std::move(pout); return true;
+}
+bool PolyMatchOutputToInput(Slice& s) { return SetPolyShapes(s, s.pin, ScalePts(s.pin, true)); }
+bool PolyMatchInputToOutput(Slice& s) { return SetPolyShapes(s, ScalePts(s.pout, false), s.pout); }
+bool PolySwapShapes(Slice& s) { return SetPolyShapes(s, ScalePts(s.pout, false), ScalePts(s.pin, true)); }
 // a polygon's points placed so their bounding box fills (x, y, w, h): the input-side quick placements (halves, whole area)
 static void FitPts(std::vector<ImVec2>& P, float x, float y, float w, float h) {
   if (P.empty()) return;
@@ -862,8 +875,11 @@ void App::addMask(int shape) { pushHist();
   Slice* sl = curSlice(); if (!sl) return;
   // A new mask is a half-size shape in the middle of the slice's INPUT rect (composition canvas px); it cuts the picture the slice takes.
   Mask m; m.id = uid("mask"); m.name = "Mask " + std::to_string(sl->masks.size() + 1); m.inverted = true; m.feather = 4;
-  m.w = std::max(80.f, sl->iw * 0.5f); m.h = std::max(80.f, sl->ih * 0.5f);
-  m.x = sl->ix + sl->iw * 0.5f - m.w * 0.5f; m.y = sl->iy + sl->ih * 0.5f - m.h * 0.5f; m.rot = 0; m.shape = shape;
+  const auto b = SliceInputBounds(*sl);   // the input rect (its box when turned); a polygon: pin's bounding box
+  const float bx = (float)b.x, by = (float)b.y, bw = (float)b.w, bh = (float)b.h;
+  if (sl->kind == 1) { m.w = std::max(80.f, bw * 0.5f); m.h = std::max(80.f, bh * 0.5f); m.x = bx + bw * 0.5f - m.w * 0.5f; m.y = by + bh * 0.5f - m.h * 0.5f; }
+  else { m.w = std::max(80.f, sl->iw * 0.5f); m.h = std::max(80.f, sl->ih * 0.5f); m.x = sl->ix + sl->iw * 0.5f - m.w * 0.5f; m.y = sl->iy + sl->ih * 0.5f - m.h * 0.5f; }
+  m.rot = 0; m.shape = shape;
   MaskRebuild(m);
   selSl = sl->id; selMk = m.id; selKind = 2;
   sl->masks.push_back(m);
@@ -940,7 +956,7 @@ void App::resetAllWarping() {
 void App::matchOutputToInput() {
   pushHist();
   if (Slice* s = curSlice()) {
-    if (s->kind == 1) { s->pout = s->pin; s->orot = 0; return; }   // polygon: the output points land on the input points
+    if (s->kind == 1) { if (PolyMatchOutputToInput(*s)) s->orot = 0; return; }   // polygon: the output points land on the input points (scaled to output px)
     ImVec2 q[4]; InputAsOutputQuad(*s, q); SetVisibleCorners(*s, q); s->orot = s->irot; }   // the visible corners land on the input's shape (rotation kept, the Transform box turns with it)
 }
 // Resolume calls this "Whole area": the input rect snaps back to covering the entire composition canvas —
@@ -1265,6 +1281,7 @@ void App::setCanvasSize(int w, int h) {
     int x1 = (int)std::lround((s.ix + s.iw) * fx), y1 = (int)std::lround((s.iy + s.ih) * fy);
     s.ix = (int)std::lround(s.ix * fx); s.iy = (int)std::lround(s.iy * fy);
     s.iw = std::max(20, x1 - s.ix); s.ih = std::max(20, y1 - s.iy);
+    for (auto& p : s.pin) p = ImVec2((float)(p.x * fx), (float)(p.y * fy));   // a polygon's input points are canvas px too (positive scale: stays simple)
   }
   canvasW = w; canvasH = h;
 }
@@ -1345,9 +1362,11 @@ std::vector<MenuItem> App::sliceMenu(const std::string& scId, const std::string&
     m.push_back(mk("Duplicate slice", "copy", false, false, [this, scId, slId] { dupSlice(scId, slId); }));
     m.push_back(mk("Whole area (input)", "maximize", false, false, [this, sel] { sel(); resetInputRect(); }));
     m.push_back(mk("Match output to input", "frame", false, false, [this, sel] { sel(); matchOutputToInput(); }));
-    m.push_back(mk("Reset warp", "rotate-ccw", false, false, [this, sel] { sel(); resetWarp(); }));
-    m.push_back(mk("Reset mesh warp", "grid-3x3", false, false, [this, sel] { sel(); resetMeshWarp(); }));
-    m.push_back(mk("Reset all warping", "rotate-ccw", false, false, [this, sel] { sel(); resetAllWarping(); }));
+    if (sc.slices[i].kind == 0) {   // a polygon has no corners or warp grid to reset (Match output to input above is its reset)
+      m.push_back(mk("Reset warp", "rotate-ccw", false, false, [this, sel] { sel(); resetWarp(); }));
+      m.push_back(mk("Reset mesh warp", "grid-3x3", false, false, [this, sel] { sel(); resetMeshWarp(); }));
+      m.push_back(mk("Reset all warping", "rotate-ccw", false, false, [this, sel] { sel(); resetAllWarping(); }));
+    }
     m.push_back(mk("Add mask", "scissors", false, false, [this, sel] { sel(); addMask(); }));
     m.push_back(mk("Delete slice", "trash-2", n <= 1, true, [this, scId, slId] { removeSlice(scId, slId); }));
   }
@@ -1838,7 +1857,7 @@ static void InputRectMenu(ImVec2 at, bool output = false) {
     add("Right Half", edit([box, W, H](Slice& s) { box(s, std::floor(W / 2), 0, W - std::floor(W / 2), H); }));
     add("Bottom Half", edit([box, W, H](Slice& s) { box(s, 0, std::floor(H / 2), W, H - std::floor(H / 2)); }));
     add("Whole Area", [] { A.resetInputRect(); });
-    add("Match Output Shape", edit([](Slice& s) { s.pin = s.pout; }), true);
+    add("Match Output Shape", edit([](Slice& s) { PolyMatchInputToOutput(s); }), true);
   } else {
   add("Center X", edit([](Slice& s) { s.ix = (A.canvasW - s.iw) / 2; }));
   add("Center Y", edit([](Slice& s) { s.iy = (A.canvasH - s.ih) / 2; }));
@@ -1852,7 +1871,7 @@ static void InputRectMenu(ImVec2 at, bool output = false) {
   add("Match Output Shape", edit([](Slice& s) { ImVec2 vc[4]; VisibleCorners(s, vc); SetInputFromQuad(s, vc); }), true);   // the shape the audience sees, not the perspective corners
   }
   add("Swap Input Output Shape", edit([](Slice& s) {
-    if (s.kind == 1) { std::swap(s.pin, s.pout); return; }   // polygon: both point lists are simple already, same count
+    if (s.kind == 1) { PolySwapShapes(s); return; }   // polygon: each side scaled into the other's space
     ImVec2 outQ[4], inQ[4]; VisibleCorners(s, outQ);
     InputAsOutputQuad(s, inQ);
     SetVisibleCorners(s, inQ);
@@ -2466,7 +2485,8 @@ static void Stage(ImRect r) {
     auto polyPx = [&](const ImVec2* q, int n, ImVec2* out) { for (int i = 0; i < n; ++i) out[i] = toPx(q[i]); };
     auto outlinePx = [&](const Slice& S) { std::vector<ImVec2> o = SliceOutline(S); for (auto& p : o) p = toPx(p); return o; };
     const bool editPts = A.outTool == 0;   // Edit Points: perspective corners + warp grid points (polygon: its points); Transform: one box around the slice
-    if (sl && sl->visible && editPts && A.meshArm == 0 && polyEdit(0)) consumed = true;   // a polygon point / edge under the pointer comes first
+    if (sl && sl->kind == 1) A.meshArm = 0;   // + Add col / row armed on a grid slice means nothing on a polygon: it must not block its points
+    if (sl && sl->visible && editPts && polyEdit(0)) consumed = true;   // a polygon point / edge under the pointer comes first
     if (rClick && !consumed && inArea && !A.mapHand) {   // right-click a slice: select it and offer the same list as the Input frame's menu
       for (auto it = sc->slices.rbegin(); it != sc->slices.rend(); ++it) if (it->visible) {
         auto ol = outlinePx(*it);

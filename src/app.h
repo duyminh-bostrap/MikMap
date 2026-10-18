@@ -186,6 +186,11 @@ bool MakePolygonSlice(Slice& s, int points);
 // >= 3). Both change nothing and return false when the result would cross itself (mikmap::tri::simple) or break the 3..64 limit.
 bool InsertPolyPoint(Slice& s, int edge, float t);
 bool DeletePolyPoint(Slice& s, int i);
+// Match Input Shape / Match Output Shape / Swap for a polygon: points are scaled between canvas px and the 1920x1080 output (as the grid
+// versions do). A result that would cross itself changes nothing, returns false and says "Shape would cross itself".
+bool PolyMatchOutputToInput(Slice& s);
+bool PolyMatchInputToOutput(Slice& s);
+bool PolySwapShapes(Slice& s);
 ImVec2 PolyTexCanvas(const Slice& s, ImVec2 p);   // canvas point the picture is sampled from: oflip mirrors it inside pin's bounding box
 namespace mikmap { class JsonValue; }
 mikmap::JsonValue SliceJ(const Slice& s);    // project.cpp: one slice <-> JSON (shared by the project file and output presets)
@@ -553,8 +558,8 @@ bool SliceBlackLevelArea(const Slice& s, mikmap::edgeblend::Rect& out);   // inp
 // F15: one point (idx 0..3 = perspective corner, 1000 + row*100 + col = warp point, kPolyOut + i polygon pout, kPolyIn + i polygon pin, canvas px).
 // A polygon edit that would cross itself is refused (false, nothing changes, status "Shape would cross itself").
 bool OutputPointPos(const Screen& sc, const App::PtRef& r, ImVec2& out);   // false if the slice or point does not exist
-bool SetOutputPointPos(Screen& sc, const App::PtRef& r, ImVec2 pos);
-std::string PointLabel(int idx);   // the F15 name of a point id: "Corner TL", "Warp point R,C" (1-based), "Point N" (polygon)       // moves exactly that point, as a drag does
+bool SetOutputPointPos(Screen& sc, const App::PtRef& r, ImVec2 pos);       // moves exactly that point, as a drag does
+std::string PointLabel(int idx);   // the F15 name of a point id: "Corner TL", "Warp point R,C" (1-based), "Point N" (polygon)
 std::vector<ImVec2> SliceOutline(const Slice& s);   // output-space outline of a slice as the audience sees it (quad, or the mesh border)
 // Everything drawn between MaskBegin and MaskEnd is limited to the slice's `outline`, then to the union of the `keep` mask polygons (when
 // there are any), minus the `holes`. Polygons are in window px. Done with the stencil buffer through draw-list callbacks; SetBlendMode(0)

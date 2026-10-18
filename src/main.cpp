@@ -1539,6 +1539,38 @@ int main(int argc, char** argv) {
         }
       }
       if (!PtOnInputPage(kPolyIn) || PtOnInputPage(kPolyOut) || PointLabel(kPolyOut + 4) != "Point 5" || PointLabel(kPolyIn) != "Point 1") return fail("polygon ids: page / label must still work");
+      auto simpleTris = [](const Slice& s) { std::vector<std::array<int, 3>> T; return PolyTris(s, T); };
+      {   // a new canvas resolution rescales pin (canvas px) like an input rect; pout (output px) stays
+        NewProject(); A.setCanvasSize(1920, 1080);
+        Slice& cs = A.screens[0].slices[0]; MakePolygonSlice(cs, 5);
+        const auto pin0 = cs.pin, pout0 = cs.pout;
+        A.setCanvasSize(3840, 2160);
+        for (size_t i = 0; i < pin0.size(); ++i)
+          if (!closeTo(cs.pin[i], ImVec2(pin0[i].x * 2, pin0[i].y * 2), 0.01f) || !closeTo(cs.pout[i], pout0[i], 0.f)) return fail("canvas resize: a polygon's pin must scale with the canvas, pout must stay");
+        if (!simpleTris(cs)) return fail("canvas resize: the scaled polygon must still be simple");
+      }
+      {   // Match Input / Output Shape and Swap scale between canvas px and the 1920x1080 output, as the grid versions do
+        NewProject(); A.setCanvasSize(3840, 1080);
+        Slice& ms = A.screens[0].slices[0]; ms.ix = 0; ms.iy = 0; ms.iw = 3840; ms.ih = 1080; MakePolygonSlice(ms, 5);
+        ms.pout[2].x -= 100;
+        A.selSc = A.screens[0].id; A.selSl = ms.id; A.selMk.clear(); A.selKind = -1;
+        A.matchOutputToInput();
+        for (size_t i = 0; i < ms.pin.size(); ++i) if (!closeTo(ms.pout[i], ImVec2(ms.pin[i].x * 0.5f, ms.pin[i].y), 0.01f)) return fail("Match Input Shape: pout must be pin scaled by 1920 / canvasW, 1080 / canvasH");
+        ms.pout[2].x -= 100;
+        const auto pinA = ms.pin, poutA = ms.pout;
+        if (!PolySwapShapes(ms)) return fail("Swap: a simple polygon must swap");
+        for (size_t i = 0; i < pinA.size(); ++i)
+          if (!closeTo(ms.pin[i], ImVec2(poutA[i].x * 2, poutA[i].y), 0.01f) || !closeTo(ms.pout[i], ImVec2(pinA[i].x * 0.5f, pinA[i].y), 0.01f)) return fail("Swap: each side must be scaled into the other's space");
+        PolySwapShapes(ms);
+        for (size_t i = 0; i < pinA.size(); ++i) if (!closeTo(ms.pin[i], pinA[i], 0.01f) || !closeTo(ms.pout[i], poutA[i], 0.01f)) return fail("Swap twice must give the shapes back");
+        if (!PolyMatchInputToOutput(ms)) return fail("Match Output Shape must apply");
+        for (size_t i = 0; i < pinA.size(); ++i) if (!closeTo(ms.pin[i], ImVec2(ms.pout[i].x * 2, ms.pout[i].y), 0.01f)) return fail("Match Output Shape: pin must be pout scaled into canvas px");
+        // a new mask sits in the middle of the polygon's input box, not of the unused input rect
+        ms.ix = 3000; ms.iy = 900; ms.iw = 100; ms.ih = 100;
+        A.addMask(App::MS_SQUARE);
+        const auto b = SliceInputBounds(ms); const Mask& nm = ms.masks.back();
+        if (std::fabs(nm.x + nm.w * 0.5f - (b.x + b.w * 0.5)) > 0.5 || std::fabs(nm.y + nm.h * 0.5f - (b.y + b.h * 0.5)) > 0.5) return fail("polygon mask: a new mask must be centred on the polygon's input box");
+      }
       NewProject();
     }
     std::printf("roundtrip OK\n"); return 0;
