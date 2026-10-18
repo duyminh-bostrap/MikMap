@@ -1357,6 +1357,37 @@ int main(int argc, char** argv) {
       A.mediaExtra.clear(); A.mediaStale = true;
       for (auto* f : {&f1, &f2, &f3}) std::remove(f->c_str());
     }
+    // F20 soft edge: overlapping input rects of soft-edge slices (any screen) give each one a fade band on the overlapping side
+    {
+      using mikmap::edgeblend::Side;
+      auto setRect = [](Slice& s, int x, int y, int w, int h) { s.ix = x; s.iy = y; s.iw = w; s.ih = h; s.irot = 0; s.visible = true; s.softEdge = true; };
+      NewProject();
+      Slice& L = A.screens[0].slices[0]; Slice& R = A.screens[0].slices[1];
+      setRect(L, 0, 0, 1000, 500); setRect(R, 800, 0, 1000, 500);
+      auto bl = SliceSoftEdgeBands(L), br = SliceSoftEdgeBands(R);
+      if (bl.size() != 1 || bl[0].side != Side::Right || bl[0].start != 800 || bl[0].end != 1000) return fail("soft edge pair: left slice fades on its right over 800..1000");
+      if (br.size() != 1 || br[0].side != Side::Left) return fail("soft edge pair: right slice fades on its left");
+      R.softEdge = false;
+      if (!SliceSoftEdgeBands(L).empty()) return fail("a partner with soft edge off gives no band");
+      R.softEdge = true; R.visible = false;
+      if (!SliceSoftEdgeBands(L).empty()) return fail("a hidden partner gives no band");
+      R.visible = true; R.softEdge = false;
+      setRect(A.screens[1].slices[0], 800, 0, 1000, 500);
+      bl = SliceSoftEdgeBands(L);
+      if (bl.size() != 1 || bl[0].side != Side::Right) return fail("a soft-edge slice on another screen must blend too");
+      R.softEdge = true;
+      setRect(A.screens[1].slices[0], -800, 0, 1000, 500);
+      bl = SliceSoftEdgeBands(L);
+      int nl = 0, nr = 0;
+      for (auto& b : bl) { if (b.side == Side::Left && b.start == 0 && b.end == 200) ++nl; if (b.side == Side::Right) ++nr; }
+      if (bl.size() != 2 || nl != 1 || nr != 1) return fail("partners on both sides give a Left (0..200) and a Right band");
+      NewProject();
+      Slice& L2 = A.screens[0].slices[0];
+      L2.ix = 0; L2.iy = 0; L2.iw = 1000; L2.ih = 500; L2.irot = 90;
+      auto rb = SliceInputBounds(L2);
+      if (std::fabs(rb.x - 250) > 0.5 || std::fabs(rb.y + 250) > 0.5 || std::fabs(rb.w - 500) > 0.5 || std::fabs(rb.h - 1000) > 0.5) return fail("rotated input rect uses its bounding box");
+      NewProject();
+    }
     std::printf("roundtrip OK\n"); return 0;
   }
   gAssets = FindAssets(argv[0]);

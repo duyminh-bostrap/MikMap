@@ -1,6 +1,7 @@
 ﻿// Application state (a direct port of the prototype's React state) and screen entry points.
 #pragma once
 #include "ui.h"
+#include "core/math/EdgeBlend.h"
 #include <algorithm>
 #include <map>
 #include <string>
@@ -124,9 +125,9 @@ struct Slice {
   float irot = 0;
   bool iflipX = false, iflipY = false;
   bool maskLegacy = false;   // runtime: masks came from a file that stored them in output px; converted to canvas px right after load
-  bool softEdge = false;   // Slice properties > Soft Edge. A saved switch only: the projector output does not feather edges yet
-  // Output-side slice properties (Output routing page). oflip / blackBg / the colour block are drawn by DrawSliceOutput; isKey, the
-  // soft-edge curve and the black-level compensation are saved and edited but not rendered yet (they matter with edge blending).
+  bool softEdge = false;   // Slice properties > Soft Edge: fades where this input rect overlaps another soft-edge slice (DrawSliceOutput)
+  // Output-side slice properties (Output routing page). oflip / blackBg / the colour block are drawn by DrawSliceOutput; the soft-edge
+  // curve too; isKey and the black-level compensation are saved and edited but not rendered yet.
   int oflip = 0;                       // 0 none, 1 mirror X, 2 mirror Y, 3 both — combined with the input rect's own mirror (WarpMap::Map)
   bool isKey = false, blackBg = false;
   int brightness = 0, contrast = 0, red = 0, green = 0, blue = 0;   // per-slice colour correction, -100..100, on top of the Screen's
@@ -514,6 +515,8 @@ unsigned SliceSourceTexture(const Slice& s, float t);   // the slice's source dr
 void SliceSourcesRenderable(bool ok);                  // false while drawing in the projector window's context (no FBO there)
 void DrawSliceTextured(const Slice& s, unsigned tex, float ox, float oy, float sx, float sy, float alpha);   // that texture through the warp   // GL texture of the MikMap mark (0 until the assets are loaded)
 void DrawSliceOutput(const Screen& sc, const Slice& sl, float ox, float oy, float sx, float sy, float t);   // the slice as the projector shows it (output.cpp), also used by the Output stage's thumbnails
+mikmap::edgeblend::Rect SliceInputBounds(const Slice& s);   // input rect in canvas px (its bounding box when irot != 0)
+std::vector<mikmap::edgeblend::Band> SliceSoftEdgeBands(const Slice& s);   // fade bands vs every visible soft-edge slice on any screen
 std::vector<ImVec2> SliceOutline(const Slice& s);   // output-space outline of a slice as the audience sees it (quad, or the mesh border)
 // Everything drawn between MaskBegin and MaskEnd is limited to the slice's `outline`, then to the union of the `keep` mask polygons (when
 // there are any), minus the `holes`. Polygons are in window px. Done with the stencil buffer through draw-list callbacks; SetBlendMode(0)

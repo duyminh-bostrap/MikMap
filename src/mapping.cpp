@@ -2553,7 +2553,7 @@ static void PropsPanel(ImRect r) {
       intRow("Blue", sl->blue, -100, 100, 0x3205, pal::cyan);
       y += 4;
       }
-      if (section(1, "Soft edge", "NOT RENDERED YET", &sl->softEdge, pal::mint)) {
+      if (section(1, "Soft edge", sl->softEdge && SliceSoftEdgeBands(*sl).empty() ? "NO OVERLAP" : nullptr, &sl->softEdge, pal::mint)) {
         fltRow("Gamma red", sl->seGammaR, 0.1f, 4.f, 0x3211, pal::red, !sl->softEdge);
         fltRow("Gamma green", sl->seGammaG, 0.1f, 4.f, 0x3212, pal::mint, !sl->softEdge);
         fltRow("Gamma blue", sl->seGammaB, 0.1f, 4.f, 0x3213, pal::cyan, !sl->softEdge);

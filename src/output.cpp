@@ -154,6 +154,25 @@ std::string MonitorName(int i) {
   return b;
 }
 
+mikmap::edgeblend::Rect SliceInputBounds(const Slice& s) {
+  if (s.irot == 0) return {(double)s.ix, (double)s.iy, (double)s.iw, (double)s.ih};
+  const double a = s.irot * 3.14159265358979323846 / 180.0, c = std::fabs(std::cos(a)), sn = std::fabs(std::sin(a));
+  const double w = s.iw * c + s.ih * sn, h = s.iw * sn + s.ih * c, cx = s.ix + s.iw * 0.5, cy = s.iy + s.ih * 0.5;
+  return {cx - w * 0.5, cy - h * 0.5, w, h};
+}
+
+std::vector<mikmap::edgeblend::Band> SliceSoftEdgeBands(const Slice& s) {
+  std::vector<mikmap::edgeblend::Band> out;
+  if (!s.softEdge) return out;
+  const auto self = SliceInputBounds(s);
+  for (auto& sc : A.screens)
+    for (auto& o : sc.slices) {
+      mikmap::edgeblend::Band b;
+      if (o.id != s.id && o.visible && o.softEdge && mikmap::edgeblend::overlapBand(self, SliceInputBounds(o), b)) out.push_back(b);
+    }
+  return out;
+}
+
 // One slice as the projector shows it: input rect -> keystone/mesh, cut by its input masks, Screen opacity + colour correction.
 // (ox, oy, sx, sy) map the screen's 1920x1080 output space to window pixels — the projector window and the Output stage share this.
 void DrawSliceOutput(const Screen& sc, const Slice& sl, float ox, float oy, float sx, float sy, float t) {
@@ -208,6 +227,34 @@ void DrawSliceOutput(const Screen& sc, const Slice& sl, float ox, float oy, floa
       std::vector<ImVec2> o = SliceOutline(sl);
       for (auto& p : o) p = ImVec2(ox + p.x * sx, oy + p.y * sy);
       DrawColorAdjust(o.data(), (int)o.size(), sc.contrast / 100.f, sc.brightness / 100.f, sc.red / 100.f, sc.green / 100.f, sc.blue / 100.f);
+    }
+    // F20 soft edge: multiply the picture by the blend curve over each overlap band (canvas px, through the warp). One multiply pass
+    // per band, so where two bands cross (a corner) their fades multiply.
+    const auto bands = SliceSoftEdgeBands(sl);
+    if (!bands.empty()) {
+      SetBlendMode(8);
+      const ImVec2 uv = ImGui::GetDrawListSharedData()->TexUvWhitePixel;
+      auto shade = [&](const mikmap::edgeblend::Band& b, double x, double y) {
+        const double t = mikmap::edgeblend::bandT(b, x, y);
+        auto ch = [&](float gm) { return (int)std::lround(std::clamp(mikmap::edgeblend::gammaRamp(t, sl.seLum, sl.sePower, gm * sl.seGamma), 0.0, 1.0) * 255); };
+        return IM_COL32(ch(sl.seGammaR), ch(sl.seGammaG), ch(sl.seGammaB), 255);
+      };
+      for (auto& b : bands) {
+        const bool alongX = b.side == mikmap::edgeblend::Side::Left || b.side == mikmap::edgeblend::Side::Right;
+        const int nx = alongX ? 24 : 8, ny = alongX ? 8 : 24;
+        const double cw = b.area.w / nx, chh = b.area.h / ny;
+        for (int j = 0; j < ny; ++j)
+          for (int i = 0; i < nx; ++i) {
+            const double x0 = b.area.x + i * cw, y0 = b.area.y + j * chh, x1 = x0 + cw, y1 = y0 + chh;
+            const double px[4] = {x0, x1, x1, x0}, py[4] = {y0, y0, y1, y1};
+            dl->PrimReserve(6, 4);
+            ImDrawIdx base = (ImDrawIdx)dl->_VtxCurrentIdx;
+            for (int k = 0; k < 4; ++k) dl->PrimWriteVtx(wm.Map((float)px[k], (float)py[k]), uv, shade(b, px[k], py[k]));
+            dl->PrimWriteIdx(base); dl->PrimWriteIdx((ImDrawIdx)(base + 1)); dl->PrimWriteIdx((ImDrawIdx)(base + 2));
+            dl->PrimWriteIdx(base); dl->PrimWriteIdx((ImDrawIdx)(base + 2)); dl->PrimWriteIdx((ImDrawIdx)(base + 3));
+          }
+      }
+      SetBlendMode(0);
     }
     // Feather: a band along each mask edge on the visible side, black at the edge fading to clear over `feather` canvas px — the picture
     // fades into the cut instead of stopping hard. Drawn in canvas px and mapped through the warp like everything else.
