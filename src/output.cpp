@@ -179,6 +179,11 @@ std::string MonitorName(int i) {
 }
 
 mikmap::edgeblend::Rect SliceInputBounds(const Slice& s) {
+  if (s.kind == 1 && !s.pin.empty()) {   // polygon slice: the box around pin (the input rect does not apply)
+    double x0 = 1e300, y0 = 1e300, x1 = -1e300, y1 = -1e300;
+    for (auto& p : s.pin) { x0 = std::min(x0, (double)p.x); y0 = std::min(y0, (double)p.y); x1 = std::max(x1, (double)p.x); y1 = std::max(y1, (double)p.y); }
+    return {x0, y0, x1 - x0, y1 - y0};
+  }
   if (s.irot == 0) return {(double)s.ix, (double)s.iy, (double)s.iw, (double)s.ih};
   const double a = s.irot * 3.14159265358979323846 / 180.0, c = std::fabs(std::cos(a)), sn = std::fabs(std::sin(a));
   const double w = s.iw * c + s.ih * sn, h = s.iw * sn + s.ih * c, cx = s.ix + s.iw * 0.5, cy = s.iy + s.ih * 0.5;

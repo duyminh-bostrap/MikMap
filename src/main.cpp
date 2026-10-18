@@ -1,5 +1,6 @@
 ﻿// MikMap Pro — VJ / projection-mapping workspace (C++ / Dear ImGui / OpenGL).
 #include "app.h"
+#include "core/util/Json.h"
 
 #include <GLFW/glfw3.h>
 #ifdef _WIN32
@@ -1447,6 +1448,44 @@ int main(int argc, char** argv) {
       if (SetOutputPointPos(sc, {s0.id, 7}, ImVec2(1, 1)) || OutputPointPos(sc, {s0.id, 7}, p)) return fail("point X/Y: a missing point must be refused");
       for (int i = 0; i < 4; ++i) if (!closeTo(s0.q[i], before.q[i], 0.f)) return fail("point X/Y: a refused edit must change nothing");
       if (s0.meshLocal.size() != before.meshLocal.size()) return fail("point X/Y: a refused edit must change nothing");
+      NewProject();
+    }
+    // F18 polygon slice: an input polygon (canvas px) mapped triangle by triangle onto an output polygon
+    {
+      NewProject();
+      auto closeTo = [](ImVec2 a, ImVec2 b, float tol) { return std::fabs(a.x - b.x) <= tol && std::fabs(a.y - b.y) <= tol; };
+      auto mix = [](ImVec2 a, ImVec2 b, float t) { return ImVec2(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t); };
+      Slice& s = A.screens[0].slices[0];
+      if (!MakePolygonSlice(s, 5) || s.kind != 1 || s.pin.size() != 5 || s.pout.size() != 5) return fail("polygon: MakePolygonSlice(5) must give a 5-point polygon slice");
+      ImVec2 c(0, 0), mn(1e9f, 1e9f), mx(-1e9f, -1e9f), o, back;
+      for (auto& p : s.pin) { c.x += p.x / 5; c.y += p.y / 5; mn = ImVec2(std::min(mn.x, p.x), std::min(mn.y, p.y)); mx = ImVec2(std::max(mx.x, p.x), std::max(mx.y, p.y)); }
+      for (auto& p : s.pin) if (!PolyForward(s, p, o) || !closeTo(o, p, 0.01f)) return fail("polygon identity: pout == pin must map every corner to itself");
+      if (!PolyForward(s, c, o) || !closeTo(o, c, 0.01f)) return fail("polygon identity: pout == pin must map the centroid to itself");
+      auto b = SliceInputBounds(s);
+      if (std::fabs(b.x - mn.x) > 0.01 || std::fabs(b.y - mn.y) > 0.01 || std::fabs(b.w - (mx.x - mn.x)) > 0.01 || std::fabs(b.h - (mx.y - mn.y)) > 0.01) return fail("polygon bounds: SliceInputBounds must be pin's bounding box");
+      s.pout[2].x += 40; s.pout[2].y -= 30;
+      const ImVec2 moved = s.pout[2];
+      for (int i = 0; i < 5; ++i) {
+        ImVec2 ip = i == 0 ? c : mix(c, s.pin[i], 0.5f);
+        if (!PolyForward(s, ip, o) || !PolyInverse(s, o, back) || !closeTo(back, ip, 0.01f)) return fail("polygon inverse: PolyInverse(PolyForward(p)) must give p back");
+      }
+      if (PolyInverse(s, ImVec2(mx.x + 540, mx.y + 500), back)) return fail("polygon inverse: a point far outside pout must be refused");
+      Slice gridCopy = A.screens[0].slices[1];
+      if (!SaveProject(roundtrip, err) || !LoadProject(roundtrip, err)) return fail(err.c_str());
+      const Slice& ls = A.screens[0].slices[0];
+      if (ls.kind != 1 || ls.pin.size() != 5 || ls.pout.size() != 5 || !closeTo(ls.pout[2], moved, 1e-3f)) return fail("polygon roundtrip: kind / points / moved output point not restored");
+      const mikmap::JsonValue full = SliceJ(ls), grid = SliceJ(gridCopy);
+      mikmap::JsonValue j = full, pin4 = mikmap::JsonValue::array(), pout3 = mikmap::JsonValue::array();
+      for (int i = 0; i < 4; ++i) pin4.push(full["pin"].at(i));
+      for (int i = 0; i < 3; ++i) pout3.push(full["pout"].at(i));
+      j.set("pin", pin4); j.set("pout", pout3);
+      if (ReadSlice(j).kind != 0) return fail("bad polygon on load: pin 4 / pout 3 must fall back to a grid slice");
+      mikmap::JsonValue old = mikmap::JsonValue::object();
+      for (auto& [k, v] : grid.objectItems()) if (k != "kind" && k != "pin" && k != "pout") old.set(k, v);
+      Slice og = ReadSlice(old);
+      if (og.kind != 0 || !og.pin.empty()) return fail("old file: a slice without kind must load as a grid slice");
+      for (int i = 0; i < 4; ++i) if (!closeTo(og.q[i], gridCopy.q[i], 1e-3f)) return fail("old file: the grid corners must be unchanged");
+      if (og.meshCols != gridCopy.meshCols || og.meshRows != gridCopy.meshRows) return fail("old file: the grid must be unchanged");
       NewProject();
     }
     std::printf("roundtrip OK\n"); return 0;

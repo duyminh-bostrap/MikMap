@@ -3,6 +3,7 @@
 #include "ui.h"
 #include "core/math/EdgeBlend.h"
 #include <algorithm>
+#include <array>
 #include <map>
 #include <string>
 #include <vector>
@@ -137,6 +138,10 @@ struct Slice {
   bool colorActive() const { return brightness || contrast || red || green || blue; }
   ImVec2 q[4];   // tl, tr, br, bl — keystone corners (perspective, like Resolume / engine WarpCornerPin)
   std::vector<Mask> masks;
+  // F18: kind 1 = polygon slice. pin (canvas px) is cut into triangles; pout (output px, same size, 3..64) reuses those indices, so each
+  // input triangle maps affinely onto its output triangle. A polygon slice ignores q/mesh and the input rect (ix..ih, irot, iflip).
+  int kind = 0;   // 0 grid (q + mesh), 1 polygon
+  std::vector<ImVec2> pin, pout;
 };
 struct Screen {
   std::string id, name, outDev;
@@ -156,12 +161,24 @@ struct WarpMap {
   const Slice* slice = nullptr;
   float ox = 0, oy = 0, sx = 1, sy = 1;  // output space (1920x1080) → window pixels
   ImVec2 Map(float canvasX, float canvasY) const;
+  mutable std::vector<std::array<int, 3>> tris;   // polygon slice: triangulated on the first Map, so one WarpMap must not outlive a pin edit
+  mutable bool trisDone = false;
 };
 ImVec2 SliceMapUV(const Slice& s, float u, float v);  // unit square → output-space point
 void SliceOutputBounds(const Slice& s, ImVec2& mn, ImVec2& mx);   // output-space bbox of the whole warped slice
 // Files written before meshLocal existed stored mesh vertices in absolute output pixels (and ignored q in mesh mode).
 // Converts such a grid into keystone-local space so the slice still looks exactly as it did.
 void MigrateAbsoluteMesh(Slice& s, const std::vector<std::vector<ImVec2>>& abs);
+// F18 polygon slice (mapping.cpp). PolyTris triangulates pin (the input shape defines the topology). PolyForward: canvas px → output
+// px through the containing triangle (outside pin: the nearest triangle's map); false only if pin cannot be triangulated.
+// PolyInverse: false when outPx is outside pout. MakePolygonSlice: a regular `points`-gon (3..64) inscribed in the input rect, pout = pin.
+bool PolyTris(const Slice& s, std::vector<std::array<int, 3>>& out);
+bool PolyForward(const Slice& s, ImVec2 canvas, ImVec2& out);
+bool PolyInverse(const Slice& s, ImVec2 outPx, ImVec2& canvas);
+bool MakePolygonSlice(Slice& s, int points);
+namespace mikmap { class JsonValue; }
+mikmap::JsonValue SliceJ(const Slice& s);    // project.cpp: one slice <-> JSON (shared by the project file and output presets)
+Slice ReadSlice(const mikmap::JsonValue& o);
 
 // ───────────── sensor model ─────────────
 struct Device { std::string id, name, endpoint; bool connected; int fps, latency; std::string packets; };

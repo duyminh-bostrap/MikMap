@@ -4,6 +4,7 @@
 #include "app.h"
 
 #include "core/util/Json.h"
+#include "core/math/Triangulate.h"
 
 #include <algorithm>
 #include <chrono>
@@ -113,6 +114,7 @@ std::vector<float> ReadFloats(const JsonValue& a) { std::vector<float> v; if (a.
 JsonValue CalibJ(const Calib& c) { JsonValue co = JsonValue::object(); co.set("tx", c.tx); co.set("ty", c.ty); co.set("mx", c.mx); co.set("my", c.my); return co; }
 Calib ReadCalibPoint(const JsonValue& co) { return {F(co, "tx", 0), F(co, "ty", 0), F(co, "mx", 0), F(co, "my", 0)}; }
 
+}  // namespace — SliceJ / ReadSlice are declared in app.h (the --roundtrip self-test feeds ReadSlice hand-edited JSON)
 JsonValue SliceJ(const Slice& s) {
   JsonValue o = JsonValue::object();
   o.set("id", s.id); o.set("name", s.name); o.set("visible", s.visible); o.set("solo", s.solo); o.set("warp", s.warp);
@@ -135,6 +137,13 @@ JsonValue SliceJ(const Slice& s) {
   o.set("blR", s.blR); o.set("blG", s.blG); o.set("blB", s.blB);
   JsonValue q = JsonValue::array(); for (int i = 0; i < 4; ++i) q.push(V2(s.q[i]));
   o.set("q", q);
+  o.set("kind", s.kind);
+  if (s.kind == 1) {
+    JsonValue pi = JsonValue::array(), po = JsonValue::array();
+    for (auto& p : s.pin) pi.push(V2(p));
+    for (auto& p : s.pout) po.push(V2(p));
+    o.set("pin", pi); o.set("pout", po);
+  }
   JsonValue ms = JsonValue::array();
   for (auto& m : s.masks) {
     JsonValue mo = JsonValue::object();
@@ -185,6 +194,13 @@ Slice ReadSlice(const JsonValue& o) {
   s.blR = std::clamp(o["blR"].asInt(0), 0, 100); s.blG = std::clamp(o["blG"].asInt(0), 0, 100); s.blB = std::clamp(o["blB"].asInt(0), 0, 100);
   ImVec2 def[4] = {{(float)s.ix, (float)s.iy}, {(float)(s.ix + s.iw), (float)s.iy}, {(float)(s.ix + s.iw), (float)(s.iy + s.ih)}, {(float)s.ix, (float)(s.iy + s.ih)}};
   for (int i = 0; i < 4; ++i) s.q[i] = o["q"].isArray() && o["q"].size() > (size_t)i ? ReadV2(o["q"].at(i), def[i]) : def[i];
+  if (o["kind"].asInt(0) == 1) {   // F18 polygon: anything malformed (sizes differ, outside 3..64, self-crossing) loads as a grid slice
+    auto pts = [](const JsonValue& a) { std::vector<ImVec2> v; if (a.isArray()) for (auto& p : a.arrayItems()) { if (v.size() > 64) break; v.push_back(ReadV2(p)); } return v; };
+    s.pin = pts(o["pin"]); s.pout = pts(o["pout"]);
+    std::vector<mikmap::tri::P> tp; for (auto& p : s.pin) tp.push_back({p.x, p.y});
+    if (s.pin.size() == s.pout.size() && s.pin.size() >= 3 && s.pin.size() <= 64 && mikmap::tri::simple(tp)) s.kind = 1;
+    else { s.pin.clear(); s.pout.clear(); }
+  }
   s.maskLegacy = o["maskSpace"].asInt(0) != 1;
   if (o["masks"].isArray()) for (auto& mo : o["masks"].arrayItems()) {
     Mask m; m.id = mo["id"].asString(); m.name = mo["name"].asString(); m.inverted = mo["inverted"].asBool(true); m.feather = mo["feather"].asInt(4); m.visible = mo["visible"].asBool(true); m.pointMode = std::clamp(mo["pointMode"].asInt(0), 0, 1);
@@ -216,6 +232,7 @@ Slice ReadSlice(const JsonValue& o) {
   NormalizeWarp(s);   // a corner-pin-only slice (warp 0) is a plain 1 x 1 grid now
   return s;
 }
+namespace {
 
 // Shared by the project serializer and the F8 output-preset file — one Screen, never duplicated field-by-field.
 JsonValue ScreenJ(const Screen& s) {

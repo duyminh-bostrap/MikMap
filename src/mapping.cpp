@@ -1,5 +1,6 @@
 ﻿// Advanced Mapping screen: mapping tree · stage canvas · slice/mask/screen properties.
 #include "app.h"
+#include "core/math/Triangulate.h"
 #include <cmath>
 #include <cstring>
 #include <algorithm>
@@ -211,9 +212,63 @@ struct MeshSurface {
   }
 };
 
+// ───── F18 polygon slice: pin (canvas px) → pout (output px), one affine map per triangle of pin ─────
+static std::vector<mikmap::tri::P> TriPts(const std::vector<ImVec2>& v) {
+  std::vector<mikmap::tri::P> o; o.reserve(v.size());
+  for (auto& p : v) o.push_back({p.x, p.y});
+  return o;
+}
+bool PolyTris(const Slice& s, std::vector<std::array<int, 3>>& out) {
+  out.clear();
+  return s.pin.size() >= 3 && s.pin.size() == s.pout.size() && mikmap::tri::triangulate(TriPts(s.pin), out);
+}
+// `T` = PolyTris(s), passed in so a caller mapping many points (WarpMap) triangulates once
+static bool PolyForwardT(const Slice& s, const std::vector<std::array<int, 3>>& T, ImVec2 c, ImVec2& out) {
+  if (T.empty()) return false;
+  const auto in = TriPts(s.pin); const mikmap::tri::P p{c.x, c.y};
+  int t = -1; double u = 0, v = 0, w = 0;
+  if (!mikmap::tri::locate(in, T, p, t, u, v, w)) {   // outside pin: extrapolate with the triangle whose centroid is nearest
+    double best = 1e300; t = -1;
+    for (int i = 0; i < (int)T.size(); ++i) {
+      const auto& a = in[T[i][0]]; const auto& b = in[T[i][1]]; const auto& d = in[T[i][2]];
+      const double dx = (a.x + b.x + d.x) / 3 - p.x, dy = (a.y + b.y + d.y) / 3 - p.y, dd = dx * dx + dy * dy;
+      double uu, vv, ww;
+      if (dd < best && mikmap::tri::barycentric(a, b, d, p, uu, vv, ww)) { best = dd; t = i; u = uu; v = vv; w = ww; }   // skips zero-area ears
+    }
+    if (t < 0) return false;
+  }
+  const ImVec2 &A0 = s.pout[T[t][0]], &B0 = s.pout[T[t][1]], &C0 = s.pout[T[t][2]];
+  out = ImVec2((float)(u * A0.x + v * B0.x + w * C0.x), (float)(u * A0.y + v * B0.y + w * C0.y));
+  return true;
+}
+bool PolyForward(const Slice& s, ImVec2 canvas, ImVec2& out) {
+  std::vector<std::array<int, 3>> T;
+  return PolyTris(s, T) && PolyForwardT(s, T, canvas, out);
+}
+bool PolyInverse(const Slice& s, ImVec2 outPx, ImVec2& canvas) {
+  std::vector<std::array<int, 3>> T; if (!PolyTris(s, T)) return false;
+  int t; double u, v, w;
+  if (!mikmap::tri::locate(TriPts(s.pout), T, {outPx.x, outPx.y}, t, u, v, w)) return false;
+  const ImVec2 &A0 = s.pin[T[t][0]], &B0 = s.pin[T[t][1]], &C0 = s.pin[T[t][2]];
+  canvas = ImVec2((float)(u * A0.x + v * B0.x + w * C0.x), (float)(u * A0.y + v * B0.y + w * C0.y));
+  return true;
+}
+bool MakePolygonSlice(Slice& s, int points) {
+  if (points < 3 || points > 64) return false;
+  const float cx = s.ix + s.iw * 0.5f, cy = s.iy + s.ih * 0.5f, rx = s.iw * 0.5f, ry = s.ih * 0.5f;
+  s.pin.clear();
+  for (int i = 0; i < points; ++i) {   // first point straight up, clockwise on screen
+    const float a = -1.5707963f + 6.2831853f * i / points;
+    s.pin.push_back(ImVec2(cx + rx * std::cos(a), cy + ry * std::sin(a)));
+  }
+  s.pout = s.pin; s.kind = 1;
+  return true;
+}
+
 // output-space outline of the slice as the audience sees it: the grid's border — straight between border points in Linear mode,
-// sampled along the curves in Bezier mode
+// sampled along the curves in Bezier mode (a polygon slice: its output polygon)
 std::vector<ImVec2> SliceOutline(const Slice& s) {
+  if (s.kind == 1) return s.pout;
   if (s.warp == 0) return {s.q[0], s.q[1], s.q[2], s.q[3]};
   const MeshSurface M(s); const Keystone k(s.q);
   const int R = M.Rows(), C = M.Cols(), n = M.bez ? 8 : 1;   // samples per patch edge
@@ -253,6 +308,7 @@ static bool MeshParamAt(const Slice& s, ImVec2 out, float& u, float& v) {
 void SliceOutputBounds(const Slice& s, ImVec2& mn, ImVec2& mx) {
   mn = ImVec2(1e9f, 1e9f); mx = ImVec2(-1e9f, -1e9f);
   auto add = [&](ImVec2 p) { mn.x = std::min(mn.x, p.x); mn.y = std::min(mn.y, p.y); mx.x = std::max(mx.x, p.x); mx.y = std::max(mx.y, p.y); };
+  if (s.kind == 1) { for (auto& p : s.pout) add(p); return; }   // a polygon slice's unused q must not widen its clip box
   for (int i = 0; i < 4; ++i) add(s.q[i]);
   if (s.warp != 0) { for (auto& row : MeshGrid(s)) for (auto& p : row) add(p); for (auto& p : SliceOutline(s)) add(p); }   // points (and Bezier edges) may bulge past the quad
 }
@@ -571,6 +627,12 @@ void DrawSliceTextured(const Slice& s, unsigned tex, float ox, float oy, float s
 
 ImVec2 WarpMap::Map(float canvasX, float canvasY) const {
   if (!slice) return ImVec2(ox + canvasX * sx, oy + canvasY * sy);
+  if (slice->kind == 1) {   // polygon slice: input rect, irot and iflip do not apply
+    if (!trisDone) { PolyTris(*slice, tris); trisDone = true; }
+    ImVec2 o(canvasX, canvasY);
+    if (!PolyForwardT(*slice, tris, o, o)) o = ImVec2(canvasX, canvasY);   // untriangulable shape: canvas point unwarped
+    return ImVec2(ox + o.x * sx, oy + o.y * sy);
+  }
   // canvas pixels → the slice's input rect in unit coordinates (undo the rect's rotation about its centre, then mirror)
   float rw = (float)std::max(1, slice->iw), rh = (float)std::max(1, slice->ih);
   float dx = canvasX - (slice->ix + rw * 0.5f), dy = canvasY - (slice->iy + rh * 0.5f);
