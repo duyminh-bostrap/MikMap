@@ -9,7 +9,7 @@ Ba vùng: cây **Screen / Slice / Mask** ở trái, sân khấu (stage) ở gi�
 - Bấm một dòng để chọn. Giữ `Ctrl` hoặc `Shift` rồi bấm để chọn nhiều phần tử cùng loại (không trộn screen, slice, mask).
 - Biểu tượng mắt ẩn hoặc hiện screen, slice và mask. Mask ẩn vẫn nằm trong slice nhưng không cắt hình.
 - Chuột phải mở menu: thêm, nhân đôi, xoá, Solo cho slice, Reset warp, Whole area và các lệnh khác.
-- Ba nút ở chân cây thêm **Screen**, **Slice** và **Mask**.
+- Ba nút ở chân cây thêm **Screen**, **Slice** và **Mask**. Nút **Slice** mở menu chọn **Add slice** hoặc **Add polygon slice**.
 
 ## Hai trang trên sân khấu
 
@@ -38,6 +38,19 @@ Tên slice, **Input source**, **Input rectangle** (X, Y, Left, Top, Width, Heigh
 ## Nhập toạ độ điểm
 
 Ở trang **Output routing** với công cụ **Edit Points**, chọn đúng một điểm (góc phối cảnh hoặc điểm warp): đầu khối **WARPING** hiện tên điểm và hai ô **X**, **Y** (px đầu ra). Gõ số để đặt chính xác điểm đó. Chọn nhiều điểm hoặc không chọn điểm nào thì hai ô này ẩn.
+
+## Slice đa giác
+
+Slice đa giác có hình bất kỳ từ 3 đến 64 điểm, thay cho bốn góc và lưới warp. Thêm bằng **Add polygon slice** ở menu chuột phải của screen hoặc nút **Slice** ở chân cây. Slice mới là một ngũ giác.
+
+- Trang **Output routing**, công cụ **Edit Points**: kéo điểm để đặt hình trên đầu ra. Trang **Input selection**: kéo điểm để chọn phần canvas mà slice lấy; kéo bên trong hình để dời cả hình.
+- Bấm đúp lên một cạnh để thêm điểm. Chuột phải một điểm rồi chọn **Delete point**, hoặc chọn điểm rồi bấm `Delete`.
+- Thao tác làm hình tự cắt chính nó bị từ chối, điểm ở lại chỗ cũ và thanh trạng thái báo `Shape would cross itself`.
+- **Transform** di chuyển, co giãn, xoay cả hình. **Magnet** hít vào điểm và cạnh của hình.
+- Chọn đúng một điểm: khối **OUTPUT POINTS** (hoặc **INPUT POINTS**) hiện **Point N** với hai ô **X**, **Y**.
+- **Flip** lật hình ảnh bên trong, giữ nguyên hình dạng. Soft edge, Black level compensation, màu, gamma và mask dùng được như slice thường. Slice đa giác được lưu trong dự án.
+
+> **Match Input Shape**, **Match Output Shape** và **Swap Input Output Shape** chép điểm theo thứ tự, một đổi một. Phím mũi tên dời cả slice đa giác không kiểm tra tự cắt. Phần mask nằm ngoài hình đa giác được ánh xạ gần đúng. Slice đa giác chưa được thử trên máy chiếu thật.
 
 ## Mask
 
