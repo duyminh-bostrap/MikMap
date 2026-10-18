@@ -1407,6 +1407,30 @@ int main(int argc, char** argv) {
       if (SliceBlackLevelArea(A.screens[0].slices[0], r)) return fail("empty black level area: bands that cross leave nothing to lift");
       NewProject();
     }
+    // F15: X/Y of the one selected output point edits exactly that point
+    {
+      NewProject();
+      Screen& sc = A.screens[0]; Slice& s0 = sc.slices[0];
+      auto closeTo =[](ImVec2 a, ImVec2 b, float tol) { return std::fabs(a.x - b.x) <= tol && std::fabs(a.y - b.y) <= tol; };
+      ImVec2 p;
+      if (!SetOutputPointPos(sc, {s0.id, 0}, ImVec2(123, 45)) || !closeTo(s0.q[0], ImVec2(123, 45), 0.5f)) return fail("point X/Y: corner TL must move to (123,45)");
+      if (!OutputPointPos(sc, {s0.id, 0}, p) || !closeTo(p, ImVec2(123, 45), 0.5f)) return fail("point X/Y: OutputPointPos must read the corner back");
+      s0.meshCols = 3; s0.meshRows = 2;
+      std::map<int, ImVec2> was;
+      for (int rr = 0; rr < 10; ++rr) for (int cc = 0; cc < 10; ++cc) if (OutputPointPos(sc, {s0.id, 1000 + rr * 100 + cc}, p)) was[1000 + rr * 100 + cc] = p;
+      if (!was.count(1101)) return fail("point X/Y: a 3x2 grid must have warp point 1101");
+      if (!SetOutputPointPos(sc, {s0.id, 1101}, ImVec2(700, 400))) return fail("point X/Y: warp point 1101 must be settable");
+      for (auto& [idx, at] : was) {
+        if (!OutputPointPos(sc, {s0.id, idx}, p)) return fail("point X/Y: a warp point vanished");
+        if (!closeTo(p, idx == 1101 ? ImVec2(700, 400) : at, 0.6f)) return fail(idx == 1101 ? "point X/Y: warp point 1101 must move to (700,400)" : "point X/Y: moving one warp point moved another");
+      }
+      Slice before = s0;
+      if (SetOutputPointPos(sc, {"nope", 0}, ImVec2(1, 1)) || OutputPointPos(sc, {"nope", 0}, p)) return fail("point X/Y: a missing slice must be refused");
+      if (SetOutputPointPos(sc, {s0.id, 7}, ImVec2(1, 1)) || OutputPointPos(sc, {s0.id, 7}, p)) return fail("point X/Y: a missing point must be refused");
+      for (int i = 0; i < 4; ++i) if (!closeTo(s0.q[i], before.q[i], 0.f)) return fail("point X/Y: a refused edit must change nothing");
+      if (s0.meshLocal.size() != before.meshLocal.size()) return fail("point X/Y: a refused edit must change nothing");
+      NewProject();
+    }
     std::printf("roundtrip OK\n"); return 0;
   }
   gAssets = FindAssets(argv[0]);

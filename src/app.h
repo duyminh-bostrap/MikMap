@@ -518,6 +518,9 @@ void DrawSliceOutput(const Screen& sc, const Slice& sl, float ox, float oy, floa
 mikmap::edgeblend::Rect SliceInputBounds(const Slice& s);   // input rect in canvas px (its bounding box when irot != 0)
 std::vector<mikmap::edgeblend::Band> SliceSoftEdgeBands(const Slice& s);   // fade bands vs every visible soft-edge slice on any screen
 bool SliceBlackLevelArea(const Slice& s, mikmap::edgeblend::Rect& out);   // input rect minus its soft-edge bands; false when nothing is left
+// F15: one output point (idx 0..3 = perspective corner, 1000 + row*100 + col = warp point) in the screen's output px (mapping.cpp).
+bool OutputPointPos(const Screen& sc, const App::PtRef& r, ImVec2& out);   // false if the slice or point does not exist
+bool SetOutputPointPos(Screen& sc, const App::PtRef& r, ImVec2 pos);       // moves exactly that point, as a drag does
 std::vector<ImVec2> SliceOutline(const Slice& s);   // output-space outline of a slice as the audience sees it (quad, or the mesh border)
 // Everything drawn between MaskBegin and MaskEnd is limited to the slice's `outline`, then to the union of the `keep` mask polygons (when
 // there are any), minus the `holes`. Polygons are in window px. Done with the stencil buffer through draw-list callbacks; SetBlendMode(0)

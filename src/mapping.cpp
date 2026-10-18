@@ -817,6 +817,18 @@ static void MovePointsTo(Screen& sc, const std::vector<PtStart>& st, ImVec2 delt
     FitCornersToMesh(s);   // the big corners keep surrounding the grid
   }
 }
+bool OutputPointPos(const Screen& sc, const App::PtRef& r, ImVec2& out) {
+  for (auto& s : sc.slices) if (s.id == r.sl) return PointPos(s, r.idx, out);
+  return false;
+}
+// F15: the point's X/Y fields — the same move as dragging that one point (then the big corners refit, as nudgeSelection does)
+bool SetOutputPointPos(Screen& sc, const App::PtRef& r, ImVec2 pos) {
+  Slice* s = SliceById(sc, r.sl); ImVec2 cur;
+  if (!s || !PointPos(*s, r.idx, cur)) return false;
+  MovePointsTo(sc, CapturePoints(sc, {r}), ImVec2(pos.x - cur.x, pos.y - cur.y));
+  FitCornersToMesh(*s);
+  return true;
+}
 // --roundtrip: moving a group of top points (two perspective corners among them) leaves every other warp point where it was.
 static bool GroupMoveSelfTest(std::string& why) {
   Screen sc; Slice s; s.id = "g"; s.q[0] = {200, 150}; s.q[1] = {1500, 120}; s.q[2] = {1600, 900}; s.q[3] = {150, 980};
@@ -2116,7 +2128,13 @@ static void Stage(ImRect r) {
     auto nearPt = [&](ImVec2 outPt, float rad) { ImVec2 p = toPx(outPt); return std::hypot(m.x - p.x, m.y - p.y) <= rad; };
     // forget picked points that no longer exist (deleted / re-meshed) or are not the selected slice's: points are only picked on the slice being edited
     A.mapPts.erase(std::remove_if(A.mapPts.begin(), A.mapPts.end(), [&](const App::PtRef& r) { Slice* ps = SliceById(*sc, r.sl); ImVec2 tmp; return !ps || !sl || ps->id != sl->id || !PointPos(*ps, r.idx, tmp); }), A.mapPts.end());
-    auto grab = [&](int kind, int idx, ImVec2 at) { A.mapPts.clear(); A.pushHist(); dragKind = kind; dragIdx = idx; dragOff = Vsub(at, mo); consumed = true; };
+    auto grab = [&](int kind, int idx, ImVec2 at) {   // a single click picks the grabbed point (its X/Y show in the panel); Ctrl/Shift adds it
+      App::PtRef pr{sl->id, kind == 1 ? idx : 1000 + idx};
+      bool have = false; for (auto& q : A.mapPts) if (q.sl == pr.sl && q.idx == pr.idx) have = true;
+      if (kind != 1 && kind != 4) A.mapPts.clear();
+      else if (!MultiMod()) A.mapPts = {pr};
+      else if (!have) A.mapPts.push_back(pr);
+      A.pushHist(); dragKind = kind; dragIdx = idx; dragOff = Vsub(at, mo); consumed = true; };
     const bool placing = A.meshArm != 0;   // armed by + Add col / + Add row: the next click places the split, even right on top of a point or line
     if (clickPending && !consumed && !placing && editPts && A.mapPts.size() > 1) {   // pressing one of several picked points drags the whole group
       for (auto& r : A.mapPts) if (Slice* ps = SliceById(*sc, r.sl)) {
@@ -2572,6 +2590,20 @@ static void PropsPanel(ImRect r) {
     if (output && A.outTool == 0) {   // Edit Points: Warping
       HLine(ox, ox + W, oy + y, K(pal::g2a)); y += 1 + 6;
       Text(x, oy + y + 4.5f, MONO_R, 9, K(pal::t88), "WARPING", 0.09f); y += 9 + 6;
+      ImVec2 pp;   // F15: X/Y of the one picked point (hidden when none or several are picked)
+      if (sc && A.mapPts.size() == 1 && A.mapPts[0].sl == sl->id && OutputPointPos(*sc, A.mapPts[0], pp)) {
+        const App::PtRef pr = A.mapPts[0];
+        static const char* kCorner[4] = {"TL", "TR", "BR", "BL"};
+        char nm[40];
+        if (pr.idx < 4) snprintf(nm, sizeof nm, "Corner %s", kCorner[pr.idx]);
+        else snprintf(nm, sizeof nm, "Warp point %d,%d", (pr.idx - 1000) / 100 + 1, (pr.idx - 1000) % 100 + 1);
+        Text(x, oy + y + 11, UI_S, 10, K(pal::t88), nm); y += 22;
+        float fw = (w - 6) / 2.f, vx = pp.x, vy = pp.y;
+        bool cx = NumCellInline(x, oy + y, fw, "X", "##ptx", vx, 0);
+        bool cy = NumCellInline(x + fw + 6, oy + y, fw, "Y", "##pty", vy, 0);
+        if (cx || cy) { A.pushHist(); SetOutputPointPos(*sc, pr, ImVec2(std::round(vx), std::round(vy))); }
+        y += 27;
+      }
       Text(x, oy + y + 11, UI_S, 10, K(pal::t88), "Point mode");
       {   // Linear | Bezier
         const char* pm[2] = {"LINEAR", "BEZIER"}; const float bw = 58.f;
