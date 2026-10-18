@@ -22,6 +22,12 @@ TEST_CASE("EdgeBlend: xep doc -> dai ben duoi") {
     CHECK(b.side == Side::Bottom);
     CHECK_NEAR(b.start, 900, 1e-12); CHECK_NEAR(b.end, 1000, 1e-12);
 }
+TEST_CASE("★ EdgeBlend: dai rong thap chong ngang -> chon truc x (chong mot phan)") {
+    Band b;  // vùng chồng 400×300 rộng hơn cao, nhưng phủ trọn chiều cao → phải dốc theo x
+    REQUIRE(overlapBand(Rect{0, 0, 1920, 300}, Rect{1520, 0, 1920, 300}, b));
+    CHECK(b.side == Side::Right);
+    CHECK_NEAR(b.start, 1520, 1e-12); CHECK_NEAR(b.end, 1920, 1e-12);
+}
 TEST_CASE("EdgeBlend: cham canh hoac roi nhau -> khong co dai") {
     Band b;
     CHECK(!overlapBand(Rect{0, 0, 100, 100}, Rect{100, 0, 100, 100}, b));

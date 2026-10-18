@@ -170,7 +170,19 @@ std::vector<mikmap::edgeblend::Band> SliceSoftEdgeBands(const Slice& s) {
       mikmap::edgeblend::Band b;
       if (o.id != s.id && o.visible && o.softEdge && mikmap::edgeblend::overlapBand(self, SliceInputBounds(o), b)) out.push_back(b);
     }
-  return out;
+  // A band lying inside another on the same side (a 2x2 grid's diagonal partner) would fade that corner twice: drop it,
+  // keeping the first of two identical ones.
+  auto inside = [](const mikmap::edgeblend::Rect& a, const mikmap::edgeblend::Rect& b) {
+    return a.x >= b.x && a.y >= b.y && a.x + a.w <= b.x + b.w && a.y + a.h <= b.y + b.h;
+  };
+  std::vector<mikmap::edgeblend::Band> kept;
+  for (size_t i = 0; i < out.size(); ++i) {
+    bool drop = false;
+    for (size_t j = 0; j < out.size() && !drop; ++j)
+      drop = j != i && out[j].side == out[i].side && inside(out[i].area, out[j].area) && (j < i || !inside(out[j].area, out[i].area));
+    if (!drop) kept.push_back(out[i]);
+  }
+  return kept;
 }
 
 bool SliceBlackLevelArea(const Slice& s, mikmap::edgeblend::Rect& out) {
@@ -266,8 +278,8 @@ void DrawSliceOutput(const Screen& sc, const Slice& sl, float ox, float oy, floa
     if (!bands.empty()) {
       SetBlendMode(8);
       auto shade = [&](const mikmap::edgeblend::Band& b, double x, double y) {
-        const double t = mikmap::edgeblend::bandT(b, x, y);
-        auto ch = [&](float gm) { return (int)std::lround(std::clamp(mikmap::edgeblend::gammaRamp(t, sl.seLum, sl.sePower, gm * sl.seGamma), 0.0, 1.0) * 255); };
+        const double bt = mikmap::edgeblend::bandT(b, x, y);
+        auto ch = [&](float gm) { return (int)std::lround(std::clamp(mikmap::edgeblend::gammaRamp(bt, sl.seLum, sl.sePower, gm * sl.seGamma), 0.0, 1.0) * 255); };
         return IM_COL32(ch(sl.seGammaR), ch(sl.seGammaG), ch(sl.seGammaB), 255);
       };
       for (auto& b : bands) {

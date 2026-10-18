@@ -1405,6 +1405,21 @@ int main(int argc, char** argv) {
       setRect(A.screens[0].slices[0], 0, 0, 300, 500, true); setRect(A.screens[0].slices[1], 100, 0, 1000, 500, true);
       setRect(A.screens[1].slices[0], -1000, 0, 1200, 500, true);
       if (SliceBlackLevelArea(A.screens[0].slices[0], r)) return fail("empty black level area: bands that cross leave nothing to lift");
+      // 2x2 grid: the diagonal partner's overlap duplicates the side partners' bands and must not fade the corner twice
+      NewProject();
+      {
+        using mikmap::edgeblend::Side;
+        auto& v = A.screens[0].slices;
+        v.resize(4, v[0]);
+        for (auto& s : v) s.id = A.uid("slice");
+        setRect(v[0], 0, 0, 1000, 500, true); setRect(v[1], 800, 0, 1000, 500, true);
+        setRect(v[2], 0, 400, 1000, 500, true); setRect(v[3], 800, 400, 1000, 500, true);
+        const auto bt = SliceSoftEdgeBands(v[0]);
+        int nr = 0, nb = 0;
+        for (auto& b : bt) { if (b.side == Side::Right && b.start == 800 && b.end == 1000) ++nr; if (b.side == Side::Bottom && b.start == 400 && b.end == 500) ++nb; }
+        if (bt.size() != 2 || nr != 1 || nb != 1) return fail("2x2 grid: top-left gets exactly one Right (800..1000) and one Bottom (400..500) band");
+        if (!SliceBlackLevelArea(v[0], r) || !is(r, 0, 0, 800, 400)) return fail("2x2 grid: top-left black level area is (0,0,800,400)");
+      }
       NewProject();
     }
     // F15: X/Y of the one selected output point edits exactly that point

@@ -11,12 +11,14 @@ bool overlapBand(const Rect& self, const Rect& other, Band& out) {
     const Rect ov{x0, y0, x1 - x0, y1 - y0};
     if (ov.w <= 0 || ov.h <= 0) return false;
 
-    if (ov.w <= ov.h) {  // dốc theo x
-        if (ov.w >= self.w || ov.w >= other.w) return false;
+    // Dốc theo trục mà vùng chồng chỉ phủ MỘT PHẦN cả hai rect; cả hai trục đều một phần → trục ngắn hơn.
+    const bool partX = ov.w < self.w && ov.w < other.w;
+    const bool partY = ov.h < self.h && ov.h < other.h;
+    if (!partX && !partY) return false;
+    if (partX && (!partY || ov.w <= ov.h)) {  // dốc theo x
         out.side = (ov.x + ov.w / 2 > self.x + self.w / 2) ? Side::Right : Side::Left;
         out.start = x0; out.end = x1;
     } else {             // dốc theo y
-        if (ov.h >= self.h || ov.h >= other.h) return false;
         out.side = (ov.y + ov.h / 2 > self.y + self.h / 2) ? Side::Bottom : Side::Top;
         out.start = y0; out.end = y1;
     }
