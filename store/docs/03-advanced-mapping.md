@@ -9,7 +9,7 @@ Ba vùng: cây **Screen / Slice / Mask** ở trái, sân khấu (stage) ở gi�
 - Bấm một dòng để chọn. Giữ `Ctrl` hoặc `Shift` rồi bấm để chọn nhiều phần tử cùng loại (không trộn screen, slice, mask).
 - Biểu tượng mắt ẩn hoặc hiện screen, slice và mask. Mask ẩn vẫn nằm trong slice nhưng không cắt hình.
 - Chuột phải mở menu: thêm, nhân đôi, xoá, Solo cho slice, Reset warp, Whole area và các lệnh khác.
-- Ba nút ở chân cây thêm **Screen**, **Slice** và **Mask**. Nút **Slice** mở menu chọn **Add slice** hoặc **Add polygon slice**.
+- Hai nút ở chân cây thêm **Screen** và **Slice**. Nút **Slice** mở menu chọn **Add slice** hoặc **Add polygon slice**.
 
 ## Hai trang trên sân khấu
 
