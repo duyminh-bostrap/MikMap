@@ -32,6 +32,7 @@ Quyết định của chủ sản phẩm (chốt qua buổi hỏi đáp ngày 20
 |---|---|---|
 | 1 | Mô hình quyền `engine/core/license` + test | **Xong** (`tests/test_license.cpp`, 16 test) |
 | 2 | Watermark ở Live Output, Show Mode, cửa sổ máy chiếu | **Xong**, trừ cửa sổ máy chiếu chưa kiểm bằng ảnh (xem dưới) |
+| 2b | Watermark **chỉ** trên output thật ra máy chiếu, gỡ khỏi editor | Chưa (yêu cầu 2026-10-18, xem dưới) |
 | 3 | Cổng ở đường gửi sensor (OSC/UDP) và NDI | Chưa. Hai đường này chưa tồn tại, viết cùng cổng |
 | 4 | Kích hoạt thật: nhập key, gọi web, lưu kết quả, hết hạn, gỡ key | Chưa. Chờ web có hàm (xem hợp đồng) |
 | 5 | Giao diện: tab License, nhãn trạng thái | Chưa |
@@ -49,6 +50,36 @@ Quyết định của chủ sản phẩm (chốt qua buổi hỏi đáp ngày 20
 - Gọi ở ô Live Output (`deck.cpp`), Show Mode (`main.cpp`), cửa sổ máy chiếu (`output.cpp`, sau mọi slice, không vẽ khi Blackout).
 - Đã kiểm bằng ảnh `--shot` (có watermark khi không license, không có khi `--license licensed`) và `--roundtrip`.
 - **Chưa kiểm bằng ảnh**: cửa sổ máy chiếu (`--outshot` mở cửa sổ viền-không lên màn hình thật), nên mới kiểm bằng đọc code. Cần chạy tay một lần.
+
+### Pha 2b — watermark chỉ trên output thật (yêu cầu của chủ sản phẩm, 2026-10-18)
+
+Yêu cầu: "watermark chỉ hiện trên output thực tế ra máy chiếu, không hiện trên editor". Watermark là để chặn dùng hình ra khán giả, không phải để làm vướng lúc dựng show.
+
+**Quyết định (Ruling, đổi được trước khi làm):**
+
+| Nơi vẽ | Có watermark khi chưa license? |
+|---|---|
+| Cửa sổ máy chiếu (screen gán vào màn hình vật lý, `MakeOutWindow`) | **Có** |
+| Cửa sổ **Virtual Output** (`MakeVirtualWindow`, trên `main`) | **Có**: đó cũng là hình đi ra ngoài (quay màn hình, cắm thêm màn) |
+| Khung gửi NDI / Spout (F23, khi có) | **Có** (đã ghi trong plan F23) |
+| Ô **Live Output** của trang Composition (`deck.cpp`) | **Không** (editor) |
+| **Show Mode** (`Tab`, vẫn là cửa sổ điều khiển) | **Không** (editor) |
+| Sân khấu trang Output / Input của Advanced Mapping, thumbnail ô clip | **Không** (trước giờ cũng không vẽ) |
+| Ảnh `--shot` của cửa sổ điều khiển | **Không**; `--outshot` của cửa sổ output thì **có** |
+
+**Việc cần làm:**
+
+1. **Đồng bộ nhánh trước.** `claude/license-gate` đang ở d8843f8, sau `main` (1a15e38: soft edge, Virtual Output, polygon…). Merge `main` vào nhánh này (hoặc làm lại Pha 1–2 trên nhánh mới từ `main`) để có `MakeVirtualWindow` và `--vout`.
+2. **Gỡ khỏi editor:** bỏ lời gọi `DrawWatermark` ở ô Live Output (`deck.cpp`) và Show Mode (`main.cpp`). Không thêm lời gọi nào khác trong cửa sổ điều khiển.
+3. **Giữ một chỗ vẽ duy nhất cho output:** `DrawWatermark` gọi trong `RenderOneOutput` (`output.cpp`), sau mọi slice, không vẽ khi Blackout. Như vậy mọi cửa sổ output, kể cả Virtual Output, đều có. Khi F23 tách `DrawScreenInto`, watermark đi theo hàm đó để khung NDI/Spout cũng có.
+4. **Một nhãn nhỏ trong editor** thay cho watermark, để người dùng biết output đang có watermark: thanh trạng thái hiện "UNLICENSED · watermark on output" (chuỗi đủ 5 ngôn ngữ `Settings` + hai bảng `Localization`, giống Pha 5). Không vẽ đè lên hình.
+5. **Tài liệu:** `store/license.md` và trang License của cửa hàng nói rõ watermark chỉ có trên hình ra máy chiếu/output, không có khi dựng trong app.
+
+**Kiểm thử:**
+
+- `--roundtrip` (không cửa sổ): một hàm thuần `bool WatermarkOn(OutputTarget t)` với `OutputTarget { Editor, Projector, Virtual, Sender }`. Chưa license: Editor → false, ba loại còn lại → true. `--license licensed`: tất cả false.
+- Ảnh: `mikmap --license none --vout 2 --shot ui.png --outshot out.png`. `ui.png` (Live Output, Show Mode nếu bật) **không** có watermark. `out.png` và `out-1.png` **có**. Với `--license licensed`, cả ba ảnh đều không có.
+- Ảnh cửa sổ máy chiếu vật lý vẫn phải chạy tay một lần (xem ghi chú Pha 2).
 
 ### Pha 3 (làm sau)
 
@@ -72,7 +103,7 @@ Tab License trong Cài đặt (trạng thái, ngày `updates_until`, nút Lấy 
 
 - Đơn vị: `tests/test_license.cpp`.
 - Không cửa sổ: đoạn license trong `mikmap --roundtrip`.
-- Ảnh: `mikmap --shot out.png --license none` và `--license licensed`.
+- Ảnh: `mikmap --shot out.png --license none` và `--license licensed`. Sau Pha 2b: watermark kiểm bằng `--outshot` (cửa sổ output), còn `--shot` (editor) phải sạch.
 - Pha 4 sẽ dùng máy chủ giả, không gọi web thật trong test.
 
 ## Rủi ro và giới hạn
