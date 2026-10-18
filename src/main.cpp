@@ -372,7 +372,7 @@ static void DrawHelpDialog(ImVec2 disp, bool fresh) {
   static const char* rows[][2] = {{"Ctrl/Cmd + N", "New blank project"}, {"Ctrl/Cmd + O", "Open project"}, {"Ctrl/Cmd + S", "Save project"},
                                   {"Ctrl/Cmd + Shift + S", "Save a timestamped copy"}, {"Ctrl/Cmd + Z", "Undo"},
                                   {"Ctrl/Cmd + Shift + Z / Y", "Redo"}, {"F11", "Open / close projector output"}, {"Esc / F11 / Ctrl+W", "Close output (while the output window has focus)"}, {"Tab", "Show Mode (hide all editing UI)"},
-                                  {"Ctrl/Cmd + C / X / V / D  (Mapping)", "Copy / cut / paste / duplicate the selected screens, slices or masks"}, {"Delete  (Mapping)", "Delete the selected screens, slices or masks"}, {"Arrows / Shift+Arrows  (Mapping)", "Move the selection 1 / 10 px"}, {"Ctrl/Cmd/Shift + click  (Mapping)", "Add to / remove from the selection"}, {"Space", "Play / pause"}, {"Enter", "Trigger selected clip"}, {"Left / Right", "Previous / next column"}, {"L", "Selected clip: loop mode"}, {"Delete", "Clear selected clip"}, {"Esc", "Close menu, dialog or popover"}, {"Double-click layer", "Rename layer"}, {"Alt + wheel (Mapping)", "Zoom at cursor"}};
+                                  {"Ctrl/Cmd + C / X / V / D  (Mapping)", "Copy / cut / paste / duplicate the selected screens, slices or masks"}, {"Delete  (Mapping)", "Delete the picked polygon points, else the selected screens, slices or masks"}, {"Arrows / Shift+Arrows  (Mapping)", "Move the selection 1 / 10 px"}, {"Ctrl/Cmd/Shift + click  (Mapping)", "Add to / remove from the selection"}, {"Space", "Play / pause"}, {"Enter", "Trigger selected clip"}, {"Left / Right", "Previous / next column"}, {"L", "Selected clip: loop mode"}, {"Delete", "Clear selected clip"}, {"Esc", "Close menu, dialog or popover"}, {"Double-click layer", "Rename layer"}, {"Alt + wheel (Mapping)", "Zoom at cursor"}};
   int n = (int)(sizeof rows / sizeof rows[0]);
   float w = 460, h = 30 + n * 26 + 30;
   ImRect r((disp.x - w) * 0.5f, std::max(48.f, (disp.y - h) * 0.4f), (disp.x + w) * 0.5f, std::max(48.f, (disp.y - h) * 0.4f) + h);
@@ -1603,7 +1603,7 @@ int main(int argc, char** argv) {
       }
       sc.slices = {sl}; scs.push_back(sc);
     }
-    A.screens = scs; A.screen = 0;
+    A.screens = scs; A.selSc = scs[0].id; A.selSl = scs[0].slices[0].id; A.selMk.clear(); A.selKind = -1;   // keeps --screen (e.g. 1 = Mapping), first vslice selected
   }
   if (outKeyTest) {   // headless check that the output window's own key callback is really installed and closes it
     OpenOutput(win, A.outMonitor);
@@ -1761,7 +1761,7 @@ int main(int argc, char** argv) {
           else if (ImGui::IsKeyPressed(ImGuiKey_V, false)) A.pasteSelection();
           else if (ImGui::IsKeyPressed(ImGuiKey_D, false)) A.duplicateSelection();
         } else {
-          if (ImGui::IsKeyPressed(ImGuiKey_Delete, false) || ImGui::IsKeyPressed(ImGuiKey_Backspace, false)) A.deleteSelection();
+          if (ImGui::IsKeyPressed(ImGuiKey_Delete, false) || ImGui::IsKeyPressed(ImGuiKey_Backspace, false)) { if (!A.deletePickedPoints()) A.deleteSelection(); }   // picked polygon points go first, never the slice under them
           float st = io.KeyShift ? 10.f : 1.f, dx = 0, dy = 0;   // arrows: 1 px, Shift = 10 px (the pixel space of the page being shown)
           bool first = false;
           if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) { dx = -st; first |= ImGui::IsKeyPressed(ImGuiKey_LeftArrow, false); }

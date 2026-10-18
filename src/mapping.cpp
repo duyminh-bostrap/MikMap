@@ -45,6 +45,11 @@ static void RectCorners(const RectXf& r, ImVec2 c[4]) {   // canvas px: tl, tr, 
   for (int i = 0; i < 4; ++i) { float lx = sx[i] * hw, ly = sy[i] * hh; c[i] = ImVec2(cx + lx * co - ly * si, cy + lx * si + ly * co); }
 }
 static void InputCorners(const Slice& s, ImVec2 c[4]) { RectCorners(RectOfSlice(s), c); }
+// what the slice takes from the canvas, as an outline: its input polygon (F18), or the four corners of its input rect
+static std::vector<ImVec2> InputOutline(const Slice& s) {
+  if (s.kind == 1) return s.pin;
+  ImVec2 c[4]; InputCorners(s, c); return {c[0], c[1], c[2], c[3]};
+}
 static void InputAsOutputQuad(const Slice& s, ImVec2 q[4]) {
   ImVec2 c[4]; InputCorners(s, c);
   float kx = 1920.f / std::max(1, A.canvasW), ky = 1080.f / std::max(1, A.canvasH);
@@ -519,6 +524,17 @@ bool MappingSelfTest(std::string& why) {
     ImVec2 want(c0x + 140 + lx * co - ly * si, c0y - 60 + lx * si + ly * co);
     if (!near2(g1[i][j], want, 0.5f)) { why = "Transform box did not move a warp point by the box's own map"; return false; }
   }
+  {   // F18: Transform on a polygon slice = the box of its output points, and moving / turning the box maps every one of them
+    Slice p; p.ix = 100; p.iy = 100; p.iw = 800; p.ih = 600; MakePolygonSlice(p, 5); p.pout[1].x += 50; p.q[2] = {5000, 5000};
+    RectXf pb0 = OutputBox(p);
+    float x0 = 1e9f, x1 = -1e9f; for (auto& q : p.pout) { x0 = std::min(x0, q.x); x1 = std::max(x1, q.x); }
+    if (std::fabs(pb0.x - x0) > 0.01f || std::fabs(pb0.w - (x1 - x0)) > 0.01f) { why = "polygon Transform box is not the box of its output points"; return false; }
+    RectXf pb1 = pb0; pb1.x += 120; pb1.y -= 40; pb1.rot = 90.f;
+    const auto was = p.pout; ApplyBox(p, pb0, pb1);
+    const float pcx = pb0.x + pb0.w * 0.5f, pcy = pb0.y + pb0.h * 0.5f;
+    for (size_t i = 0; i < was.size(); ++i)   // turned a quarter about the centre, then moved
+      if (!near2(p.pout[i], ImVec2(pcx + 120 - (was[i].y - pcy), pcy - 40 + (was[i].x - pcx)), 0.5f)) { why = "polygon Transform did not map an output point by the box's own map"; return false; }
+  }
   RectXf bb = OutputBox(t);
   if (std::fabs(bb.w - b1.w) > 0.5f || std::fabs(bb.h - b1.h) > 0.5f || std::fabs(bb.rot - 30.f) > 1e-3f) { why = "Transform box is not the box of the moved points"; return false; }
   // adding a column / subdivisions keeps the surface: the same (u, v) lands on the same output pixel
@@ -923,7 +939,9 @@ void App::resetAllWarping() {
 // Kept as its own action so "reset" always means "back to fullscreen default", never "copy the crop".
 void App::matchOutputToInput() {
   pushHist();
-  if (Slice* s = curSlice()) { ImVec2 q[4]; InputAsOutputQuad(*s, q); SetVisibleCorners(*s, q); s->orot = s->irot; }   // the visible corners land on the input's shape (rotation kept, the Transform box turns with it)
+  if (Slice* s = curSlice()) {
+    if (s->kind == 1) { s->pout = s->pin; s->orot = 0; return; }   // polygon: the output points land on the input points
+    ImVec2 q[4]; InputAsOutputQuad(*s, q); SetVisibleCorners(*s, q); s->orot = s->irot; }   // the visible corners land on the input's shape (rotation kept, the Transform box turns with it)
 }
 // Resolume calls this "Whole area": the input rect snaps back to covering the entire composition canvas —
 // matches a brand-new slice's own default (Slice struct defaults / NewBlankProject), so an operator who cropped
@@ -931,6 +949,7 @@ void App::matchOutputToInput() {
 void App::resetInputRect() {
   pushHist(); if (Slice* s = curSlice()) {
     int cw = canvasW > 0 ? canvasW : 1920, ch = canvasH > 0 ? canvasH : 1080;
+    if (s->kind == 1) { FitPts(s->pin, 0, 0, (float)cw, (float)ch); return; }   // polygon: its input points' box fills the canvas
     s->ix = 0; s->iy = 0; s->iw = cw; s->ih = ch; s->irot = 0;   // a rotated rect could not cover the whole canvas
   }
 }
@@ -1193,22 +1212,28 @@ void App::pasteClip() {
 }
 void App::nudgeSelection(float dx, float dy) {
   std::vector<MapRef> sel = mapSelection();
-  if ((sel.empty() && !(mpage == 1 && !mapPts.empty())) || maskPen) return;
+  const bool pts = !mapPts.empty() && (mpage == 1) == (mapPts[0].idx < 3000);   // points picked on the page being shown (3000+ = Input)
+  if ((sel.empty() && !pts) || maskPen) return;
   int kind = MapKind();
   auto slice = [&](const MapRef& r) -> Slice* { for (auto& sc : screens) if (sc.id == r.sc) for (auto& sl : sc.slices) if (sl.id == r.sl) return &sl; return nullptr; };
   auto clampQ = [](float v) { return std::clamp(v, -4000.f, 8000.f); };
-  if (mpage == 0) {   // Input: the selected input rects / masks (canvas px)
-    for (auto& r : sel) {
-      if (kind == 2) { for (auto& sc : screens) if (sc.id == r.sc) for (auto& sl : sc.slices) if (sl.id == r.sl) for (auto& m : sl.masks) if (m.id == r.mk) { m.x += dx; m.y += dy; MaskRebuild(m); } }
-      else if (kind == 1) if (Slice* s = slice(r)) { s->ix += (int)std::lround(dx); s->iy += (int)std::lround(dy); }
-    }
-  } else if (!mapPts.empty()) {   // Output with points picked: move exactly those
+  if (pts) {   // points picked: move exactly those
     if (Screen* sc = curScreen()) {
       auto st = CapturePoints(*sc, mapPts); MovePointsTo(*sc, st, ImVec2(dx, dy));
-      for (auto& s : sc->slices) for (auto& r : mapPts) if (r.sl == s.id) { FitCornersToMesh(s); break; }   // (only perspective corners picked: refit here)
+      for (auto& s : sc->slices) for (auto& r : mapPts) if (r.sl == s.id && s.kind == 0) { FitCornersToMesh(s); break; }   // (only perspective corners picked: refit here)
     }
-  } else {            // Output: the selected slices' quads, or every slice of the selected screens (the mesh rides along with the keystone)
-    auto moveQ = [&](Slice& s) { for (auto& q : s.q) { q.x = clampQ(q.x + dx); q.y = clampQ(q.y + dy); } };
+  } else if (mpage == 0) {   // Input: the selected input rects / polygons / masks (canvas px)
+    for (auto& r : sel) {
+      if (kind == 2) { for (auto& sc : screens) if (sc.id == r.sc) for (auto& sl : sc.slices) if (sl.id == r.sl) for (auto& m : sl.masks) if (m.id == r.mk) { m.x += dx; m.y += dy; MaskRebuild(m); } }
+      else if (kind == 1) if (Slice* s = slice(r)) {
+        if (s->kind == 1) for (auto& p : s->pin) p = ImVec2(p.x + dx, p.y + dy);
+        else { s->ix += (int)std::lround(dx); s->iy += (int)std::lround(dy); }
+      }
+    }
+  } else {            // Output: the selected slices' quads (polygons: their points), or every slice of the selected screens (the mesh rides along)
+    auto moveQ = [&](Slice& s) {
+      if (s.kind == 1) { for (auto& p : s.pout) { p.x = clampQ(p.x + dx); p.y = clampQ(p.y + dy); } return; }
+      for (auto& q : s.q) { q.x = clampQ(q.x + dx); q.y = clampQ(q.y + dy); } };
     for (auto& r : sel) {
       if (kind == 1) { if (Slice* s = slice(r)) moveQ(*s); }
       else if (kind == 0) for (auto& sc : screens) if (sc.id == r.sc) for (auto& sl : sc.slices) moveQ(sl);
@@ -1291,6 +1316,9 @@ std::vector<MenuItem> App::screenMenu(const std::string& scId) {
   m.push_back(mk("Add slice", "plus", false, false, [this, scId] {
     for (auto& s : screens) if (s.id == scId) { selSc = scId; selSl = s.slices.empty() ? "" : s.slices[0].id; selMk.clear(); selKind = -1; }
     addSlice(); }));
+  m.push_back(mk("Add polygon slice", "plus", false, false, [this, scId] {
+    for (auto& s : screens) if (s.id == scId) { selSc = scId; selSl = s.slices.empty() ? "" : s.slices[0].id; selMk.clear(); selKind = -1; }
+    addPolygonSlice(); }));
   m.push_back(mk("Delete screen", "trash-2", screens.size() <= 1, true, [this, scId] { deleteScreen(scId); }));
   return m;
 }
@@ -1436,6 +1464,12 @@ static std::vector<Node> BuildTree(bool onlyScreen, const std::string& only) {
   return out;
 }
 
+// the "+ Slice" buttons: a grid slice (corner pin + warp grid) or a free polygon (F18)
+static std::vector<MenuItem> AddSliceMenu() {
+  MenuItem a; a.label = "Add slice"; a.icon = "maximize"; a.run = [] { A.addSlice(); };
+  MenuItem b; b.label = "Add polygon slice"; b.icon = "pentagon"; b.run = [] { A.addPolygonSlice(); };
+  return {a, b};
+}
 static void TreePanel(ImRect r) {
   Fill(r, K(pal::g12));
   VLine(r.Max.x - 1, r.Min.y, r.Max.y, K(pal::g2a));
@@ -1473,7 +1507,7 @@ static void TreePanel(ImRect r) {
     Icon(acts[i].ic, ImVec2(cx - tw * 0.5f - 8, cy), 11, K(acts[i].fg));
     Text(cx - tw * 0.5f + 4, cy, UI_B, 10, K(acts[i].fg), acts[i].l);
     if (h.hover) CursorHand();
-    if (h.click) { if (i == 0) A.addScreen(); else A.addSlice(); }
+    if (h.click) { if (i == 0) A.addScreen(); else A.openCtx(ImVec2(br.Min.x, br.Max.y + 4), AddSliceMenu()); }
   }
 }
 
@@ -1543,7 +1577,7 @@ static void RailPopover(ImRect rail) {
     Box(br, h.hover ? K(pal::ctrlHover) : K(pal::g1c), K(pal::g22), 3);
     TextC((br.Min.x + br.Max.x) * 0.5f, (br.Min.y + br.Max.y) * 0.5f, UI_B, 10, K(pal::white), "Slice");
     if (h.hover) CursorHand();
-    if (h.click) A.addSlice();
+    if (h.click) A.openCtx(ImVec2(br.Min.x, br.Max.y + 4), AddSliceMenu());
   }
 }
 
@@ -1570,6 +1604,10 @@ static void AddRectTargets(SnapSet& S, const RectXf& R) {
   ImVec2 c[4]; RectCorners(R, c);
   for (int i = 0; i < 4; ++i) { S.pts.push_back(c[i]); S.segs.push_back({c[i], c[(i + 1) % 4]}); }
 }
+// a polygon slice's points and edges (pout on Output, pin on Input); a point drag drops its own moving points afterwards (dragKind 7)
+static void AddPolyTargets(SnapSet& S, const std::vector<ImVec2>& P) {
+  for (size_t i = 0; i < P.size(); ++i) { S.pts.push_back(P[i]); S.segs.push_back({P[i], P[(i + 1) % P.size()]}); }
+}
 static SnapSet BuildSnap(const Screen* sc, const Slice* sl, const Mask* mk, bool onMask, int skipQ) {
   SnapSet S;
   if (A.mpage == 1) {   // Output: the screen's 1920x1080 box, and every visible slice's corners and edges
@@ -1578,6 +1616,7 @@ static SnapSet BuildSnap(const Screen* sc, const Slice* sl, const Mask* mk, bool
       if (!o.visible) continue;
       bool own = sl && o.id == sl->id;
       if (own && skipQ == -2) continue;   // a whole-quad edit: the slice's own (moving) edges are no targets
+      if (o.kind == 1) { AddPolyTargets(S, o.pout); continue; }
       for (int i = 0; i < 4; ++i) {
         if (own && i == skipQ) continue;   // never snap a corner onto itself
         S.pts.push_back(o.q[i]);
@@ -1594,6 +1633,7 @@ static SnapSet BuildSnap(const Screen* sc, const Slice* sl, const Mask* mk, bool
     S.xs = {0.f, W * 0.5f, W}; S.ys = {0.f, H * 0.5f, H}; S.boxMax = ImVec2(W, H);
     if (sc) for (auto& o : sc->slices) {
       if (!o.visible) continue;
+      if (o.kind == 1) { AddPolyTargets(S, o.pin); continue; }   // its own points too: the ones being dragged are dropped by the drag
       if (sl && o.id == sl->id && !onMask) continue;   // the rect being edited is not a target for itself
       AddRectTargets(S, RectOfSlice(o));
     }
@@ -1678,7 +1718,16 @@ static bool SnapSelfTest(std::string& why) {
     why = "magnet: a point near another slice's slanted edge must slide onto it";
   else if (!near2(SnapPoint({140, 214}, S, 8), {140, 214})) why = "magnet: a corner must never snap onto itself";
   else if (SnapAngle(88.5f, 3.f) != 90.f || SnapAngle(-46.f, 3.f) != -45.f || SnapAngle(80.f, 3.f) != 80.f) why = "magnet: turning must lock near multiples of 45 degrees only";
-  else ok = true;
+  else {   // F18: a polygon slice offers its output points and edges, never its unused corners q
+    Slice poly; poly.id = "poly"; poly.ix = 1000; poly.iy = 500; poly.iw = 600; poly.ih = 400; MakePolygonSlice(poly, 5);
+    poly.q[0] = {300, 900};   // stale corner far from the polygon
+    sc.slices.push_back(poly);
+    const SnapSet P = BuildSnap(&sc, &sc.slices[0], nullptr, false, 0);
+    const ImVec2 v = poly.pout[2];
+    if (!near2(SnapPoint({v.x + 4, v.y - 3}, P, 8), v)) why = "magnet: a point near a polygon slice's output point must land on it";
+    else if (near2(SnapPoint({303, 897}, P, 8), {300, 900})) why = "magnet: a polygon slice's unused corners must not be targets";
+    else ok = true;
+  }
   gGuideLines.clear(); gGuideDots.clear(); A.mpage = page;
   return ok;
 }
@@ -1747,19 +1796,41 @@ static void InputRectMenu(ImVec2 at, bool output = false) {
   auto edit = [](std::function<void(Slice&)> f) { return [f] { A.pushHist(); if (Slice* s = A.curSlice()) f(*s); }; };
   auto setRect = [](Slice& s, int x, int y, int w, int h) { s.ix = x; s.iy = y; s.iw = std::max(20, w); s.ih = std::max(20, h); s.irot = 0; };
   if (output) {   // the same list, acting on the slice's quad in the 1920x1080 output (a mesh follows: it lives inside the quad)
-    auto bbox = [](const Slice& s, float& x0, float& y0, float& x1, float& y1) { x0 = x1 = s.q[0].x; y0 = y1 = s.q[0].y; for (auto& p : s.q) { x0 = std::min(x0, p.x); x1 = std::max(x1, p.x); y0 = std::min(y0, p.y); y1 = std::max(y1, p.y); } };
-    auto shift = [bbox](Slice& s, float dx, float dy) { for (auto& p : s.q) { p.x = std::round(p.x + dx); p.y = std::round(p.y + dy); } (void)bbox; };
+    // a polygon slice: its output points instead of the four corners
+    auto bbox = [](const Slice& s, float& x0, float& y0, float& x1, float& y1) {
+      const ImVec2* P = s.kind == 1 ? s.pout.data() : s.q; const int n = s.kind == 1 ? (int)s.pout.size() : 4;
+      x0 = x1 = P[0].x; y0 = y1 = P[0].y; for (int i = 0; i < n; ++i) { x0 = std::min(x0, P[i].x); x1 = std::max(x1, P[i].x); y0 = std::min(y0, P[i].y); y1 = std::max(y1, P[i].y); } };
+    auto shift = [](Slice& s, float dx, float dy) {
+      ImVec2* P = s.kind == 1 ? s.pout.data() : s.q; const int n = s.kind == 1 ? (int)s.pout.size() : 4;
+      for (int i = 0; i < n; ++i) { P[i].x = std::round(P[i].x + dx); P[i].y = std::round(P[i].y + dy); } };
+    const bool poly = sl->kind == 1;
     auto setQuad = [](Slice& s, float x, float y, float w, float h) { FitBox(s, x, y, w, h); };   // the box moves there; the warp keeps its shape
     add("Center X", edit([bbox, shift](Slice& s) { float a, b, c, d; bbox(s, a, b, c, d); shift(s, 960.f - (a + c) * 0.5f, 0.f); }));
     add("Center Y", edit([bbox, shift](Slice& s) { float a, b, c, d; bbox(s, a, b, c, d); shift(s, 0.f, 540.f - (b + d) * 0.5f); }));
-    add("Mirror X", edit([](Slice& s) { std::swap(s.q[0], s.q[1]); std::swap(s.q[3], s.q[2]); }));
-    add("Mirror Y", edit([](Slice& s) { std::swap(s.q[0], s.q[3]); std::swap(s.q[1], s.q[2]); }));
+    if (!poly) {   // a polygon mirrors its picture with Flip (Slice properties)
+      add("Mirror X", edit([](Slice& s) { std::swap(s.q[0], s.q[1]); std::swap(s.q[3], s.q[2]); }));
+      add("Mirror Y", edit([](Slice& s) { std::swap(s.q[0], s.q[3]); std::swap(s.q[1], s.q[2]); }));
+    }
     add("Left Half", edit([setQuad](Slice& s) { setQuad(s, 0, 0, 960, 1080); }), true);
     add("Top Half", edit([setQuad](Slice& s) { setQuad(s, 0, 0, 1920, 540); }));
     add("Right Half", edit([setQuad](Slice& s) { setQuad(s, 960, 0, 960, 1080); }));
     add("Bottom Half", edit([setQuad](Slice& s) { setQuad(s, 0, 540, 1920, 540); }));
     add("Whole Area", edit([setQuad](Slice& s) { setQuad(s, 0, 0, 1920, 1080); }));
     add("Match Input Shape", [] { A.matchOutputToInput(); }, true);
+  } else if (sl->kind == 1) {   // polygon: the same placements act on its input points (their bounding box); iflip does not apply
+    auto box = [](Slice& s, float x, float y, float w, float h) { FitPts(s.pin, x, y, w, h); };
+    auto center = [](Slice& s, bool onX) {
+      float lo = 1e9f, hi = -1e9f; for (auto& p : s.pin) { lo = std::min(lo, onX ? p.x : p.y); hi = std::max(hi, onX ? p.x : p.y); }
+      const float d = std::round(((onX ? A.canvasW : A.canvasH) - (lo + hi)) * 0.5f); for (auto& p : s.pin) (onX ? p.x : p.y) += d; };
+    add("Center X", edit([center](Slice& s) { center(s, true); }));
+    add("Center Y", edit([center](Slice& s) { center(s, false); }));
+    const float W = (float)A.canvasW, H = (float)A.canvasH;
+    add("Left Half", edit([box, W, H](Slice& s) { box(s, 0, 0, std::floor(W / 2), H); }), true);
+    add("Top Half", edit([box, W, H](Slice& s) { box(s, 0, 0, W, std::floor(H / 2)); }));
+    add("Right Half", edit([box, W, H](Slice& s) { box(s, std::floor(W / 2), 0, W - std::floor(W / 2), H); }));
+    add("Bottom Half", edit([box, W, H](Slice& s) { box(s, 0, std::floor(H / 2), W, H - std::floor(H / 2)); }));
+    add("Whole Area", [] { A.resetInputRect(); });
+    add("Match Output Shape", edit([](Slice& s) { s.pin = s.pout; }), true);
   } else {
   add("Center X", edit([](Slice& s) { s.ix = (A.canvasW - s.iw) / 2; }));
   add("Center Y", edit([](Slice& s) { s.iy = (A.canvasH - s.ih) / 2; }));
@@ -1773,6 +1844,7 @@ static void InputRectMenu(ImVec2 at, bool output = false) {
   add("Match Output Shape", edit([](Slice& s) { ImVec2 vc[4]; VisibleCorners(s, vc); SetInputFromQuad(s, vc); }), true);   // the shape the audience sees, not the perspective corners
   }
   add("Swap Input Output Shape", edit([](Slice& s) {
+    if (s.kind == 1) { std::swap(s.pin, s.pout); return; }   // polygon: both point lists are simple already, same count
     ImVec2 outQ[4], inQ[4]; VisibleCorners(s, outQ);
     InputAsOutputQuad(s, inQ);
     SetVisibleCorners(s, inQ);
@@ -1897,6 +1969,8 @@ static void Stage(ImRect r) {
         // Input Selection has nothing to do with corner pins/mesh (that's the OUTPUT warp) — offer the one reset
         // that actually applies here instead of showing output actions out of context.
         mi.push_back(mk("Whole area", "maximize", false, [] { A.resetInputRect(); }));
+      } else if (sl && sl->kind == 1) {   // a polygon has no corners or warp grid: the one reset that applies
+        mi.push_back(mk("Match output to input", "frame", false, [] { A.matchOutputToInput(); }));
       } else {
         mi.push_back(mk("Reset perspective corners", "frame", false, [] { A.resetWarp(); }));
         mi.push_back(mk("Match output to input", "frame", false, [] { A.matchOutputToInput(); }));
@@ -1994,11 +2068,12 @@ static void Stage(ImRect r) {
 
   // ---- drag processing ----
   if (dragKind && !ImGui::IsMouseDown(0)) {
-    if ((dragKind == 1 || dragKind == 7) && sl) FitCornersToMesh(*sl);   // a perspective corner was let go: back to the smallest quad around the grid
+    if ((dragKind == 1 || dragKind == 7) && sl && sl->kind == 0) FitCornersToMesh(*sl);   // a perspective corner was let go: back to the smallest quad around the grid
     dragKind = 0;
   }
   gGuideLines.clear(); gGuideDots.clear();
-  if (A.mpage != 1) A.mapPts.clear();   // picked points belong to the Output page
+  // picked points belong to their page: polygon input points (3000+) to the Input page, every other kind to the Output page
+  A.mapPts.erase(std::remove_if(A.mapPts.begin(), A.mapPts.end(), [](const App::PtRef& r) { return (A.mpage == 1) != (r.idx < 3000); }), A.mapPts.end());
   const bool snapOn = A.mapSnap && !io.KeyAlt;   // magnet on; hold Alt to place freely
   const float snapThr = 8.f / std::max(0.05f, s);   // 8 screen px, in stage px
   if (dragKind && sl) {
@@ -2172,16 +2247,64 @@ static void Stage(ImRect r) {
         Border(hr, K(hex), 2, 2);
       }
     };
+  // F18: the selected polygon slice's points on the page shown (pout on Output, pin on Input; picked ids 2000 + i / 3000 + i). Click picks
+  // and drags them (Ctrl/Cmd/Shift adds; pressing a picked point drags every picked one), double-click an edge adds a point there,
+  // right-click a point offers Delete point. phase 0: hit-test (true = it took the click), 1: draw.
+  auto polyEdit = [&](int phase) -> bool {
+    if (!sl || sl->kind != 1) return false;
+    const bool input = A.mpage == 0;
+    const std::vector<ImVec2>& P = input ? sl->pin : sl->pout;
+    const int base = input ? 3000 : 2000, n = (int)P.size();
+    const float kHalf = 4.5f, kPad = 4.f;
+    int hotPt = -1, hotSeg = -1; float segT = 0;
+    if (inArea && !dragKind && !A.mapHand && !A.maskPen) {
+      for (int i = 0; i < n && hotPt < 0; ++i) { ImVec2 p = toPx(P[i]); if (std::hypot(m.x - p.x, m.y - p.y) <= kHalf + kPad) hotPt = i; }
+      for (int i = 0; i < n && hotPt < 0 && hotSeg < 0; ++i) {
+        ImVec2 a = toPx(P[i]), b = toPx(P[(i + 1) % n]), ab(b.x - a.x, b.y - a.y);
+        float l2 = ab.x * ab.x + ab.y * ab.y; if (l2 < 1.f) continue;
+        float t = std::clamp(((m.x - a.x) * ab.x + (m.y - a.y) * ab.y) / l2, 0.f, 1.f);
+        if (std::hypot(a.x + ab.x * t - m.x, a.y + ab.y * t - m.y) <= 5.f) { hotSeg = i; segT = t; }
+      }
+    }
+    auto picked = [&](int i) { for (auto& r : A.mapPts) if (r.sl == sl->id && r.idx == base + i) return true; return false; };
+    if (phase == 0) {
+      if (hotPt >= 0 || hotSeg >= 0) CursorHand();
+      if (rClick && hotPt >= 0) {
+        if (!picked(hotPt)) A.mapPts = {{sl->id, base + hotPt}};
+        MenuItem d; d.label = "Delete point"; d.icon = "trash-2"; d.danger = true; d.disabled = n <= 3; d.run = [] { A.deletePickedPoints(); };
+        A.openCtx(m, {d});
+        return true;
+      }
+      if (ImGui::IsMouseDoubleClicked(0) && overStage && hotSeg >= 0) {
+        if (n >= 64) { A.notify("A polygon slice has at most 64 points"); return true; }
+        if (!InsertPolyPoint(*sl, hotSeg, segT)) { A.notify(kCrossMsg); return true; }
+        A.pushHist(); A.mapPts.clear(); hotPt = hotSeg + 1;   // the new point is picked and follows the pointer if the press turns into a drag
+      }
+      if (clickPending && hotPt >= 0) {
+        const App::PtRef pr{sl->id, base + hotPt};
+        if (!picked(hotPt)) { if (MultiMod()) A.mapPts.push_back(pr); else A.mapPts = {pr}; }
+        A.pushHist(); gGroup = CapturePoints(*sc, A.mapPts); gGrabStart = P[hotPt]; dragKind = 7; dragIdx = 0; dragOff = Vsub(P[hotPt], mo);
+        return true;
+      }
+      return false;
+    }
+    for (int i = 0; i < n; ++i) {   // small squares like the warp points; picked ones white
+      ImVec2 p = toPx(P[i]); bool lit = hotPt == i || picked(i);
+      float hh = kHalf + (lit ? 1.f : 0.f);
+      Box(ImRect(p.x - hh, p.y - hh, p.x + hh, p.y + hh), K(lit ? pal::white : pal::yellow), K(lit ? (input ? pal::cyan : pal::coral) : 0x050505), 1);
+    }
+    return false;
+  };
   if (A.mpage == 0) {
+    A.mapPts.erase(std::remove_if(A.mapPts.begin(), A.mapPts.end(), [&](const App::PtRef& r) { ImVec2 tmp; return !sl || A.MapKind() == 2 || r.sl != sl->id || !PointPos(*sl, r.idx, tmp); }), A.mapPts.end());   // (a mask selected: arrows / Delete act on it)
     if (!sl) A.cancelMaskPen();
     // The other slices of this screen show only their input outline (no handles), so it is clear which parts of the source
     // are already taken while another slice is being edited. Drawn first so the selected slice's frame stays on top.
     if (scVis) for (auto& o : sc->slices) {
       if (!o.visible || (sl && o.id == sl->id)) continue;
-      ImVec2 oc[4], opx[4]; InputCorners(o, oc);
-      for (int i = 0; i < 4; ++i) opx[i] = toPx(oc[i]);
-      if (A.MapKind() == 1 && A.mapSelCount() > 1 && A.mapIsSel(1, sc->id, o.id, "")) g.dl->AddPolyline(opx, 4, Ca(K(pal::cyan)), ImDrawFlags_Closed, 2.f);   // selected together with the primary: solid
-      else DashedPoly(opx, 4, K(pal::cyan, 0.7f), 1.5f, 8, 5);   // dashed and unnamed: only the selected slice carries its name
+      std::vector<ImVec2> opx = InputOutline(o); for (auto& q : opx) q = toPx(q);
+      if (A.MapKind() == 1 && A.mapSelCount() > 1 && A.mapIsSel(1, sc->id, o.id, "")) g.dl->AddPolyline(opx.data(), (int)opx.size(), Ca(K(pal::cyan)), ImDrawFlags_Closed, 2.f);   // selected together with the primary: solid
+      else DashedPoly(opx.data(), (int)opx.size(), K(pal::cyan, 0.7f), 1.5f, 8, 5);   // dashed and unnamed: only the selected slice carries its name
     }
     // ---- transform frames: the slice's input rect, or — when a mask is selected — that mask ----
     // Both are edited the same way (like the Preview Cue frame): drag inside to move, the small squares (corners and edge middles)
@@ -2200,8 +2323,8 @@ static void Stage(ImRect r) {
     if (sl && sl->visible && scVis) {
       if (maskMode) {
         // the slice is just an outline while its mask is edited; clicking it (outside the mask's frame) goes back to the slice
-        ImVec2 sc4[4], sp4[4]; InputCorners(*sl, sc4); for (int i = 0; i < 4; ++i) sp4[i] = toPx(sc4[i]);
-        g.dl->AddPolyline(sp4, 4, Ca(K(pal::cyan, 0.8f)), ImDrawFlags_Closed, 1.5f);
+        std::vector<ImVec2> sp4 = InputOutline(*sl); for (auto& q : sp4) q = toPx(q);
+        g.dl->AddPolyline(sp4.data(), (int)sp4.size(), Ca(K(pal::cyan, 0.8f)), ImDrawFlags_Closed, 1.5f);
         for (auto& M : sl->masks) if (M.id != mk->id && A.mapSelCount() > 1 && A.mapIsSel(2, sc->id, sl->id, M.id)) {   // masks selected together: shown, edited via the primary
           std::vector<ImVec2> op = MaskOutline(M); for (auto& q : op) q = toPx(q);
           g.dl->AddConcavePolyFilled(op.data(), (int)op.size(), Ca(K(pal::yellow, 0.18f)));
@@ -2258,7 +2381,7 @@ static void Stage(ImRect r) {
             Box(ImRect(pp[i].x - hh, pp[i].y - hh, pp[i].x + hh, pp[i].y + hh), K(hot ? pal::white : pal::yellow), K(hot ? pal::yellow : 0x050505), 1);
           }
         }
-        if (clickPending && !frameTookClick && !A.maskPen && PointInPoly(m, sp4, 4)) { A.selKind = 1; A.selMk.clear(); frameTookClick = true; }
+        if (clickPending && !frameTookClick && !A.maskPen && PointInPoly(m, sp4.data(), (int)sp4.size())) { A.selKind = 1; A.selMk.clear(); frameTookClick = true; }
       } else {
         // The selected slice's masks show as dashed yellow outlines (Input selection), so it is clear what will be cut before a mask is
         // picked. A click right on one of the outlines picks that mask (before the input frame gets the click).
@@ -2284,7 +2407,26 @@ static void Stage(ImRect r) {
             frameTookClick = true;
           }
         }
-        frame(RectOfSlice(*sl), pal::cyan, 0, -1);
+        if (sl->kind == 1) {   // polygon: its input outline and points instead of the rect frame; drag inside moves every point
+          std::vector<ImVec2> pp = sl->pin; for (auto& q : pp) q = toPx(q);
+          const int n = (int)pp.size();
+          g.dl->AddConcavePolyFilled(pp.data(), n, Ca(K(pal::cyan, 0.05f)));
+          g.dl->AddPolyline(pp.data(), n, Ca(K(pal::cyan)), ImDrawFlags_Closed, 2.f);
+          ImVec2 c(0, 0); for (auto& q : pp) { c.x += q.x / n; c.y += q.y / n; }
+          char dm[24]; snprintf(dm, sizeof dm, "%d points", n);
+          TextC(c.x, c.y - 7, MONO_B, 11, K(pal::cyan), sl->name.c_str());
+          TextC(c.x, c.y + 7, MONO_R, 9, K(pal::tcc), dm);
+          if (!frameTookClick && polyEdit(0)) frameTookClick = true;
+          else if (!frameTookClick && !A.maskPen && !A.mapHand && inArea && !dragKind && PointInPoly(m, pp.data(), n)) {
+            CursorHand();
+            if (rClick) InputRectMenu(m);
+            else if (clickPending) {
+              std::vector<App::PtRef> all; for (int i = 0; i < n; ++i) all.push_back({sl->id, 3000 + i});
+              A.pushHist(); gGroup = CapturePoints(*sc, all); gGrabStart = sl->pin[0]; dragOff = Vsub(sl->pin[0], mo); dragKind = 7; dragIdx = 0; frameTookClick = true;
+            }
+          }
+          polyEdit(1);
+        } else frame(RectOfSlice(*sl), pal::cyan, 0, -1);
       }
     }
     if (A.maskPen && scVis) {   // the shape being drawn, plus a rubber-band segment to the cursor
@@ -2301,9 +2443,8 @@ static void Stage(ImRect r) {
     if (scVis && inArea && dragKind == 0 && !frameTookClick && !A.mapHand) {
       for (auto it = sc->slices.rbegin(); it != sc->slices.rend(); ++it) {
         if (!it->visible || (sl && it->id == sl->id)) continue;
-        ImVec2 oc[4], opx[4]; InputCorners(*it, oc);
-        for (int i = 0; i < 4; ++i) opx[i] = toPx(oc[i]);
-        if (!PointInPoly(m, opx, 4)) continue;
+        std::vector<ImVec2> opx = InputOutline(*it); for (auto& q : opx) q = toPx(q);
+        if (!PointInPoly(m, opx.data(), (int)opx.size())) continue;
         CursorHand();
         if (clickPending) {
           if (MultiMod()) A.mapToggle(1, {sc->id, it->id, ""});
@@ -2316,7 +2457,9 @@ static void Stage(ImRect r) {
     bool consumed = false;
     auto polyPx = [&](const ImVec2* q, int n, ImVec2* out) { for (int i = 0; i < n; ++i) out[i] = toPx(q[i]); };
     auto outlinePx = [&](const Slice& S) { std::vector<ImVec2> o = SliceOutline(S); for (auto& p : o) p = toPx(p); return o; };
-    if (rClick && inArea && !A.mapHand) {   // right-click a slice: select it and offer the same list as the Input frame's menu
+    const bool editPts = A.outTool == 0;   // Edit Points: perspective corners + warp grid points (polygon: its points); Transform: one box around the slice
+    if (sl && sl->visible && editPts && A.meshArm == 0 && polyEdit(0)) consumed = true;   // a polygon point / edge under the pointer comes first
+    if (rClick && !consumed && inArea && !A.mapHand) {   // right-click a slice: select it and offer the same list as the Input frame's menu
       for (auto it = sc->slices.rbegin(); it != sc->slices.rend(); ++it) if (it->visible) {
         auto ol = outlinePx(*it);
         if (!PointInPoly(m, ol.data(), (int)ol.size())) continue;
@@ -2325,7 +2468,6 @@ static void Stage(ImRect r) {
         break;
       }
     }
-    const bool editPts = A.outTool == 0;   // Edit Points: perspective corners + warp grid points; Transform: one box around the slice
     if (!editPts) { A.mapPts.clear(); A.meshArm = 0; }
     if (sl && sl->visible && !editPts && !A.maskPen) { frame(OutputBox(*sl), pal::coral, 2, 0); consumed = frameTookClick; }   // Transform: hit-test first, drawn on top of the thumbnails below
     // handles keep a fixed on-screen size at any zoom (they used to scale with it and vanish when zoomed out)
@@ -2352,14 +2494,15 @@ static void Stage(ImRect r) {
     ImRect zoomBtn; bool haveZoom = false; ImVec2 labelAt; float labelW = 0;
     if (sl && sl->visible) {
       ImVec2 bmn, bmx; SliceOutputBounds(*sl, bmn, bmx);
-      ImVec2 c = toPx(ImVec2((sl->q[0].x + sl->q[1].x + sl->q[2].x + sl->q[3].x) * 0.25f, (sl->q[0].y + sl->q[1].y + sl->q[2].y + sl->q[3].y) * 0.25f));
+      ImVec2 c = sl->kind == 1 ? toPx(ImVec2((bmn.x + bmx.x) * 0.5f, (bmn.y + bmx.y) * 0.5f))   // polygon: the middle of its box
+                               : toPx(ImVec2((sl->q[0].x + sl->q[1].x + sl->q[2].x + sl->q[3].x) * 0.25f, (sl->q[0].y + sl->q[1].y + sl->q[2].y + sl->q[3].y) * 0.25f));
       labelW = std::min(TextW(MONO_B, 11, sl->name.c_str()), std::max(0.f, (bmx.x - bmn.x) * s - 32));   // stay inside the slice
       labelAt = ImVec2(c.x - (labelW + 20) * 0.5f, c.y);
       zoomBtn = ImRect(labelAt.x + labelW + 4, c.y - 8, labelAt.x + labelW + 20, c.y + 8);
       haveZoom = true;
     }
     if (clickPending && haveZoom && zoomBtn.Contains(m)) { ZoomToSlice(area, *sl); consumed = true; }
-    if (clickPending && !consumed && !placing && editPts && sl && sl->visible) {
+    if (clickPending && !consumed && !placing && editPts && sl && sl->visible && sl->kind == 0) {
       // the warp points first (small squares, also the grid's own four corners), then the big perspective corners around them —
       // where the two sit on top of each other the small one is under the pointer and the big one is its outer ring
       auto gr = MeshGrid(*sl);
@@ -2386,7 +2529,7 @@ static void Stage(ImRect r) {
         A.mapMulti.clear();
         A.selSc = sc->id; A.selSl = it->id; A.selMk.clear(); A.selKind = 1; consumed = true;
         float pu0, pv0;   // where the click lands on the mesh = where "+ add col / + add row" puts the new line (shown by the preview line)
-        if (editPts && A.meshArm && wasOn && MeshParamAt(*it, mo, pu0, pv0)) {   // a split is only ever placed in the slice that was already selected
+        if (editPts && A.meshArm && wasOn && it->kind == 0 && MeshParamAt(*it, mo, pu0, pv0)) {   // a split is only ever placed in the slice that was already selected
           float u = std::clamp(pu0, 0.02f, 0.98f), v = std::clamp(pv0, 0.02f, 0.98f);
           {
             std::vector<float> us, vs; MeshUV(*it, us, vs);
@@ -2414,9 +2557,10 @@ static void Stage(ImRect r) {
       auto ol = outlinePx(S);
       if (on) g.dl->AddPolyline(ol.data(), (int)ol.size(), Ca(K(pal::coral)), ImDrawFlags_Closed, 2.5f);
       else DashedPoly(ol.data(), (int)ol.size(), K(0x444444), 1.5f, 9, 6);
-      if (on && editPts) { ImVec2 pp[4]; polyPx(S.q, 4, pp); g.dl->AddPolyline(pp, 4, Ca(K(pal::coral, 0.6f)), ImDrawFlags_Closed, 1.f); }   // the perspective frame the warp grid sits in
+      if (on && editPts && S.kind == 0) { ImVec2 pp[4]; polyPx(S.q, 4, pp); g.dl->AddPolyline(pp, 4, Ca(K(pal::coral, 0.6f)), ImDrawFlags_Closed, 1.f); }   // the perspective frame the warp grid sits in
     }
-    if (sl && sl->visible && editPts) {
+    if (sl && sl->visible && editPts && sl->kind == 1) polyEdit(1);
+    else if (sl && sl->visible && editPts) {
       auto gr = MeshGrid(*sl);
       int R = (int)gr.size(), C = (int)gr[0].size();
       auto seg = [&](ImVec2 a, ImVec2 b) { ImVec2 p2[2] = {toPx(a), toPx(b)}; DashedPoly(p2, 2, K(pal::coral, 0.55f), 1.5f, 8, 6); };
@@ -2523,9 +2667,13 @@ static void Stage(ImRect r) {
         const bool add = MultiMod();
         if (gMarquee == 2) {
           ImRect mr(std::min(gMarqueeA.x, m.x), std::min(gMarqueeA.y, m.y), std::max(gMarqueeA.x, m.x), std::max(gMarqueeA.y, m.y));
+          std::vector<App::PtRef> pinHit;
+          if (A.mpage == 0 && sl && sl->visible && sl->kind == 1)
+            for (int i = 0; i < (int)sl->pin.size(); ++i) if (mr.Contains(toPx(sl->pin[i]))) pinHit.push_back({sl->id, 3000 + i});
           if (A.mpage == 1 && A.outTool == 0) {   // Edit Points: pick points
             std::vector<App::PtRef> hit;
-            if (sl && sl->visible) {   // only the selected slice's points: its perspective corners and every warp point (grid corners too)
+            if (sl && sl->visible && sl->kind == 1) { for (int i = 0; i < (int)sl->pout.size(); ++i) if (mr.Contains(toPx(sl->pout[i]))) hit.push_back({sl->id, 2000 + i}); }
+            else if (sl && sl->visible) {   // only the selected slice's points: its perspective corners and every warp point (grid corners too)
               for (int i = 0; i < 4; ++i) if (mr.Contains(toPx(sl->q[i]))) hit.push_back({sl->id, i});
               auto gr = MeshGrid(*sl); int R = (int)gr.size(), C = (int)gr[0].size();
               for (int rr = 0; rr < R; ++rr) for (int cc = 0; cc < C; ++cc)
@@ -2533,6 +2681,9 @@ static void Stage(ImRect r) {
             }
             if (add) { for (auto& h : hit) { bool have = false; for (auto& q : A.mapPts) if (q.sl == h.sl && q.idx == h.idx) have = true; if (!have) A.mapPts.push_back(h); } }
             else A.mapPts = hit;
+          } else if (!pinHit.empty()) {   // Input, polygon selected and some of its points in the box: pick those
+            if (!add) A.mapPts.clear();
+            for (auto& h : pinHit) { bool have = false; for (auto& q : A.mapPts) if (q.idx == h.idx) have = true; if (!have) A.mapPts.push_back(h); }
           } else {
             std::vector<App::MapRef> refs;
             if (add && A.MapKind() == 1) refs = A.mapSelection();
@@ -2540,8 +2691,8 @@ static void Stage(ImRect r) {
               ImVec2 lo, hi;
               if (A.mpage == 1) { SliceOutputBounds(S, lo, hi); lo = toPx(lo); hi = toPx(hi); }
               else {
-                ImVec2 rc[4]; InputCorners(S, rc); lo = toPx(rc[0]); hi = lo;
-                for (int i = 1; i < 4; ++i) { ImVec2 q = toPx(rc[i]); lo = ImVec2(std::min(lo.x, q.x), std::min(lo.y, q.y)); hi = ImVec2(std::max(hi.x, q.x), std::max(hi.y, q.y)); }
+                std::vector<ImVec2> rc = InputOutline(S); lo = toPx(rc[0]); hi = lo;
+                for (size_t i = 1; i < rc.size(); ++i) { ImVec2 q = toPx(rc[i]); lo = ImVec2(std::min(lo.x, q.x), std::min(lo.y, q.y)); hi = ImVec2(std::max(hi.x, q.x), std::max(hi.y, q.y)); }
               }
               bool touches = lo.x <= mr.Max.x && hi.x >= mr.Min.x && lo.y <= mr.Max.y && hi.y >= mr.Min.y, have = false;
               for (auto& r : refs) if (r.sl == S.id) have = true;
@@ -2549,7 +2700,7 @@ static void Stage(ImRect r) {
             }
             if (!refs.empty()) A.mapSelectRefs(1, refs);
           }
-        } else if (!add && A.mpage == 1) A.mapPts.clear();   // a plain click on the stage lets go of the picked points
+        } else if (!add) A.mapPts.clear();   // a plain click on the stage lets go of the picked points
         gMarquee = 0;
       } else {
         if (gMarquee == 1 && std::hypot(m.x - gMarqueeA.x, m.y - gMarqueeA.y) > 4.f) gMarquee = 2;
@@ -2794,15 +2945,17 @@ static void PropsPanel(ImRect r) {
         y += 4;
       }
     }
-    if (output && A.outTool == 0) {   // Edit Points: Warping
+    const bool poly = sl->kind == 1;
+    if ((output && A.outTool == 0) || (!output && poly)) {   // Edit Points: Warping (a polygon: its points, on either page)
       HLine(ox, ox + W, oy + y, K(pal::g2a)); y += 1 + 6;
-      Text(x, oy + y + 4.5f, MONO_R, 9, K(pal::t88), "WARPING", 0.09f); y += 9 + 6;
+      Text(x, oy + y + 4.5f, MONO_R, 9, K(pal::t88), poly ? (output ? "OUTPUT POINTS" : "INPUT POINTS") : "WARPING", 0.09f); y += 9 + 6;
       ImVec2 pp;   // F15: X/Y of the one picked point (hidden when none or several are picked)
       if (sc && A.mapPts.size() == 1 && A.mapPts[0].sl == sl->id && OutputPointPos(*sc, A.mapPts[0], pp)) {
         const App::PtRef pr = A.mapPts[0];
         static const char* kCorner[4] = {"TL", "TR", "BR", "BL"};
         char nm[40];
-        if (pr.idx < 4) snprintf(nm, sizeof nm, "Corner %s", kCorner[pr.idx]);
+        if (pr.idx >= 2000) snprintf(nm, sizeof nm, "Point %d", pr.idx % 1000 + 1);
+        else if (pr.idx < 4) snprintf(nm, sizeof nm, "Corner %s", kCorner[pr.idx]);
         else snprintf(nm, sizeof nm, "Warp point %d,%d", (pr.idx - 1000) / 100 + 1, (pr.idx - 1000) % 100 + 1);
         Text(x, oy + y + 11, UI_S, 10, K(pal::t88), nm); y += 22;
         float fw = (w - 6) / 2.f, vx = pp.x, vy = pp.y;
@@ -2811,6 +2964,14 @@ static void PropsPanel(ImRect r) {
         if (cx || cy) { A.pushHist(); SetOutputPointPos(*sc, pr, ImVec2(cx ? std::round(vx) : pp.x, cy ? std::round(vy) : pp.y)); }   // round only the edited axis
         y += 27;
       }
+      if (poly) {   // no point mode / subdivisions / grid tools: how to shape it instead
+        char nb[48]; snprintf(nb, sizeof nb, "%d points \xC2\xB7 3 to 64", (int)sl->pout.size());
+        Text(x, oy + y + 8, UI_S, 10, K(pal::t88), nb); y += 18;
+        Text(x, oy + y + 8, UI_S, 9, K(pal::t66), "Double-click an edge to add a point.", 0.01f); y += 16;
+        Text(x, oy + y + 8, UI_S, 9, K(pal::t66), "Right-click a point or press Delete to remove it.", 0.01f); y += 16 + 6;
+      }
+    }
+    if (output && A.outTool == 0 && !poly) {
       Text(x, oy + y + 11, UI_S, 10, K(pal::t88), "Point mode");
       {   // Linear | Bezier
         const char* pm[2] = {"LINEAR", "BEZIER"}; const float bw = 58.f;
@@ -2878,7 +3039,7 @@ static void PropsPanel(ImRect r) {
       }
     }
     // The Output panel ends with Warping / Black level: no corner-pin numbers, no input rectangle, no masks.
-    if (!output) {   // the input rectangle and the masks belong to the Input page
+    if (!output && !poly) {   // the input rectangle and the masks belong to the Input page (a polygon takes its input points instead)
       HLine(ox + 8, ox + 8 + w, oy + y, K(pal::g2a)); y += 1 + 6;
       Label(x, oy + y, "Input rectangle (px)"); y += 9 + 4;
       // X/Y are the rect's centre, Left/Top its unrotated top-left corner (what the stage frame edits)

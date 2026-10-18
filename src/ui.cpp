@@ -219,6 +219,7 @@ void Icon(const char* n, ImVec2 c, float sz, ImU32 col) {
   else if (is("rotate-ccw")) { dl->PathArcTo(P(12, 12), 9 * s, -1.15f, 3.56f, 24); dl->PathStroke(col, 0, th); Poly({P(3, 3), P(3, 8), P(8, 8)}); }
   else if (is("monitor")) { Rect(2, 3, 22, 16, 2); Line(8, 21, 16, 21); Line(12, 16, 12, 21); }
   else if (is("maximize")) { Poly({P(8, 3), P(3, 3), P(3, 8)}); Poly({P(21, 8), P(21, 3), P(16, 3)}); Poly({P(3, 16), P(3, 21), P(8, 21)}); Poly({P(16, 21), P(21, 21), P(21, 16)}); }
+  else if (is("pentagon")) Poly({P(12, 2.5f), P(21.5f, 9.4f), P(17.9f, 20.5f), P(6.1f, 20.5f), P(2.5f, 9.4f)}, true);
   else if (is("scissors")) { Circ(6, 6, 3); Circ(6, 18, 3); Line(20, 4, 8.1f, 15.9f); Line(14.5f, 14.5f, 20, 20); Line(8.1f, 8.1f, 12, 12); }
   else if (is("plus")) { Line(5, 12, 19, 12); Line(12, 5, 12, 19); }
   else if (is("x")) { Line(18, 6, 6, 18); Line(6, 6, 18, 18); }
