@@ -17,7 +17,7 @@
 # ════════════════════════════════════════════════════════════════════════
 
 cmake_minimum_required(VERSION 3.20)
-project(MikMap LANGUAGES CXX)
+project(MikMap LANGUAGES CXX C)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -25,15 +25,29 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 if(MSVC)
     # /W4      cảnh báo mức cao
-    # /permissive-  tuân thủ chuẩn chặt chẽ
+    # /permissive-  tuân thủ chuẩn chặt chẽ (chỉ có nghĩa với C++)
     # /fp:precise   KHÔNG dùng /fp:fast — toán homography cần độ chính xác
-    add_compile_options(/W4 /permissive- /fp:precise /utf-8)
+    # C cũng phải /W4 /utf-8 (plugin giả build bằng C thuần).
+    add_compile_options(
+        "$<$<COMPILE_LANGUAGE:CXX>:/W4>"
+        "$<$<COMPILE_LANGUAGE:CXX>:/permissive->"
+        "$<$<COMPILE_LANGUAGE:CXX>:/fp:precise>"
+        "$<$<COMPILE_LANGUAGE:CXX>:/utf-8>"
+        "$<$<COMPILE_LANGUAGE:C>:/W4>"
+        "$<$<COMPILE_LANGUAGE:C>:/utf-8>")
 else()
     # -ffp-contract=off là bản tương đương /fp:precise của GCC/Clang: cấm
     # gộp a*b+c thành FMA. Thiếu nó, cùng một ma trận homography cho kết
     # quả lệch bit giữa Windows-MSVC và macOS/Linux, và test so sánh số
     # với epsilon nhỏ sẽ đỏ trên đúng một nền tảng.
-    add_compile_options(-Wall -Wextra -Wpedantic -ffp-contract=off)
+    add_compile_options(
+        "$<$<COMPILE_LANGUAGE:CXX>:-Wall>"
+        "$<$<COMPILE_LANGUAGE:CXX>:-Wextra>"
+        "$<$<COMPILE_LANGUAGE:CXX>:-Wpedantic>"
+        "$<$<COMPILE_LANGUAGE:CXX>:-ffp-contract=off>"
+        "$<$<COMPILE_LANGUAGE:C>:-Wall>"
+        "$<$<COMPILE_LANGUAGE:C>:-Wextra>"
+        "$<$<COMPILE_LANGUAGE:C>:-Wpedantic>")
 endif()
 
 # Test engine xuất file chạy thẳng vào <build>/ (giống src/CMakeLists.txt),
@@ -72,7 +86,7 @@ find_package(Threads REQUIRED)
 
 add_library(mikmap_io STATIC ${MIKMAP_IO_SOURCES} ${MIKMAP_IO_HEADERS})
 target_include_directories(mikmap_io PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/engine")
-target_link_libraries(mikmap_io PUBLIC mikmap_core Threads::Threads)
+target_link_libraries(mikmap_io PUBLIC mikmap_core Threads::Threads ${CMAKE_DL_LIBS})
 
 # Winsock: PHẢI khai ở đây, không chỉ dựa vào `#pragma comment(lib, ...)`
 # trong OscSource.cpp — pragma đó là đặc sản của MSVC, MinGW/clang trên
@@ -95,6 +109,23 @@ add_library(mikmap_i18n STATIC
 target_include_directories(mikmap_i18n PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/engine")
 target_link_libraries(mikmap_i18n PUBLIC mikmap_core)
 
+# ── Plugin cảm biến giả (C thuần) ──────────────────────────────────────
+# Cùng một file .c build hai lần: bản đúng API và bản lệch phiên bản để
+# test loader từ chối. test_plugin.cpp nhận đường dẫn qua FAKE_PLUGIN_PATH
+# / FAKE_PLUGIN_V999_PATH (bên dưới).
+add_library(mikmap_fake_scan_plugin SHARED tests/plugins/fake_scan_plugin.c)
+target_include_directories(mikmap_fake_scan_plugin PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/engine/io/plugin")
+if(UNIX)
+    target_link_libraries(mikmap_fake_scan_plugin PRIVATE m)
+endif()
+
+add_library(mikmap_fake_scan_plugin_v999 SHARED tests/plugins/fake_scan_plugin.c)
+target_include_directories(mikmap_fake_scan_plugin_v999 PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/engine/io/plugin")
+target_compile_definitions(mikmap_fake_scan_plugin_v999 PRIVATE FAKE_API_VERSION=999)
+if(UNIX)
+    target_link_libraries(mikmap_fake_scan_plugin_v999 PRIVATE m)
+endif()
+
 # ── Unit tests ─────────────────────────────────────────────────────────
 enable_testing()
 
@@ -105,6 +136,10 @@ file(GLOB MIKMAP_TEST_SOURCES CONFIGURE_DEPENDS
 add_executable(mikmap_tests ${MIKMAP_TEST_SOURCES})
 target_link_libraries(mikmap_tests PRIVATE mikmap_core mikmap_io mikmap_i18n)
 target_include_directories(mikmap_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests")
+target_compile_definitions(mikmap_tests PRIVATE
+    "FAKE_PLUGIN_PATH=\"$<TARGET_FILE:mikmap_fake_scan_plugin>\""
+    "FAKE_PLUGIN_V999_PATH=\"$<TARGET_FILE:mikmap_fake_scan_plugin_v999>\"")
+add_dependencies(mikmap_tests mikmap_fake_scan_plugin mikmap_fake_scan_plugin_v999)
 
 add_test(NAME core_tests COMMAND mikmap_tests)
 
