@@ -273,8 +273,71 @@ void FireTouchRoutes() {
   }
 }
 
+// Task 4: camera skeleton. MediaPipe sends landmark ids as slot*100 + landmark, so a bone only
+// connects two joints of the same person. Coordinates stay raw ([0,1] image space, y down) and are
+// mapped straight onto the 4:3 frame; H_s is applied later, where the touch is used (principle #5).
+static void SkeletonView(ImRect r, const Device& d) {
+  Fill(r, K(pal::g050));
+  ImRect tb(r.Min.x, r.Min.y, r.Max.x, r.Min.y + 44);
+  Fill(tb, K(pal::g12)); HLine(tb.Min.x, tb.Max.x, tb.Max.y - 1, K(pal::g2a));
+  float cy = r.Min.y + 21.5f;
+  Icon("activity", ImVec2(tb.Min.x + 8 + 6.5f, cy), 13, K(pal::mint));
+  Text(tb.Min.x + 8 + 13 + 6, cy, UI_B, 11, K(pal::white), "CAMERA VIEW", 0.09f);
+  // Output overlay is a debug aid for every device, so it stays; Edit ROI has no meaning here.
+  const char* ol = "Output overlay";
+  float ow = TextW(UI_B, 10, ol) + 10 + 6 + 12 + 10;
+  ImRect ob(tb.Max.x - 8 - ow, cy - 12, tb.Max.x - 8, cy + 12);
+  Hit oh = HitR(ob);
+  Box(ob, A.sensorOverlay ? K(pal::mint, 0.18f) : K(pal::g1c), A.sensorOverlay ? K(pal::mint) : K(pal::g22), 3);
+  ImU32 ofg = K(A.sensorOverlay ? pal::mint : pal::t88);
+  Icon("activity", ImVec2(ob.Min.x + 10 + 6, cy), 12, ofg);
+  Text(ob.Min.x + 10 + 12 + 6, cy, UI_B, 10, ofg, ol);
+  if (oh.hover) CursorHand();
+  if (oh.click) A.sensorOverlay = !A.sensorOverlay;
+  int slots[64], nsl = 0;
+  for (auto& t : d.touches) {
+    int s = t.id / 100; bool seen = false;
+    for (int i = 0; i < nsl; ++i) if (slots[i] == s) { seen = true; break; }
+    if (!seen && nsl < 64) slots[nsl++] = s;
+  }
+  char cnt[64]; snprintf(cnt, sizeof cnt, "%d fps \xC2\xB7 %d %s", d.fps, nsl, nsl == 1 ? "person" : "people");
+  TextR(ob.Min.x - 8, cy, MONO_R, 10, K(pal::t88), cnt);
+
+  ImRect area(r.Min.x, r.Min.y + 44, r.Max.x, r.Max.y);
+  float avW = area.GetWidth() - 48, avH = area.GetHeight() - 48;
+  if (avW < 40 || avH < 30) return;
+  // shortcut: 4:3 matches the bridge's default 640x480 capture; if the bridge changes resolution,
+  // it has to send the size in /mikmap/meta.
+  float w = std::min(avW, avH * 4.f / 3.f), h = w * 3.f / 4.f;
+  float cx = (area.Min.x + area.Max.x) * 0.5f, cyc = (area.Min.y + area.Max.y) * 0.5f;
+  ImRect fr(cx - w * 0.5f, cyc - h * 0.5f, cx + w * 0.5f, cyc + h * 0.5f);
+  float k = w / 640.f;
+  Box(fr, K(0x070707), K(pal::g22), 4);
+  auto at = [&](int id, ImVec2& p) {
+    for (auto& t : d.touches) if (t.id == id) { p = ImVec2(fr.Min.x + t.x * w, fr.Min.y + t.y * h); return true; }
+    return false;
+  };
+  static const int kBones[35][2] = {{0,1},{1,2},{2,3},{3,7},{0,4},{4,5},{5,6},{6,8},{9,10},{11,12},{11,13},{13,15},{15,17},{15,19},{15,21},{17,19},{12,14},{14,16},{16,18},{16,20},{16,22},{18,20},{11,23},{12,24},{23,24},{23,25},{24,26},{25,27},{26,28},{27,29},{28,30},{29,31},{30,32},{27,31},{28,32}};
+  for (int si = 0; si < nsl; ++si) {
+    ImU32 col = Ca(K(RoleHex(slots[si] % 3)));
+    for (auto& b : kBones) {
+      ImVec2 p0, p1;
+      if (at(slots[si] * 100 + b[0], p0) && at(slots[si] * 100 + b[1], p1)) g.dl->AddLine(p0, p1, col, std::max(1.f, 3.f * k));
+    }
+    for (auto& t : d.touches) {
+      if (t.id / 100 != slots[si]) continue;
+      ImVec2 p(fr.Min.x + t.x * w, fr.Min.y + t.y * h);
+      g.dl->AddCircleFilled(p, std::max(2.f, 3.5f * k), col, 16);
+      if (t.id == kCalibJoint && A.wizardStep >= 1 && A.wizardStep <= 4)
+        g.dl->AddCircle(p, std::max(6.f, 10.f * k), Ca(K(pal::yellow)), 24, std::max(1.f, 2.f * k));
+    }
+  }
+  if (d.touches.empty()) TextC(cx, (fr.Max.y + area.Max.y) * 0.5f, MONO_R, 10, K(pal::t66), "No camera data \xE2\x80\x94 run pose_bridge.py");
+}
+
 static void Radar(ImRect r) {
   Device* cd = A.curDevice();
+  if (cd && cd->kind == DevKind::Skeleton) { A.editRoi = false; SkeletonView(r, *cd); return; }
   bool sim = cd && cd->kind == DevKind::Sim;   // the radar disc speaks the Sim's normalised units; other kinds get their own view with their driver
   if (!sim) A.editRoi = false;
   Fill(r, K(pal::g050));

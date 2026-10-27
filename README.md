@@ -146,8 +146,9 @@ chuyển sang mô hình thật của `engine/`, làm từng mảng để luôn b
 3. `core/model/Slice` + `WarpCornerPin`/`WarpMesh`/`WarpBezier` → thay phép
    warp trong `src/mapping.cpp`, qua đó có luôn Bezier (F10) và mặt nạ
    bezier (F12).
-4. `io/*` → nguồn sensor thật (G1–G4, G14) thay cho radar mô phỏng trong
-   `src/sensor.cpp`.
+4. `io/*` → nguồn sensor thật (G1, G3, G14) thay cho radar mô phỏng trong
+   `src/sensor.cpp`. OSC/UDP (G4) và camera skeleton (G20) đã chạy qua
+   `src/sources.cpp`; Hokuyo còn chờ driver.
 5. `core/model/Composition` · `Layer` · `Clip` · `Transport` → thay mô hình
    deck trong `src/app.h`.
 

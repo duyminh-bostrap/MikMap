@@ -149,10 +149,10 @@
 
 | ✓ | ID | Tính năng | Công sức | Đề xuất |
 |:-:|---|---|:-:|:-:|
-| [ ] | **G1** | Kiến trúc thread + TripleBuffer + SpscRing | M | 🔴 P0 |
+| [x] | **G1** | Kiến trúc thread + TripleBuffer + SpscRing | M | 🔴 P0 |
 | [x] | **G2** | MockSource + sensor simulator | S | 🔴 P0 |
 | [ ] | **G3** | Serial / Arduino source | M | 🔴 P0 |
-| [ ] | **G4** | OSC server (UDP) | M | 🔴 P0 |
+| [x] | **G4** | OSC server (UDP) | M | 🔴 P0 |
 | [x] | **G5** | **Homography solver (DLT + RANSAC)** | M | 🔴 P0 |
 | [x] | **G6** | **Calibration wizard — chạm 4+ điểm** | M | 🔴 P0 |
 | [ ] | **G7** | **SensorMapper: sensor → slice → clip pixel** | M | 🔴 P0 |
@@ -168,6 +168,7 @@
 | [~] | **G17** | Trigger clip / FX từ sự kiện sensor | M | 🟠 P1 |
 | [ ] | **G18** | Calibration nhiều sensor cho nhiều screen | M | 🟡 P2 |
 | [ ] | **G19** | LiDAR source (Livox / Ouster) | L | 🟡 P2 |
+| [x] | **G20** | **Camera skeleton (MediaPipe sidecar)** | M | 🔴 P0 |
 
 ---
 
@@ -696,3 +697,13 @@ Nay khung input sửa giống khung transform của Preview Cue: **kéo trong kh
 - Đếm mới: 60 `[x]` · 13 `[~]` · 62 `[ ]`.
 - **F18 `[ ]` → `[x]` — slice đa giác (2026-10-18):** `Slice::kind` = 1 là slice đa giác: `pin` (điểm trong canvas px) và `pout` (điểm trên output), 3..64 điểm, cùng số điểm; file cũ không có `kind` mở ra là slice lưới như trước, đa giác hỏng thì quay về slice lưới. Thêm bằng **Add polygon slice** (menu chuột phải của screen, menu của nút **+ Slice** ở chân cây và nút Slice trên dải thu gọn; `App::addPolygonSlice`), bắt đầu là ngũ giác nội tiếp input rect mặc định, `pout == pin`. Vẽ: mỗi tam giác của `pin` (tam giác hoá ở `engine/core`) được dán lên tam giác tương ứng của `pout` (`PolyForward`/`PolyInverse`, `mapping.cpp`); **Flip** lật texture trong khung bao của `pin`, hình giữ nguyên; soft edge, black level, màu, gamma và mask cắt theo tam giác của `pin`. Sửa trên stage: kéo điểm `pout` (Output, Edit Points) và `pin` (Input), bấm đúp cạnh thêm điểm, chuột phải điểm → **Delete point**, `Delete` xoá điểm đang chọn (không xoá slice khi còn điểm được chọn). Mọi sửa làm hình tự cắt bị từ chối, điểm đứng yên, báo `Shape would cross itself`. Hộp Transform, nam châm (điểm + cạnh của đa giác), X/Y (F15, nhãn `Point N` dưới **OUTPUT POINTS**/**INPUT POINTS**), vị trí nhanh và reset dùng điểm của đa giác; id điểm `kPolyOut`/`kPolyIn` (100000+/200000+) không bao giờ trùng id điểm lưới. Kiểm: `--roundtrip` (lưu/mở, đồng nhất khi `pout == pin`, nghịch đảo, thêm/xoá điểm, từ chối tự cắt, id điểm lưới hàng 10+), `--vout N --poly N` chụp được slice đa giác khía trên output. Match Input/Output Shape và Swap đổi tỉ lệ điểm giữa canvas px và output 1920×1080 như slice lưới (`PolyMatchOutputToInput`/`PolyMatchInputToOutput`/`PolySwapShapes`), đổi độ phân giải canvas cũng đổi tỉ lệ `pin`. Giới hạn: soft edge của slice đa giác tính vùng chồng theo khung bao của `pin`, nên hai đa giác cạnh chéo có khung bao chồng nhau sẽ mờ cả ở chỗ hình không chồng; phím mũi tên dời cả slice đa giác không kiểm tự cắt; mask nằm ngoài đa giác dùng ánh xạ gần đúng; chưa thử trên máy chiếu thật.
 - Đếm mới: 61 `[x]` · 13 `[~]` · 61 `[ ]`.
+
+### Sensor thật trong `src/`: thread nguồn sensor + OSC/UDP + khung nhìn camera skeleton (2026-10-27)
+
+- **G1 `[x]` — thread nguồn sensor thật:** `src/sources.cpp` giữ một `mikmap::ISensorSource` cho mỗi thiết bị đang bật (`Start`, `SensorsTick`, `SensorsShutdown`), tự huỷ/tạo lại khi đổi kind/host/port hoặc tắt thiết bị. Toạ độ đi qua `TripleBuffer` (frame) và `SpscRingBuffer` (sự kiện) của `engine/io`; render thread đọc bằng `frames().consume()` và áp `H_s` tại nơi dùng, không áp trong thread sensor. Điểm mới xuất hiện tính là `Down` nên vẫn kích được patch cord `touch.down`.
+- **G4 `[x]` — OSC server (UDP):** `OscSource` thật, bind đúng cổng của thiết bị; nhận bundle `/mikmap/touch`, `/up`, `/clear`, `/mikmap/meta` (độ trễ bên gửi); điểm không được gửi lại trong 250 ms tự nhả (UDP rơi gói không làm kẹt điểm). `SensorSelfTest` (`--roundtrip`) gửi UDP thật qua loopback.
+- **G20 `[x]` — camera skeleton (MediaPipe sidecar):** `tools/pose_bridge/pose_bridge.py` chạy MediaPipe ở tiến trình riêng, gửi bundle 33 khớp với id `slot*100 + landmark`; `SlotTracker` (ghép slot theo khoảng cách hông) giữ id người qua frame. Khung nhìn `SkeletonView` (`src/sensor.cpp`): khung 4:3 căn giữa vùng radar, ánh xạ `[0,1]²`, 35 xương `POSE_CONNECTIONS`, xương chỉ nối hai khớp **cùng slot**; màu theo `RoleHex(slot % 3)`, khớp `kCalibJoint` có vòng vàng khi wizard đang chạy; thanh trên `CAMERA VIEW` + `<fps> fps · <N> people`, không có Edit ROI, không chèn touch giả khi bấm.
+- **Kiểm tự động:** engine 437/437 test PASS (đợt Task 1–2); `ctest` 1/1 PASS (`project_roundtrip`); `mikmap --roundtrip` exit 0, không warning MSVC; Python `pose_bridge` 5/5 test OK.
+- **Kiểm hình:** `--shot --screen 2` với bundle 33 khớp gửi thật qua UDP 9000 — card **Camera skeleton** Running, 27 fps, 13 ms, 61 packet; người que đủ xương trong khung 4:3, dòng `27 fps · 1 person`. Chưa chụp lúc wizard chạy nên **vòng vàng `kCalibJoint` chưa nhìn bằng mắt**.
+- **Chưa kiểm:** webcam thật (Task 3 Step 5 mới gửi bundle tổng hợp); id người **có thể nhảy khi hai người cắt nhau** (bridge chỉ ghép slot theo khoảng cách hông, chưa có PointTracker G12).
+- Đếm mới: 64 `[x]` · 13 `[~]` · 59 `[ ]`.

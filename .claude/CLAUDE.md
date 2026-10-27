@@ -192,7 +192,9 @@ không phải cấu trúc riêng, `App::tlLayout`/`App::tlSync`). Cả hai đề
 dự án (trừ playhead/loop của Timeline, chỉ runtime).
 
 **Vẫn còn giả/thiếu — dễ bị đánh giá cao hơn thực tế:** `B3` generator vẽ bằng CPU, chưa
-phải shader GLSL; chưa có nguồn video/ảnh thật (`B1`), chưa có thread sensor thật (`G1`).
+phải shader GLSL; chưa có nguồn video/ảnh thật (`B1`). Thread sensor thật (`G1`) và OSC/UDP
+(`G4`) đã chạy qua `src/sources.cpp`; camera skeleton (`G20`) chạy qua sidecar MediaPipe,
+nhưng **chưa kiểm tay với webcam thật** — id người có thể nhảy khi hai người cắt nhau.
 (`A4` thumbnail động đã `[x]` từ 2026-09-23 — giới hạn ≤3 ô vẽ lại/khung, xem đầu mục này.)
 `I2` (lưu/mở dự án) **đã chạy** qua `src/project.cpp` (đọc/ghi `.mikmap` bằng schema
 JSON tự viết riêng của `src/`) nhưng **vẫn chưa gọi `engine/core/model/ProjectIO`** —
@@ -202,7 +204,7 @@ của bên này bằng bên kia sẽ lỗi. Cài đặt máy lưu ở thư mục
 
 **Việc còn lại để ghép engine thật vào `src/`** (chi tiết ở `README.md`): (1)
 `ProjectIO`, (2) `core/calib/*` thay `calib.cpp` tự viết, (3) `Slice`+
-`Warp*` thay `mapping.cpp`, (4) `io/*` thay radar mô phỏng trong `sensor.cpp`,
+`Warp*` thay `mapping.cpp`, (4) `io/*` thay radar mô phỏng trong `sensor.cpp` (OSC/skeleton đã ghép, Hokuyo chưa),
 (5) `Composition`/`Layer`/`Clip`/`Transport` thay `app.h`.
 
 Khi tick một mục hoặc báo "đã làm", grep đúng `src/*.cpp` để xác nhận,
