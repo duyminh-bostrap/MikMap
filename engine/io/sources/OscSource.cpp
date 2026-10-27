@@ -1,66 +1,15 @@
 #include "io/sources/OscSource.h"
 
 #include "core/util/Clock.h"
+#include "io/net/Socket.h"
 
 #include <algorithm>
 #include <vector>
-
-#if defined(_WIN32)
-#  ifndef WIN32_LEAN_AND_MEAN
-#    define WIN32_LEAN_AND_MEAN
-#  endif
-#  ifndef NOMINMAX
-#    define NOMINMAX
-#  endif
-#  include <winsock2.h>
-#  include <ws2tcpip.h>
-#  if defined(_MSC_VER)
-// Chỉ MSVC hiểu pragma này. MinGW/clang trên Windows bỏ qua (kèm cảnh
-// báo -Wunknown-pragmas) — ở đó ws2_32 được nối trong CMakeLists.txt.
-#  pragma comment(lib, "ws2_32.lib")
-#  endif
-using SocketHandle = SOCKET;
-static constexpr SocketHandle kInvalidSocket = INVALID_SOCKET;
-#else
-#  include <arpa/inet.h>
-#  include <fcntl.h>
-#  include <netinet/in.h>
-#  include <sys/socket.h>
-#  include <unistd.h>
-using SocketHandle = int;
-static constexpr SocketHandle kInvalidSocket = -1;
-#endif
 
 namespace mikmap {
 namespace {
 
 constexpr size_t kMaxPacketSize = 65536;
-
-void closeSocketHandle(SocketHandle s) {
-    if (s == kInvalidSocket) return;
-#if defined(_WIN32)
-    ::closesocket(s);
-#else
-    ::close(s);
-#endif
-}
-
-#if defined(_WIN32)
-/// Winsock cần khởi tạo trước khi dùng và chỉ nên làm một lần cho cả
-/// tiến trình. Bọc trong biến tĩnh cục bộ để C++ tự lo an toàn đa luồng.
-struct WinsockInit {
-    bool ok = false;
-    WinsockInit() {
-        WSADATA d{};
-        ok = (::WSAStartup(MAKEWORD(2, 2), &d) == 0);
-    }
-    ~WinsockInit() { if (ok) ::WSACleanup(); }
-};
-bool ensureWinsock() {
-    static WinsockInit init;
-    return init.ok;
-}
-#endif
 
 } // namespace
 
