@@ -750,13 +750,16 @@ int main(int argc, char** argv) {
     NewProject();
     std::string first = A.layers[0].name;
     A.trigger(0, 2); if (!A.layers[0].clips[2].isLive()) return fail("trigger setup");
+    A.devices[0].touches.assign(1, Touch{1, 0.1f, 0.1f}); A.devices[0].fps = 99;   // live sensor state must survive an unrelated undo/redo
     A.layers[0].name = "A1"; UndoCommit(); A.layers[0].name = "A2"; A.screens[0].slices[0].q[0] = ImVec2(9, 9); UndoCommit();
     if (!CanUndo() || CanRedo()) return fail("undo flags after edits");
     UndoStep(false); if (A.layers[0].name != "A1" || A.screens[0].slices[0].q[0].x == 9.f) return fail("undo 1");
     if (!A.layers[0].clips[2].isLive()) return fail("undo cut a playing clip");
+    if (A.devices[0].touches.size() != 1 || A.devices[0].fps != 99) return fail("undo wiped device runtime state");
     UndoStep(false); if (A.layers[0].name != first) return fail("undo 2");
     if (CanUndo()) return fail("history should be empty");
     UndoStep(true); if (A.layers[0].name != "A1") return fail("redo");
+    if (A.devices[0].touches.size() != 1 || A.devices[0].fps != 99) return fail("redo wiped device runtime state");
     A.layers[0].name = "A3"; UndoCommit(); if (CanRedo()) return fail("new edit should clear redo");
     // A10: triggering another clip on a layer with blend time > 0 starts a dissolve from the previous live clip
     NewProject(); A.layers[0].blendTime = 2.f;

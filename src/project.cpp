@@ -737,6 +737,10 @@ static bool UndoApply(const std::string& snap) {
       Clip& n = tmp.layers[li].clips[ci]; const Clip& o = A.layers[li].clips[ci];
       if (n.st != Clip::Empty && n.name == o.name) { n.st = o.st; n.progress = o.progress; }
     }
+  for (auto& nd : tmp.devices) for (const auto& od : A.devices) if (od.id == nd.id) {   // device runtime state (live touches, counters) is not part of the snapshot: carry it across
+    nd.touches = od.touches; nd.status = od.status; nd.error = od.error; nd.fps = od.fps; nd.latencyMs = od.latencyMs; nd.packets = od.packets;
+    break;
+  }
   for (auto& l : tmp.layers) { l.live = false; for (auto& c : l.clips) if (c.isLive()) l.live = true; }
   A.canvasW = tmp.canvasW; A.canvasH = tmp.canvasH; A.comp = tmp.comp; A.groups = tmp.groups; A.layers = tmp.layers; A.colNames = tmp.colNames;
   A.decks = tmp.decks; A.curDeckIdx = std::clamp(tmp.curDeckIdx, 0, (int)A.decks.size() - 1); A.deckMode = tmp.deckMode;   // undo also covers deck add/delete/switch
