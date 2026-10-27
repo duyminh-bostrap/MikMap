@@ -15,10 +15,14 @@
 #  include <sys/socket.h>
 #  include <unistd.h>
 #endif
+#include "FakeScipServer.h"
 #include "app.h"
 #include "core/util/Clock.h"
 #include "io/ISensorSource.h"
+#include "io/sources/HokuyoSource.h"
 #include "io/sources/OscSource.h"
+#include "io/sources/ScanSource.h"
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <memory>
@@ -29,6 +33,7 @@ namespace {
 struct Live {
   std::unique_ptr<mikmap::ISensorSource> src;   // null when the source could not start
   mikmap::OscSource* osc = nullptr;             // the same object, for the OSC-only counters
+  mikmap::ScanSource* scan = nullptr;           // lidar sources: raw scans + params for the radar view
   std::string sig, err;                         // sig = kind|host|port: a change restarts the source
   bool failed = false;                          // start() refused (port taken, bad port, no driver): kept so it is not retried every frame
   double winStart = 0; int winFrames = 0, fps = 0;
@@ -44,14 +49,29 @@ std::string Sig(const Device& d) { return std::to_string((int)d.kind) + "|" + d.
 
 Live Start(const Device& d, double now) {
   Live L; L.sig = Sig(d); L.winStart = now;
-  if (d.kind != DevKind::Skeleton) { L.failed = true; L.err = "No driver for this sensor yet"; return L; }
   if (d.port < 1 || d.port > 65535) { L.failed = true; L.err = "Port must be 1-65535"; return L; }
-  mikmap::OscConfig c;
-  c.port = (uint16_t)d.port; c.protocol = mikmap::OscProtocol::Mikmap; c.addressPrefix = "/mikmap/touch";
-  c.normalizedInput = false; c.pointTimeoutSec = 0.25;   // a person who leaves the picture lets go of every joint after 250 ms
-  auto o = std::make_unique<mikmap::OscSource>(c);
-  if (!o->start()) { L.failed = true; L.err = o->lastError(); return L; }
-  L.osc = o.get(); L.src = std::move(o);
+
+  if (d.kind == DevKind::Skeleton) {
+    mikmap::OscConfig c;
+    c.port = (uint16_t)d.port; c.protocol = mikmap::OscProtocol::Mikmap; c.addressPrefix = "/mikmap/touch";
+    c.normalizedInput = false; c.pointTimeoutSec = 0.25;   // a person who leaves the picture lets go of every joint after 250 ms
+    auto o = std::make_unique<mikmap::OscSource>(c);
+    if (!o->start()) { L.failed = true; L.err = o->lastError(); return L; }
+    L.osc = o.get(); L.src = std::move(o);
+    return L;
+  }
+
+  if (d.kind == DevKind::Hokuyo) {
+    if (d.host.empty()) { L.failed = true; L.err = "Host is required"; return L; }
+    mikmap::HokuyoConfig c;
+    c.host = d.host; c.port = (uint16_t)d.port; c.reconnectSec = 1.0;
+    auto h = std::make_unique<mikmap::HokuyoSource>(c);
+    h->start();   // a missing cable is temporary: status()/lastError() report it, the source keeps retrying
+    L.scan = h.get(); L.src = std::move(h);
+    return L;
+  }
+
+  L.failed = true; L.err = "No driver for this sensor yet";
   return L;
 }
 
@@ -88,6 +108,12 @@ void SensorsTick(double now) {
     Live& L = it->second;
     if (!L.src) { d.status = (int)mikmap::SourceStatus::Error; d.error = L.err; d.touches.clear(); continue; }
     mikmap::ISensorSource& S = *L.src;
+    if (L.scan) {   // the ROI/blob sliders live in the app; the source picks up the latest copy on its next scan
+      mikmap::LidarParams p;
+      p.minBlobMm = std::clamp(A.blobSize, 5.f, 300.f);
+      for (int i = 0; i < 4; ++i) p.roi[i] = mikmap::Vec2{d.roi[i].x, d.roi[i].y};
+      L.scan->setParams(p);
+    }
     bool got = false;
     if (S.frames().consume()) {
       got = true; ++L.winFrames;
@@ -100,7 +126,7 @@ void SensorsTick(double now) {
     while (S.events().pop(ev)) if (ev.state == mikmap::TouchState::Down) fire = true;
     double dt = now - L.winStart;
     if (dt < 0 || dt >= 1.0) { L.fps = dt > 0 ? (int)std::lround(L.winFrames / dt) : 0; L.winStart = now; L.winFrames = 0; }
-    d.fps = L.fps; d.latencyMs = L.latencyMs; d.packets = L.osc ? L.osc->packetsReceived() : 0;
+    d.fps = L.fps; d.latencyMs = L.latencyMs; d.packets = L.osc ? L.osc->packetsReceived() : L.scan ? L.scan->scansReceived() : 0;
     d.status = (int)S.status();
     if (S.status() == mikmap::SourceStatus::Error) d.error = S.lastError(); else d.error.clear();   // lastError() takes the source's mutex: only ask when there is an error
     if (got && g_cap.on && g_cap.dev == d.id) CaptureFrame(d, now);
@@ -117,6 +143,15 @@ void SensorsShutdown() { g_live.clear(); g_cap.on = false; }
 mikmap::ISensorSource* DeviceSource(const Device& d) {
   auto it = g_live.find(d.id);
   return it == g_live.end() ? nullptr : it->second.src.get();
+}
+
+// Latest raw scan of any lidar source (Hokuyo today, plugin in Task 10). Kept in the app, not the engine,
+// so the radar view asks "is this a ScanSource?" instead of "is this a Hokuyo?".
+const mikmap::LaserScan* DeviceScan(const Device& d) {
+  auto* scan = dynamic_cast<mikmap::ScanSource*>(DeviceSource(d));
+  if (!scan || scan->scansReceived() == 0) return nullptr;
+  scan->scans().consume();
+  return &scan->scans().readSlot();
 }
 
 void StartCapture(int step) {
@@ -182,6 +217,20 @@ bool SensorSelfTest(std::string& why) {
   SensorsTick(now());
   if (dev("selftest-b").status != (int)mikmap::SourceStatus::Error || dev("selftest-b").error.empty()) return fail("sensor: a second source on a taken port must report Error with a message");
   if (DeviceSource(dev("selftest-b"))) return fail("sensor: a source that failed to start must not be reachable");
+
+  // Hokuyo over a fake SCIP server: one blob at 1000 mm, then 30 frames averaged into calibration point 1
+  mikmap::test::FakeScipServer hokuyo;
+  if (!hokuyo.error().empty()) return fail("sensor: the fake SCIP server did not start");
+  Device h = MakeDevice(DevKind::Hokuyo, "selftest-h");
+  h.host = "127.0.0.1"; h.port = hokuyo.port(); h.enabled = true;
+  A.devices.push_back(h);
+  for (double t0 = now(); now() - t0 < 2.0 && !(DeviceScan(dev("selftest-h")) && dev("selftest-h").touches.size() == 1);) { SensorsTick(now()); std::this_thread::sleep_for(std::chrono::milliseconds(5)); }
+  Device& dh = dev("selftest-h");
+  if (!DeviceScan(dh) || dh.touches.size() != 1) return fail("sensor: a Hokuyo scan did not produce exactly one blob");
+  A.selDevice = (int)(&dh - A.devices.data()); A.wizardStep = 1; StartCapture(1);
+  for (double t0 = now(); now() - t0 < 3.0 && A.wizardStep == 1;) { SensorsTick(now()); std::this_thread::sleep_for(std::chrono::milliseconds(5)); }
+  if (A.wizardStep != 2 || std::fabs(dh.calib[0].mx - 1000.f) > 25.f) return fail("sensor: Hokuyo Capture did not average the blob at 1000 mm");
+  A.wizardStep = 0;
 
   dev("selftest-a").enabled = false; dev("selftest-b").enabled = false;
   SensorsTick(now());

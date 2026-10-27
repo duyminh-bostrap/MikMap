@@ -1,6 +1,7 @@
 ﻿// Sensor I/O screen: device manager + calibration · radar · parameter routing.
 #include "app.h"
 #include "io/ISensorSource.h"
+#include "io/sources/ScanSource.h"
 #include <cmath>
 #include <cstdlib>
 #include <algorithm>
@@ -338,15 +339,18 @@ static void SkeletonView(ImRect r, const Device& d) {
 static void Radar(ImRect r) {
   Device* cd = A.curDevice();
   if (cd && cd->kind == DevKind::Skeleton) { A.editRoi = false; SkeletonView(r, *cd); return; }
-  bool sim = cd && cd->kind == DevKind::Sim;   // the radar disc speaks the Sim's normalised units; other kinds get their own view with their driver
-  if (!sim) A.editRoi = false;
+  const bool sim = cd && cd->kind == DevKind::Sim;   // the radar disc speaks the Sim's normalised units
+  const bool lidar = cd && dynamic_cast<mikmap::ScanSource*>(DeviceSource(*cd)) != nullptr;   // Hokuyo today, plugin later
+  const mikmap::LaserScan* scan = lidar ? DeviceScan(*cd) : nullptr;
+  if (!sim && !lidar) A.editRoi = false;
   Fill(r, K(pal::g050));
   ImRect tb(r.Min.x, r.Min.y, r.Max.x, r.Min.y + 44);
   Fill(tb, K(pal::g12)); HLine(tb.Min.x, tb.Max.x, tb.Max.y - 1, K(pal::g2a));
   float cy = r.Min.y + 21.5f;
+  const char* title = lidar ? "LIDAR VIEW" : "RADAR VIEW";
   Icon("activity", ImVec2(tb.Min.x + 8 + 6.5f, cy), 13, K(pal::mint));
-  Text(tb.Min.x + 8 + 13 + 6, cy, UI_B, 11, K(pal::white), "RADAR VIEW", 0.09f);
-  float lx = tb.Min.x + 8 + 13 + 6 + TextW(UI_B, 11, "RADAR VIEW", 0.09f) + 6;
+  Text(tb.Min.x + 8 + 13 + 6, cy, UI_B, 11, K(pal::white), title, 0.09f);
+  float lx = tb.Min.x + 8 + 13 + 6 + TextW(UI_B, 11, title, 0.09f) + 6;
   // ROI button
   {
     const char* lb = A.editRoi ? "Finish ROI" : "Edit ROI";
@@ -358,7 +362,7 @@ static void Radar(ImRect r) {
     Icon("target", ImVec2(br.Min.x + 10 + 6, cy), 12, fg);
     Text(br.Min.x + 10 + 12 + 6, cy, UI_B, 10, fg, lb);
     if (h.hover) CursorHand();
-    if (h.click && sim) A.editRoi = !A.editRoi;
+    if (h.click && (sim || lidar)) A.editRoi = !A.editRoi;
     const char* ol = "Output overlay";
     float ow = TextW(UI_B, 10, ol) + 10 + 6 + 12 + 10;
     ImRect ob(br.Min.x - 6 - ow, cy - 12, br.Min.x - 6, cy + 12);
@@ -369,7 +373,10 @@ static void Radar(ImRect r) {
     Text(ob.Min.x + 10 + 12 + 6, cy, UI_B, 10, ofg, ol);
     if (oh.hover) CursorHand();
     if (oh.click) A.sensorOverlay = !A.sensorOverlay;
-    TextEll(lx, cy, ob.Min.x - 8 - lx, MONO_R, 10, K(pal::t88), "40.0 Hz real-time sweep");
+    char info[48];
+    if (lidar) snprintf(info, sizeof info, "%d Hz \xC2\xB7 %d %s", cd->fps, (int)cd->touches.size(), cd->touches.size() == 1 ? "blob" : "blobs");
+    else snprintf(info, sizeof info, "40.0 Hz real-time sweep");
+    TextEll(lx, cy, ob.Min.x - 8 - lx, MONO_R, 10, K(pal::t88), info);
   }
   ImRect area(r.Min.x, r.Min.y + 44, r.Max.x, r.Max.y);
   float D = std::min({area.GetWidth() - 32, 540.f, area.GetHeight() - 32 - 6 - 10});
@@ -391,13 +398,31 @@ static void Radar(ImRect r) {
     float a = i * 3.14159265f / 4.f;
     dl->AddLine(c, ImVec2(c.x + cosf(a) * maxR, c.y + sinf(a) * maxR), Ca(K(0x181818)), std::max(1.f, k));
   }
-  // ROI
+  // Lidar ↔ screen: front (0°) is up, +y is left. The disc is a fixed 4 m window.
+  const float mmToPx = maxR / kRadarRangeMm;
+  auto lidarToScreen = [&](float xmm, float ymm) { return ImVec2(c.x - ymm * mmToPx, c.y - xmm * mmToPx); };
+  auto screenToLidar = [&](ImVec2 p) { return ImVec2(-(p.y - c.y) / mmToPx, -(p.x - c.x) / mmToPx); };
+
+  // Raw scan: one 1 px dot per valid ray inside the disc (pal::t66, the same grey as the rest of the chrome).
+  if (lidar && scan) {
+    const ImU32 dot = Ca(K(pal::t66));
+    for (int i = 0; i < scan->count; ++i) {
+      const float rm = scan->rangeMm[i];
+      if (rm <= 0.f || rm > kRadarRangeMm) continue;
+      const float a = scan->angleRad[i];
+      const ImVec2 p = lidarToScreen(rm * std::cos(a), rm * std::sin(a));
+      dl->AddRectFilled(ImVec2(p.x - 0.5f, p.y - 0.5f), ImVec2(p.x + 0.5f, p.y + 0.5f), dot);
+    }
+  }
+
+  // ROI: Sim in normalised units, lidar in raw millimetres.
   ImVec2 rp[4] = {};
-  if (sim) for (int i = 0; i < 4; ++i) rp[i] = ImVec2(c.x + cd->roi[i].x * maxR, c.y + cd->roi[i].y * maxR);
-  if (sim) for (int i = 1; i + 1 < 4; ++i) dl->AddTriangleFilled(rp[0], rp[i], rp[i + 1], Ca(A.editRoi ? K(pal::yellow, 0.15f) : K(pal::cyan, 0.10f)));
-  if (sim) dl->AddPolyline(rp, 4, Ca(K(A.editRoi ? pal::yellow : pal::cyan)), ImDrawFlags_Closed, 2 * k);
-  if (A.editRoi) for (int i = 0; i < 4; ++i) dl->AddCircleFilled(rp[i], 6 * k, Ca(K(pal::yellow)), 20);
-  static int roiDrag = -1;   // S4: while "Edit ROI" is on, the four yellow handles can be dragged (clamped to the radar disc)
+  if (sim || lidar) for (int i = 0; i < 4; ++i)
+    rp[i] = sim ? ImVec2(c.x + cd->roi[i].x * maxR, c.y + cd->roi[i].y * maxR) : lidarToScreen(cd->roi[i].x, cd->roi[i].y);
+  if (sim || lidar) for (int i = 1; i + 1 < 4; ++i) dl->AddTriangleFilled(rp[0], rp[i], rp[i + 1], Ca(A.editRoi ? K(pal::yellow, 0.15f) : K(pal::cyan, 0.10f)));
+  if (sim || lidar) dl->AddPolyline(rp, 4, Ca(K(A.editRoi ? pal::yellow : pal::cyan)), ImDrawFlags_Closed, 2 * k);
+  if (A.editRoi && (sim || lidar)) for (int i = 0; i < 4; ++i) dl->AddCircleFilled(rp[i], 6 * k, Ca(K(pal::yellow)), 20);
+  static int roiDrag = -1;   // while "Edit ROI" is on, the four yellow handles can be dragged (Sim clamps to the disc, lidar uses mm)
   if (!A.editRoi) roiDrag = -1;
   else {
     ImVec2 mm = ImGui::GetIO().MousePos;
@@ -407,9 +432,14 @@ static void Radar(ImRect r) {
       for (int i = 0; i < 4; ++i) if (std::hypot(mm.x - rp[i].x, mm.y - rp[i].y) <= 12 * k + 4) { roiDrag = i; break; }
     if (roiDrag >= 0) {
       if (ImGui::IsMouseDown(0)) {
-        float nx = (mm.x - c.x) / maxR, ny = (mm.y - c.y) / maxR, len = std::hypot(nx, ny);
-        if (len > 1.f) { nx /= len; ny /= len; }
-        cd->roi[roiDrag] = ImVec2(std::round(nx * 1000) / 1000, std::round(ny * 1000) / 1000);
+        if (sim) {
+          float nx = (mm.x - c.x) / maxR, ny = (mm.y - c.y) / maxR, len = std::hypot(nx, ny);
+          if (len > 1.f) { nx /= len; ny /= len; }
+          cd->roi[roiDrag] = ImVec2(std::round(nx * 1000) / 1000, std::round(ny * 1000) / 1000);
+        } else {   // millimetres, deliberately NOT clamped to the disc: a real lidar sees beyond 4 m
+          const ImVec2 p = screenToLidar(mm);
+          cd->roi[roiDrag] = ImVec2(std::round(p.x), std::round(p.y));
+        }
         ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
       } else roiDrag = -1;
     } else if (nearH) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
@@ -420,6 +450,13 @@ static void Radar(ImRect r) {
     RadialFan(c, maxR, K(pal::mint, 0.30f), K(pal::mint, 0.f), a - 0.35f, a, 24);
     dl->AddLine(c, ImVec2(c.x + cosf(a) * maxR, c.y + sinf(a) * maxR), Ca(K(pal::mint)), 1.5f * k);
   }
+  if (lidar) for (auto& t : cd->touches) {   // touches are blob centroids in raw millimetres
+    const ImVec2 b = lidarToScreen(t.x, t.y);
+    dl->AddCircleFilled(b, 7 * k, Ca(K(pal::coral)), 24);
+    dl->AddCircle(b, 12 * k, Ca(K(pal::white)), 24, 1.5f * k);
+    char lb[64]; snprintf(lb, sizeof lb, "ID:%d [%d,%d mm]", t.id, (int)std::lround(t.x), (int)std::lround(t.y));
+    Text(b.x + 14 * k, b.y + 4 * k - 1, MONO_B, 11 * k, K(pal::white), lb);
+  }
   if (sim) for (auto& t : cd->touches) {
     ImVec2 b(c.x + t.x * maxR, c.y + t.y * maxR);
     dl->AddCircleFilled(b, 7 * k, Ca(K(pal::coral)), 24);
@@ -427,15 +464,18 @@ static void Radar(ImRect r) {
     char lb[48]; snprintf(lb, sizeof lb, "ID:%d [%dmm]", t.id, (int)std::round(t.x * 2000));
     Text(b.x + 14 * k, b.y + 4 * k - 1, MONO_B, 11 * k, K(pal::white), lb);
   }
-  if (sim && A.wizardStep >= 1 && A.wizardStep <= 4) {
+  if ((sim || lidar) && A.wizardStep >= 1 && A.wizardStep <= 4) {
     const Calib& cb = cd->calib[A.wizardStep - 1];
-    ImVec2 t(c.x + cb.mx * maxR, c.y + cb.my * maxR);
-    dl->AddCircle(t, 18 * k, Ca(K(pal::yellow)), 32, 2 * k);
-    char lb[24]; snprintf(lb, sizeof lb, "TARGET %d/4", A.wizardStep);
-    Text(t.x + 22 * k, t.y - 6 * k - 1, MONO_B, 12 * k, K(pal::yellow), lb);
+    const bool known = !lidar || cb.mx != 0 || cb.my != 0;   // a lidar target only exists after Capture
+    if (known) {
+      ImVec2 t = sim ? ImVec2(c.x + cb.mx * maxR, c.y + cb.my * maxR) : lidarToScreen(cb.mx, cb.my);
+      dl->AddCircle(t, 18 * k, Ca(K(pal::yellow)), 32, 2 * k);
+      char lb[24]; snprintf(lb, sizeof lb, "TARGET %d/4", A.wizardStep);
+      Text(t.x + 22 * k, t.y - 6 * k - 1, MONO_B, 12 * k, K(pal::yellow), lb);
+    }
   }
   dl->AddCircle(c, D * 0.5f - 0.5f, Ca(K(pal::g2a)), 96, 1.f);
-  TextC(cx, top + D + 6 + 5, MONO_R, 10, K(pal::t66), A.editRoi ? "Drag the yellow handles to reshape the region of interest" : sim ? "Click the radar to inject a simulated touch point" : "Live view for this sensor type arrives with its driver");
+  TextC(cx, top + D + 6 + 5, MONO_R, 10, K(pal::t66), A.editRoi ? "Drag the yellow handles to reshape the region of interest" : sim ? "Click the radar to inject a simulated touch point" : lidar ? "" : "Live view appears when this device is running");
   // click
   ImVec2 m = ImGui::GetIO().MousePos;
   float dist = std::hypot(m.x - c.x, m.y - c.y);
@@ -479,8 +519,8 @@ static void Routing(ImRect r) {
     snprintf(b, sizeof b, "%dmm", (int)A.blobSize);
     TextR(x + w, oy + y + 5, MONO_B, 10, K(pal::mint), b);
     y += 10 + 4;
-    float v2 = (A.blobSize - 5) / 45.f * 100.f;
-    if (Slider(0x4002, Rc(x, oy + y + 4, w, 6), v2, pal::mint)) A.blobSize = std::round(5 + v2 / 100.f * 45.f);
+    float v2 = std::clamp((A.blobSize - 5.f) / 295.f * 100.f, 0.f, 100.f);   // lidar blobs: 5-300 mm
+    if (Slider(0x4002, Rc(x, oy + y + 4, w, 6), v2, pal::mint)) A.blobSize = std::round(5 + v2 / 100.f * 295.f);
     y += 14 + 8;
   }
   HLine(x, x + w, oy + y, K(pal::g2a)); y += 1 + 6;

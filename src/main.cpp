@@ -1,6 +1,7 @@
 ﻿// MikMap Pro — VJ / projection-mapping workspace (C++ / Dear ImGui / OpenGL).
 #include "app.h"
 #include "core/util/Json.h"
+#include "FakeScipServer.h"
 
 #include <GLFW/glfw3.h>
 #ifdef _WIN32
@@ -27,6 +28,7 @@
 #include <fstream>
 #include <sstream>
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -635,6 +637,7 @@ int main(int argc, char** argv) {
   std::string roundtrip; std::vector<int> fxTest;
   std::string shot; int startScreen = 0, frames = 12, W = 1440, H = 900, tab = -1, page = -1;
   bool sel = false, scaleGiven = false; int selLi = 0, selCi = 0, ctxTest = 0, cliScale = 100;
+  bool fakeHokuyo = false;
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
     if (a == "--shot" && i + 1 < argc) shot = argv[++i];
@@ -649,6 +652,7 @@ int main(int argc, char** argv) {
     else if (a == "--outkeytest") outKeyTest = true;
     else if (a == "--snap") startSnap = true;    // test aid: start with the Mapping magnet on
     else if (a == "--hand") startHand = true;    // test aid: start with the Mapping hand tool on
+    else if (a == "--fake-hokuyo") fakeHokuyo = true;   // test aid: point the Hokuyo device at an in-process fake SCIP server
     else if (a == "--wheel" && i + 1 < argc) {   // test aid: mouse wheel notch(es) at x,y,amount
       Script sc{}; sc.kind = 4; sscanf(argv[++i], "%f,%f,%f", &sc.x0, &sc.y0, &sc.x1); script.push_back(sc);
     }
@@ -1674,6 +1678,15 @@ int main(int argc, char** argv) {
   gLogoTex = LoadTexture(gAssets + "/mikmap-mark.png");
 
   NewProject();
+  std::unique_ptr<mikmap::test::FakeScipServer> fakeScip;   // --fake-hokuyo: a fake lidar that lives as long as the window
+  if (fakeHokuyo) {
+    fakeScip = std::make_unique<mikmap::test::FakeScipServer>();
+    if (fakeScip->error().empty()) for (auto& d : A.devices) if (d.kind == DevKind::Hokuyo) {
+      d.host = "127.0.0.1"; d.port = fakeScip->port(); d.enabled = true;
+      A.selDevice = (int)(&d - A.devices.data());
+      break;
+    }
+  }
   A.screen = startScreen;
   A.mapSnap = startSnap; A.mapHand = startHand; A.testCard = startCard;
   if (startTool >= 0) A.outTool = startTool; if (startInTool >= 0) A.inTool = startInTool;   // (NewProject just reset the app state)

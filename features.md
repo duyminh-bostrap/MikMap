@@ -160,7 +160,7 @@
 | [x] | **G9** | PerfPanel — đo độ trễ p99, FPS, frame drop | S | 🔴 P0 |
 | [x] | **G10** | Hiển thị sai số tái chiếu (reprojection error) | S | 🟠 P1 |
 | [ ] | **G11** | OneEuroFilter khử nhiễu | S | 🟠 P1 |
-| [ ] | **G12** | PointTracker — gán ID bền vững qua frame | M | 🟠 P1 |
+| [x] | **G12** | PointTracker — gán ID bền vững qua frame | M | 🟠 P1 |
 | [x] | **G13** | Overlay debug điểm sensor lên output | S | 🟠 P1 |
 | [ ] | **G14** | TUIO source | M | 🟠 P1 |
 | [ ] | **G15** | Kinect / Femto Bolt depth source + blob detect | L | 🟠 P1 |
@@ -169,6 +169,7 @@
 | [ ] | **G18** | Calibration nhiều sensor cho nhiều screen | M | 🟡 P2 |
 | [ ] | **G19** | LiDAR source (Livox / Ouster) | L | 🟡 P2 |
 | [x] | **G20** | **Camera skeleton (MediaPipe sidecar)** | M | 🔴 P0 |
+| [~] | **G21** | Hokuyo 2D lidar (SCIP 2.0/TCP) | M | 🟠 P1 |
 
 ---
 
@@ -707,3 +708,12 @@ Nay khung input sửa giống khung transform của Preview Cue: **kéo trong kh
 - **Kiểm hình:** `--shot --screen 2` với bundle 33 khớp gửi thật qua UDP 9000 — card **Camera skeleton** Running, 27 fps, 13 ms, 61 packet; người que đủ xương trong khung 4:3, dòng `27 fps · 1 person`. Chưa chụp lúc wizard chạy nên **vòng vàng `kCalibJoint` chưa nhìn bằng mắt**.
 - **Chưa kiểm:** webcam thật (Task 3 Step 5 mới gửi bundle tổng hợp); id người **có thể nhảy khi hai người cắt nhau** (bridge chỉ ghép slot theo khoảng cách hông, chưa có PointTracker G12).
 - Đếm mới: 64 `[x]` · 13 `[~]` · 59 `[ ]`.
+
+### Lidar Hokuyo trên trang Sensor: khung nhìn quét mm + ROI + calib 4 điểm (2026-10-27)
+
+- **G21 `[~]` — Hokuyo 2D lidar (SCIP 2.0/TCP):** `HokuyoSource` (`engine/io/sources/HokuyoSource.*`) mở TCP tới lidar, `PP` → `MD`, đọc block `99b` (kiểm checksum; dòng bị cắt qua nhiều lần `recv` vẫn ghép đúng), quy đổi `angleRad[i] = (amin + i − afrt)·2π/ares`, `rangeMm[i] = r` trong `[max(dmin, 20), dmax]`. Block hỏng đếm `scansMalformed` rồi đọc tiếp; chỉ khi >32 lỗi liên tiếp mới đóng socket, báo `Error` + `lastError`, chờ `reconnectSec` và nối lại. Trang Sensor: `Radar` nhánh lidar kiểm **nguồn là `ScanSource`** (không kiểm `kind == Hokuyo`, để plugin Task 10 dùng lại), vẽ mỗi tia thành chấm 1 px `pal::t66`, ROI tính bằng mm (kéo handle bằng ánh xạ ngược, không kẹp vào đĩa), blob coral nhãn `ID:n [x,y mm]`, thanh trên `LIDAR VIEW` + `<fps> Hz · <N> blobs`; tầm nhìn cố định 4 m (`kRadarRangeMm`). `Min blob size` (5–300 mm) là `minBlobMm`; `maxGapMm` cố định 50 mm; `noise` không dùng cho Hokuyo; bấm radar không chèn touch giả. **Chưa kiểm phần cứng thật** (UST-10LX/20LX). `--fake-hokuyo` (cờ test) trỏ thiết bị Hokuyo vào fake SCIP trong tiến trình để chụp màn hình.
+- **G12 `[x]` — PointTracker:** `LidarTouchPublisher` (`engine/io/LidarBlobs.*`) gọi `PointTracker` cho từng blob, nên id blob bền vững qua frame và có `Down`/`Up` thật; pipeline dùng chung cho Hokuyo hôm nay và lidar UDP/plugin sau này.
+- **Kiểm tự động:** engine 455/455 test PASS, 6088 assertion (thêm 8 test SCIP, 6 test `LidarBlobs`, 4 test Hokuyo); `ctest --test-dir src/build -C Release` 1/1 PASS — `SensorSelfTest` dựng `FakeScipServer` (`tests/FakeScipServer.h`), chờ ≤2 s thấy `DeviceScan() != nullptr` và đúng 1 blob, rồi `StartCapture` đủ 30 frame cho `calib[0].mx` lệch <25 mm so với 1000 mm. App và engine build không warning mới.
+- **Kiểm hình:** `mikmap --shot lidar.png --screen 2 --frames 60 --fake-hokuyo --click 1100,62` (bấm **Edit ROI**): tường tròn 2 m, một blob coral `ID:1 [1000,0 mm]`, ROI vàng 4 handle theo mm, card Hokuyo Running với fps/latency/packet thật.
+- **Chưa kiểm:** phần cứng thật (nối `192.168.0.x/24`, ~40 Hz, đứng vào ROI thấy blob, wizard 4 điểm đặt đúng chỗ chân trên Output); lidar UDP của Tàu chưa làm — pipeline chờ sẵn ở `LidarBlobs.h`.
+- Đếm mới: 65 `[x]` · 14 `[~]` · 59 `[ ]`.
