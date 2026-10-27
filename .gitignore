@@ -81,3 +81,9 @@ bin/data/settings.json
 # (duong dan cuc bo, thiet bi sensor test tai cho, override rieng).
 .claude/CLAUDE.local.md
 .claude/settings.local.json
+
+# pose_bridge: model tai ve luc chay lan dau + venv cua nguoi dung
+tools/pose_bridge/*.task
+tools/pose_bridge/*.task.part
+tools/pose_bridge/.venv/
+__pycache__/
