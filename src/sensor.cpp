@@ -1,5 +1,6 @@
 ﻿// Sensor I/O screen: device manager + calibration · radar · parameter routing.
 #include "app.h"
+#include "io/ISensorSource.h"
 #include <cmath>
 #include <cstdlib>
 #include <algorithm>
@@ -65,12 +66,18 @@ static void Devices(ImRect r) {
   float ox = sa.origin.x, oy = sa.origin.y, W = r.GetWidth() - 1 - 8, x = ox + 6, w = W - 12, y = 6;
   for (int di = 0; di < (int)A.devices.size(); ++di) {
     Device& d = A.devices[di];
-    float h = d.enabled ? 76.f : 46.f;
+    const int st = d.status;
+    const bool fields = di == A.selDevice && d.kind != DevKind::Sim;   // the selected card edits its address in place
+    const bool hint = d.enabled && d.kind == DevKind::Skeleton && st == (int)mikmap::SourceStatus::Running && d.packets == 0;
+    const bool errLine = d.enabled && !d.error.empty();
+    const float fh = fields ? 18.f : 0.f;
+    float h = (d.enabled ? 76.f : 46.f) + fh + (hint || errLine ? 16.f : 0.f);
     ImRect cr(x, oy + y, x + w, oy + y + h);
     float prev = g.alpha; if (!d.enabled) g.alpha = 0.65f;
     Box(cr, d.enabled ? K(pal::g18) : K(pal::g14), di == A.selDevice ? K(pal::coral) : d.enabled ? K(pal::g3a) : K(pal::g2a), 4);   // coral edge = the device the page edits
     float cy = cr.Min.y + 6 + 9;
-    Dot(ImVec2(cr.Min.x + 6 + 4 + 1, cy), 8, d.enabled ? pal::mint : 0x555555, d.enabled);
+    uint32_t dotHex = !d.enabled ? 0x555555 : st == (int)mikmap::SourceStatus::Error ? pal::red : st == (int)mikmap::SourceStatus::Connecting ? pal::yellow : pal::mint;
+    Dot(ImVec2(cr.Min.x + 6 + 4 + 1, cy), 8, dotHex, d.enabled && st == (int)mikmap::SourceStatus::Running);
     const char* bl = d.enabled ? "DISCONNECT" : "CONNECT";
     float bw = TextW(MONO_B, 9, bl, 0.09f) + 16 + 2;
     ImRect br(cr.Max.x - 7 - bw, cy - 9, cr.Max.x - 7, cy + 9);
@@ -81,22 +88,76 @@ static void Devices(ImRect r) {
     if (bh.hover) CursorHand();
     if (bh.click) { d.enabled = !d.enabled; }
     else if (!bh.hover && HitR(cr).click) { A.selDevice = di; A.wizardStep = 0; A.editRoi = false; }   // each device has its own calibration, so a half-done wizard does not carry over
+    if (!bh.hover && HitR(cr).rclick) {
+      MenuItem rm; rm.label = "Remove"; rm.icon = "trash-2"; rm.danger = true;
+      rm.run = [id = d.id] {
+        for (size_t i = 0; i < A.devices.size(); ++i) if (A.devices[i].id == id) { A.devices.erase(A.devices.begin() + i); A.wizardStep = 0; A.editRoi = false; break; }   // its source stops on the next SensorsTick
+      };
+      A.openCtx(ImGui::GetIO().MousePos, {rm});
+    }
     TextEll(cr.Min.x + 6 + 8 + 6 + 1, cy, br.Min.x - 6 - (cr.Min.x + 21), UI_B, 11, K(pal::white), d.name.c_str());
-    TextEll(cr.Min.x + 7, cy + 9 + 4 + 5, cr.GetWidth() - 14, MONO_R, 10, K(pal::t88), Endpoint(d).c_str());
+    if (!fields) TextEll(cr.Min.x + 7, cy + 9 + 4 + 5, cr.GetWidth() - 14, MONO_R, 10, K(pal::t88), Endpoint(d).c_str());
+    else {   // host (Hokuyo) and port, applied when the field loses focus so typing "9001" does not restart the source on every digit
+      static std::string hostEdit; static int portEdit = 0;
+      ImGuiID hid = ImGui::GetID("##devhost"), pid = ImGui::GetID("##devport");
+      if (ImGui::GetActiveID() != hid) hostEdit = d.host;
+      if (ImGui::GetActiveID() != pid) portEdit = d.port;
+      float fy = cy + 9 + 4, fx = cr.Min.x + 7, fr = cr.Max.x - 7, pw = 64;
+      if (d.kind == DevKind::Hokuyo) {
+        TextField("##devhost", Rc(fx, fy, fr - pw - 6 - fx, 18), hostEdit, MONO_R, 10);
+        if (ImGui::IsItemDeactivatedAfterEdit()) d.host = hostEdit;
+      } else {
+        Text(fx, fy + 9, MONO_R, 9, K(pal::t66), "OSC UDP port");
+      }
+      IntField("##devport", Rc(fr - pw, fy, pw, 18), portEdit);
+      if (ImGui::IsItemDeactivatedAfterEdit()) d.port = std::clamp(portEdit, 0, 65535);
+    }
     if (d.enabled) {
-      float sy = cy + 9 + 4 + 10 + 4;
+      float sy = cy + 9 + 4 + 10 + 4 + fh;
       HLine(cr.Min.x + 7, cr.Max.x - 7, sy, K(pal::g2a));
       float cw = (cr.GetWidth() - 14 - 8) / 3.f;
       char v0[16], v1[16]; snprintf(v0, sizeof v0, "%d", d.fps); snprintf(v1, sizeof v1, "%.0fms", d.latencyMs);
       const char* labs[3] = {"FPS", "LATENCY", "PACKETS"}; std::string vs[3] = {v0, v1, std::to_string(d.packets)};
+      if (d.kind == DevKind::Sim) vs[0] = vs[1] = vs[2] = "\xE2\x80\x94";   // the simulated radar has no source to measure
       for (int i = 0; i < 3; ++i) {
         float sx = cr.Min.x + 7 + i * (cw + 4);
         Text(sx, sy + 4 + 5, MONO_R, 9, K(pal::t66), labs[i]);
         Text(sx, sy + 4 + 9 + 1 + 5, MONO_B, 10, K(i == 0 ? pal::mint : pal::tcc), vs[i].c_str());
       }
+      if (errLine) TextEll(cr.Min.x + 7, cr.Max.y - 12, cr.GetWidth() - 14, MONO_R, 9, K(pal::red), d.error.c_str());
+      else if (hint) {
+        std::string cmd = "python tools/pose_bridge/pose_bridge.py --port " + std::to_string(d.port);   // nothing has arrived yet: show how to start the sender
+        TextEll(cr.Min.x + 7, cr.Max.y - 12, cr.GetWidth() - 14, MONO_R, 9, K(pal::t66), cmd.c_str());
+      }
     }
     g.alpha = prev;
     y += h + 6;
+  }
+  {
+    ImRect ab(x, oy + y, x + w, oy + y + 26);
+    Hit ah = HitR(ab);
+    Box(ab, ah.hover ? K(pal::ctrlHover) : K(pal::g1c), K(pal::g22), 3);
+    float tw = TextW(UI_B, 10, "Add device"), acx = (ab.Min.x + ab.Max.x) * 0.5f, acy = (ab.Min.y + ab.Max.y) * 0.5f;
+    Icon("plus", ImVec2(acx - tw * 0.5f - 9, acy), 12, K(pal::t88));
+    Text(acx - tw * 0.5f + 2, acy, UI_B, 10, K(pal::t88), "Add device");
+    if (ah.hover) CursorHand();
+    if (ah.click) {
+      std::vector<MenuItem> mi;
+      for (DevKind k : {DevKind::Skeleton, DevKind::Hokuyo, DevKind::Sim}) {
+        MenuItem it; it.label = k == DevKind::Skeleton ? "Camera skeleton" : k == DevKind::Hokuyo ? "Hokuyo 2D lidar" : "Simulated radar"; it.icon = "plus";
+        it.run = [k] {
+          int n = 1; auto taken = [&](const std::string& id) { for (auto& e : A.devices) if (e.id == id) return true; return false; };
+          while (taken("dev" + std::to_string(n))) ++n;
+          Device nd = MakeDevice(k, "dev" + std::to_string(n));
+          int same = 0; for (auto& e : A.devices) same += e.kind == k;
+          if (same) nd.name += " " + std::to_string(same + 1);
+          A.devices.push_back(nd); A.selDevice = (int)A.devices.size() - 1; A.wizardStep = 0; A.editRoi = false;
+        };
+        mi.push_back(it);
+      }
+      A.openCtx(ImVec2(ab.Min.x, ab.Max.y + 4), mi);
+    }
+    y += 26 + 6;
   }
   Device* cd = A.curDevice();
   if (!cd) { sa.End(W, y); return; }
@@ -130,11 +191,22 @@ static void Devices(ImRect r) {
     static const char* CN[4] = {"TOP-LEFT", "TOP-RIGHT", "BOTTOM-RIGHT", "BOTTOM-LEFT"};
     Text(br.Min.x + 7, br.Min.y + 6 + 6.5f, MONO_B, 11, K(pal::yellow), st);
     TextR(br.Max.x - 7, br.Min.y + 6 + 6.5f, MONO_R, 10, K(pal::t88), CN[A.wizardStep - 1]);
-    Text(br.Min.x + 7, br.Min.y + 6 + 13 + 4 + 7.5f, UI_S, 10, K(pal::te0), "Touch the physical crosshair, or click the target", 0.0f);
+    bool live = cd->kind != DevKind::Sim;   // a real sensor reports where the target stands: Capture averages 30 frames of it
+    Text(br.Min.x + 7, br.Min.y + 6 + 13 + 4 + 7.5f, UI_S, 10, K(pal::te0), live ? (cd->kind == DevKind::Skeleton ? "Hold your right wrist on the target, then Capture" : "Stand alone on the target, then Capture") : "Touch the physical crosshair, or click the target", 0.0f);
     ImRect cr(br.Min.x + 7, br.Max.y - 6 - 24, br.Max.x - 7, br.Max.y - 6);
+    if (live) {
+      float half = (cr.GetWidth() - 6) * 0.5f;
+      ImRect cap(cr.Min.x, cr.Min.y, cr.Min.x + half, cr.Max.y);
+      cr.Min.x += half + 6;
+      Hit ch = HitR(cap);
+      Box(cap, K(pal::coral, 0.18f), K(pal::coral, 0.5f), 3);
+      TextC((cap.Min.x + cap.Max.x) * 0.5f, (cap.Min.y + cap.Max.y) * 0.5f, UI_B, 10, K(pal::coral), "Capture");
+      if (ch.hover) CursorHand();
+      if (ch.click) StartCapture(A.wizardStep);
+    }
     Hit h = HitR(cr);
     Box(cr, K(pal::g050), K(pal::g22), 3);
-    TextC((cr.Min.x + cr.Max.x) * 0.5f, (cr.Min.y + cr.Max.y) * 0.5f, UI_S, 10, K(pal::t88), "Cancel wizard");
+    TextC((cr.Min.x + cr.Max.x) * 0.5f, (cr.Min.y + cr.Max.y) * 0.5f, UI_S, 10, K(pal::t88), live ? "Cancel" : "Cancel wizard");
     if (h.hover) CursorHand();
     if (h.click) A.wizardStep = 0;
     y += br.GetHeight() + 6;
@@ -187,7 +259,7 @@ static void Devices(ImRect r) {
 }
 
 // G17: a "touch.down" patch cord that is switched on fires the clip named in its target ("<layer> · <clip>").
-static void FireTouchRoutes() {
+void FireTouchRoutes() {
   for (auto& r : A.routes) {
     if (!r.active || r.source != "touch.down") continue;
     size_t sep = r.target.find(" \xC2\xB7 ");

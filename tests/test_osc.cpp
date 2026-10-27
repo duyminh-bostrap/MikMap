@@ -352,6 +352,44 @@ TEST_CASE("G4: dia chi la bi bo qua, khong gay loi") {
     REQUIRE(src.frames().readSlot().count == 0);
 }
 
+TEST_CASE("★ OSC: vector chung voi pose_bridge.py") {
+    // PHAI trung tung byte voi test Python cua pose_bridge: /mikmap/touch 16 0.5 0.25 0.0
+    static const char* kHex =
+        "2f6d696b6d61702f746f756368000000" "2c69666666000000"
+        "00000010" "3f000000" "3e800000" "00000000";
+    std::vector<uint8_t> pkt;
+    for (size_t i = 0; kHex[i]; i += 2)
+        pkt.push_back(static_cast<uint8_t>(std::stoi(std::string(kHex + i, 2), nullptr, 16)));
+    REQUIRE(pkt.size() == 40u);
+
+    OscConfig cfg;
+    cfg.normalizedInput = false;
+    OscSource src(cfg);
+    src.feedPacket(pkt.data(), pkt.size());
+
+    REQUIRE(src.frames().consume());
+    const SensorFrame& f = src.frames().readSlot();
+    REQUIRE(f.count == 1);
+    CHECK(f.points[0].id == 16u);
+    CHECK_NEAR(f.points[0].x, 0.5, 1e-6);
+    CHECK_NEAR(f.points[0].y, 0.25, 1e-6);
+}
+
+TEST_CASE("OSC: /mikmap/meta cap nhat senderLatencyMs, khong tao diem") {
+    OscSource src;
+    CHECK_NEAR(src.senderLatencyMs(), 0.0, 1e-9);
+
+    OscBuilder b = makeMessage("/mikmap/meta", "iff");
+    b.i32(7);
+    b.f32(12.5f);
+    b.f32(30.0f);
+    src.feedPacket(b.ptr(), b.size());
+
+    CHECK_NEAR(src.senderLatencyMs(), 12.5, 1e-4);
+    if (src.frames().consume()) CHECK(src.frames().readSlot().count == 0);
+    CHECK(src.events().empty());
+}
+
 TEST_CASE("★ G4: goi hong duoc DEM lai de hien tren PerfPanel") {
     OscSource src;
     const uint8_t rac[8] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};

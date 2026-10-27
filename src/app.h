@@ -619,6 +619,15 @@ void FitAffine(const std::vector<Calib>& c, float out[9], float* rms);
 bool FitHomography(const std::vector<Calib>& pts, float H[9], float* rms);
 bool DeviceH(const Device& d, float H[9]);       // H_s of one device; false if it is not calibrated
 Device MakeDevice(DevKind k, const std::string& id);   // per-kind defaults (name, address, ROI, calibration targets)
+// Live sensors (sources.cpp): the real ISensorSource threads, one per enabled non-Sim device, kept OUT of App so undo never touches them.
+namespace mikmap { class ISensorSource; }
+inline constexpr int kCalibJoint = 16;   // MediaPipe RIGHT_WRIST of person slot 0 (OSC touch id 16): the point a Skeleton calibrates with
+void SensorsTick(double now);            // render thread, once per frame: start/stop/restart sources from enabled+host/port, consume frames into d.touches, fire touch.down routes, refresh status/error/fps/latency/packets, run the capture
+void SensorsShutdown();
+mikmap::ISensorSource* DeviceSource(const Device& d);   // nullptr for a Sim device or one that is not running
+void StartCapture(int step);             // wizard: average the calibration point of curDevice() over 30 consecutive frames into calib[step-1], then advance
+bool SensorSelfTest(std::string& why);   // --roundtrip: a real OscSource over loopback UDP
+void FireTouchRoutes();                  // sensor.cpp: a "touch.down" patch cord fires its clip
 void ApplyH(const float H[9], float x, float y, float& ox, float& oy);
 void PerfPush(float ms); float PerfFps(); float PerfP99(); int PerfDrops(float budgetMs);
 

@@ -285,6 +285,10 @@ void OscSource::handleMessages(const std::vector<OscMessage>& msgs) {
     const double now = nowSec();
 
     for (const OscMessage& m : msgs) {
+        if (m.address == "/mikmap/meta") {   // địa chỉ cố định, không theo tiền tố
+            m_senderLatencyMs.store(static_cast<float>(m.argDouble(1, 0.0)), std::memory_order_relaxed);
+            continue;
+        }
         if (m.address == prefix + "/clear") {
             for (const auto& kv : m_points) {
                 TouchEvent ev;

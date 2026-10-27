@@ -1225,6 +1225,7 @@ int main(int argc, char** argv) {
       if (!closeTo(SliceMapUV(os, 0.5f, 0.5f), ImVec2(520, 480), 0.05f) || !closeTo(SliceMapUV(os, 0.5f, 0.f), ImVec2(500, 0), 0.05f)) return fail("old absolute mesh changed shape on load");
     }
     { std::string why; if (!MappingSelfTest(why)) return fail(why.c_str()); }
+    { std::string why; if (!SensorSelfTest(why)) return fail(why.c_str()); }
     {   // an old project with a corner-pin-only slice (warp 0, the old 4 x 3 default) loads as a plain 1 x 1 grid and looks the same
       std::string oldPath = roundtrip + ".oldpin";
       { std::FILE* f = std::fopen(oldPath.c_str(), "wb"); if (f) { std::fputs(
@@ -1776,6 +1777,7 @@ int main(int argc, char** argv) {
     }
     for (auto& l : A.layers) if (l.fadeT < 1.f) l.fadeT = std::min(1.f, l.fadeT + (float)dt / std::max(0.05f, l.blendTime));
     A.sweep = std::fmod(A.sweep + (float)dt * 2.4f, 6.2831853f);
+    SensorsTick(now);
     PerfPush((float)dt * 1000.f);   // G9
 
     ImGui_ImplOpenGL3_NewFrame();
@@ -1930,6 +1932,7 @@ int main(int argc, char** argv) {
     RenderOutput();   // F2: draw the warped slices into the projector window, if it is open
   }
   CloseOutput();
+  SensorsShutdown();
   ImGui_ImplOpenGL3_Shutdown();
   ImGui_ImplGlfw_Shutdown();
   ImGui::DestroyContext();

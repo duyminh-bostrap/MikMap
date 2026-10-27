@@ -10,6 +10,7 @@
 //      /mikmap/touch/down <id:int> <x:float> <y:float>
 //      /mikmap/touch/up   <id:int>
 //      /mikmap/clear
+//      /mikmap/meta       <frame:int> <latency_ms:float> <fps:float>   (bên gửi tự báo, không phải điểm chạm)
 //
 //  Tiền tố đổi được để khớp với thiết bị sẵn có mà không phải sửa code.
 //
@@ -89,6 +90,9 @@ public:
     uint64_t packetsReceived() const { return m_packets.load(); }
     uint64_t packetsMalformed() const { return m_malformed.load(); }
 
+    /// Độ trễ phía bên gửi (suy luận pose, v.v.) do "/mikmap/meta" báo; 0 nếu chưa nhận.
+    float senderLatencyMs() const { return m_senderLatencyMs.load(std::memory_order_relaxed); }
+
 private:
     void threadLoop();
     void handleMessages(const std::vector<OscMessage>& msgs);
@@ -112,6 +116,7 @@ private:
     std::atomic<SourceStatus> m_status{SourceStatus::Stopped};
     std::atomic<uint64_t> m_packets{0};
     std::atomic<uint64_t> m_malformed{0};
+    std::atomic<float> m_senderLatencyMs{0.0f};
 
     mutable std::mutex m_errorMutex;
     std::string m_error;
