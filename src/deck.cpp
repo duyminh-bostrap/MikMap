@@ -111,15 +111,12 @@ void App::init() {
   s3.slices = {e};
   screens = {s1, s2, s3};
 
-  devices = {{"dev1", "LiDAR \xC2\xB7 Stage Front", "udp://192.168.1.40:2368", true, 40, 12, "184.2k"},
-             {"dev2", "Depth Cam \xC2\xB7 Kinect v2", "usb://kinect-v2/0", true, 30, 22, "96.1k"},
-             {"dev3", "OSC Bridge", "osc://0.0.0.0:9000/mikmap", false, 0, 0, "0"}};
+  devices = {MakeDevice(DevKind::Sim, "dev1"), MakeDevice(DevKind::Skeleton, "dev2"), MakeDevice(DevKind::Hokuyo, "dev3")};
+  devices[0].enabled = true;
   routes = {{"r1", "touch.down", "Layer 3 \xC2\xB7 Particle Vortex", true},
             {"r2", "touch.x (normalised)", "FX \xC2\xB7 Kaleido angle", true},
             {"r3", "blob.count", "Master \xC2\xB7 Opacity", false},
             {"r4", "touch.velocity", "Audio React \xC2\xB7 Gain", true}};
-  calib = {{100, 100, -0.65f, -0.55f}, {1820, 100, 0.65f, -0.55f}, {1820, 980, 0.75f, 0.65f}, {100, 980, -0.75f, 0.65f}};
-  roi[0] = {-0.7f, -0.6f}; roi[1] = {0.7f, -0.6f}; roi[2] = {0.85f, 0.7f}; roi[3] = {-0.85f, 0.7f};
   decks = {{"Deck A", groups, layers, colNames, activeCol}};
   curDeckIdx = 0;
 }

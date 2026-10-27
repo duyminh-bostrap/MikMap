@@ -465,10 +465,10 @@ static void RenderOneOutput(OutWin& ow, const std::string& capture) {
   }
 
   // G13: sensor touches through H_s, drawn straight in output space (only the first screen: that is what was calibrated)
-  if (A.sensorOverlay && sc && !A.screens.empty() && sc == &A.screens[0] && !A.touchPts.empty()) {
-    float H[9], rms; if (!FitHomography(A.calib, H, &rms)) FitAffine(H, &rms);
+  if (A.sensorOverlay && sc && !A.screens.empty() && sc == &A.screens[0]) for (auto& d : A.devices) {
+    float H[9]; if (d.touches.empty() || !DeviceH(d, H)) continue;
     float sx = fw / 1920.f, sy = fh / 1080.f, ph = std::fmod((float)g.time * 1.4f, 1.f);
-    for (auto& t : A.touchPts) {
+    for (auto& t : d.touches) {
       float ox, oy; ApplyH(H, t.x, t.y, ox, oy);
       ImVec2 p(ox * sx, oy * sy);
       dl.AddCircle(p, (12 + 44 * ph) * sx, IM_COL32(60, 255, 190, (int)(180 * (1.f - ph))), 32, 2.f);

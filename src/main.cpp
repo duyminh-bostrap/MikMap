@@ -24,6 +24,8 @@
 #include <chrono>
 #include <ctime>
 #include <filesystem>
+#include <fstream>
+#include <sstream>
 #include <functional>
 #include <string>
 #include <vector>
@@ -153,7 +155,7 @@ static void StatusBar(ImRect r) {
   Dot(ImVec2(x + 3, cy), 6, pal::mint, true, A.beat ? 1.f : 0.6f);
   x += 6 + 8;
   {
-    int on = 0; for (auto& d : A.devices) if (d.connected) ++on;
+    int on = 0; for (auto& d : A.devices) if (d.enabled) ++on;
     char dv[64]; snprintf(dv, sizeof dv, "SENSORS %d/%d", on, (int)A.devices.size());
     Text(x, cy, MONO_M, 10, K(pal::t66), dv); x += TextW(MONO_M, 10, dv) + 8;
     {   // tempo: click = tap tempo (average of the last taps), wheel = fine adjust, right-click = reset to 128
@@ -698,18 +700,44 @@ int main(int argc, char** argv) {
     NewProject();
     if (ProjectDirty()) return fail("fresh project reports dirty");
     A.layers[0].name = "Edited"; A.layers[0].clips[1].fx.push_back(Fx()); A.colNames.resize(A.colCount()); A.colNames[1] = "Renamed";
-    A.screens[0].slices[0].q[2] = ImVec2(1500, 900); A.calib[0].mx = 0.123f; A.bpm = 97.5f; A.screens[0].slices[1].solo = true; A.layers[0].clips[1].media = "/no/such/file.png";
+    A.screens[0].slices[0].q[2] = ImVec2(1500, 900); A.devices[2].calib[2].mx = 0.123f; A.bpm = 97.5f; A.screens[0].slices[1].solo = true; A.layers[0].clips[1].media = "/no/such/file.png";
     if (!ProjectDirty()) return fail("edit not detected as dirty");
     if (!SaveProject(roundtrip, err)) return fail(err.c_str());
     if (ProjectDirty()) return fail("dirty right after save");
     A.layers[0].name = "Scribble"; A.screens[0].slices[0].q[2] = ImVec2(1, 1); A.colNames[1] = "x";
     if (!LoadProject(roundtrip, err)) return fail(err.c_str());
-    if (A.layers[0].name != "Edited" || A.colName(1) != "Renamed" || A.screens[0].slices[0].q[2].x != 1500.f || std::fabs(A.calib[0].mx - 0.123f) > 1e-6f) return fail("state not restored");
+    if (A.layers[0].name != "Edited" || A.colName(1) != "Renamed" || A.screens[0].slices[0].q[2].x != 1500.f || std::fabs(A.devices[2].calib[2].mx - 0.123f) > 1e-6f) return fail("state not restored");
     if (A.layers[0].clips[1].fx.empty()) return fail("fx chain lost");
     if (A.bpm != 97.5f) return fail("bpm not restored");
     if (A.layers[0].clips[1].media != "/no/such/file.png") return fail("image clip path not restored");
     if (!A.screens[0].slices[1].solo || A.screens[0].slices[0].solo) return fail("slice solo not restored");
     if (ProjectDirty()) return fail("dirty right after load");
+    // Calibration lives on each device: its kind/port/points survive, a pre-device project file migrates its one global
+    // calibration onto a Sim device, a profile of another kind is refused, and live counters never make the project dirty.
+    {
+      if (A.devices.size() != 3 || A.devices[2].kind != DevKind::Hokuyo || A.devices[2].port != 10940) return fail("device kind/port not restored");
+      if (std::fabs(A.devices[2].calib[2].mx - 0.123f) > 1e-6f) return fail("per-device calibration point not restored");
+      { std::ifstream f(roundtrip, std::ios::binary); std::stringstream ss; ss << f.rdbuf();
+        mikmap::JsonValue root, legacy; std::string jerr;
+        if (!mikmap::JsonValue::parse(ss.str(), root, jerr)) return fail("cannot re-read the saved project");
+        const char* old = R"({"calib":[{"tx":1,"ty":2,"mx":3,"my":4},{"tx":5,"ty":6,"mx":7,"my":8},{"tx":9,"ty":10,"mx":11,"my":12},{"tx":13,"ty":14,"mx":15,"my":16}],)"
+                          R"("roi":[[0,0],[1,0],[1,1],[0,1]],"devices":[{"id":"d","name":"L","endpoint":"udp://x","connected":true,"fps":40,"latency":12,"packets":"1k"}]})";
+        if (!mikmap::JsonValue::parse(old, legacy, jerr)) return fail("legacy sensor literal");
+        root.set("sensor", legacy);
+        std::ofstream o(roundtrip + ".legacy", std::ios::binary); o << root.dump(2); }
+      if (!LoadProject(roundtrip + ".legacy", err)) return fail(err.c_str());
+      if (A.devices.size() != 1 || A.devices[0].id != "d" || A.devices[0].kind != DevKind::Sim || !A.devices[0].calibrated || A.devices[0].enabled) return fail("legacy device not migrated to a disabled, calibrated Sim");
+      if (A.devices[0].calib.size() != 4 || A.devices[0].calib[3].my != 16.f || A.devices[0].calib[0].tx != 1.f || A.devices[0].roi[2].y != 1.f) return fail("legacy global calibration/ROI not moved onto the device");
+      NewProject();
+      A.devices[2].calib[2].mx = 5.5f;
+      std::string pp = roundtrip + ".hokuyo.calib", cerr; float nz = 1.2f, bs = 15;
+      if (!SaveCalibProfile(pp, A.devices[2], nz, bs, cerr)) return fail(cerr.c_str());
+      if (LoadCalibProfile(pp, A.devices[1], nz, bs, cerr) || cerr.find("Hokuyo") == std::string::npos) return fail("a Hokuyo profile was accepted by a Skeleton device");
+      if (!LoadCalibProfile(pp, A.devices[2], nz, bs, cerr)) return fail(cerr.c_str());
+      MarkSaved();
+      A.devices[0].fps = 99; A.devices[0].touches.push_back({1, 0.1f, 0.1f});
+      if (ProjectDirty()) return fail("runtime device counters made the project dirty");
+    }
     NewBlankProject();
     if (A.layers.size() != 4 || A.screens.size() != 1) return fail("blank project shape");
     if (!SaveProject(roundtrip + ".blank", err) || !LoadProject(roundtrip + ".blank", err)) return fail(err.c_str());
@@ -1127,18 +1155,24 @@ int main(int argc, char** argv) {
       { std::FILE* f = std::fopen(presetPath.c_str(), "wb"); if (f) { std::fputs("{\"format\":1,\"app\":\"MikMap\"}", f); std::fclose(f); } }
       if (LoadOutputPreset(presetPath, loaded, perr)) return fail("a file with no \"screen\" object was accepted as an output preset");
 
-      A.calib = {{0, 0, 10, 10}, {100, 0, 110, 10}, {100, 100, 110, 110}, {0, 100, 10, 110}};
-      for (int i = 0; i < 4; ++i) A.roi[i] = ImVec2(1.f * i, 2.f * i);
+      Device& sim = A.devices[0];   // the default Sim device
+      sim.calib = {{0, 0, 10, 10}, {100, 0, 110, 10}, {100, 100, 110, 110}, {0, 100, 10, 110}};
+      for (int i = 0; i < 4; ++i) sim.roi[i] = ImVec2(1.f * i, 2.f * i);
       A.noise = 3.5f; A.blobSize = 7.25f;
       std::string calibPath = roundtrip + ".calib";
-      if (!SaveCalibProfile(calibPath, A.calib, A.roi, A.noise, A.blobSize, perr)) return fail(perr.c_str());
-      std::vector<Calib> loadedCalib; ImVec2 loadedRoi[4]; float loadedNoise = 0, loadedBlob = 0;
-      if (!LoadCalibProfile(calibPath, loadedCalib, loadedRoi, loadedNoise, loadedBlob, perr)) return fail(perr.c_str());
-      if (loadedCalib.size() != 4 || loadedCalib[2].mx != 110) return fail("calibration profile did not round-trip points");
-      if (loadedRoi[3].x != 3.f || loadedRoi[3].y != 6.f) return fail("calibration profile did not round-trip ROI");
+      if (!SaveCalibProfile(calibPath, sim, A.noise, A.blobSize, perr)) return fail(perr.c_str());
+      Device loadedDev = MakeDevice(DevKind::Sim, "x"); float loadedNoise = 0, loadedBlob = 0;
+      if (!LoadCalibProfile(calibPath, loadedDev, loadedNoise, loadedBlob, perr)) return fail(perr.c_str());
+      if (loadedDev.calib.size() != 4 || loadedDev.calib[2].mx != 110) return fail("calibration profile did not round-trip points");
+      if (loadedDev.roi[3].x != 3.f || loadedDev.roi[3].y != 6.f) return fail("calibration profile did not round-trip ROI");
       if (loadedNoise != 3.5f || loadedBlob != 7.25f) return fail("calibration profile did not round-trip noise/blobSize");
       { std::FILE* f = std::fopen(calibPath.c_str(), "wb"); if (f) { std::fputs("{\"format\":1,\"calib\":[1,2,3]}", f); std::fclose(f); } }
-      if (LoadCalibProfile(calibPath, loadedCalib, loadedRoi, loadedNoise, loadedBlob, perr)) return fail("a calibration file without exactly 4 points was accepted");
+      if (LoadCalibProfile(calibPath, loadedDev, loadedNoise, loadedBlob, perr)) return fail("a calibration file without exactly 4 points was accepted");
+      // a profile saved before kinds existed has no "kind": only a Sim device may take it
+      { std::FILE* f = std::fopen(calibPath.c_str(), "wb"); if (f) { std::fputs("{\"format\":1,\"calib\":[{},{},{},{}]}", f); std::fclose(f); } }
+      Device skel = MakeDevice(DevKind::Skeleton, "s");
+      if (LoadCalibProfile(calibPath, skel, loadedNoise, loadedBlob, perr)) return fail("a kind-less profile was accepted by a Skeleton device");
+      if (!LoadCalibProfile(calibPath, loadedDev, loadedNoise, loadedBlob, perr)) return fail("a kind-less profile was refused by a Sim device");
     }
     // F5/F9: keystone is a true perspective map, and the mesh warp lives in keystone space so it follows the corners.
     {

@@ -149,6 +149,32 @@ void ApplyH(const float H[9], float x, float y, float& ox, float& oy) {
   oy = (H[3] * x + H[4] * y + H[5]) / w;
 }
 
+// H_s of one device: homography of its 4 points, affine when they are degenerate. Raw sensor coordinates only ever
+// meet this matrix where they are used (principle #5), never on the sensor thread.
+bool DeviceH(const Device& d, float H[9]) {
+  if (!d.calibrated || d.calib.size() != 4) return false;
+  float rms; if (!FitHomography(d.calib, H, &rms)) FitAffine(d.calib, H, &rms);
+  return true;
+}
+
+Device MakeDevice(DevKind k, const std::string& id) {
+  Device d; d.id = id; d.kind = k;
+  const float tx[4] = {100, 1820, 1820, 100}, ty[4] = {100, 100, 980, 980};   // the same output-pixel targets for every kind
+  for (int i = 0; i < 4; ++i) d.calib.push_back({tx[i], ty[i], 0, 0});
+  if (k == DevKind::Sim) {
+    d.name = "Simulated radar"; d.calibrated = true;
+    const float mx[4] = {-0.65f, 0.65f, 0.75f, -0.75f}, my[4] = {-0.55f, -0.55f, 0.65f, 0.65f};
+    for (int i = 0; i < 4; ++i) { d.calib[i].mx = mx[i]; d.calib[i].my = my[i]; }
+    d.roi[0] = {-0.7f, -0.6f}; d.roi[1] = {0.7f, -0.6f}; d.roi[2] = {0.85f, 0.7f}; d.roi[3] = {-0.85f, 0.7f};
+  } else if (k == DevKind::Skeleton) {
+    d.name = "Camera skeleton"; d.port = 9000;
+  } else {
+    d.name = "Hokuyo 2D lidar"; d.host = "192.168.0.10"; d.port = 10940;
+    d.roi[0] = {3000, 1500}; d.roi[1] = {3000, -1500}; d.roi[2] = {500, -1500}; d.roi[3] = {500, 1500};   // mm
+  }
+  return d;
+}
+
 // ── G9: frame-time statistics ──
 static float gFrames[240];
 static int gCount = 0, gHead = 0;

@@ -197,10 +197,22 @@ mikmap::JsonValue SliceJ(const Slice& s);    // project.cpp: one slice <-> JSON 
 Slice ReadSlice(const mikmap::JsonValue& o);
 
 // ───────────── sensor model ─────────────
-struct Device { std::string id, name, endpoint; bool connected; int fps, latency; std::string packets; };
 struct Route { std::string id, source, target; bool active; };
 struct Touch { int id; float x, y; };
 struct Calib { float tx, ty, mx, my; };
+// A sensor and its OWN calibration: a camera reports [0,1], a lidar reports mm, so they can never share one H_s.
+enum class DevKind { Sim = 0, Skeleton = 1, Hokuyo = 2 };
+inline const char* DevKindName(DevKind k) { return k == DevKind::Hokuyo ? "Hokuyo" : k == DevKind::Skeleton ? "Skeleton" : "Simulated"; }
+struct Device {
+  std::string id, name; DevKind kind = DevKind::Sim;
+  std::string host; int port = 0;    // Skeleton: OSC listen port (host unused) · Hokuyo: lidar address
+  bool enabled = false;              // the user wants it running (saved with the project)
+  bool calibrated = false;
+  std::vector<Calib> calib;          // exactly 4: tx,ty = output px of Screen 0; mx,my = THIS device's raw units
+  ImVec2 roi[4] = {};                // this device's raw units
+  // runtime only, never serialized (a live counter must not make the project dirty)
+  std::vector<Touch> touches; int status = 0; std::string error; int fps = 0; float latencyMs = 0; uint64_t packets = 0;
+};
 
 inline uint32_t RoleHex(int r) { return r == 0 ? pal::coral : r == 1 ? pal::mint : pal::cyan; }
 extern const uint32_t CLIP_COLORS[6];
@@ -377,9 +389,7 @@ struct App {
   // sensor
   std::vector<Device> devices;
   std::vector<Route> routes;
-  std::vector<Touch> touchPts;
-  std::vector<Calib> calib;
-  ImVec2 roi[4];
+  int selDevice = 0;            // runtime: the card the Sensor page edits; clamped by curDevice()
   bool editRoi = false;
   bool sensorOverlay = false;   // G13: draw live sensor touches on the projector output window (debug aid, off by default)
   int wizardStep = 0;
@@ -390,6 +400,7 @@ struct App {
   Group* group(const std::string& id) { for (auto& g : groups) if (g.id == id) return &g; return nullptr; }
   Screen* curScreen();
   Slice* curSlice();
+  Device* curDevice();          // nullptr when the list is empty
   Mask* curMask();
   void init();
   // deck actions
@@ -509,8 +520,9 @@ std::string DoSaveOutputPreset(const Screen& s);   // toast-message convenience,
 // recomputes H_s from these points at point of use (src/calib.cpp), so the profile is the points, not a matrix.
 std::string CalibDir();                       // ~/Documents/MikMap/Calibration
 std::vector<ProjectFile> ListCalibProfiles();
-bool SaveCalibProfile(const std::string& path, const std::vector<Calib>& calib, const ImVec2 roi[4], float noise, float blobSize, std::string& err);
-bool LoadCalibProfile(const std::string& path, std::vector<Calib>& calib, ImVec2 roi[4], float& noise, float& blobSize, std::string& err);
+// The profile carries the device kind: loading one into a device of another kind is refused (units differ).
+bool SaveCalibProfile(const std::string& path, const Device& d, float noise, float blobSize, std::string& err);
+bool LoadCalibProfile(const std::string& path, Device& d, float& noise, float& blobSize, std::string& err);
 std::string DoSaveCalibProfile();                  // toast-message convenience, mirrors DoSave()
 void MarkSaved();
 bool ProjectDirty();
@@ -602,9 +614,11 @@ bool DeviceResolution(const std::string& dev, int& w, int& h);   // that display
 void SyncScreenResolutions();                   // screens on a physical display take its real resolution (once per frame)
 void SetOutputCapture(const char* path);
 void LoadAllFonts(ImGuiIO& io, const std::string& assets);
-void FitAffine(float out[9], float* rms);
+void FitAffine(const std::vector<Calib>& c, float out[9], float* rms);
 // G5 homography + G9 perf
 bool FitHomography(const std::vector<Calib>& pts, float H[9], float* rms);
+bool DeviceH(const Device& d, float H[9]);       // H_s of one device; false if it is not calibrated
+Device MakeDevice(DevKind k, const std::string& id);   // per-kind defaults (name, address, ROI, calibration targets)
 void ApplyH(const float H[9], float x, float y, float& ox, float& oy);
 void PerfPush(float ms); float PerfFps(); float PerfP99(); int PerfDrops(float budgetMs);
 

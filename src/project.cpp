@@ -329,19 +329,19 @@ JsonValue Serialize(const App& a) {
   root.set("screens", scs);
 
   JsonValue sensor = JsonValue::object();
-  JsonValue cal = JsonValue::array();
-  for (auto& c : a.calib) cal.push(CalibJ(c));
-  sensor.set("calib", cal);
-  JsonValue roi = JsonValue::array(); for (int i = 0; i < 4; ++i) roi.push(V2(a.roi[i]));
-  sensor.set("roi", roi);
   sensor.set("noise", a.noise); sensor.set("blobSize", a.blobSize);
   JsonValue rs = JsonValue::array();
   for (auto& r : a.routes) { JsonValue ro = JsonValue::object(); ro.set("id", r.id); ro.set("source", r.source); ro.set("target", r.target); ro.set("active", r.active); rs.push(ro); }
   sensor.set("routes", rs);
   JsonValue ds = JsonValue::array();
-  for (auto& d : a.devices) {
-    JsonValue dob = JsonValue::object(); dob.set("id", d.id); dob.set("name", d.name); dob.set("endpoint", d.endpoint); dob.set("connected", d.connected);
-    dob.set("fps", d.fps); dob.set("latency", d.latency); dob.set("packets", d.packets); ds.push(dob);
+  for (auto& d : a.devices) {   // configuration only: touches/status/fps/latency/packets are runtime and stay out of the snapshot
+    JsonValue dob = JsonValue::object(); dob.set("id", d.id); dob.set("name", d.name); dob.set("kind", (int)d.kind);
+    dob.set("host", d.host); dob.set("port", d.port); dob.set("enabled", d.enabled); dob.set("calibrated", d.calibrated);
+    JsonValue cal = JsonValue::array(); for (auto& c : d.calib) cal.push(CalibJ(c));
+    dob.set("calib", cal);
+    JsonValue roi = JsonValue::array(); for (int i = 0; i < 4; ++i) roi.push(V2(d.roi[i]));
+    dob.set("roi", roi);
+    ds.push(dob);
   }
   sensor.set("devices", ds);
   root.set("sensor", sensor);
@@ -447,16 +447,27 @@ bool Deserialize(const JsonValue& root, App& out, std::string& err) {
   if (out.screens.empty()) { err = "no screens in file"; return false; }
 
   const JsonValue& sn = root["sensor"];
-  if (sn["calib"].isArray() && sn["calib"].size() == 4) {
-    out.calib.clear();
-    for (auto& co : sn["calib"].arrayItems()) out.calib.push_back(ReadCalibPoint(co));
-  }
-  if (sn["roi"].isArray() && sn["roi"].size() == 4) for (int i = 0; i < 4; ++i) out.roi[i] = ReadV2(sn["roi"].at(i));
   out.noise = F(sn, "noise", out.noise); out.blobSize = F(sn, "blobSize", out.blobSize);
   if (sn["routes"].isArray()) { out.routes.clear(); for (auto& r : sn["routes"].arrayItems()) out.routes.push_back({r["id"].asString(), r["source"].asString(), r["target"].asString(), r["active"].asBool()}); }
   if (sn["devices"].isArray()) {
     out.devices.clear();
-    for (auto& d : sn["devices"].arrayItems()) out.devices.push_back({d["id"].asString(), d["name"].asString(), d["endpoint"].asString(), d["connected"].asBool(), d["fps"].asInt(), d["latency"].asInt(), d["packets"].asString("0")});
+    auto readCal = [](const JsonValue& o, Device& v) {   // calib + roi of one object, kept if malformed
+      if (o["calib"].isArray() && o["calib"].size() == 4) { v.calib.clear(); for (auto& co : o["calib"].arrayItems()) v.calib.push_back(ReadCalibPoint(co)); }
+      if (o["roi"].isArray() && o["roi"].size() == 4) for (int i = 0; i < 4; ++i) v.roi[i] = ReadV2(o["roi"].at(i));
+    };
+    for (auto& d : sn["devices"].arrayItems()) {
+      Device v = MakeDevice(DevKind(std::clamp(d["kind"].asInt(0), 0, 2)), d["id"].asString());
+      v.name = d["name"].asString(v.name);
+      if (d.has("kind")) {
+        v.host = d["host"].asString(v.host); v.port = d["port"].asInt(v.port);
+        v.enabled = d["enabled"].asBool(); v.calibrated = d["calibrated"].asBool();
+        readCal(d, v);
+      } else {   // before per-device calibration: one global calib/roi in `sensor`, which belonged to the (only kind then) simulated radar
+        v.enabled = false; v.calibrated = true;
+        readCal(sn, v);
+      }
+      out.devices.push_back(v);
+    }
   }
   return true;
 }
@@ -603,7 +614,7 @@ bool LoadProject(const std::string& path, std::string& err) {
   A.tlProgress = 0; A.tlLoopOn = false; A.tlIn = 0; A.tlOut = 100;   // timeline playhead/loop are runtime-only, never saved
   A.selSc = A.screens[0].id; A.selSl = A.screens[0].slices.empty() ? "" : A.screens[0].slices[0].id; A.selMk.clear(); A.selKind = -1;
   A.railScreen.clear(); A.mapScrollX = A.mapScrollY = 0;
-  A.wizardStep = 0; A.editRoi = false; A.touchPts.clear(); A.pending.clear();
+  A.wizardStep = 0; A.editRoi = false; A.selDevice = 0; A.pending.clear();
   A.idCounter = 1000;
   for (auto& l : A.layers) for (auto& c : l.clips) if (!c.media.empty()) PreloadMedia(c.media);
   A.cue(0, 0);
@@ -640,24 +651,29 @@ bool LoadOutputPreset(const std::string& path, Screen& out, std::string& err) {
 // G8: the 4 calibration correspondence points + ROI/noise, as their own file. src/calib.cpp refits H_s from these
 // points at point of use (never caches a matrix), so a "calibration profile" is the points themselves, matching
 // how src/ already treats calibration everywhere else — see .claude/CLAUDE.md's note on this being intentional.
-bool SaveCalibProfile(const std::string& path, const std::vector<Calib>& calib, const ImVec2 roi[4], float noise, float blobSize, std::string& err) {
+bool SaveCalibProfile(const std::string& path, const Device& d, float noise, float blobSize, std::string& err) {
   JsonValue root = JsonValue::object();
-  root.set("format", 1); root.set("app", "MikMap-calib");
-  JsonValue cal = JsonValue::array(); for (auto& c : calib) cal.push(CalibJ(c));
+  root.set("format", 1); root.set("app", "MikMap-calib"); root.set("kind", (int)d.kind);   // raw units differ per kind
+  JsonValue cal = JsonValue::array(); for (auto& c : d.calib) cal.push(CalibJ(c));
   root.set("calib", cal);
-  JsonValue roiJ = JsonValue::array(); for (int i = 0; i < 4; ++i) roiJ.push(V2(roi[i]));
+  JsonValue roiJ = JsonValue::array(); for (int i = 0; i < 4; ++i) roiJ.push(V2(d.roi[i]));
   root.set("roi", roiJ);
   root.set("noise", noise); root.set("blobSize", blobSize);
   return WriteAtomic(path, root.dump(2), err);
 }
-bool LoadCalibProfile(const std::string& path, std::vector<Calib>& calib, ImVec2 roi[4], float& noise, float& blobSize, std::string& err) {
+bool LoadCalibProfile(const std::string& path, Device& d, float& noise, float& blobSize, std::string& err) {
   bool ok; std::string text = ReadFile(path, ok);
   if (!ok) { err = "cannot open file"; return false; }
   JsonValue root; std::string perr;
   if (!JsonValue::parse(text, root, perr)) { err = "invalid JSON: " + perr; return false; }
   if (!root["calib"].isArray() || root["calib"].size() != 4) { err = "not a MikMap calibration profile"; return false; }
-  calib.clear(); for (auto& co : root["calib"].arrayItems()) calib.push_back(ReadCalibPoint(co));
-  if (root["roi"].isArray() && root["roi"].size() == 4) for (int i = 0; i < 4; ++i) roi[i] = ReadV2(root["roi"].at(i));
+  if (root.has("kind")) {   // refuse before touching `d`
+    int pk = root["kind"].asInt(-1);
+    if (pk != (int)d.kind) { err = std::string("profile is for a ") + DevKindName(DevKind(std::clamp(pk, 0, 2))) + " sensor"; return false; }
+  } else if (d.kind != DevKind::Sim) { err = "profile has no sensor kind, only a simulated sensor accepts it"; return false; }   // saved before kinds existed
+  d.calib.clear(); for (auto& co : root["calib"].arrayItems()) d.calib.push_back(ReadCalibPoint(co));
+  if (root["roi"].isArray() && root["roi"].size() == 4) for (int i = 0; i < 4; ++i) d.roi[i] = ReadV2(root["roi"].at(i));
+  d.calibrated = true;
   noise = F(root, "noise", noise); blobSize = F(root, "blobSize", blobSize);
   return true;
 }
@@ -724,7 +740,7 @@ static bool UndoApply(const std::string& snap) {
   for (auto& l : tmp.layers) { l.live = false; for (auto& c : l.clips) if (c.isLive()) l.live = true; }
   A.canvasW = tmp.canvasW; A.canvasH = tmp.canvasH; A.comp = tmp.comp; A.groups = tmp.groups; A.layers = tmp.layers; A.colNames = tmp.colNames;
   A.decks = tmp.decks; A.curDeckIdx = std::clamp(tmp.curDeckIdx, 0, (int)A.decks.size() - 1); A.deckMode = tmp.deckMode;   // undo also covers deck add/delete/switch
-  A.screens = tmp.screens; A.calib = tmp.calib; for (int i = 0; i < 4; ++i) A.roi[i] = tmp.roi[i];
+  A.screens = tmp.screens;
   A.noise = tmp.noise; A.blobSize = tmp.blobSize; A.routes = tmp.routes; A.devices = tmp.devices;
   int nl = (int)A.layers.size(), nc = A.colCount();
   A.selLi = std::clamp(A.selLi, 0, nl - 1); A.selLayer = std::clamp(A.selLayer, 0, nl - 1); A.selCi = std::clamp(A.selCi, 0, nc - 1);
@@ -784,8 +800,9 @@ std::string DoSaveOutputPreset(const Screen& s) {
 // G8: convenience for "Save profile" on the Sensor screen — calibration has no natural name to key a file on
 // (unlike a Screen), so every save stamps a new file; old profiles stay around to load from.
 std::string DoSaveCalibProfile() {
+  Device* d = A.curDevice(); if (!d) return "Save failed: no sensor selected";
   std::string err, path = (fs::path(CalibDir()) / ("Calibration-" + Stamp() + ".mikmap-calib")).string();
-  return SaveCalibProfile(path, A.calib, A.roi, A.noise, A.blobSize, err) ? "Saved profile: " + fs::path(path).filename().string() : "Save failed: " + err;
+  return SaveCalibProfile(path, *d, A.noise, A.blobSize, err) ? "Saved profile: " + fs::path(path).filename().string() : "Save failed: " + err;
 }
 
 // ───────────── machine settings ─────────────

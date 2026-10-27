@@ -6,8 +6,13 @@
 
 using namespace ui;
 
-void FitAffine(float out[9], float* rms) {
-  const auto& c = A.calib;
+Device* App::curDevice() {
+  if (devices.empty()) return nullptr;
+  selDevice = std::clamp(selDevice, 0, (int)devices.size() - 1);
+  return &devices[selDevice];
+}
+
+void FitAffine(const std::vector<Calib>& c, float out[9], float* rms) {
   float mnx = 1e9f, mxx = -1e9f, mny = 1e9f, mxy = -1e9f, tnx = 1e9f, txx = -1e9f, tny = 1e9f, txy = -1e9f;
   float smx = 0, smy = 0, stx = 0, sty = 0;
   for (auto& p : c) {
@@ -42,40 +47,48 @@ static std::vector<std::string> Wrap(FontId f, float sz, const std::string& text
   return lines;
 }
 
+static std::string Endpoint(const Device& d) {
+  if (d.kind == DevKind::Sim) return "simulated";
+  return (d.kind == DevKind::Skeleton ? "OSC :" : d.host + ":") + std::to_string(d.port);
+}
+
 static void Devices(ImRect r) {
   Fill(r, K(pal::g12));
   VLine(r.Max.x - 1, r.Min.y, r.Max.y, K(pal::g2a));
   PanelHeader(Rc(r.Min.x, r.Min.y, r.GetWidth() - 1, 24), "Device manager", pal::t88);
-  int on = 0; for (auto& d : A.devices) on += d.connected;
-  char cnt[32]; snprintf(cnt, sizeof cnt, "%d/%d online", on, (int)A.devices.size());
+  A.curDevice();   // clamps selDevice
+  int on = 0; for (auto& d : A.devices) on += d.enabled;
+  char cnt[32]; snprintf(cnt, sizeof cnt, "%d/%d enabled", on, (int)A.devices.size());
   TextR(r.Max.x - 7, r.Min.y + 11.5f, MONO_M, 10, K(pal::t66), cnt);
   static ScrollArea sa;
   sa.Begin("##devices", ImRect(r.Min.x, r.Min.y + 24, r.Max.x - 1, r.Max.y));
   float ox = sa.origin.x, oy = sa.origin.y, W = r.GetWidth() - 1 - 8, x = ox + 6, w = W - 12, y = 6;
-  for (auto& d : A.devices) {
-    float h = d.connected ? 76.f : 46.f;
+  for (int di = 0; di < (int)A.devices.size(); ++di) {
+    Device& d = A.devices[di];
+    float h = d.enabled ? 76.f : 46.f;
     ImRect cr(x, oy + y, x + w, oy + y + h);
-    float prev = g.alpha; if (!d.connected) g.alpha = 0.65f;
-    Box(cr, d.connected ? K(pal::g18) : K(pal::g14), d.connected ? K(pal::g3a) : K(pal::g2a), 4);
+    float prev = g.alpha; if (!d.enabled) g.alpha = 0.65f;
+    Box(cr, d.enabled ? K(pal::g18) : K(pal::g14), di == A.selDevice ? K(pal::coral) : d.enabled ? K(pal::g3a) : K(pal::g2a), 4);   // coral edge = the device the page edits
     float cy = cr.Min.y + 6 + 9;
-    Dot(ImVec2(cr.Min.x + 6 + 4 + 1, cy), 8, d.connected ? pal::mint : 0x555555, d.connected);
-    const char* bl = d.connected ? "DISCONNECT" : "CONNECT";
+    Dot(ImVec2(cr.Min.x + 6 + 4 + 1, cy), 8, d.enabled ? pal::mint : 0x555555, d.enabled);
+    const char* bl = d.enabled ? "DISCONNECT" : "CONNECT";
     float bw = TextW(MONO_B, 9, bl, 0.09f) + 16 + 2;
     ImRect br(cr.Max.x - 7 - bw, cy - 9, cr.Max.x - 7, cy + 9);
     Hit bh = HitR(br);
-    uint32_t bx = d.connected ? pal::red : pal::mint;
+    uint32_t bx = d.enabled ? pal::red : pal::mint;
     Box(br, K(bx, 0.16f), K(bx, 0.45f), 3);
     Text(br.Min.x + 9, cy, MONO_B, 9, K(bx), bl, 0.09f);
     if (bh.hover) CursorHand();
-    if (bh.click) { d.connected = !d.connected; }
+    if (bh.click) { d.enabled = !d.enabled; }
+    else if (!bh.hover && HitR(cr).click) { A.selDevice = di; A.wizardStep = 0; A.editRoi = false; }   // each device has its own calibration, so a half-done wizard does not carry over
     TextEll(cr.Min.x + 6 + 8 + 6 + 1, cy, br.Min.x - 6 - (cr.Min.x + 21), UI_B, 11, K(pal::white), d.name.c_str());
-    TextEll(cr.Min.x + 7, cy + 9 + 4 + 5, cr.GetWidth() - 14, MONO_R, 10, K(pal::t88), d.endpoint.c_str());
-    if (d.connected) {
+    TextEll(cr.Min.x + 7, cy + 9 + 4 + 5, cr.GetWidth() - 14, MONO_R, 10, K(pal::t88), Endpoint(d).c_str());
+    if (d.enabled) {
       float sy = cy + 9 + 4 + 10 + 4;
       HLine(cr.Min.x + 7, cr.Max.x - 7, sy, K(pal::g2a));
       float cw = (cr.GetWidth() - 14 - 8) / 3.f;
-      char v0[16], v1[16]; snprintf(v0, sizeof v0, "%d", d.fps); snprintf(v1, sizeof v1, "%dms", d.latency);
-      const char* labs[3] = {"FPS", "LATENCY", "PACKETS"}; std::string vs[3] = {v0, v1, d.packets};
+      char v0[16], v1[16]; snprintf(v0, sizeof v0, "%d", d.fps); snprintf(v1, sizeof v1, "%.0fms", d.latencyMs);
+      const char* labs[3] = {"FPS", "LATENCY", "PACKETS"}; std::string vs[3] = {v0, v1, std::to_string(d.packets)};
       for (int i = 0; i < 3; ++i) {
         float sx = cr.Min.x + 7 + i * (cw + 4);
         Text(sx, sy + 4 + 5, MONO_R, 9, K(pal::t66), labs[i]);
@@ -85,14 +98,16 @@ static void Devices(ImRect r) {
     g.alpha = prev;
     y += h + 6;
   }
-  // calibration wizard
+  Device* cd = A.curDevice();
+  if (!cd) { sa.End(W, y); return; }
+  // calibration wizard (for the selected device)
   HLine(ox + 6, ox + 6 + w, oy + y, K(pal::g2a));
   y += 1 + 6;
   Icon("wand-2", ImVec2(x + 6, oy + y + 6), 12, K(pal::yellow));
   Text(x + 12 + 4, oy + y + 6, UI_B, 9, K(pal::yellow), "CALIBRATION WIZARD", 0.14f);
-  float m[9], rms; if (!FitHomography(A.calib, m, &rms)) FitAffine(m, &rms);
-  char rb[32]; snprintf(rb, sizeof rb, "RMS: %.2fpx", rms);
-  TextR(x + w, oy + y + 6, MONO_R, 9, K(pal::mint), rb);
+  float m[9], rms; if (!FitHomography(cd->calib, m, &rms)) FitAffine(cd->calib, m, &rms);
+  char rb[32]; if (cd->calibrated) snprintf(rb, sizeof rb, "RMS: %.2fpx", rms); else snprintf(rb, sizeof rb, "NOT CALIBRATED");
+  TextR(x + w, oy + y + 6, MONO_R, 9, K(cd->calibrated ? pal::mint : pal::coral), rb);
   y += 12 + 6;
   auto lines = Wrap(UI_S, 10, "Maps sensor coordinates to projector coordinates via 3\xC3\x97" "3 homography (DLT).", w);
   for (auto& l : lines) { Text(x, oy + y + 7.5f, UI_S, 10, K(pal::t88), l.c_str(), 0.01f); y += 15; }
@@ -157,8 +172,9 @@ static void Devices(ImRect r) {
       for (auto& pf : profiles) {
         MenuItem it; it.label = pf.name; it.icon = "folder-open";
         it.run = [path = pf.path, name = pf.name] {
+          Device* cur = A.curDevice(); if (!cur) return;
           std::string err;
-          if (LoadCalibProfile(path, A.calib, A.roi, A.noise, A.blobSize, err)) { A.wizardStep = 0; A.notify("Loaded profile: " + name); }
+          if (LoadCalibProfile(path, *cur, A.noise, A.blobSize, err)) { A.wizardStep = 0; A.notify("Loaded profile: " + name); }
           else A.notify("Load failed: " + err);
         };
         mi.push_back(it);
@@ -186,6 +202,9 @@ static void FireTouchRoutes() {
 }
 
 static void Radar(ImRect r) {
+  Device* cd = A.curDevice();
+  bool sim = cd && cd->kind == DevKind::Sim;   // the radar disc speaks the Sim's normalised units; other kinds get their own view with their driver
+  if (!sim) A.editRoi = false;
   Fill(r, K(pal::g050));
   ImRect tb(r.Min.x, r.Min.y, r.Max.x, r.Min.y + 44);
   Fill(tb, K(pal::g12)); HLine(tb.Min.x, tb.Max.x, tb.Max.y - 1, K(pal::g2a));
@@ -204,7 +223,7 @@ static void Radar(ImRect r) {
     Icon("target", ImVec2(br.Min.x + 10 + 6, cy), 12, fg);
     Text(br.Min.x + 10 + 12 + 6, cy, UI_B, 10, fg, lb);
     if (h.hover) CursorHand();
-    if (h.click) A.editRoi = !A.editRoi;
+    if (h.click && sim) A.editRoi = !A.editRoi;
     const char* ol = "Output overlay";
     float ow = TextW(UI_B, 10, ol) + 10 + 6 + 12 + 10;
     ImRect ob(br.Min.x - 6 - ow, cy - 12, br.Min.x - 6, cy + 12);
@@ -238,10 +257,10 @@ static void Radar(ImRect r) {
     dl->AddLine(c, ImVec2(c.x + cosf(a) * maxR, c.y + sinf(a) * maxR), Ca(K(0x181818)), std::max(1.f, k));
   }
   // ROI
-  ImVec2 rp[4];
-  for (int i = 0; i < 4; ++i) rp[i] = ImVec2(c.x + A.roi[i].x * maxR, c.y + A.roi[i].y * maxR);
-  for (int i = 1; i + 1 < 4; ++i) dl->AddTriangleFilled(rp[0], rp[i], rp[i + 1], Ca(A.editRoi ? K(pal::yellow, 0.15f) : K(pal::cyan, 0.10f)));
-  dl->AddPolyline(rp, 4, Ca(K(A.editRoi ? pal::yellow : pal::cyan)), ImDrawFlags_Closed, 2 * k);
+  ImVec2 rp[4] = {};
+  if (sim) for (int i = 0; i < 4; ++i) rp[i] = ImVec2(c.x + cd->roi[i].x * maxR, c.y + cd->roi[i].y * maxR);
+  if (sim) for (int i = 1; i + 1 < 4; ++i) dl->AddTriangleFilled(rp[0], rp[i], rp[i + 1], Ca(A.editRoi ? K(pal::yellow, 0.15f) : K(pal::cyan, 0.10f)));
+  if (sim) dl->AddPolyline(rp, 4, Ca(K(A.editRoi ? pal::yellow : pal::cyan)), ImDrawFlags_Closed, 2 * k);
   if (A.editRoi) for (int i = 0; i < 4; ++i) dl->AddCircleFilled(rp[i], 6 * k, Ca(K(pal::yellow)), 20);
   static int roiDrag = -1;   // S4: while "Edit ROI" is on, the four yellow handles can be dragged (clamped to the radar disc)
   if (!A.editRoi) roiDrag = -1;
@@ -255,44 +274,47 @@ static void Radar(ImRect r) {
       if (ImGui::IsMouseDown(0)) {
         float nx = (mm.x - c.x) / maxR, ny = (mm.y - c.y) / maxR, len = std::hypot(nx, ny);
         if (len > 1.f) { nx /= len; ny /= len; }
-        A.roi[roiDrag] = ImVec2(std::round(nx * 1000) / 1000, std::round(ny * 1000) / 1000);
+        cd->roi[roiDrag] = ImVec2(std::round(nx * 1000) / 1000, std::round(ny * 1000) / 1000);
         ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
       } else roiDrag = -1;
     } else if (nearH) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
   }
   // sweep
   float a = A.sweep;
-  RadialFan(c, maxR, K(pal::mint, 0.30f), K(pal::mint, 0.f), a - 0.35f, a, 24);
-  dl->AddLine(c, ImVec2(c.x + cosf(a) * maxR, c.y + sinf(a) * maxR), Ca(K(pal::mint)), 1.5f * k);
-  for (auto& t : A.touchPts) {
+  if (sim) {
+    RadialFan(c, maxR, K(pal::mint, 0.30f), K(pal::mint, 0.f), a - 0.35f, a, 24);
+    dl->AddLine(c, ImVec2(c.x + cosf(a) * maxR, c.y + sinf(a) * maxR), Ca(K(pal::mint)), 1.5f * k);
+  }
+  if (sim) for (auto& t : cd->touches) {
     ImVec2 b(c.x + t.x * maxR, c.y + t.y * maxR);
     dl->AddCircleFilled(b, 7 * k, Ca(K(pal::coral)), 24);
     dl->AddCircle(b, 12 * k, Ca(K(pal::white)), 24, 1.5f * k);
     char lb[48]; snprintf(lb, sizeof lb, "ID:%d [%dmm]", t.id, (int)std::round(t.x * 2000));
     Text(b.x + 14 * k, b.y + 4 * k - 1, MONO_B, 11 * k, K(pal::white), lb);
   }
-  if (A.wizardStep >= 1 && A.wizardStep <= 4) {
-    const Calib& cb = A.calib[A.wizardStep - 1];
+  if (sim && A.wizardStep >= 1 && A.wizardStep <= 4) {
+    const Calib& cb = cd->calib[A.wizardStep - 1];
     ImVec2 t(c.x + cb.mx * maxR, c.y + cb.my * maxR);
     dl->AddCircle(t, 18 * k, Ca(K(pal::yellow)), 32, 2 * k);
     char lb[24]; snprintf(lb, sizeof lb, "TARGET %d/4", A.wizardStep);
     Text(t.x + 22 * k, t.y - 6 * k - 1, MONO_B, 12 * k, K(pal::yellow), lb);
   }
   dl->AddCircle(c, D * 0.5f - 0.5f, Ca(K(pal::g2a)), 96, 1.f);
-  TextC(cx, top + D + 6 + 5, MONO_R, 10, K(pal::t66), A.editRoi ? "Drag the yellow handles to reshape the region of interest" : "Click the radar to inject a simulated touch point");
+  TextC(cx, top + D + 6 + 5, MONO_R, 10, K(pal::t66), A.editRoi ? "Drag the yellow handles to reshape the region of interest" : sim ? "Click the radar to inject a simulated touch point" : "Live view for this sensor type arrives with its driver");
   // click
   ImVec2 m = ImGui::GetIO().MousePos;
   float dist = std::hypot(m.x - c.x, m.y - c.y);
-  if (!A.editRoi && Hover(ImRect(c.x - D * 0.5f, c.y - D * 0.5f, c.x + D * 0.5f, c.y + D * 0.5f)) && dist <= D * 0.5f) {
+  if (sim && !A.editRoi && Hover(ImRect(c.x - D * 0.5f, c.y - D * 0.5f, c.x + D * 0.5f, c.y + D * 0.5f)) && dist <= D * 0.5f) {
     ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
     if (ImGui::IsMouseClicked(0)) {
       float nx = (m.x - c.x) / maxR, ny = (m.y - c.y) / maxR;
       if (std::hypot(nx, ny) <= 1.05f) {
         if (A.wizardStep >= 1 && A.wizardStep <= 4) {
-          A.calib[A.wizardStep - 1].mx = std::round(nx * 1000) / 1000; A.calib[A.wizardStep - 1].my = std::round(ny * 1000) / 1000;
+          cd->calib[A.wizardStep - 1].mx = std::round(nx * 1000) / 1000; cd->calib[A.wizardStep - 1].my = std::round(ny * 1000) / 1000;
           A.wizardStep = A.wizardStep == 4 ? 0 : A.wizardStep + 1;
+          if (A.wizardStep == 0) cd->calibrated = true;
         } else {
-          A.touchPts.clear(); A.touchPts.push_back({100 + rand() % 900, nx, ny});
+          cd->touches.assign(1, Touch{100 + rand() % 900, nx, ny});
           FireTouchRoutes();
         }
       }
@@ -359,8 +381,10 @@ static void Routing(ImRect r) {
     Text(cx - tw * 0.5f + 2, cy, UI_B, 10, K(pal::coral), "Simulate particle trigger");
     if (h.hover) CursorHand();
     if (h.click) {
-      A.touchPts.clear();
-      A.touchPts.push_back({100 + rand() % 900, ((rand() % 1000) / 1000.f - 0.5f) * 1.4f, ((rand() % 1000) / 1000.f - 0.5f) * 1.4f});
+      for (auto& d : A.devices) if (d.kind == DevKind::Sim) {   // normalised units: only the simulated radar understands them
+        d.touches.assign(1, Touch{100 + rand() % 900, ((rand() % 1000) / 1000.f - 0.5f) * 1.4f, ((rand() % 1000) / 1000.f - 0.5f) * 1.4f});
+        break;
+      }
     }
     y += 30 + 8;
   }

@@ -2653,10 +2653,9 @@ static void Stage(ImRect r) {
     }
     // G13: sensor touches projected through the calibration homography H_s into output space (first screen only —
     // the calibration targets are in that screen's 1920x1080 pixels). Sensor coordinates stay raw until here (principle #5).
-    if (!A.touchPts.empty() && sc == &A.screens[0]) {
-      float H[9], rms; bool ok = FitHomography(A.calib, H, &rms);
-      if (!ok) FitAffine(H, &rms);
-      for (auto& t : A.touchPts) {
+    if (sc == &A.screens[0]) for (auto& d : A.devices) {   // each device through ITS OWN H_s
+      float H[9]; if (d.touches.empty() || !DeviceH(d, H)) continue;
+      for (auto& t : d.touches) {
         float ox, oy; ApplyH(H, t.x, t.y, ox, oy);
         ImVec2 p = toPx(ImVec2(ox, oy));
         float ph = std::fmod((float)g.time * 1.4f, 1.f);
