@@ -132,6 +132,25 @@ set_target_properties(mikmap PROPERTIES
 add_custom_command(TARGET mikmap POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/assets" "$<TARGET_FILE_DIR:mikmap>/assets")
 
+# The fake sensor plugin (tests/plugins/fake_scan_plugin.c) is what --roundtrip and --fake-plugin load, so the app's
+# plugin path is exercised without hardware. It lands in <exe dir>/plugins/sensors, exactly where SensorPluginDir()
+# looks at run time. A release build turns it off: the DLL is a test aid, not part of the product.
+option(MIKMAP_TEST_PLUGINS "Build the fake sensor plugin used by --roundtrip and --fake-plugin" ON)
+if(MIKMAP_TEST_PLUGINS)
+  enable_language(C)   # the ABI header is C: a plugin may be built by any C compiler with C linkage
+  add_library(mikmap_fake_scan_plugin SHARED "${REPO}/tests/plugins/fake_scan_plugin.c")
+  target_include_directories(mikmap_fake_scan_plugin PRIVATE "${REPO}/engine/io/plugin")
+  if(UNIX)
+    target_link_libraries(mikmap_fake_scan_plugin PRIVATE m)   # sin/cos in the fake scan
+  endif()
+  set(FAKE_PLUGIN_DIR "$<TARGET_FILE_DIR:mikmap>/plugins/sensors")
+  set_target_properties(mikmap_fake_scan_plugin PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${FAKE_PLUGIN_DIR}"   # Windows .dll
+    LIBRARY_OUTPUT_DIRECTORY "${FAKE_PLUGIN_DIR}")  # macOS .dylib / Linux .so
+  add_dependencies(mikmap mikmap_fake_scan_plugin)
+  target_compile_definitions(mikmap PRIVATE "MIKMAP_FAKE_PLUGIN_FILE=\"$<TARGET_FILE_NAME:mikmap_fake_scan_plugin>\"")
+endif()
+
 # Headless self-check of project save/load/undo (needs no window or GPU): `ctest --test-dir src/build`
 enable_testing()
 add_test(NAME project_roundtrip COMMAND mikmap --roundtrip ${CMAKE_CURRENT_BINARY_DIR}/roundtrip.mikmap)

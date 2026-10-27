@@ -147,9 +147,9 @@ chuyển sang mô hình thật của `engine/`, làm từng mảng để luôn b
    warp trong `src/mapping.cpp`, qua đó có luôn Bezier (F10) và mặt nạ
    bezier (F12).
 4. `io/*` → nguồn sensor thật (G3, G14) thay cho radar mô phỏng trong
-   `src/sensor.cpp`. OSC/UDP (G4), camera skeleton (G20) và Hokuyo 2D lidar
-   (G21, SCIP 2.0/TCP) đã chạy qua `src/sources.cpp`; Serial/Arduino (G3)
-   và lidar UDP của Tàu (plugin DLL) còn chờ.
+   `src/sensor.cpp`. OSC/UDP (G4), camera skeleton (G20), Hokuyo 2D lidar
+   (G21, SCIP 2.0/TCP) và thiết bị Plugin DLL (G22, ABI C) đã chạy qua
+   `src/sources.cpp`; Serial/Arduino (G3) và YDLIDAR (G23, plugin) còn chờ.
 5. `core/model/Composition` · `Layer` · `Clip` · `Transport` → thay mô hình
    deck trong `src/app.h`.
 

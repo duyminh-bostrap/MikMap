@@ -67,7 +67,7 @@ jobs:
       - name: Build app
         shell: bash
         run: |
-          cmake -S src -B src/build -DCMAKE_BUILD_TYPE=Release
+          cmake -S src -B src/build -DCMAKE_BUILD_TYPE=Release -DMIKMAP_TEST_PLUGINS=OFF
           cmake --build src/build --config Release -j
 
       - name: App test (project round-trip)

@@ -1,6 +1,7 @@
 ﻿// Sensor I/O screen: device manager + calibration · radar · parameter routing.
 #include "app.h"
 #include "io/ISensorSource.h"
+#include "io/plugin/PluginLoader.h"
 #include "io/sources/ScanSource.h"
 #include <cmath>
 #include <cstdlib>
@@ -51,6 +52,7 @@ static std::vector<std::string> Wrap(FontId f, float sz, const std::string& text
 
 static std::string Endpoint(const Device& d) {
   if (d.kind == DevKind::Sim) return "simulated";
+  if (d.kind == DevKind::Plugin) return d.plugin.empty() ? "plugin" : d.plugin;   // the file inside plugins/sensors, not a path
   return (d.kind == DevKind::Skeleton ? "OSC :" : d.host + ":") + std::to_string(d.port);
 }
 
@@ -98,6 +100,15 @@ static void Devices(ImRect r) {
     }
     TextEll(cr.Min.x + 6 + 8 + 6 + 1, cy, br.Min.x - 6 - (cr.Min.x + 21), UI_B, 11, K(pal::white), d.name.c_str());
     if (!fields) TextEll(cr.Min.x + 7, cy + 9 + 4 + 5, cr.GetWidth() - 14, MONO_R, 10, K(pal::t88), Endpoint(d).c_str());
+    else if (d.kind == DevKind::Plugin) {   // JSON config, applied on blur: typing must not restart the source on every character
+      // shortcut: config is raw JSON; with a second plugin, add mikmap_sensor_params() to describe each field, like TouchDesigner's setupParameters
+      static std::string cfgEdit;
+      ImGuiID cid = ImGui::GetID("##devconfig");
+      if (ImGui::GetActiveID() != cid) cfgEdit = d.config;
+      float fy = cy + 9 + 4, fx = cr.Min.x + 7, fr = cr.Max.x - 7;
+      TextField("##devconfig", Rc(fx, fy, fr - fx, 18), cfgEdit, MONO_R, 10);
+      if (ImGui::IsItemDeactivatedAfterEdit()) d.config = cfgEdit;
+    }
     else {   // host (Hokuyo) and port, applied when the field loses focus so typing "9001" does not restart the source on every digit
       static std::string hostEdit; static int portEdit = 0;
       ImGuiID hid = ImGui::GetID("##devhost"), pid = ImGui::GetID("##devport");
@@ -151,6 +162,21 @@ static void Devices(ImRect r) {
           while (taken("dev" + std::to_string(n))) ++n;
           Device nd = MakeDevice(k, "dev" + std::to_string(n));
           int same = 0; for (auto& e : A.devices) same += e.kind == k;
+          if (same) nd.name += " " + std::to_string(same + 1);
+          A.devices.push_back(nd); A.selDevice = (int)A.devices.size() - 1; A.wizardStep = 0; A.editRoi = false;
+        };
+        mi.push_back(it);
+      }
+      for (const auto& p : SensorPlugins()) {   // one entry per DLL that reported API 1 (+ Add device, Task 10)
+        const size_t slash = p.path.find_last_of("/\\");
+        const std::string file = slash == std::string::npos ? p.path : p.path.substr(slash + 1);
+        MenuItem it; it.label = p.name.empty() ? file : p.name; it.icon = "plus";
+        it.run = [name = it.label, file, cfg = p.defaultConfig] {
+          int n = 1; auto taken = [&](const std::string& id) { for (auto& e : A.devices) if (e.id == id) return true; return false; };
+          while (taken("dev" + std::to_string(n))) ++n;
+          Device nd = MakeDevice(DevKind::Plugin, "dev" + std::to_string(n));
+          nd.name = name; nd.plugin = file; nd.config = cfg;
+          int same = 0; for (auto& e : A.devices) same += e.kind == DevKind::Plugin && e.plugin == file;
           if (same) nd.name += " " + std::to_string(same + 1);
           A.devices.push_back(nd); A.selDevice = (int)A.devices.size() - 1; A.wizardStep = 0; A.editRoi = false;
         };
@@ -340,7 +366,7 @@ static void Radar(ImRect r) {
   Device* cd = A.curDevice();
   if (cd && cd->kind == DevKind::Skeleton) { A.editRoi = false; SkeletonView(r, *cd); return; }
   const bool sim = cd && cd->kind == DevKind::Sim;   // the radar disc speaks the Sim's normalised units
-  const bool lidar = cd && dynamic_cast<mikmap::ScanSource*>(DeviceSource(*cd)) != nullptr;   // Hokuyo today, plugin later
+  const bool lidar = cd && dynamic_cast<mikmap::ScanSource*>(DeviceSource(*cd)) != nullptr;   // Hokuyo, or a plugin DLL
   const mikmap::LaserScan* scan = lidar ? DeviceScan(*cd) : nullptr;
   if (!sim && !lidar) A.editRoi = false;
   Fill(r, K(pal::g050));

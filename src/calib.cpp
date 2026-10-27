@@ -168,8 +168,11 @@ Device MakeDevice(DevKind k, const std::string& id) {
     d.roi[0] = {-0.7f, -0.6f}; d.roi[1] = {0.7f, -0.6f}; d.roi[2] = {0.85f, 0.7f}; d.roi[3] = {-0.85f, 0.7f};
   } else if (k == DevKind::Skeleton) {
     d.name = "Camera skeleton"; d.port = 9000;
-  } else {
+  } else if (k == DevKind::Hokuyo) {
     d.name = "Hokuyo 2D lidar"; d.host = "192.168.0.10"; d.port = 10940;
+    d.roi[0] = {3000, 1500}; d.roi[1] = {3000, -1500}; d.roi[2] = {500, -1500}; d.roi[3] = {500, 1500};   // mm
+  } else {   // Plugin: a lidar until the DLL says otherwise; the menu fills plugin/config from the scanned ABI
+    d.name = "Plugin";
     d.roi[0] = {3000, 1500}; d.roi[1] = {3000, -1500}; d.roi[2] = {500, -1500}; d.roi[3] = {500, 1500};   // mm
   }
   return d;

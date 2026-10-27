@@ -201,11 +201,15 @@ struct Route { std::string id, source, target; bool active; };
 struct Touch { int id; float x, y; };
 struct Calib { float tx, ty, mx, my; };
 // A sensor and its OWN calibration: a camera reports [0,1], a lidar reports mm, so they can never share one H_s.
-enum class DevKind { Sim = 0, Skeleton = 1, Hokuyo = 2 };
-inline const char* DevKindName(DevKind k) { return k == DevKind::Hokuyo ? "Hokuyo" : k == DevKind::Skeleton ? "Skeleton" : "Simulated"; }
+enum class DevKind { Sim = 0, Skeleton = 1, Hokuyo = 2, Plugin = 3 };
+inline const char* DevKindName(DevKind k) {
+  return k == DevKind::Plugin ? "Plugin" : k == DevKind::Hokuyo ? "Hokuyo" : k == DevKind::Skeleton ? "Skeleton" : "Simulated";
+}
 struct Device {
   std::string id, name; DevKind kind = DevKind::Sim;
   std::string host; int port = 0;    // Skeleton: OSC listen port (host unused) · Hokuyo: lidar address
+  std::string plugin;                // Plugin: file name inside SensorPluginDir(), never an absolute path (portable projects)
+  std::string config;                // Plugin: raw JSON handed to mikmap_sensor_create()
   bool enabled = false;              // the user wants it running (saved with the project)
   bool calibrated = false;
   std::vector<Calib> calib;          // exactly 4: tx,ty = output px of Screen 0; mx,my = THIS device's raw units
@@ -620,13 +624,17 @@ bool FitHomography(const std::vector<Calib>& pts, float H[9], float* rms);
 bool DeviceH(const Device& d, float H[9]);       // H_s of one device; false if it is not calibrated
 Device MakeDevice(DevKind k, const std::string& id);   // per-kind defaults (name, address, ROI, calibration targets)
 // Live sensors (sources.cpp): the real ISensorSource threads, one per enabled non-Sim device, kept OUT of App so undo never touches them.
-namespace mikmap { class ISensorSource; struct LaserScan; }
+namespace mikmap { class ISensorSource; struct LaserScan; struct SensorPlugin; }
 inline constexpr int kCalibJoint = 16;   // MediaPipe RIGHT_WRIST of person slot 0 (OSC touch id 16): the point a Skeleton calibrates with
 inline constexpr float kRadarRangeMm = 4000.f;   // fixed 4 m radar range; UST-20LX sees 20 m, so add zoom when the job needs it
 void SensorsTick(double now);            // render thread, once per frame: start/stop/restart sources from enabled+host/port, consume frames into d.touches, fire touch.down routes, refresh status/error/fps/latency/packets, run the capture
 void SensorsShutdown();
 mikmap::ISensorSource* DeviceSource(const Device& d);   // nullptr for a Sim device or one that is not running
 const mikmap::LaserScan* DeviceScan(const Device& d);   // latest raw scan of any lidar source (ScanSource), or nullptr after no scan yet
+// Sensor plugins (Task 9 ABI): <dir of the executable>/plugins/sensors, scanned once on the first tick. A load error is
+// toasted once and the plugin is skipped; a device that names a missing plugin stays in the project and reports why.
+std::string SensorPluginDir();
+const std::vector<mikmap::SensorPlugin>& SensorPlugins();
 void StartCapture(int step);             // wizard: average the calibration point of curDevice() over 30 consecutive frames into calib[step-1], then advance
 bool SensorSelfTest(std::string& why);   // --roundtrip: a real OscSource over loopback UDP
 void FireTouchRoutes();                  // sensor.cpp: a "touch.down" patch cord fires its clip

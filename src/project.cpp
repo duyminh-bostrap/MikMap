@@ -337,6 +337,7 @@ JsonValue Serialize(const App& a) {
   for (auto& d : a.devices) {   // configuration only: touches/status/fps/latency/packets are runtime and stay out of the snapshot
     JsonValue dob = JsonValue::object(); dob.set("id", d.id); dob.set("name", d.name); dob.set("kind", (int)d.kind);
     dob.set("host", d.host); dob.set("port", d.port); dob.set("enabled", d.enabled); dob.set("calibrated", d.calibrated);
+    dob.set("plugin", d.plugin); dob.set("config", d.config);   // plugin file name + JSON; empty for every other kind
     JsonValue cal = JsonValue::array(); for (auto& c : d.calib) cal.push(CalibJ(c));
     dob.set("calib", cal);
     JsonValue roi = JsonValue::array(); for (int i = 0; i < 4; ++i) roi.push(V2(d.roi[i]));
@@ -456,10 +457,11 @@ bool Deserialize(const JsonValue& root, App& out, std::string& err) {
       if (o["roi"].isArray() && o["roi"].size() == 4) for (int i = 0; i < 4; ++i) v.roi[i] = ReadV2(o["roi"].at(i));
     };
     for (auto& d : sn["devices"].arrayItems()) {
-      Device v = MakeDevice(DevKind(std::clamp(d["kind"].asInt(0), 0, 2)), d["id"].asString());
+      Device v = MakeDevice(DevKind(std::clamp(d["kind"].asInt(0), 0, 3)), d["id"].asString());
       v.name = d["name"].asString(v.name);
       if (d.has("kind")) {
         v.host = d["host"].asString(v.host); v.port = d["port"].asInt(v.port);
+        v.plugin = d["plugin"].asString(v.plugin); v.config = d["config"].asString(v.config);
         v.enabled = d["enabled"].asBool(); v.calibrated = d["calibrated"].asBool();
         readCal(d, v);
       } else {   // before per-device calibration: one global calib/roi in `sensor`, which belonged to the (only kind then) simulated radar
@@ -669,7 +671,7 @@ bool LoadCalibProfile(const std::string& path, Device& d, float& noise, float& b
   if (!root["calib"].isArray() || root["calib"].size() != 4) { err = "not a MikMap calibration profile"; return false; }
   if (root.has("kind")) {   // refuse before touching `d`
     int pk = root["kind"].asInt(-1);
-    if (pk != (int)d.kind) { err = std::string("profile is for a ") + DevKindName(DevKind(std::clamp(pk, 0, 2))) + " sensor"; return false; }
+    if (pk != (int)d.kind) { err = std::string("profile is for a ") + DevKindName(DevKind(std::clamp(pk, 0, 3))) + " sensor"; return false; }
   } else if (d.kind != DevKind::Sim) { err = "profile has no sensor kind, only a simulated sensor accepts it"; return false; }   // saved before kinds existed
   d.calib.clear(); for (auto& co : root["calib"].arrayItems()) d.calib.push_back(ReadCalibPoint(co));
   if (root["roi"].isArray() && root["roi"].size() == 4) for (int i = 0; i < 4; ++i) d.roi[i] = ReadV2(root["roi"].at(i));

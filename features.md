@@ -170,6 +170,7 @@
 | [ ] | **G19** | LiDAR source (Livox / Ouster) | L | 🟡 P2 |
 | [x] | **G20** | **Camera skeleton (MediaPipe sidecar)** | M | 🔴 P0 |
 | [~] | **G21** | Hokuyo 2D lidar (SCIP 2.0/TCP) | M | 🟠 P1 |
+| [x] | **G22** | Plugin cảm biến DLL (ABI C) | M | 🟠 P1 |
 
 ---
 
@@ -717,3 +718,12 @@ Nay khung input sửa giống khung transform của Preview Cue: **kéo trong kh
 - **Kiểm hình:** `mikmap --shot lidar.png --screen 2 --frames 60 --fake-hokuyo --click 1100,62` (bấm **Edit ROI**): tường tròn 2 m, một blob coral `ID:1 [1000,0 mm]`, ROI vàng 4 handle theo mm, card Hokuyo Running với fps/latency/packet thật.
 - **Chưa kiểm:** phần cứng thật (nối `192.168.0.x/24`, ~40 Hz, đứng vào ROI thấy blob, wizard 4 điểm đặt đúng chỗ chân trên Output); lidar UDP của Tàu chưa làm — pipeline chờ sẵn ở `LidarBlobs.h`.
 - Đếm mới: 65 `[x]` · 14 `[~]` · 59 `[ ]`.
+
+### Plugin cảm biến DLL (ABI C) + thiết bị Plugin trên trang Sensor (2026-10-27)
+
+- **G22 `[x]` — Plugin cảm biến DLL (ABI C):** `engine/io/plugin/mikmap_sensor_plugin.h` là toàn bộ hợp đồng cho người viết plugin: 9 hàm C (`api_version`, `name`, `default_config`, `create`, `start`, `poll`, `error`, `stop`, `destroy`), không có kiểu C++ nào ở biên. `PluginLoader` (`engine/io/plugin/PluginLoader.*`) nạp bằng đường dẫn tuyệt đối và `LOAD_WITH_ALTERED_SEARCH_PATH` / `dlopen(RTLD_NOW|RTLD_LOCAL)` để DLL phụ thuộc nằm cạnh plugin vẫn tìm thấy; thiếu hàm → `missing export <tên>`, lệch phiên bản → `API version <n>, MikMap needs 1`. `PluginSource` (`engine/io/sources/PluginSource.*`) chạy `create → start → poll` trên thread riêng, hai mảng `float[kMaxScanPoints]` là thành viên (không cấp phát trong vòng lặp), mỗi scan đi qua đúng `ScanSource`/`LidarTouchPublisher` của Hokuyo; `poll < 0` hoặc `start` lỗi thì `Up` mọi blob, `Error` + `lastError`, `stop`/`destroy`, chờ `reconnectSec` rồi tạo lại. Plugin chạy **chung tiến trình**: plugin sập thì app sập theo (không có sandbox).
+- **Thiết bị Plugin trong app:** `DevKind::Plugin` + `Device::plugin` (tên file, không phải đường dẫn tuyệt đối) + `Device::config` (JSON thô), lưu/nạp cùng project. `SensorPluginDir()` = `<thư mục chứa mikmap.exe>/plugins/sensors`; `SensorPlugins()` quét một lần lúc khởi động, DLL lỗi được `A.notify` một lần. `+ Add device` có một mục cho mỗi plugin (tên từ `mikmap_sensor_name`, config điền từ `mikmap_sensor_default_config`); card Plugin có ô config sửa tại chỗ, đổi config thì chữ ký nguồn đổi và source được tạo lại. Card dùng lại khung nhìn lidar, ROI mm, slider blob và wizard 4 điểm; thiếu DLL thì thiết bị vẫn nằm trong danh sách, card đỏ với `plugin not found: <tên file> in <thư mục>`.
+- **Kiểm tự động:** engine 460/460 test PASS, 6113 assertion (5 test plugin: nạp/tên/config, API 999 bị từ chối, đường dẫn không tồn tại, scan → 1 touch, poll lỗi → Up + Error + tạo lại); `ctest --test-dir src/build -C Release` 1/1 PASS — `SensorSelfTest` thêm thiết bị Plugin dùng DLL giả, chờ ≤2 s thấy `DeviceScan()` và đúng 1 blob, lưu→nạp giữ nguyên `plugin`/`config`, rồi đổi sang `no_such_plugin.dll` thấy `Error` + `"plugin not found"`. `src/CMakeLists.txt` build DLL giả vào `plugins/sensors/` khi `MIKMAP_TEST_PLUGINS=ON` (mặc định); workflow release truyền `OFF`.
+- **Kiểm hình:** `mikmap --shot plugin.png --screen 2 --frames 60 --fake-plugin` — card **Fake scan** Running với fps/latency/packet thật, khung `LIDAR VIEW`, một blob coral `ID:1 [1000,0 mm]`; mở `+ Add device` thấy mục **Fake scan**.
+- **Chưa kiểm:** plugin bên thứ ba thật (YDLIDAR ở G23) và phần cứng; mới kiểm bằng plugin giả C. Không có cô lập tiến trình.
+- Đếm mới: 66 `[x]` · 14 `[~]` · 59 `[ ]`.

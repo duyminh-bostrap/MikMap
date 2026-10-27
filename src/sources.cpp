@@ -19,14 +19,21 @@
 #include "app.h"
 #include "core/util/Clock.h"
 #include "io/ISensorSource.h"
+#include "io/plugin/PluginLoader.h"
 #include "io/sources/HokuyoSource.h"
 #include "io/sources/OscSource.h"
+#include "io/sources/PluginSource.h"
 #include "io/sources/ScanSource.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <filesystem>
 #include <memory>
+#include <system_error>
 #include <thread>
+#ifdef __APPLE__
+#  include <mach-o/dyld.h>
+#endif
 
 namespace {
 
@@ -34,7 +41,7 @@ struct Live {
   std::unique_ptr<mikmap::ISensorSource> src;   // null when the source could not start
   mikmap::OscSource* osc = nullptr;             // the same object, for the OSC-only counters
   mikmap::ScanSource* scan = nullptr;           // lidar sources: raw scans + params for the radar view
-  std::string sig, err;                         // sig = kind|host|port: a change restarts the source
+  std::string sig, err;                         // sig = kind|host|port|plugin|config: a change restarts the source
   bool failed = false;                          // start() refused (port taken, bad port, no driver): kept so it is not retried every frame
   double winStart = 0; int winFrames = 0, fps = 0;
   float latencyMs = 0;
@@ -45,10 +52,30 @@ std::map<std::string, Live> g_live;   // keyed by Device::id
 constexpr int kCaptureFrames = 30;
 struct Capture { bool on = false; std::string dev; int step = 0, n = 0; double sx = 0, sy = 0, lastFrame = -1; } g_cap;
 
-std::string Sig(const Device& d) { return std::to_string((int)d.kind) + "|" + d.host + "|" + std::to_string(d.port); }
+std::string Sig(const Device& d) {
+  // plugin + config are part of the signature: editing the JSON restarts the source, exactly like a new address
+  return std::to_string((int)d.kind) + "|" + d.host + "|" + std::to_string(d.port) + "|" + d.plugin + "|" + d.config;
+}
+
+std::string FileName(const std::string& path) {
+  const size_t k = path.find_last_of("/\\");
+  return k == std::string::npos ? path : path.substr(k + 1);
+}
 
 Live Start(const Device& d, double now) {
   Live L; L.sig = Sig(d); L.winStart = now;
+
+  if (d.kind == DevKind::Plugin) {
+    const mikmap::SensorPlugin* found = nullptr;
+    for (auto& p : SensorPlugins()) if (FileName(p.path) == d.plugin) { found = &p; break; }
+    if (!found) { L.failed = true; L.err = "plugin not found: " + d.plugin + " in " + SensorPluginDir(); return L; }
+    mikmap::PluginConfig pc; pc.configJson = d.config; pc.reconnectSec = 1.0;
+    auto ps = std::make_unique<mikmap::PluginSource>(*found, pc);
+    ps->start();   // a plugin that rejects its config is temporary: status()/lastError() report it, the source retries
+    L.scan = ps.get(); L.src = std::move(ps);
+    return L;
+  }
+
   if (d.port < 1 || d.port > 65535) { L.failed = true; L.err = "Port must be 1-65535"; return L; }
 
   if (d.kind == DevKind::Skeleton) {
@@ -77,8 +104,10 @@ Live Start(const Device& d, double now) {
 
 // One new frame of the device being calibrated.
 void CaptureFrame(Device& d, double now) {
+  // A lidar blob has no joint id: every touch of a ScanSource is a candidate. Skeleton keeps the wrist filter.
+  const bool lidar = dynamic_cast<mikmap::ScanSource*>(DeviceSource(d)) != nullptr;
   int seen = 0; const Touch* pt = nullptr;
-  for (auto& t : d.touches) if (d.kind == DevKind::Hokuyo || t.id == kCalibJoint) { ++seen; pt = &t; }
+  for (auto& t : d.touches) if (lidar || t.id == kCalibJoint) { ++seen; pt = &t; }
   if (seen != 1) { g_cap.on = false; A.notify("Need exactly one point \xE2\x80\x94 seen " + std::to_string(seen)); return; }
   g_cap.sx += pt->x; g_cap.sy += pt->y; g_cap.lastFrame = now;
   if (++g_cap.n < kCaptureFrames) return;
@@ -92,7 +121,39 @@ void CaptureFrame(Device& d, double now) {
 
 }  // namespace
 
+std::string SensorPluginDir() {
+#if defined(_WIN32)
+  std::vector<wchar_t> buf(32768);
+  const DWORD n = GetModuleFileNameW(nullptr, buf.data(), (DWORD)buf.size());
+  if (n == 0 || n >= buf.size()) return {};
+  const std::filesystem::path dir = std::filesystem::path(std::wstring(buf.data(), n)).parent_path() / "plugins" / "sensors";
+#elif defined(__APPLE__)
+  char buf[4096]; uint32_t size = sizeof buf;
+  if (_NSGetExecutablePath(buf, &size) != 0) return {};
+  const std::filesystem::path dir = std::filesystem::path(buf).parent_path() / "plugins" / "sensors";
+#else
+  char buf[4096];
+  const ssize_t n = readlink("/proc/self/exe", buf, sizeof buf - 1);
+  if (n <= 0) return {};
+  buf[n] = '\0';
+  const std::filesystem::path dir = std::filesystem::path(buf).parent_path() / "plugins" / "sensors";
+#endif
+  const std::u8string u8 = dir.u8string();   // UTF-8 even when the install path is Vietnamese
+  return std::string(reinterpret_cast<const char*>(u8.data()), u8.size());
+}
+
+const std::vector<mikmap::SensorPlugin>& SensorPlugins() {
+  static const std::vector<mikmap::SensorPlugin> plugins = [] {
+    std::vector<std::string> errors;
+    auto found = mikmap::scanPluginDir(SensorPluginDir(), errors);
+    for (auto& e : errors) A.notify("Sensor plugin: " + e);   // once per bad DLL, not on every tick
+    return found;
+  }();
+  return plugins;
+}
+
 void SensorsTick(double now) {
+  SensorPlugins();   // scan the plugin folder once on the first tick (a missing folder is not an error)
   for (auto it = g_live.begin(); it != g_live.end();) {   // a removed or disabled device, or a changed address, stops its source
     const Device* d = nullptr; for (auto& x : A.devices) if (x.id == it->first) { d = &x; break; }
     if (!d || !d->enabled || d->kind == DevKind::Sim || it->second.sig != Sig(*d)) it = g_live.erase(it); else ++it;
@@ -189,7 +250,7 @@ bool SensorSelfTest(std::string& why) {
                                   0,0,0,0x10, 0x3f,0,0,0, 0x3e,0x80,0,0, 0,0,0,0};
   auto now = [] { return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); };
   auto dev = [](const char* id) -> Device& { for (auto& d : A.devices) if (d.id == id) return d; return A.devices.back(); };
-  auto fail = [&](const char* w) { why = w; SensorsShutdown(); return false; };
+  auto fail = [&](const std::string& w) { why = w; SensorsShutdown(); return false; };
 
   Device a = MakeDevice(DevKind::Skeleton, "selftest-a"); a.port = port; a.enabled = true;
   A.devices.push_back(a);
@@ -231,6 +292,35 @@ bool SensorSelfTest(std::string& why) {
   for (double t0 = now(); now() - t0 < 3.0 && A.wizardStep == 1;) { SensorsTick(now()); std::this_thread::sleep_for(std::chrono::milliseconds(5)); }
   if (A.wizardStep != 2 || std::fabs(dh.calib[0].mx - 1000.f) > 25.f) return fail("sensor: Hokuyo Capture did not average the blob at 1000 mm");
   A.wizardStep = 0;
+
+#ifdef MIKMAP_FAKE_PLUGIN_FILE
+  // Plugin ABI through the app: the same fake scan as Hokuyo, produced by the DLL this build wrote into plugins/sensors.
+  const mikmap::SensorPlugin* fp = nullptr;
+  for (auto& p : SensorPlugins()) if (FileName(p.path) == MIKMAP_FAKE_PLUGIN_FILE) { fp = &p; break; }
+  if (!fp) return fail("sensor: the fake plugin was not found in " + SensorPluginDir());
+  Device q = MakeDevice(DevKind::Plugin, "selftest-p");
+  q.name = fp->name; q.plugin = MIKMAP_FAKE_PLUGIN_FILE; q.config = "{\"fail_after\":0}"; q.enabled = true;
+  A.devices.push_back(q);
+  for (double t0 = now(); now() - t0 < 2.0 && !(DeviceScan(dev("selftest-p")) && dev("selftest-p").touches.size() == 1);) { SensorsTick(now()); std::this_thread::sleep_for(std::chrono::milliseconds(5)); }
+  if (!DeviceScan(dev("selftest-p")) || dev("selftest-p").touches.size() != 1) return fail("sensor: a plugin scan did not produce exactly one blob");
+
+  // plugin + config are project data: save -> load must bring back the file name and the JSON unchanged
+  std::error_code tec;
+  const auto tmpdir = std::filesystem::temp_directory_path(tec);
+  if (tec) return fail("sensor: no temp directory for the plugin save/load check");
+  const std::string ppath = (tmpdir / "mikmap_selftest_plugin.mikmap").string();
+  std::string perr;
+  if (!SaveProject(ppath, perr)) return fail("sensor: cannot save a plugin device: " + perr);
+  if (!LoadProject(ppath, perr)) return fail("sensor: cannot load a plugin device: " + perr);
+  std::filesystem::remove(ppath, tec);
+  Device& ql = dev("selftest-p");
+  if (ql.plugin != MIKMAP_FAKE_PLUGIN_FILE || ql.config != "{\"fail_after\":0}") return fail("sensor: plugin file/config did not survive save/load");
+
+  // a missing DLL keeps the device (with its config) and says exactly where it looked
+  ql.plugin = "no_such_plugin.dll"; ql.enabled = false; SensorsTick(now()); ql.enabled = true; SensorsTick(now());
+  if (dev("selftest-p").status != (int)mikmap::SourceStatus::Error || dev("selftest-p").error.find("plugin not found") == std::string::npos)
+    return fail("sensor: a missing plugin must keep the device and say where it looked");
+#endif
 
   dev("selftest-a").enabled = false; dev("selftest-b").enabled = false;
   SensorsTick(now());
