@@ -1398,7 +1398,7 @@ static std::vector<MenuItem> SensorMenu(const std::string& dvId) {
   m.push_back(mk("Rename", "pencil", false, false, [dvId] {
     for (int i = 0; i < (int)A.devices.size(); ++i) if (A.devices[i].id == dvId) A.beginRename(5, i, ImGui::GetIO().MousePos, A.devices[i].name); }));
   MenuItem dv; dv.divider = true; m.push_back(dv);
-  m.push_back(mk("Move to screen âº", "monitor", true, false, [] {}));   // a header: the menu has no sub-menus, the screens follow flat
+  m.push_back(mk("Move to screen \xE2\x80\xBA", "monitor", true, false, [] {}));   // a header: the menu has no sub-menus, the screens follow flat
   bool fb = false; const Screen* cur = DeviceScreen(A.devices[idx], &fb);
   for (auto& sc : A.screens) {
     std::string label = "   " + sc.name;
