@@ -169,7 +169,7 @@ Screen* DeviceScreen(const Device& d, bool* fellBack) {
 // so everything downstream (DeviceH, touch mapping) is unchanged.
 bool PlacementCalib(Device& d, const Screen& sc, const mikmap::LidarPose& pose) {
   if (sc.realW <= 0 || sc.realH <= 0) return false;
-  const float W = (float)sc.w, H = (float)sc.h;
+  const float W = 1920, H = 1080;   // calib tx,ty are always stage space (1920x1080), whatever sc.w/sc.h the display reports
   const float tx[4] = {0, W, W, 0}, ty[4] = {0, 0, H, H};
   const mikmap::Vec2 corner[4] = {{0, 0}, {sc.realW, 0}, {sc.realW, sc.realH}, {0, sc.realH}};
   d.calib.clear();
