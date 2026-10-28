@@ -74,7 +74,8 @@ static void Devices(ImRect r) {
     const bool hint = d.enabled && d.kind == DevKind::Skeleton && st == (int)mikmap::SourceStatus::Running && d.packets == 0;
     const bool errLine = d.enabled && !d.error.empty();
     const float fh = fields ? 18.f : 0.f;
-    float h = (d.enabled ? 76.f : 46.f) + fh + (hint || errLine ? 16.f : 0.f);
+    bool fb = false; const Screen* dsc = DeviceScreen(d, &fb);
+    float h = (d.enabled ? 76.f : 46.f) + fh + (hint || errLine || fb ? 16.f : 0.f);
     ImRect cr(x, oy + y, x + w, oy + y + h);
     float prev = g.alpha; if (!d.enabled) g.alpha = 0.65f;
     Box(cr, d.enabled ? K(pal::g18) : K(pal::g14), di == A.selDevice ? K(pal::coral) : d.enabled ? K(pal::g3a) : K(pal::g2a), 4);   // coral edge = the device the page edits
@@ -142,6 +143,7 @@ static void Devices(ImRect r) {
         TextEll(cr.Min.x + 7, cr.Max.y - 12, cr.GetWidth() - 14, MONO_R, 9, K(pal::t66), cmd.c_str());
       }
     }
+    if (fb && dsc && !errLine && !hint) TextEll(cr.Min.x + 7, cr.Max.y - 12, cr.GetWidth() - 14, MONO_R, 9, K(pal::yellow), ("Screen not found \xE2\x80\x94 using " + dsc->name).c_str());
     g.alpha = prev;
     y += h + 6;
   }
@@ -163,6 +165,7 @@ static void Devices(ImRect r) {
           Device nd = MakeDevice(k, "dev" + std::to_string(n));
           int same = 0; for (auto& e : A.devices) same += e.kind == k;
           if (same) nd.name += " " + std::to_string(same + 1);
+          if (!A.screens.empty()) nd.screenId = A.screens[0].id;
           A.devices.push_back(nd); A.selDevice = (int)A.devices.size() - 1; A.wizardStep = 0; A.editRoi = false;
         };
         mi.push_back(it);
@@ -178,6 +181,7 @@ static void Devices(ImRect r) {
           nd.name = name; nd.plugin = file; nd.config = cfg;
           int same = 0; for (auto& e : A.devices) same += e.kind == DevKind::Plugin && e.plugin == file;
           if (same) nd.name += " " + std::to_string(same + 1);
+          if (!A.screens.empty()) nd.screenId = A.screens[0].id;
           A.devices.push_back(nd); A.selDevice = (int)A.devices.size() - 1; A.wizardStep = 0; A.editRoi = false;
         };
         mi.push_back(it);

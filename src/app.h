@@ -147,6 +147,7 @@ struct Slice {
 struct Screen {
   std::string id, name, outDev;
   int w = 1920, h = 1080, fps = 60;
+  float realW = 0, realH = 0;   // mm of the physical projection surface; 0 = not entered (a lidar needs both to be placed)
   bool edgeBlend = false, visible = true;
   int role = 0;  // colour role, see RoleHex
   // Screen properties > colour. Applied to what this screen sends to its projector window (output.cpp): opacity scales every
@@ -208,6 +209,7 @@ inline const char* DevKindName(DevKind k) {
 struct Device {
   std::string id, name; DevKind kind = DevKind::Sim;
   std::string host; int port = 0;    // Skeleton: OSC listen port (host unused) · Hokuyo: lidar address
+  std::string screenId;              // the Screen this sensor is calibrated against (Screen::id); empty / unknown = first screen
   std::string plugin;                // Plugin: file name inside SensorPluginDir(), never an absolute path (portable projects)
   std::string config;                // Plugin: raw JSON handed to mikmap_sensor_create()
   bool enabled = false;              // the user wants it running (saved with the project)
@@ -622,6 +624,7 @@ void FitAffine(const std::vector<Calib>& c, float out[9], float* rms);
 // G5 homography + G9 perf
 bool FitHomography(const std::vector<Calib>& pts, float H[9], float* rms);
 bool DeviceH(const Device& d, float H[9]);       // H_s of one device; false if it is not calibrated
+Screen* DeviceScreen(const Device& d, bool* fellBack = nullptr);   // never null while A.screens is non-empty; *fellBack = a named screen is gone
 Device MakeDevice(DevKind k, const std::string& id);   // per-kind defaults (name, address, ROI, calibration targets)
 // Live sensors (sources.cpp): the real ISensorSource threads, one per enabled non-Sim device, kept OUT of App so undo never touches them.
 namespace mikmap { class ISensorSource; struct LaserScan; struct SensorPlugin; }

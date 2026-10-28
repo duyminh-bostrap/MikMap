@@ -112,6 +112,7 @@ void App::init() {
   screens = {s1, s2, s3};
 
   devices = {MakeDevice(DevKind::Sim, "dev1"), MakeDevice(DevKind::Skeleton, "dev2"), MakeDevice(DevKind::Hokuyo, "dev3")};
+  for (auto& dv : devices) dv.screenId = screens[0].id;
   devices[0].enabled = true;
   routes = {{"r1", "touch.down", "Layer 3 \xC2\xB7 Particle Vortex", true},
             {"r2", "touch.x (normalised)", "FX \xC2\xB7 Kaleido angle", true},

@@ -705,6 +705,7 @@ int main(int argc, char** argv) {
     std::string err;
     NewProject();
     if (ProjectDirty()) return fail("fresh project reports dirty");
+    A.screens[1].realW = 4000; A.screens[1].realH = 2250; A.devices[2].screenId = A.screens[1].id;   // checked after the reload below
     A.layers[0].name = "Edited"; A.layers[0].clips[1].fx.push_back(Fx()); A.colNames.resize(A.colCount()); A.colNames[1] = "Renamed";
     A.screens[0].slices[0].q[2] = ImVec2(1500, 900); A.devices[2].calib[2].mx = 0.123f; A.bpm = 97.5f; A.screens[0].slices[1].solo = true; A.layers[0].clips[1].media = "/no/such/file.png";
     if (!ProjectDirty()) return fail("edit not detected as dirty");
@@ -723,6 +724,11 @@ int main(int argc, char** argv) {
     {
       if (A.devices.size() != 3 || A.devices[2].kind != DevKind::Hokuyo || A.devices[2].port != 10940) return fail("device kind/port not restored");
       if (std::fabs(A.devices[2].calib[2].mx - 0.123f) > 1e-6f) return fail("per-device calibration point not restored");
+      if (A.screens[1].realW != 4000.f || A.screens[1].realH != 2250.f) return fail("screen real size (mm) not restored");
+      if (A.devices[2].screenId != A.screens[1].id || DeviceScreen(A.devices[2]) != &A.screens[1]) return fail("device screen not restored");
+      { bool fb = false; const std::string sid = A.screens[1].id; const bool cal = A.devices[2].calibrated;
+        A.deleteScreen(sid);   // the sensor must keep its calibration and fall back to the first screen, visibly
+        if (DeviceScreen(A.devices[2], &fb) != &A.screens[0] || !fb || A.devices[2].calibrated != cal) return fail("a deleted screen must make the device fall back to screen 0 and keep its calibration"); }
       { std::ifstream f(roundtrip, std::ios::binary); std::stringstream ss; ss << f.rdbuf();
         mikmap::JsonValue root, legacy; std::string jerr;
         if (!mikmap::JsonValue::parse(ss.str(), root, jerr)) return fail("cannot re-read the saved project");
@@ -733,6 +739,7 @@ int main(int argc, char** argv) {
         std::ofstream o(roundtrip + ".legacy", std::ios::binary); o << root.dump(2); }
       if (!LoadProject(roundtrip + ".legacy", err)) return fail(err.c_str());
       if (A.devices.size() != 1 || A.devices[0].id != "d" || A.devices[0].kind != DevKind::Sim || !A.devices[0].calibrated || A.devices[0].enabled) return fail("legacy device not migrated to a disabled, calibrated Sim");
+      if (A.devices[0].screenId != A.screens[0].id) return fail("a file without a device screen must put the device on the first screen");
       if (A.devices[0].calib.size() != 4 || A.devices[0].calib[3].my != 16.f || A.devices[0].calib[0].tx != 1.f || A.devices[0].roi[2].y != 1.f) return fail("legacy global calibration/ROI not moved onto the device");
       NewProject();
       A.devices[2].calib[2].mx = 5.5f;

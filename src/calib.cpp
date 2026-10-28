@@ -157,6 +157,14 @@ bool DeviceH(const Device& d, float H[9]) {
   return true;
 }
 
+Screen* DeviceScreen(const Device& d, bool* fellBack) {
+  if (fellBack) *fellBack = false;
+  if (A.screens.empty()) return nullptr;
+  for (auto& s : A.screens) if (s.id == d.screenId) return &s;
+  if (fellBack) *fellBack = !d.screenId.empty();
+  return &A.screens[0];
+}
+
 Device MakeDevice(DevKind k, const std::string& id) {
   Device d; d.id = id; d.kind = k;
   const float tx[4] = {100, 1820, 1820, 100}, ty[4] = {100, 100, 980, 980};   // the same output-pixel targets for every kind

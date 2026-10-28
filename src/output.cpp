@@ -465,8 +465,8 @@ static void RenderOneOutput(OutWin& ow, const std::string& capture) {
   }
 
   // G13: sensor touches through H_s, drawn straight in output space (only the first screen: that is what was calibrated)
-  if (A.sensorOverlay && sc && !A.screens.empty() && sc == &A.screens[0]) for (auto& d : A.devices) {
-    float H[9]; if (d.touches.empty() || !DeviceH(d, H)) continue;
+  if (A.sensorOverlay && sc && !A.screens.empty()) for (auto& d : A.devices) {
+    float H[9]; if (d.touches.empty() || DeviceScreen(d) != sc || !DeviceH(d, H)) continue;
     float sx = fw / 1920.f, sy = fh / 1080.f, ph = std::fmod((float)g.time * 1.4f, 1.f);
     for (auto& t : d.touches) {
       float ox, oy; ApplyH(H, t.x, t.y, ox, oy);

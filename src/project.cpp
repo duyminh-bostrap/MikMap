@@ -238,6 +238,7 @@ namespace {
 JsonValue ScreenJ(const Screen& s) {
   JsonValue so = JsonValue::object();
   so.set("id", s.id); so.set("name", s.name); so.set("outDev", s.outDev); so.set("w", s.w); so.set("h", s.h); so.set("fps", s.fps);
+  so.set("realW", (double)s.realW); so.set("realH", (double)s.realH);
   so.set("edgeBlend", s.edgeBlend); so.set("visible", s.visible); so.set("role", s.role);
   so.set("opacity", s.opacity); so.set("brightness", s.brightness); so.set("contrast", s.contrast);
   so.set("red", s.red); so.set("green", s.green); so.set("blue", s.blue);
@@ -259,6 +260,7 @@ static void ConvertLegacyMasks(Screen& sc, int canvasW, int canvasH) {
 Screen ReadScreen(const JsonValue& so) {
   Screen s; s.id = so["id"].asString(); s.name = so["name"].asString(); s.outDev = so["outDev"].asString();
   s.w = std::max(16, so["w"].asInt(1920)); s.h = std::max(16, so["h"].asInt(1080)); s.fps = so["fps"].asInt(60);
+  s.realW = std::max(0.f, (float)so["realW"].asNumber(0)); s.realH = std::max(0.f, (float)so["realH"].asNumber(0));
   s.edgeBlend = so["edgeBlend"].asBool(); s.visible = so["visible"].asBool(true); s.role = std::clamp(so["role"].asInt(0), 0, 2);
   s.opacity = std::clamp(so["opacity"].asInt(100), 0, 100);
   s.brightness = std::clamp(so["brightness"].asInt(0), -100, 100); s.contrast = std::clamp(so["contrast"].asInt(0), -100, 100);
@@ -337,6 +339,7 @@ JsonValue Serialize(const App& a) {
   for (auto& d : a.devices) {   // configuration only: touches/status/fps/latency/packets are runtime and stay out of the snapshot
     JsonValue dob = JsonValue::object(); dob.set("id", d.id); dob.set("name", d.name); dob.set("kind", (int)d.kind);
     dob.set("host", d.host); dob.set("port", d.port); dob.set("enabled", d.enabled); dob.set("calibrated", d.calibrated);
+    dob.set("screen", d.screenId);
     dob.set("plugin", d.plugin); dob.set("config", d.config);   // plugin file name + JSON; empty for every other kind
     JsonValue cal = JsonValue::array(); for (auto& c : d.calib) cal.push(CalibJ(c));
     dob.set("calib", cal);
@@ -459,6 +462,7 @@ bool Deserialize(const JsonValue& root, App& out, std::string& err) {
     for (auto& d : sn["devices"].arrayItems()) {
       Device v = MakeDevice(DevKind(std::clamp(d["kind"].asInt(0), 0, 3)), d["id"].asString());
       v.name = d["name"].asString(v.name);
+      v.screenId = d["screen"].asString(out.screens[0].id);   // files from before sensors belonged to a screen: the first one, as it always was
       if (d.has("kind")) {
         v.host = d["host"].asString(v.host); v.port = d["port"].asInt(v.port);
         v.plugin = d["plugin"].asString(v.plugin); v.config = d["config"].asString(v.config);

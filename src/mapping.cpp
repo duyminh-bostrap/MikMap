@@ -2653,8 +2653,8 @@ static void Stage(ImRect r) {
     }
     // G13: sensor touches projected through the calibration homography H_s into output space (first screen only —
     // the calibration targets are in that screen's 1920x1080 pixels). Sensor coordinates stay raw until here (principle #5).
-    if (sc == &A.screens[0]) for (auto& d : A.devices) {   // each device through ITS OWN H_s
-      float H[9]; if (d.touches.empty() || !DeviceH(d, H)) continue;
+    for (auto& d : A.devices) {   // each device through ITS OWN H_s, on the screen it was calibrated against
+      float H[9]; if (d.touches.empty() || DeviceScreen(d) != sc || !DeviceH(d, H)) continue;
       for (auto& t : d.touches) {
         float ox, oy; ApplyH(H, t.x, t.y, ox, oy);
         ImVec2 p = toPx(ImVec2(ox, oy));
@@ -3214,6 +3214,13 @@ static void PropsPanel(ImRect r) {
           Text(fr.Min.x + 8, (fr.Min.y + fr.Max.y) * 0.5f, MONO_R, 11, K(pal::t88), vb);
           TextR(fr.Max.x - 8, (fr.Min.y + fr.Max.y) * 0.5f, MONO_R, 8, K(pal::t66), "DISPLAY", 0.09f);
         } else if (NumCell(fx, oy + y, fw, fl[i], id, vals[i], 0)) (i ? sc->h : sc->w) = std::clamp((int)std::lround(vals[i]), 16, 16384);
+      }
+      y += 35 + 8;
+      float rv[2] = {sc->realW, sc->realH};   // the physical surface in mm: the lidar page places the sensor on it
+      const char* rl[2] = {"Real width (mm)", "Real height (mm)"};
+      for (int i = 0; i < 2; ++i) {
+        char id[16]; snprintf(id, sizeof id, "##screal%d", i);
+        if (NumCell(x + i * (fw + 6), oy + y, fw, rl[i], id, rv[i], 0)) (i ? sc->realH : sc->realW) = std::clamp(std::round(rv[i]), 0.f, 100000.f);
       }
       y += 35 + 8;
     }
