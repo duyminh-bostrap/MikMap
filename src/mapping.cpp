@@ -1468,7 +1468,7 @@ static void TreeRow(ImRect r, const Node& n, bool railMode) {
   g.alpha = prev;
   if (h.hover) CursorHand();
   if (n.kind == Node::SensorN) {   // a sensor is not part of the Mapping selection: click jumps to its page
-    if (h.click) { for (int i = 0; i < (int)A.devices.size(); ++i) if (A.devices[i].id == n.dv) { A.screen = 2; A.selDevice = i; A.wizardStep = 0; A.editRoi = false; } }
+    if (h.click) { for (int i = 0; i < (int)A.devices.size(); ++i) if (A.devices[i].id == n.dv) { A.screen = 2; A.selDevice = i; A.wizardStep = 0; A.wizard.step = 0; A.editRoi = false; } }
     if (h.rclick) A.openCtx(ImGui::GetIO().MousePos, SensorMenu(n.dv));
     return;
   }
@@ -1528,7 +1528,7 @@ static std::vector<MenuItem> AddSliceMenu() {
 }
 
 void OpenSensorWizard(const std::string& screenId) {
-  A.screen = 2; A.editRoi = false;
+  A.screen = 2; A.editRoi = false; A.wizardStep = 0;   // the 4-point calibration wizard belongs to the device being left
   A.wizard = SensorWizard(); A.wizard.step = 1; A.wizard.screenId = screenId;
 }
 

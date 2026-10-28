@@ -639,7 +639,7 @@ int main(int argc, char** argv) {
   std::string shot; int startScreen = 0, frames = 12, W = 1440, H = 900, tab = -1, page = -1;
   bool sel = false, scaleGiven = false; int selLi = 0, selCi = 0, ctxTest = 0, cliScale = 100;
   bool fakeHokuyo = false, fakePlugin = false;
-  int spage = -1, stool = -1; std::string place;
+  int spage = -1, stool = -1, wizard = 0; std::string place;
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
     if (a == "--shot" && i + 1 < argc) shot = argv[++i];
@@ -649,6 +649,7 @@ int main(int argc, char** argv) {
     else if (a == "--tab" && i + 1 < argc) tab = atoi(argv[++i]);
     else if (a == "--page" && i + 1 < argc) page = atoi(argv[++i]);
     else if (a == "--spage" && i + 1 < argc) spage = atoi(argv[++i]);   // test aid: Sensor page tab, 0 Input / 1 Output
+    else if (a == "--wizard" && i + 1 < argc) wizard = std::clamp(atoi(argv[++i]), 1, 3);   // test aid: the add-sensor wizard at step N (Hokuyo; 3 = after adding the fake lidar + an unreachable one)
     else if (a == "--stool" && i + 1 < argc) stool = atoi(argv[++i]);   // test aid: Sensor Output tool, 0 Edit points / 1 Transform
     else if (a == "--place" && i + 1 < argc) place = argv[++i];         // test aid: --place W,H,x,y,angle = the selected sensor's screen in mm + its pose, placed
     else if (a == "--roundtrip" && i + 1 < argc) roundtrip = argv[++i];
@@ -1714,8 +1715,8 @@ int main(int argc, char** argv) {
 
   NewProject();
   std::unique_ptr<mikmap::test::FakeScipServer> fakeScip;   // --fake-hokuyo: a fake lidar that lives as long as the window
+  if (fakeHokuyo || wizard == 3) fakeScip = std::make_unique<mikmap::test::FakeScipServer>();   // --wizard 3 adds its own device on it
   if (fakeHokuyo) {
-    fakeScip = std::make_unique<mikmap::test::FakeScipServer>();
     if (fakeScip->error().empty()) for (auto& d : A.devices) if (d.kind == DevKind::Hokuyo) {
       d.host = "127.0.0.1"; d.port = fakeScip->port(); d.enabled = true;
       A.selDevice = (int)(&d - A.devices.data());
@@ -1742,6 +1743,19 @@ int main(int argc, char** argv) {
   if (page >= 0) A.mpage = page;
   if (spage >= 0) A.spage = spage;
   if (stool >= 0) A.sensorTool = stool;
+  if (wizard > 0 && !A.screens.empty()) {
+    OpenSensorWizard(A.screens[0].id);
+    if (wizard >= 2) { A.wizard.kind = DevKind::Hokuyo; SensorWizardNext(); }
+    if (wizard == 2) {   // a list as a scan would leave it: two lidars, one ticked
+      for (const char* h : {"192.168.0.10", "192.168.0.11"}) { A.wizard.manualHost = h; SensorWizardAddManual(); }
+      A.wizard.pick[1] = 0;
+    }
+    if (wizard == 3) {
+      A.wizard.manualHost = fakeScip && fakeScip->error().empty() ? "127.0.0.1:" + std::to_string(fakeScip->port()) : "127.0.0.1"; SensorWizardAddManual();
+      A.wizard.manualHost = "192.0.2.1"; SensorWizardAddManual();   // TEST-NET: never answers, so the table shows a failing device
+      SensorWizardNext();
+    }
+  }
   if (!place.empty()) if (Device* d = A.curDevice()) if (Screen* s = DeviceScreen(*d)) {
     float v[5] = {}; const char* c = place.c_str();
     for (int k = 0; k < 5 && *c; ++k) { char* e = nullptr; v[k] = std::strtof(c, &e); c = *e == ',' ? e + 1 : e; }

@@ -3,6 +3,7 @@
 // Output = where its points land on the screen (1920x1080): the 4 calibration targets, edited with Mapping's own quad tools.
 #include "app.h"
 #include "io/ISensorSource.h"
+#include "io/net/NetScan.h"
 #include "io/plugin/PluginLoader.h"
 #include "io/sources/ScanSource.h"
 #include <cmath>
@@ -541,6 +542,10 @@ static void ConnectionSection(Device& d, float x, float w, float oy, float& y) {
   PropertyRow(Rc(x - 6, oy + y, w + 12, 24), "Packets", std::to_string(d.packets).c_str()); y += 24 + 6;
   if (WideButton(x, oy + y, w, "Reconnect", "rotate-ccw", pal::mint)) { RestartSource(d.id); A.notify("Reconnecting " + d.name); }
   y += 26 + 8;
+  if (d.kind == DevKind::Hokuyo) {   // look for more lidars on the network: the add wizard at its scan step, on this sensor's screen
+    if (WideButton(x, oy + y, w, "Scan again", "radar", pal::mint)) { OpenSensorWizard(d.screenId); A.wizard.kind = DevKind::Hokuyo; SensorWizardNext(); }
+    y += 26 + 8;
+  }
 }
 
 static void ScreenSizeSection(Device& d, float x, float w, float oy, float& y) {
@@ -777,6 +782,285 @@ static void SensorProps(ImRect r, Device* d) {
   sa.End(W, y + 8);
 }
 
+// ───────────────────────── Add-sensor wizard ─────────────────────────
+// The only way to add a device: 1 pick a type · 2 connect (Hokuyo: scan the subnet) · 3 watch the new devices come up.
+constexpr uint16_t kHokuyoPort = 10940;
+static std::vector<mikmap::Ipv4Iface> gIfs; static bool gIfsFresh = false;   // network cards, read once per visit to step 2
+
+static std::string PluginFile(const mikmap::SensorPlugin& p) {
+  const size_t k = p.path.find_last_of("/\\");
+  return k == std::string::npos ? p.path : p.path.substr(k + 1);
+}
+static std::string NewDeviceId() {
+  for (int n = 1;; ++n) {
+    const std::string id = "dev" + std::to_string(n);
+    bool taken = false; for (auto& e : A.devices) taken |= e.id == id;
+    if (!taken) return id;
+  }
+}
+static int FreeOscPort() {   // the lowest port >= 9000 no device uses yet
+  for (int p = 9000; p < 65536; ++p) {
+    bool used = false; for (auto& e : A.devices) used |= e.port == p;
+    if (!used) return p;
+  }
+  return 9000;
+}
+static std::string Numbered(const std::string& base) {   // "Simulated radar", "Simulated radar 2", ...
+  int same = 0; for (auto& e : A.devices) same += e.name == base || e.name.rfind(base + " ", 0) == 0;
+  return same ? base + " " + std::to_string(same + 1) : base;
+}
+
+void SensorWizardAddManual() {
+  SensorWizard& w = A.wizard;
+  std::string h = w.manualHost;
+  h.erase(0, h.find_first_not_of(" \t")); h.erase(h.find_last_not_of(" \t") + 1);
+  if (h.empty()) return;
+  w.pick.resize(w.found.size(), 0);
+  for (size_t i = 0; i < w.found.size(); ++i) if (w.found[i] == h) { w.pick[i] = 1; w.manualHost.clear(); return; }
+  w.found.push_back(h); w.pick.push_back(1); w.manualHost.clear();
+}
+
+void SensorWizardNext() {
+  SensorWizard& w = A.wizard;
+  if (w.step == 1 && w.kind != DevKind::Sim) {
+    w.step = 2; w.found.clear(); w.pick.clear(); w.added.clear(); w.scanning = false;
+    if (w.kind == DevKind::Skeleton) w.port = FreeOscPort();
+    return;
+  }
+  if (w.step != 1 && w.step != 2) return;
+  std::string sid = w.screenId;
+  if (sid.empty() && !A.screens.empty()) sid = A.screens[0].id;
+  auto add = [&](DevKind k, const std::string& name) -> Device& {
+    Device nd = MakeDevice(k, NewDeviceId());
+    nd.name = name; nd.enabled = true; nd.screenId = sid;
+    A.devices.push_back(nd); w.added.push_back(nd.id);
+    return A.devices.back();
+  };
+  w.added.clear();
+  if (w.kind == DevKind::Hokuyo) {
+    w.pick.resize(w.found.size(), 0);
+    for (size_t i = 0; i < w.found.size(); ++i) {
+      if (!w.pick[i]) continue;
+      const std::string& e = w.found[i];
+      const size_t c = e.rfind(':');
+      const int port = c == std::string::npos ? kHokuyoPort : std::atoi(e.c_str() + c + 1);   // a bad port is kept: the device reports "Port must be 1-65535"
+      Device& d = add(DevKind::Hokuyo, "Hokuyo " + e);
+      d.host = e.substr(0, c); d.port = port;
+    }
+    if (w.added.empty()) { A.notify("Tick at least one lidar, or type its IP and Add"); return; }
+  } else if (w.kind == DevKind::Skeleton) {
+    add(DevKind::Skeleton, "Camera :" + std::to_string(w.port)).port = w.port;
+  } else if (w.kind == DevKind::Plugin) {
+    std::string name = w.plugin;
+    for (auto& p : SensorPlugins()) if (PluginFile(p) == w.plugin && !p.name.empty()) name = p.name;
+    Device& d = add(DevKind::Plugin, Numbered(name));
+    d.plugin = w.plugin; d.config = w.config;
+  } else {
+    add(DevKind::Sim, Numbered("Simulated radar"));
+  }
+  A.pushHist();
+  w.step = 3;
+}
+
+void SensorWizardDone() {
+  SensorWizard& w = A.wizard;
+  w.step = 0; A.spage = 0;
+  if (!w.added.empty()) for (int i = 0; i < (int)A.devices.size(); ++i) if (A.devices[i].id == w.added[0]) { A.selDevice = i; break; }
+}
+
+// one choice on step 1; a dimmed card only says it is planned
+static bool WizCard(ImRect r, const char* icon, const char* title, const char* sub, bool dim) {
+  Hit h = HitR(r);
+  const float prev = g.alpha; if (dim) g.alpha *= 0.45f;
+  Box(r, h.hover && !dim ? K(pal::mint, 0.10f) : K(pal::g14), h.hover && !dim ? K(pal::mint, 0.6f) : K(pal::g2a), 4);
+  const float cy = (r.Min.y + r.Max.y) * 0.5f;
+  Icon(icon, ImVec2(r.Min.x + 26, cy), 20, K(dim ? pal::t66 : pal::mint));
+  TextEll(r.Min.x + 50, cy - 8, r.GetWidth() - 60, UI_B, 11, K(pal::white), title);
+  TextEll(r.Min.x + 50, cy + 9, r.GetWidth() - 60, MONO_R, 9, K(pal::t88), sub);
+  g.alpha = prev;
+  if (h.hover) CursorHand();
+  return h.click;
+}
+
+static void TickRow(ImRect r, const char* label, char& on) {
+  Hit h = HitR(r);
+  if (h.hover) Fill(r, K(pal::g1c), 2);
+  const float cy = (r.Min.y + r.Max.y) * 0.5f;
+  ImRect cb(r.Min.x + 6, cy - 7, r.Min.x + 20, cy + 7);
+  Box(cb, on ? K(pal::mint) : K(pal::g050), on ? K(pal::mint) : K(pal::g22), 2);
+  if (on) Check(ImVec2((cb.Min.x + cb.Max.x) * 0.5f, cy), 12, K(0x0f0f0f));
+  Text(r.Min.x + 28, cy, MONO_R, 10, K(pal::tcc), label);
+  if (h.hover) CursorHand();
+  if (h.click) on = !on;
+}
+
+static void SensorWizardView(ImRect r) {
+  SensorWizard& w = A.wizard;
+  if (w.step != 2) gIfsFresh = false;
+  Fill(r, K(pal::g050));
+  // header: title, the three steps, the target screen, close
+  ImRect tb(r.Min.x, r.Min.y, r.Max.x, r.Min.y + 44);
+  Fill(tb, K(pal::g12)); HLine(tb.Min.x, tb.Max.x, tb.Max.y - 1, K(pal::g2a));
+  const float cy = tb.Min.y + 21.5f;
+  Icon("plus", ImVec2(tb.Min.x + 18, cy), 14, K(pal::mint));
+  Text(tb.Min.x + 32, cy, UI_B, 11, K(pal::white), "ADD SENSOR", 0.09f);
+  static const char* kSteps[3] = {"1 Type", "2 Connect", "3 Check"};
+  float sx = tb.Min.x + 32 + TextW(UI_B, 11, "ADD SENSOR", 0.09f) + 18;
+  for (int i = 0; i < 3; ++i) {
+    const bool on = w.step == i + 1, past = w.step > i + 1;
+    Text(sx, cy, MONO_B, 10, K(on ? pal::mint : past ? pal::t88 : pal::t66), kSteps[i]);
+    sx += TextW(MONO_B, 10, kSteps[i]) + 14;
+  }
+  ImRect xb(tb.Max.x - 34, cy - 13, tb.Max.x - 8, cy + 13);
+  Hit xh = HitR(xb);
+  if (xh.hover) { Fill(xb, K(pal::g22), 3); CursorHand(); }
+  Icon("x", ImVec2((xb.Min.x + xb.Max.x) * 0.5f, cy), 14, K(xh.hover ? pal::white : pal::t88));
+  if (xh.click) { if (w.step == 3) SensorWizardDone(); else w.step = 0; return; }   // devices made on step 3 stay
+  {
+    const Screen* sc = nullptr; for (auto& s : A.screens) if (s.id == w.screenId) sc = &s;
+    if (!sc && !A.screens.empty()) sc = &A.screens[0];
+    if (sc) TextR(xb.Min.x - 10, cy, MONO_R, 10, K(pal::coral), ("on " + sc->name).c_str());
+  }
+
+  const float colW = std::min(640.f, r.GetWidth() - 48), x = (r.Min.x + r.Max.x - colW) * 0.5f;
+  float y = tb.Max.y + 24;
+
+  if (w.step == 1) {
+    Text(x, y + 6, UI_B, 11, K(pal::tcc), "What are you connecting?"); y += 26;
+    struct C { DevKind k; std::string plugin, title, sub; const char* icon; bool dim; };
+    std::vector<C> cards = {{DevKind::Skeleton, "", "Camera 2D", "Body skeleton over OSC (pose_bridge)", "camera", false},
+                            {DevKind::Hokuyo, "", "Lidar 2D \xC2\xB7 Hokuyo", "UST-10LX / 20LX over Ethernet", "radar", false}};
+    for (auto& p : SensorPlugins()) cards.push_back({DevKind::Plugin, PluginFile(p), "Lidar 2D \xC2\xB7 " + (p.name.empty() ? PluginFile(p) : p.name), PluginFile(p), "radar", false});
+    cards.push_back({DevKind::Sim, "", "Simulated", "Click a radar to make touches", "activity", false});
+    cards.push_back({DevKind::Sim, "", "Lidar 3D", "Planned", "layers", true});
+    cards.push_back({DevKind::Sim, "", "Depth camera", "Planned", "camera", true});
+    const float cw = (colW - 10) * 0.5f, ch = 64;
+    for (size_t i = 0; i < cards.size(); ++i) {
+      const C& c = cards[i];
+      ImRect cr = Rc(x + (i % 2) * (cw + 10), y + (i / 2) * (ch + 10), cw, ch);
+      if (!WizCard(cr, c.icon, c.title.c_str(), c.sub.c_str(), c.dim)) continue;
+      if (c.dim) { A.notify("Not supported yet \xE2\x80\x94 planned"); continue; }
+      w.kind = c.k; w.plugin = c.plugin; w.config.clear();
+      if (c.k == DevKind::Plugin) for (auto& p : SensorPlugins()) if (PluginFile(p) == c.plugin) w.config = p.defaultConfig;
+      SensorWizardNext();
+      return;
+    }
+    return;
+  }
+
+  if (w.step == 2) {
+    float fy = r.Max.y - 24 - 26;   // footer: Back · Next
+    const float bw = 110;
+    if (WideButton(x, fy, bw, "Back", "chevron-left", pal::t88)) { w.step = 1; return; }
+    if (w.kind == DevKind::Hokuyo) {
+      if (!gIfsFresh) { gIfs = mikmap::localIpv4Interfaces(); gIfsFresh = true; }   // a card plugged in later shows after Back
+      auto& ifs = gIfs;
+      if (w.iface >= (int)ifs.size()) w.iface = 0;
+      PLabel(x, y, "Network card"); y += 9 + 4;
+      ImRect ir(x, y, x + colW, y + 28);
+      Hit ih = HitR(ir);
+      Box(ir, ih.hover ? K(pal::ctrlHover) : K(pal::g1c), K(pal::g22), 3);
+      std::string cur = ifs.empty() ? std::string("No network card is up \xE2\x80\x94 type the IP below")
+                                     : ifs[w.iface].name + "  \xC2\xB7  " + ifs[w.iface].address + "/" + std::to_string(ifs[w.iface].prefix);
+      TextEll(ir.Min.x + 10, (ir.Min.y + ir.Max.y) * 0.5f, colW - 40, MONO_R, 10, K(pal::tf3), cur.c_str());
+      Icon("chevron-down", ImVec2(ir.Max.x - 12, (ir.Min.y + ir.Max.y) * 0.5f), 10, K(pal::t66));
+      if (ih.hover) CursorHand();
+      if (ih.click && !ifs.empty()) {
+        std::vector<MenuItem> mi;
+        for (int i = 0; i < (int)ifs.size(); ++i) {
+          MenuItem it; it.label = ifs[i].name + "  " + ifs[i].address + "/" + std::to_string(ifs[i].prefix); it.icon = "activity";
+          it.toneHex = i == w.iface ? pal::mint : 0;
+          it.run = [i] { A.wizard.iface = i; };
+          mi.push_back(it);
+        }
+        A.openCtx(ImVec2(ir.Min.x, ir.Max.y + 4), mi);
+      }
+      y += 28 + 8;
+      const bool tooBig = !ifs.empty() && ifs[w.iface].prefix < 22;
+      const bool canScan = !ifs.empty() && !w.scanning && !tooBig;
+      {
+        const float prev = g.alpha; if (!canScan) g.alpha *= 0.5f;
+        const bool click = WideButton(x, y, 200, w.scanning ? "Scanning\xE2\x80\xA6" : "Scan port 10940", "radar", pal::mint);
+        g.alpha = prev;
+        if (click && canScan) {
+          if (mikmap::hostsInSubnet(ifs[w.iface].address, ifs[w.iface].prefix).empty()) A.notify("Nothing to scan on " + ifs[w.iface].address);
+          else { w.scanning = true; StartIpScan(ifs[w.iface].address, ifs[w.iface].prefix, kHokuyoPort); }
+        }
+      }
+      if (tooBig) {
+        char tb2[96]; snprintf(tb2, sizeof tb2, "Subnet too large to scan (/%d) \xE2\x80\x94 type the IP", ifs[w.iface].prefix);
+        TextEll(x + 212, y + 13, colW - 212, MONO_R, 10, K(pal::yellow), tb2);
+      }
+      std::vector<std::string> res;
+      if (w.scanning && IpScanDone(res)) {
+        w.scanning = false;
+        w.pick.resize(w.found.size(), 0);
+        for (auto& h : res) {   // found lidars join the list ticked; one already there just gets ticked
+          bool had = false;
+          for (size_t i = 0; i < w.found.size(); ++i) if (w.found[i] == h) { w.pick[i] = 1; had = true; }
+          if (!had) { w.found.push_back(h); w.pick.push_back(1); }
+        }
+        A.notify(res.empty() ? "No lidar answered on port 10940" : "Found " + std::to_string(res.size()) + (res.size() == 1 ? " lidar" : " lidars"));
+      }
+      y += 26 + 14;
+      PLabel(x, y, "Lidars"); y += 9 + 4;
+      w.pick.resize(w.found.size(), 0);
+      if (w.found.empty()) { Text(x, y + 12, MONO_R, 10, K(pal::t66), w.scanning ? "Scanning\xE2\x80\xA6" : "Nothing yet \xE2\x80\x94 Scan, or type an IP below"); y += 24; }
+      // shortcut: rows past the footer are not drawn (still ticked); add a ScrollArea if a site ever has more lidars than fit
+      for (size_t i = 0; i < w.found.size() && y + 26 < fy - 70; ++i) { TickRow(Rc(x, y, colW, 24), w.found[i].c_str(), w.pick[i]); y += 26; }
+      y += 10;
+      PLabel(x, y, "Add by IP (ip or ip:port)"); y += 9 + 4;
+      TextField("##wizhost", Rc(x, y, colW - 90, 26), w.manualHost, MONO_R, 10);
+      if (WideButton(x + colW - 80, y, 80, "Add", "plus", pal::mint)) SensorWizardAddManual();
+      int n = 0; for (char c : w.pick) n += c;
+      char nl[48]; snprintf(nl, sizeof nl, n == 1 ? "Add 1 lidar" : "Add %d lidars", n);
+      const float prev = g.alpha; if (n == 0) g.alpha *= 0.5f;
+      const bool next = WideButton(x + colW - 180, fy, 180, nl, nullptr, pal::mint);
+      g.alpha = prev;
+      if (next) SensorWizardNext();
+    } else if (w.kind == DevKind::Skeleton) {
+      PLabel(x, y, "OSC UDP port"); y += 9 + 4;
+      IntField("##wizport", Rc(x, y, 160, 26), w.port);
+      w.port = std::clamp(w.port, 1, 65535);
+      y += 26 + 12;
+      PLabel(x, y, "Start the camera bridge"); y += 9 + 4;
+      const std::string cmd = "python tools/pose_bridge/pose_bridge.py --port " + std::to_string(w.port);
+      Box(Rc(x, y, colW, 28), K(0x000000), K(pal::g22), 3);
+      TextEll(x + 10, y + 14, colW - 20, MONO_R, 10, K(pal::mint), cmd.c_str());
+      if (WideButton(x + colW - 180, fy, 180, "Add camera", nullptr, pal::mint)) SensorWizardNext();
+    } else {   // Plugin
+      PLabel(x, y, ("Config for " + w.plugin + " (JSON)").c_str()); y += 9 + 4;
+      TextField("##wizcfg", Rc(x, y, colW, 26), w.config, MONO_R, 10);
+      if (WideButton(x + colW - 180, fy, 180, "Add lidar", nullptr, pal::mint)) SensorWizardNext();
+    }
+    return;
+  }
+
+  // step 3: the new devices, live
+  Text(x, y + 6, UI_B, 11, K(pal::tcc), w.added.size() == 1 ? "Connecting the new sensor" : "Connecting the new sensors"); y += 26;
+  for (auto& id : w.added) {
+    const Device* d = nullptr; for (auto& e : A.devices) if (e.id == id) d = &e;
+    if (!d) continue;   // removed meanwhile (undo)
+    ImRect rr = Rc(x, y, colW, 40);
+    Box(rr, K(pal::g14), K(pal::g2a), 4);
+    const int st = d->status;
+    const bool run = d->kind == DevKind::Sim || st == (int)mikmap::SourceStatus::Running;
+    const uint32_t dot = st == (int)mikmap::SourceStatus::Error ? pal::red : run ? pal::mint : pal::yellow;
+    Dot(ImVec2(rr.Min.x + 14, rr.Min.y + 14), 8, dot, run);
+    TextEll(rr.Min.x + 26, rr.Min.y + 14, colW * 0.45f, UI_B, 11, K(pal::white), d->name.c_str());
+    char sl[64];
+    if (d->kind == DevKind::Sim) snprintf(sl, sizeof sl, "Simulated");
+    else if (run) snprintf(sl, sizeof sl, "%d fps", d->fps);
+    else snprintf(sl, sizeof sl, st == (int)mikmap::SourceStatus::Error ? "Error" : "Connecting\xE2\x80\xA6");
+    TextR(rr.Max.x - 10, rr.Min.y + 14, MONO_B, 10, K(run ? pal::mint : st == (int)mikmap::SourceStatus::Error ? pal::red : pal::yellow), sl);
+    const std::string sub = d->error.empty() ? Endpoint(*d) : d->error;
+    TextEll(rr.Min.x + 26, rr.Min.y + 29, colW - 36, MONO_R, 9, K(d->error.empty() ? pal::t88 : pal::red), sub.c_str());
+    y += 40 + 6;
+  }
+  TextEll(x, y + 10, colW, MONO_R, 9, K(pal::t66), "A sensor that does not connect stays in the list \xE2\x80\x94 fix its address in Properties");
+  if (WideButton(x + colW - 140, r.Max.y - 24 - 26, 140, "Done", nullptr, pal::mint)) SensorWizardDone();
+}
+
 void DrawSensor(ImRect body) {
   Fill(body, K(pal::g0f));
   const float tw = A.sensorTreeCollapsed ? 46.f : 236.f, pw = 280.f;
@@ -784,6 +1068,7 @@ void DrawSensor(ImRect body) {
   Device* d = A.curDevice();
   DrawTree(tree, TreeMode::Sensors);
   SensorProps(ImRect(body.Max.x - pw, body.Min.y, body.Max.x, body.Max.y), d);
-  SensorStage(ImRect(tree.Max.x, body.Min.y, body.Max.x - pw, body.Max.y), d);
+  const ImRect stage(tree.Max.x, body.Min.y, body.Max.x - pw, body.Max.y);
+  if (A.wizard.step > 0) SensorWizardView(stage); else SensorStage(stage, d);
   DrawTreePopover(tree, TreeMode::Sensors);
 }

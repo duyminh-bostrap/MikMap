@@ -234,9 +234,10 @@ struct Node {
   uint32_t color = pal::coral;
   DevKind dk = DevKind::Sim;
 };
-// Add-sensor wizard (Task 7 draws it). Runtime only, never serialized.
+// Add-sensor wizard (sensor.cpp draws it in place of the stage while step > 0). Runtime only, never serialized.
+// step 1 type · 2 connect · 3 watch the new devices come up. found/pick: Hokuyo hosts ("ip" or "ip:port") and which are ticked.
 struct SensorWizard { int step = 0; DevKind kind = DevKind::Hokuyo; std::string plugin, screenId, manualHost, config;
-                      int iface = 0; std::vector<std::string> found; std::vector<char> pick; std::vector<std::string> added; bool scanning = false; };
+                      int iface = 0, port = 0; std::vector<std::string> found; std::vector<char> pick; std::vector<std::string> added; bool scanning = false; };
 
 inline uint32_t RoleHex(int r) { return r == 0 ? pal::coral : r == 1 ? pal::mint : pal::cyan; }
 extern const uint32_t CLIP_COLORS[6];
@@ -680,6 +681,11 @@ std::vector<Node> BuildTree(TreeMode m, bool onlyScreen, const std::string& only
 void DrawTreePopover(ImRect r, TreeMode m);   // the open rail popover: call after the stage so it floats over it
 void DrawTree(ImRect r, TreeMode m);   // full panel, or the 46 px rail when that page's collapse flag is on
 void OpenSensorWizard(const std::string& screenId);   // jumps to the Sensor page, wizard step 1, screen preselected
+void SensorWizardNext();         // step 1 -> 2 (Sim: straight to 3); step 2 -> 3 creates one enabled device per ticked item on wizard.screenId
+void SensorWizardAddManual();    // step 2 Hokuyo: wizard.manualHost ("ip" or "ip:port") joins the list, ticked
+void SensorWizardDone();         // step 3 -> 0, the first new device selected
+void StartIpScan(const std::string& address, int prefix, uint16_t port);   // sources.cpp: one worker thread, result via an atomic done flag
+bool IpScanDone(std::vector<std::string>& out);                            // true once, with the hosts that accepted the port
 Screen* DeviceScreen(const Device& d, bool* fellBack = nullptr);   // never null while A.screens is non-empty; *fellBack = a named screen is gone
 bool PlacementCalib(Device& d, const Screen& sc, const mikmap::LidarPose& pose);   // places a lidar by its pose (mm) on a screen of known real size: writes the 4 calib pairs; false + d untouched if the size is unknown
 bool ApplyPlacement(Device& d);   // only while d.placed: PlacementCalib on its own screen with d.pose (a hand-tuned "Custom (4-point)" quad is left alone)
@@ -691,7 +697,6 @@ Device MakeDevice(DevKind k, const std::string& id);   // per-kind defaults (nam
 // Live sensors (sources.cpp): the real ISensorSource threads, one per enabled non-Sim device, kept OUT of App so undo never touches them.
 namespace mikmap { class ISensorSource; struct LaserScan; struct SensorPlugin; }
 inline constexpr int kCalibJoint = 16;   // MediaPipe RIGHT_WRIST of person slot 0 (OSC touch id 16): the point a Skeleton calibrates with
-inline constexpr float kRadarRangeMm = 4000.f;   // fixed 4 m radar range; UST-20LX sees 20 m, so add zoom when the job needs it
 void SensorsTick(double now);            // render thread, once per frame: start/stop/restart sources from enabled+host/port, consume frames into d.touches, fire touch.down routes, refresh status/error/fps/latency/packets, run the capture
 void SensorsShutdown();
 void RestartSource(const std::string& deviceId);   // Reconnect: drop the live source; the next SensorsTick starts a fresh one

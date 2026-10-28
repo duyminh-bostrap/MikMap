@@ -19,12 +19,14 @@
 #include "app.h"
 #include "core/util/Clock.h"
 #include "io/ISensorSource.h"
+#include "io/net/NetScan.h"
 #include "io/plugin/PluginLoader.h"
 #include "io/sources/HokuyoSource.h"
 #include "io/sources/OscSource.h"
 #include "io/sources/PluginSource.h"
 #include "io/sources/ScanSource.h"
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <filesystem>
@@ -119,7 +121,26 @@ void CaptureFrame(Device& d, double now) {
   g_cap.on = false;
 }
 
+// Wizard IP scan: one worker thread; it only touches `result` and publishes it with done (release). Never ImGui, never A.
+struct IpScan { std::thread t; std::atomic<bool> done{false}; std::vector<std::string> result; } g_scan;
+void JoinIpScan() { if (g_scan.t.joinable()) g_scan.t.join(); }
+
 }  // namespace
+
+void StartIpScan(const std::string& address, int prefix, uint16_t port) {
+  JoinIpScan();   // a previous scan finishes first (at most one 300 ms batch per 256 hosts)
+  g_scan.result.clear(); g_scan.done.store(false, std::memory_order_relaxed);
+  g_scan.t = std::thread([address, prefix, port] {
+    g_scan.result = mikmap::scanTcpPort(mikmap::hostsInSubnet(address, prefix), port, 300);
+    g_scan.done.store(true, std::memory_order_release);
+  });
+}
+
+bool IpScanDone(std::vector<std::string>& out) {
+  if (!g_scan.t.joinable() || !g_scan.done.load(std::memory_order_acquire)) return false;
+  JoinIpScan(); out = std::move(g_scan.result); g_scan.result.clear();
+  return true;
+}
 
 std::string SensorPluginDir() {
 #if defined(_WIN32)
@@ -200,7 +221,7 @@ void SensorsTick(double now) {
   if (fire) FireTouchRoutes();
 }
 
-void SensorsShutdown() { g_live.clear(); g_cap.on = false; }
+void SensorsShutdown() { g_live.clear(); g_cap.on = false; JoinIpScan(); }
 void RestartSource(const std::string& deviceId) { g_live.erase(deviceId); }
 
 mikmap::ISensorSource* DeviceSource(const Device& d) {
@@ -330,6 +351,42 @@ bool SensorSelfTest(std::string& why) {
     if (DeviceSource(dh)) return fail("sensor: Reconnect must drop the live source");
     SensorsTick(now());
     if (!DeviceSource(dh)) return fail("sensor: after Reconnect the next tick must start the source again");
+  }
+
+  // Add-sensor wizard: the scan thread finds a fake lidar, then step 1 Hokuyo -> step 2 typed 127.0.0.1:<port> -> step 3,
+  // one enabled device on the chosen screen that reaches Running within 2 s.
+  {
+    mikmap::test::FakeScipServer wz;
+    if (!wz.error().empty()) return fail("wizard: the fake SCIP server did not start");
+    StartIpScan("127.0.0.2", 30, wz.port());   // 127.0.0.0/30 without itself = just 127.0.0.1
+    std::vector<std::string> found; bool got = false;
+    for (double t0 = now(); now() - t0 < 2.0 && !(got = IpScanDone(found));) std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    if (!got || found != std::vector<std::string>{"127.0.0.1"}) return fail("wizard: the IP scan thread did not report the listening fake lidar");
+
+    const size_t before = A.devices.size();
+    A.wizardStep = 3; OpenSensorWizard(A.screens[1].id);
+    if (A.wizardStep != 0 || A.wizard.step != 1) return fail("wizard: opening it must close the 4-point calibration wizard and start at step 1");
+    A.wizard.kind = DevKind::Hokuyo; SensorWizardNext();
+    if (A.wizard.step != 2) return fail("wizard: a Hokuyo goes to the connect step");
+    A.wizard.manualHost = " 127.0.0.1:" + std::to_string(wz.port()) + " "; SensorWizardAddManual();
+    if (A.wizard.found.size() != 1 || !A.wizard.pick[0]) return fail("wizard: a typed IP must join the list ticked");
+    SensorWizardNext();
+    if (A.wizard.step != 3 || A.devices.size() != before + 1 || A.wizard.added.size() != 1) return fail("wizard: one ticked lidar must make exactly one device");
+    const std::string nid = A.wizard.added[0];
+    Device& nw = dev(nid.c_str());
+    if (nw.screenId != A.screens[1].id || !nw.enabled || nw.host != "127.0.0.1" || nw.port != wz.port() || nw.name != "Hokuyo 127.0.0.1:" + std::to_string(wz.port()))
+      return fail("wizard: the new Hokuyo must be enabled, on the chosen screen, at the typed address");
+    for (double t0 = now(); now() - t0 < 2.0 && dev(nid.c_str()).status != (int)mikmap::SourceStatus::Running;) { SensorsTick(now()); std::this_thread::sleep_for(std::chrono::milliseconds(5)); }
+    if (dev(nid.c_str()).status != (int)mikmap::SourceStatus::Running) return fail("wizard: the new Hokuyo did not reach Running within 2 s");
+    SensorWizardDone();
+    if (A.wizard.step != 0 || !A.curDevice() || A.curDevice()->id != nid) return fail("wizard: Done must close it and select the new device");
+    dev(nid.c_str()).enabled = false; SensorsTick(now());   // stop it before the fake server goes away
+
+    OpenSensorWizard(A.screens[0].id); A.wizard.kind = DevKind::Skeleton; SensorWizardNext();
+    for (auto& e : A.devices) if (e.port == A.wizard.port) return fail("wizard: a new camera must get a port no device uses");
+    OpenSensorWizard(A.screens[0].id); A.wizard.kind = DevKind::Sim; SensorWizardNext();
+    if (A.wizard.step != 3 || A.devices.size() != before + 2 || A.devices.back().kind != DevKind::Sim) return fail("wizard: Simulated skips the connect step");
+    A.wizard.step = 0;
   }
 
 #ifdef MIKMAP_FAKE_PLUGIN_FILE
