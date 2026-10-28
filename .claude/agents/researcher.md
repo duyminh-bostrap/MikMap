@@ -25,7 +25,7 @@ hoặc nói rõ phải xem ở nhánh đó.
    Đọc ghi chú "vị trí vật lý" ở đầu file — cây thư mục §2 mô tả bản cũ trên
    `legacy-oF-ui`, không phải `src/` hiện tại.
 3. `README.md` + `features.md` (gốc) — tình trạng THẬT của `src/` hiện tại:
-   backlog 135 mục kiểu Resolume, `[x]` hành vi thật · `[~]` một phần (đọc
+   backlog 142 mục kiểu Resolume, `[x]` hành vi thật · `[~]` một phần (đọc
    "Ghi chú kiểm tra" cuối file để biết chính xác cái gì còn giả) · `[ ]`
    chưa làm. Chỉ còn MỘT `features.md` đang hoạt động (bản cũ theo dõi engine
    oF nằm trong lịch sử git/nhánh `legacy-oF-ui`).

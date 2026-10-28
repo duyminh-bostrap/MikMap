@@ -22,10 +22,10 @@ còn ở giai đoạn prototype:
 | | |
 |---|---|
 | Giao diện | 3 màn Composition · Advanced Mapping · Sensor I/O + cửa sổ Cài đặt, bám bản thiết kế `MikMap Workspace.dc.html` |
-| Engine dùng chung (`engine/core`, `engine/io`) | Đã biên dịch & link vào app; `src/` mới chỉ gọi `core/util/Json` (cho lưu/mở dự án), **chưa gọi model/calib/io thật** |
+| Engine dùng chung (`engine/core`, `engine/io`) | Đã biên dịch & link vào app; `src/` gọi `core/util/Json` (lưu/mở dự án), `core/calib/LidarPlacement`, `core/math` (EdgeBlend/Triangulate), `io/net`, `io/sources`, `io/plugin` (thread sensor); **chưa gọi model/warp/calib DLT/ProjectIO thật** |
 | Mô hình dữ liệu app hiện tại | Struct riêng trong `src/app.h`, chưa dùng `core/model` thật |
 | Đối chiếu chi tiết | `features.md` — 71 mục `[x]` hành vi thật · 14 mục `[~]` một phần · 57 mục `[ ]`, trên 142 mục Resolume-parity |
-| Build đa nền tảng | **Đã kiểm chứng thật**: macOS (2026-09-22, build+chạy trên máy Mac thật) · Linux (2026-09-22, build native + chạy dưới Xvfb, chụp màn hình) · Windows — **hai đường kiểm chứng riêng**: cross-compile MinGW-w64 (2026-09-22, ra `mikmap.exe` PE32+ thật, chạy qua Wine, chụp màn hình) **và MSVC thật trên Windows thật** (2026-09-23, build Debug lẫn Release qua cả dòng lệnh lẫn task/F5 của VS Code, chạy được) — cả 3 OS cùng render đúng giao diện, cùng tiếng Việt có dấu |
+| Build đa nền tảng | **Đã kiểm chứng thật**: macOS (2026-09-22, build+chạy trên máy Mac thật) · Linux (2026-09-22, build native + chạy dưới Xvfb, chụp màn hình) · Windows — **hai đường kiểm chứng riêng**: cross-compile MinGW-w64 (2026-09-22, ra `mikmap.exe` PE32+ thật, chạy qua Wine, chụp màn hình) **và MSVC thật trên Windows thật** (2026-09-23, build Debug lẫn Release qua cả dòng lệnh lẫn task/F5 của VS Code, chạy được) — cả 3 OS cùng render đúng giao diện, cùng tiếng Việt có dấu. **Chưa kiểm:** build Linux/macOS của code trang Sensor (2026-10-28: `engine/io/net` NetScan/TouchSender, `src/sources.cpp`) — mới build/chạy trên Windows MSVC |
 
 Xem [`features.md`](features.md) để biết chính xác cái gì thật/cái gì chỉ có
 UI, và [`architecture.md`](architecture.md) để biết đích đến kiến trúc (chuỗi

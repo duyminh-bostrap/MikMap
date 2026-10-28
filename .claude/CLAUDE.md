@@ -39,7 +39,9 @@ features.md     backlog 142 mục, chấm điểm theo code thật của src/
 
 `src/` hiện là struct riêng (`src/app.h` và các file phẳng
 `calib.cpp`/`deck.cpp`/`mapping.cpp`/`sensor.cpp`/`output.cpp`/`clipart.cpp`/`project.cpp`/...), **link `engine/core`+
-`engine/io` vào, nhưng chỉ gọi `core/util/Json` (ở `project.cpp`); phần còn lại CHƯA gọi tới** — xem "Việc còn lại để ghép trọn" ở
+`engine/io` vào, nhưng chỉ gọi một phần: `core/util/Json` (ở `project.cpp`), `core/calib/LidarPlacement`,
+`core/math` (EdgeBlend/Triangulate), `io/net` (NetScan/TouchSender), `io/sources` + `io/plugin` (thread sensor);
+model/warp/calib DLT/ProjectIO của engine CHƯA gọi tới** — xem "Việc còn lại để ghép trọn" ở
 `README.md`. Đừng nhầm đây là cây thư mục layered đầy đủ ở `architecture.md`
 §2 (`app/`,`ui/`,`render/`,`io/`,`core/`) — cây đó mô tả bản cũ trên nhánh
 `legacy-oF-ui` và là đích mà `src/` đang được ghép dần vào.
@@ -203,8 +205,8 @@ YDLIDAR (`G23`, plugin bọc YDLidar-SDK) còn chờ.
 **Trang Sensor (2026-10-28, `G18`/`G24`–`G27`):** thiết bị thuộc một Screen (`Device::screenId`, `Screen::realW/realH` mm);
 lidar đặt theo mm (`PlacementCalib` → 4 cặp calib, lõi `engine/core/calib/LidarPlacement`); cây sensor + tab Input/Output,
 Output dùng `EditQuad` và mã sân khấu chung `src/stage.cpp` với Mapping; wizard scan IP (`engine/io/net/NetScan`);
-gửi toạ độ OSC/UDP (`engine/io/net/TouchSender`, `SendOut` ở `sources.cpp`, chuẩn hoá 0–1 theo canvas). **Chưa kiểm với phần cứng
-thật** (Hokuyo/YDLIDAR, quét LAN thật, receiver OSC thật như TouchDesigner). Lidar hết chỉnh ROI tay (chỉ "ROI = screen";
+gửi toạ độ OSC/UDP (`engine/io/net/TouchSender`, `SendOut` ở `sources.cpp`, chuẩn hoá 0–1 theo sân khấu 1920×1080 của Screen — không phải canvas `A1`). **Chưa kiểm với phần cứng
+thật** (Hokuyo/YDLIDAR, quét LAN thật, receiver OSC thật như TouchDesigner), và **chưa build Linux/macOS** code mới (`engine/io/net`). Lidar hết chỉnh ROI tay (chỉ "ROI = screen";
 Edit ROI còn cho Sim); camera 2D (crop, nhận dạng, preview, NDI/Spout) và lidar 3D/depth CHƯA làm. Chi tiết: "Ghi chú kiểm tra" cuối `features.md`.
 (`A4` thumbnail động đã `[x]` từ 2026-09-23 — giới hạn ≤3 ô vẽ lại/khung, xem đầu mục này.)
 `I2` (lưu/mở dự án) **đã chạy** qua `src/project.cpp` (đọc/ghi `.mikmap` bằng schema
