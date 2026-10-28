@@ -92,7 +92,7 @@ if(WIN32)
   # in output.cpp/clipart.cpp for <GL/gl.h>) otherwise #defines min/max as macros,
   # which breaks std::min/std::max/std::clamp calls under MSVC.
   target_compile_definitions(mikmap PRIVATE NOMINMAX)
-  target_link_libraries(mikmap PRIVATE dwmapi ws2_32)   # dark titlebar (main.cpp) + UDP socket (OscSource.cpp)
+  target_link_libraries(mikmap PRIVATE dwmapi ws2_32 iphlpapi)   # dark titlebar (main.cpp) + UDP socket (OscSource.cpp) + adapter list (NetScan.cpp)
   # GUI subsystem: no console window. Works for both MSVC (/SUBSYSTEM:WINDOWS)
   # and MinGW (-mwindows), unlike a hardcoded linker flag.
   if(NOT MIKMAP_CONSOLE)
