@@ -181,6 +181,20 @@ bool PlacementCalib(Device& d, const Screen& sc, const mikmap::LidarPose& pose) 
   return true;
 }
 
+bool ApplyPlacement(Device& d) {
+  if (!d.placed) return false;   // "Custom (4-point)": the hand-tuned quad wins until the user presses Re-apply placement
+  const Screen* sc = DeviceScreen(d);
+  return sc && PlacementCalib(d, *sc, d.pose);
+}
+
+bool RoiToScreen(Device& d) {
+  const Screen* sc = DeviceScreen(d);
+  if (!sc || sc->realW <= 0 || sc->realH <= 0) return false;
+  const mikmap::Vec2 corner[4] = {{0, 0}, {sc->realW, 0}, {sc->realW, sc->realH}, {0, sc->realH}};
+  for (int i = 0; i < 4; ++i) { const mikmap::Vec2 m = mikmap::surfaceToLidar(d.pose, corner[i]); d.roi[i] = ImVec2((float)m.x, (float)m.y); }
+  return true;
+}
+
 Device MakeDevice(DevKind k, const std::string& id) {
   Device d; d.id = id; d.kind = k;
   const float tx[4] = {100, 1820, 1820, 100}, ty[4] = {100, 100, 980, 980};   // the same output-pixel targets for every kind

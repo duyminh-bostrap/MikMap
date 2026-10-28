@@ -1,4 +1,6 @@
-﻿// Sensor I/O screen: device manager + calibration · radar · parameter routing.
+﻿// Sensor page, laid out like Advanced Mapping: the shared tree · a stage with an INPUT / OUTPUT tab · Properties.
+// Input = what the sensor sees (a lidar placed in mm on its screen; the Sim radar; the camera skeleton).
+// Output = where its points land on the screen (1920x1080): the 4 calibration targets, edited with Mapping's own quad tools.
 #include "app.h"
 #include "io/ISensorSource.h"
 #include "io/plugin/PluginLoader.h"
@@ -36,257 +38,19 @@ void FitAffine(const std::vector<Calib>& c, float out[9], float* rms) {
   if (rms) *rms = err / 4;
 }
 
-static std::vector<std::string> Wrap(FontId f, float sz, const std::string& text, float width) {
-  std::vector<std::string> lines; std::string cur, word;
-  auto flush = [&]() {
-    if (word.empty()) return;
-    std::string t = cur.empty() ? word : cur + " " + word;
-    if (!cur.empty() && TextW(f, sz, t.c_str(), 0.01f) > width) { lines.push_back(cur); cur = word; } else cur = t;
-    word.clear();
-  };
-  for (char ch : text) { if (ch == ' ') flush(); else word += ch; }
-  flush();
-  if (!cur.empty()) lines.push_back(cur);
-  return lines;
+std::vector<PropSection> SensorPropSections(DevKind k, int spage) {
+  using P = PropSection;
+  if (spage != 0) return {P::Calibration, P::SendOut, P::Triggers};
+  if (k == DevKind::Hokuyo || k == DevKind::Plugin) return {P::Connection, P::ScreenSize, P::Placement, P::Blobs};   // a plugin is a 2D lidar today
+  return {P::Connection};
 }
+
+static bool IsLidar(const Device& d) { return d.kind == DevKind::Hokuyo || d.kind == DevKind::Plugin; }
 
 static std::string Endpoint(const Device& d) {
   if (d.kind == DevKind::Sim) return "simulated";
   if (d.kind == DevKind::Plugin) return d.plugin.empty() ? "plugin" : d.plugin;   // the file inside plugins/sensors, not a path
   return (d.kind == DevKind::Skeleton ? "OSC :" : d.host + ":") + std::to_string(d.port);
-}
-
-static void Devices(ImRect r) {
-  Fill(r, K(pal::g12));
-  VLine(r.Max.x - 1, r.Min.y, r.Max.y, K(pal::g2a));
-  PanelHeader(Rc(r.Min.x, r.Min.y, r.GetWidth() - 1, 24), "Device manager", pal::t88);
-  A.curDevice();   // clamps selDevice
-  int on = 0; for (auto& d : A.devices) on += d.enabled;
-  char cnt[32]; snprintf(cnt, sizeof cnt, "%d/%d enabled", on, (int)A.devices.size());
-  TextR(r.Max.x - 7, r.Min.y + 11.5f, MONO_M, 10, K(pal::t66), cnt);
-  static ScrollArea sa;
-  sa.Begin("##devices", ImRect(r.Min.x, r.Min.y + 24, r.Max.x - 1, r.Max.y));
-  float ox = sa.origin.x, oy = sa.origin.y, W = r.GetWidth() - 1 - 8, x = ox + 6, w = W - 12, y = 6;
-  for (int di = 0; di < (int)A.devices.size(); ++di) {
-    Device& d = A.devices[di];
-    const int st = d.status;
-    const bool fields = di == A.selDevice && d.kind != DevKind::Sim;   // the selected card edits its address in place
-    const bool hint = d.enabled && d.kind == DevKind::Skeleton && st == (int)mikmap::SourceStatus::Running && d.packets == 0;
-    const bool errLine = d.enabled && !d.error.empty();
-    const float fh = fields ? 18.f : 0.f;
-    bool fb = false; const Screen* dsc = DeviceScreen(d, &fb);
-    float h = (d.enabled ? 76.f : 46.f) + fh + (hint || errLine || fb ? 16.f : 0.f);
-    ImRect cr(x, oy + y, x + w, oy + y + h);
-    float prev = g.alpha; if (!d.enabled) g.alpha = 0.65f;
-    Box(cr, d.enabled ? K(pal::g18) : K(pal::g14), di == A.selDevice ? K(pal::coral) : d.enabled ? K(pal::g3a) : K(pal::g2a), 4);   // coral edge = the device the page edits
-    float cy = cr.Min.y + 6 + 9;
-    uint32_t dotHex = !d.enabled ? 0x555555 : st == (int)mikmap::SourceStatus::Error ? pal::red : st == (int)mikmap::SourceStatus::Connecting ? pal::yellow : pal::mint;
-    Dot(ImVec2(cr.Min.x + 6 + 4 + 1, cy), 8, dotHex, d.enabled && st == (int)mikmap::SourceStatus::Running);
-    const char* bl = d.enabled ? "DISCONNECT" : "CONNECT";
-    float bw = TextW(MONO_B, 9, bl, 0.09f) + 16 + 2;
-    ImRect br(cr.Max.x - 7 - bw, cy - 9, cr.Max.x - 7, cy + 9);
-    Hit bh = HitR(br);
-    uint32_t bx = d.enabled ? pal::red : pal::mint;
-    Box(br, K(bx, 0.16f), K(bx, 0.45f), 3);
-    Text(br.Min.x + 9, cy, MONO_B, 9, K(bx), bl, 0.09f);
-    if (bh.hover) CursorHand();
-    if (bh.click) { d.enabled = !d.enabled; }
-    else if (!bh.hover && HitR(cr).click) { A.selDevice = di; A.wizardStep = 0; A.editRoi = false; }   // each device has its own calibration, so a half-done wizard does not carry over
-    if (!bh.hover && HitR(cr).rclick) {
-      MenuItem rm; rm.label = "Remove"; rm.icon = "trash-2"; rm.danger = true;
-      rm.run = [id = d.id] {
-        for (size_t i = 0; i < A.devices.size(); ++i) if (A.devices[i].id == id) { A.devices.erase(A.devices.begin() + i); A.wizardStep = 0; A.editRoi = false; break; }   // its source stops on the next SensorsTick
-      };
-      A.openCtx(ImGui::GetIO().MousePos, {rm});
-    }
-    TextEll(cr.Min.x + 6 + 8 + 6 + 1, cy, br.Min.x - 6 - (cr.Min.x + 21), UI_B, 11, K(pal::white), d.name.c_str());
-    if (!fields) TextEll(cr.Min.x + 7, cy + 9 + 4 + 5, cr.GetWidth() - 14, MONO_R, 10, K(pal::t88), Endpoint(d).c_str());
-    else if (d.kind == DevKind::Plugin) {   // JSON config, applied on blur: typing must not restart the source on every character
-      // shortcut: config is raw JSON; with a second plugin, add mikmap_sensor_params() to describe each field, like TouchDesigner's setupParameters
-      static std::string cfgEdit;
-      ImGuiID cid = ImGui::GetID("##devconfig");
-      if (ImGui::GetActiveID() != cid) cfgEdit = d.config;
-      float fy = cy + 9 + 4, fx = cr.Min.x + 7, fr = cr.Max.x - 7;
-      TextField("##devconfig", Rc(fx, fy, fr - fx, 18), cfgEdit, MONO_R, 10);
-      if (ImGui::IsItemDeactivatedAfterEdit()) d.config = cfgEdit;
-    }
-    else {   // host (Hokuyo) and port, applied when the field loses focus so typing "9001" does not restart the source on every digit
-      static std::string hostEdit; static int portEdit = 0;
-      ImGuiID hid = ImGui::GetID("##devhost"), pid = ImGui::GetID("##devport");
-      if (ImGui::GetActiveID() != hid) hostEdit = d.host;
-      if (ImGui::GetActiveID() != pid) portEdit = d.port;
-      float fy = cy + 9 + 4, fx = cr.Min.x + 7, fr = cr.Max.x - 7, pw = 64;
-      if (d.kind == DevKind::Hokuyo) {
-        TextField("##devhost", Rc(fx, fy, fr - pw - 6 - fx, 18), hostEdit, MONO_R, 10);
-        if (ImGui::IsItemDeactivatedAfterEdit()) d.host = hostEdit;
-      } else {
-        Text(fx, fy + 9, MONO_R, 9, K(pal::t66), "OSC UDP port");
-      }
-      IntField("##devport", Rc(fr - pw, fy, pw, 18), portEdit);
-      if (ImGui::IsItemDeactivatedAfterEdit()) d.port = std::clamp(portEdit, 0, 65535);
-    }
-    if (d.enabled) {
-      float sy = cy + 9 + 4 + 10 + 4 + fh;
-      HLine(cr.Min.x + 7, cr.Max.x - 7, sy, K(pal::g2a));
-      float cw = (cr.GetWidth() - 14 - 8) / 3.f;
-      char v0[16], v1[16]; snprintf(v0, sizeof v0, "%d", d.fps); snprintf(v1, sizeof v1, "%.0fms", d.latencyMs);
-      const char* labs[3] = {"FPS", "LATENCY", "PACKETS"}; std::string vs[3] = {v0, v1, std::to_string(d.packets)};
-      if (d.kind == DevKind::Sim) vs[0] = vs[1] = vs[2] = "\xE2\x80\x94";   // the simulated radar has no source to measure
-      for (int i = 0; i < 3; ++i) {
-        float sx = cr.Min.x + 7 + i * (cw + 4);
-        Text(sx, sy + 4 + 5, MONO_R, 9, K(pal::t66), labs[i]);
-        Text(sx, sy + 4 + 9 + 1 + 5, MONO_B, 10, K(i == 0 ? pal::mint : pal::tcc), vs[i].c_str());
-      }
-      if (errLine) TextEll(cr.Min.x + 7, cr.Max.y - 12, cr.GetWidth() - 14, MONO_R, 9, K(pal::red), d.error.c_str());
-      else if (hint) {
-        std::string cmd = "python tools/pose_bridge/pose_bridge.py --port " + std::to_string(d.port);   // nothing has arrived yet: show how to start the sender
-        TextEll(cr.Min.x + 7, cr.Max.y - 12, cr.GetWidth() - 14, MONO_R, 9, K(pal::t66), cmd.c_str());
-      }
-    }
-    if (fb && dsc && !errLine && !hint) TextEll(cr.Min.x + 7, cr.Max.y - 12, cr.GetWidth() - 14, MONO_R, 9, K(pal::yellow), ("Screen not found \xE2\x80\x94 using " + dsc->name).c_str());
-    g.alpha = prev;
-    y += h + 6;
-  }
-  {
-    ImRect ab(x, oy + y, x + w, oy + y + 26);
-    Hit ah = HitR(ab);
-    Box(ab, ah.hover ? K(pal::ctrlHover) : K(pal::g1c), K(pal::g22), 3);
-    float tw = TextW(UI_B, 10, "Add device"), acx = (ab.Min.x + ab.Max.x) * 0.5f, acy = (ab.Min.y + ab.Max.y) * 0.5f;
-    Icon("plus", ImVec2(acx - tw * 0.5f - 9, acy), 12, K(pal::t88));
-    Text(acx - tw * 0.5f + 2, acy, UI_B, 10, K(pal::t88), "Add device");
-    if (ah.hover) CursorHand();
-    if (ah.click) {
-      std::vector<MenuItem> mi;
-      for (DevKind k : {DevKind::Skeleton, DevKind::Hokuyo, DevKind::Sim}) {
-        MenuItem it; it.label = k == DevKind::Skeleton ? "Camera skeleton" : k == DevKind::Hokuyo ? "Hokuyo 2D lidar" : "Simulated radar"; it.icon = "plus";
-        it.run = [k] {
-          int n = 1; auto taken = [&](const std::string& id) { for (auto& e : A.devices) if (e.id == id) return true; return false; };
-          while (taken("dev" + std::to_string(n))) ++n;
-          Device nd = MakeDevice(k, "dev" + std::to_string(n));
-          int same = 0; for (auto& e : A.devices) same += e.kind == k;
-          if (same) nd.name += " " + std::to_string(same + 1);
-          if (!A.screens.empty()) nd.screenId = A.screens[0].id;
-          A.devices.push_back(nd); A.selDevice = (int)A.devices.size() - 1; A.wizardStep = 0; A.editRoi = false;
-        };
-        mi.push_back(it);
-      }
-      for (const auto& p : SensorPlugins()) {   // one entry per DLL that reported API 1 (+ Add device, Task 10)
-        const size_t slash = p.path.find_last_of("/\\");
-        const std::string file = slash == std::string::npos ? p.path : p.path.substr(slash + 1);
-        MenuItem it; it.label = p.name.empty() ? file : p.name; it.icon = "plus";
-        it.run = [name = it.label, file, cfg = p.defaultConfig] {
-          int n = 1; auto taken = [&](const std::string& id) { for (auto& e : A.devices) if (e.id == id) return true; return false; };
-          while (taken("dev" + std::to_string(n))) ++n;
-          Device nd = MakeDevice(DevKind::Plugin, "dev" + std::to_string(n));
-          nd.name = name; nd.plugin = file; nd.config = cfg;
-          int same = 0; for (auto& e : A.devices) same += e.kind == DevKind::Plugin && e.plugin == file;
-          if (same) nd.name += " " + std::to_string(same + 1);
-          if (!A.screens.empty()) nd.screenId = A.screens[0].id;
-          A.devices.push_back(nd); A.selDevice = (int)A.devices.size() - 1; A.wizardStep = 0; A.editRoi = false;
-        };
-        mi.push_back(it);
-      }
-      A.openCtx(ImVec2(ab.Min.x, ab.Max.y + 4), mi);
-    }
-    y += 26 + 6;
-  }
-  Device* cd = A.curDevice();
-  if (!cd) { sa.End(W, y); return; }
-  // calibration wizard (for the selected device)
-  HLine(ox + 6, ox + 6 + w, oy + y, K(pal::g2a));
-  y += 1 + 6;
-  Icon("wand-2", ImVec2(x + 6, oy + y + 6), 12, K(pal::yellow));
-  Text(x + 12 + 4, oy + y + 6, UI_B, 9, K(pal::yellow), "CALIBRATION WIZARD", 0.14f);
-  float m[9], rms; if (!FitHomography(cd->calib, m, &rms)) FitAffine(cd->calib, m, &rms);
-  char rb[32]; if (cd->calibrated) snprintf(rb, sizeof rb, "RMS: %.2fpx", rms); else snprintf(rb, sizeof rb, "NOT CALIBRATED");
-  TextR(x + w, oy + y + 6, MONO_R, 9, K(cd->calibrated ? pal::mint : pal::coral), rb);
-  y += 12 + 6;
-  auto lines = Wrap(UI_S, 10, "Maps sensor coordinates to projector coordinates via 3\xC3\x97" "3 homography (DLT).", w);
-  for (auto& l : lines) { Text(x, oy + y + 7.5f, UI_S, 10, K(pal::t88), l.c_str(), 0.01f); y += 15; }
-  y += 6;
-  if (A.wizardStep == 0) {
-    ImRect br(x, oy + y, x + w, oy + y + 30);
-    Hit h = HitR(br);
-    Box(br, K(pal::coral, 0.18f), K(pal::coral, 0.5f), 3);
-    float tw = TextW(UI_B, 10, "Start wizard");
-    float cx = (br.Min.x + br.Max.x) * 0.5f, cy2 = (br.Min.y + br.Max.y) * 0.5f;
-    Icon("crosshair", ImVec2(cx - tw * 0.5f - 10, cy2), 12, K(pal::coral));
-    Text(cx - tw * 0.5f + 2, cy2, UI_B, 10, K(pal::coral), "Start wizard");
-    if (h.hover) CursorHand();
-    if (h.click) A.wizardStep = 1;
-    y += 30 + 6;
-  } else {
-    ImRect br(x, oy + y, x + w, oy + y + 6 + 13 + 4 + 15 + 4 + 24 + 6);
-    Box(br, K(pal::g18), K(pal::yellow, 0.5f), 3);
-    char st[24]; snprintf(st, sizeof st, "STEP %d OF 4", A.wizardStep);
-    static const char* CN[4] = {"TOP-LEFT", "TOP-RIGHT", "BOTTOM-RIGHT", "BOTTOM-LEFT"};
-    Text(br.Min.x + 7, br.Min.y + 6 + 6.5f, MONO_B, 11, K(pal::yellow), st);
-    TextR(br.Max.x - 7, br.Min.y + 6 + 6.5f, MONO_R, 10, K(pal::t88), CN[A.wizardStep - 1]);
-    bool live = cd->kind != DevKind::Sim;   // a real sensor reports where the target stands: Capture averages 30 frames of it
-    Text(br.Min.x + 7, br.Min.y + 6 + 13 + 4 + 7.5f, UI_S, 10, K(pal::te0), live ? (cd->kind == DevKind::Skeleton ? "Hold your right wrist on the target, then Capture" : "Stand alone on the target, then Capture") : "Touch the physical crosshair, or click the target", 0.0f);
-    ImRect cr(br.Min.x + 7, br.Max.y - 6 - 24, br.Max.x - 7, br.Max.y - 6);
-    if (live) {
-      float half = (cr.GetWidth() - 6) * 0.5f;
-      ImRect cap(cr.Min.x, cr.Min.y, cr.Min.x + half, cr.Max.y);
-      cr.Min.x += half + 6;
-      Hit ch = HitR(cap);
-      Box(cap, K(pal::coral, 0.18f), K(pal::coral, 0.5f), 3);
-      TextC((cap.Min.x + cap.Max.x) * 0.5f, (cap.Min.y + cap.Max.y) * 0.5f, UI_B, 10, K(pal::coral), "Capture");
-      if (ch.hover) CursorHand();
-      if (ch.click) StartCapture(A.wizardStep);
-    }
-    Hit h = HitR(cr);
-    Box(cr, K(pal::g050), K(pal::g22), 3);
-    TextC((cr.Min.x + cr.Max.x) * 0.5f, (cr.Min.y + cr.Max.y) * 0.5f, UI_S, 10, K(pal::t88), live ? "Cancel" : "Cancel wizard");
-    if (h.hover) CursorHand();
-    if (h.click) A.wizardStep = 0;
-    y += br.GetHeight() + 6;
-  }
-  // matrix
-  ImRect mr(x, oy + y, x + w, oy + y + 6 + 9 + 4 + (6 + 3 * 13 + 2 * 4 + 6) + 6);
-  Box(mr, K(pal::g050), K(pal::g2a), 3);
-  Text(mr.Min.x + 7, mr.Min.y + 6 + 4.5f, MONO_B, 9, K(pal::coral), "MATRIX H_s", 0.09f);
-  ImRect gr(mr.Min.x + 7, mr.Min.y + 6 + 9 + 4, mr.Max.x - 7, mr.Max.y - 7);
-  Fill(gr, K(0x000000), 3);
-  float cw = (gr.GetWidth() - 12 - 8) / 3.f;
-  for (int i = 0; i < 9; ++i) {
-    char b[16]; snprintf(b, sizeof b, "%.2f", m[i]);
-    TextC(gr.Min.x + 6 + (i % 3) * (cw + 4) + cw * 0.5f, gr.Min.y + 6 + (i / 3) * 17 + 6.5f, MONO_R, 10, K(pal::tcc), b);
-  }
-  y += mr.GetHeight() + 8;
-  // G8: save/load the 4 calibration points + ROI/noise as their own file, independent of the project.
-  {
-    float gap = 6, bw = (w - gap) * 0.5f;
-    ImRect sb(x, oy + y, x + bw, oy + y + 26), lb(x + bw + gap, oy + y, x + w, oy + y + 26);
-    Hit sh = HitR(sb), lh = HitR(lb);
-    Box(sb, K(pal::g1c), K(pal::g22), 3);
-    Icon("save", ImVec2(sb.Min.x + 12, (sb.Min.y + sb.Max.y) * 0.5f), 12, K(pal::t88));
-    Text(sb.Min.x + 24, (sb.Min.y + sb.Max.y) * 0.5f, UI_S, 10, K(pal::t88), "Save profile");
-    if (sh.hover) CursorHand();
-    if (sh.click) A.notify(DoSaveCalibProfile());
-    Box(lb, K(pal::g1c), K(pal::g22), 3);
-    Icon("folder-open", ImVec2(lb.Min.x + 12, (lb.Min.y + lb.Max.y) * 0.5f), 12, K(pal::t88));
-    Text(lb.Min.x + 24, (lb.Min.y + lb.Max.y) * 0.5f, UI_S, 10, K(pal::t88), "Load profile");
-    if (lh.hover) CursorHand();
-    if (lh.click) {
-      std::vector<MenuItem> mi;
-      auto profiles = ListCalibProfiles();
-      if (profiles.empty()) { MenuItem it; it.label = "No saved profiles"; it.disabled = true; mi.push_back(it); }
-      for (auto& pf : profiles) {
-        MenuItem it; it.label = pf.name; it.icon = "folder-open";
-        it.run = [path = pf.path, name = pf.name] {
-          Device* cur = A.curDevice(); if (!cur) return;
-          std::string err;
-          if (LoadCalibProfile(path, *cur, A.noise, A.blobSize, err)) { A.wizardStep = 0; A.notify("Loaded profile: " + name); }
-          else A.notify("Load failed: " + err);
-        };
-        mi.push_back(it);
-      }
-      A.openCtx(ImVec2(lb.Min.x, lb.Max.y + 4), mi);
-    }
-    y += 26 + 8;
-  }
-  sa.End(W, y);
 }
 
 // G17: a "touch.down" patch cord that is switched on fires the clip named in its target ("<layer> · <clip>").
@@ -304,37 +68,112 @@ void FireTouchRoutes() {
   }
 }
 
-// Task 4: camera skeleton. MediaPipe sends landmark ids as slot*100 + landmark, so a bone only
-// connects two joints of the same person. Coordinates stay raw ([0,1] image space, y down) and are
-// mapped straight onto the 4:3 frame; H_s is applied later, where the touch is used (principle #5).
-static void SkeletonView(ImRect r, const Device& d) {
-  Fill(r, K(pal::g050));
-  ImRect tb(r.Min.x, r.Min.y, r.Max.x, r.Min.y + 44);
+static bool OverStage(ImRect area) {   // the pointer may grab something on this stage (not over a panel, popup or another window)
+  return area.Contains(ImGui::GetIO().MousePos) && !g.blocked && ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
+}
+static float StageBase(ImRect area, float SW, float SH) {   // space width in px at 100%, as Mapping's stage
+  return std::min(std::min(area.GetWidth() - 20, 960.f), (area.GetHeight() - 20) * SW / SH);
+}
+
+// ───────────────────────── stage bar ─────────────────────────
+// INPUT / OUTPUT tabs (mint / coral, Mapping's page switch), the Output tools, and on the right the zoom group (for stages that
+// pan/zoom) and the Output overlay switch. *lx / return value: where the bar's free middle starts / ends.
+static float StageBar(ImRect tb, bool zoom, float* lx) {
   Fill(tb, K(pal::g12)); HLine(tb.Min.x, tb.Max.x, tb.Max.y - 1, K(pal::g2a));
-  float cy = r.Min.y + 21.5f;
-  Icon("activity", ImVec2(tb.Min.x + 8 + 6.5f, cy), 13, K(pal::mint));
-  Text(tb.Min.x + 8 + 13 + 6, cy, UI_B, 11, K(pal::white), "CAMERA VIEW", 0.09f);
-  // Output overlay is a debug aid for every device, so it stays; Edit ROI has no meaning here.
-  const char* ol = "Output overlay";
-  float ow = TextW(UI_B, 10, ol) + 10 + 6 + 12 + 10;
-  ImRect ob(tb.Max.x - 8 - ow, cy - 12, tb.Max.x - 8, cy + 12);
-  Hit oh = HitR(ob);
-  Box(ob, A.sensorOverlay ? K(pal::mint, 0.18f) : K(pal::g1c), A.sensorOverlay ? K(pal::mint) : K(pal::g22), 3);
-  ImU32 ofg = K(A.sensorOverlay ? pal::mint : pal::t88);
-  Icon("activity", ImVec2(ob.Min.x + 10 + 6, cy), 12, ofg);
-  Text(ob.Min.x + 10 + 12 + 6, cy, UI_B, 10, ofg, ol);
-  if (oh.hover) CursorHand();
-  if (oh.click) A.sensorOverlay = !A.sensorOverlay;
-  int slots[64], nsl = 0;
+  const float cy = tb.Min.y + 21.5f, kBtnW = 28.f, kBtnH = 28.f, kGrpH = 17.f;
+  const char* pages[2] = {"Input", "Output"}; const uint32_t pcol[2] = {pal::mint, pal::coral};
+  float pw[2], tot = 4;
+  for (int i = 0; i < 2; ++i) { pw[i] = TextW(UI_B, 10, Upper(pages[i]).c_str(), 0.09f) + 18; tot += pw[i] + (i ? 0 : 2); }
+  ImRect grp(tb.Min.x + 6, cy - 14, tb.Min.x + 6 + tot + 2, cy + 14);
+  Box(grp, K(0x000000), K(pal::g2a), 4);
+  float px = grp.Min.x + 3;
+  for (int i = 0; i < 2; ++i) {
+    ImRect pr(px, cy - 11, px + pw[i], cy + 11);
+    Hit h = HitR(pr);
+    const bool on = A.spage == i;
+    if (on) Fill(pr, K(pcol[i]), 3);
+    TextC((pr.Min.x + pr.Max.x) * 0.5f, cy, UI_B, 10, K(on ? pal::white : pal::t77), Upper(pages[i]).c_str(), 0.09f);
+    if (h.hover) CursorHand();
+    if (h.click) A.spage = i;
+    px += pw[i] + 2;
+  }
+  float left = grp.Max.x + 8;
+  if (A.spage == 1) {   // Mapping's two Output tools, in the sensor's mint
+    const char* tl[2] = {"Edit points", "Transform"}; const char* ti[2] = {"plus", "frame"};
+    float bw[2]; for (int i = 0; i < 2; ++i) bw[i] = 8 + 16 + 6 + TextW(UI_B, 9, Upper(tl[i]).c_str(), 0.08f) + 10;
+    ImRect tg(grp.Max.x + 4, cy - kGrpH, grp.Max.x + 4 + 3 + bw[0] + 2 + bw[1] + 3, cy + kGrpH);
+    Box(tg, K(0x000000), K(pal::g2a), 4);
+    float bx = tg.Min.x + 3;
+    for (int i = 0; i < 2; ++i) {
+      ImRect br(bx, cy - kBtnH * 0.5f, bx + bw[i], cy + kBtnH * 0.5f);
+      const bool on = A.sensorTool == i;
+      Hit h = HitR(br);
+      Box(br, on ? K(pal::mint, 0.2f) : h.hover ? K(pal::g1c) : 0, on ? K(pal::mint, 0.6f) : 0, 3);
+      Icon(ti[i], ImVec2(br.Min.x + 8 + 8, cy), 14, K(on ? pal::mint : h.hover ? pal::white : pal::t88));
+      Text(br.Min.x + 8 + 16 + 6, cy, UI_B, 9, K(on ? pal::mint : h.hover ? pal::white : pal::t88), Upper(tl[i]).c_str(), 0.08f);
+      if (h.hover) CursorHand();
+      if (h.click) A.sensorTool = i;
+      bx += bw[i] + 2;
+    }
+    left = tg.Max.x + 8;
+  }
+  float xr = tb.Max.x - 6;
+  if (zoom) {   // − % + ; the readout goes back to 100 % centred
+    StageView& v = A.sensorView[A.spage];
+    const float pctW = 46.f, gw = 3 + kBtnW + pctW + kBtnW + 3;
+    ImRect zg(xr - gw, cy - kGrpH, xr, cy + kGrpH);
+    Box(zg, K(pal::g1c), K(pal::g22), 3);
+    float zx = zg.Min.x + 3;
+    auto iconBtn = [&](float x, const char* ic) {
+      ImRect br(x, cy - kBtnH * 0.5f, x + kBtnW, cy + kBtnH * 0.5f);
+      Hit h = HitR(br);
+      if (h.hover) { Fill(br, K(pal::g22), 3); CursorHand(); }
+      Icon(ic, ImVec2((br.Min.x + br.Max.x) * 0.5f, cy), 16, K(h.hover ? pal::white : pal::tcc));
+      return h.click;
+    };
+    if (iconBtn(zx, "zoom-out")) v.setZoom(v.z / 1.4f);
+    zx += kBtnW;
+    ImRect pr(zx, cy - kBtnH * 0.5f, zx + pctW, cy + kBtnH * 0.5f);
+    Hit ph = HitR(pr);
+    if (ph.hover) { Fill(pr, K(pal::g22), 3); CursorHand(); }
+    char zl[16]; snprintf(zl, sizeof zl, "%d%%", (int)std::round(v.z * 100));
+    TextC((pr.Min.x + pr.Max.x) * 0.5f, cy, MONO_B, 11, K(ph.hover ? pal::white : pal::tcc), zl);
+    if (ph.click) v.setZoom(1, 0.5f, 0.5f);
+    zx += pctW;
+    if (iconBtn(zx, "zoom-in")) v.setZoom(v.z * 1.4f);
+    xr = zg.Min.x - 6;
+  }
+  {   // G13: draw live touches on the projector window (a debug aid for every device)
+    const char* ol = "Output overlay";
+    const float ow = TextW(UI_B, 10, ol) + 10 + 6 + 12 + 10;
+    ImRect ob(xr - ow, cy - 12, xr, cy + 12);
+    Hit oh = HitR(ob);
+    Box(ob, A.sensorOverlay ? K(pal::mint, 0.18f) : K(pal::g1c), A.sensorOverlay ? K(pal::mint) : K(pal::g22), 3);
+    const ImU32 ofg = K(A.sensorOverlay ? pal::mint : pal::t88);
+    Icon("activity", ImVec2(ob.Min.x + 10 + 6, cy), 12, ofg);
+    Text(ob.Min.x + 10 + 12 + 6, cy, UI_B, 10, ofg, ol);
+    if (oh.hover) CursorHand();
+    if (oh.click) A.sensorOverlay = !A.sensorOverlay;
+    xr = ob.Min.x - 8;
+  }
+  if (lx) *lx = left;
+  return xr;
+}
+
+// ───────────────────────── Input: camera skeleton ─────────────────────────
+// MediaPipe sends landmark ids as slot*100 + landmark, so a bone only connects two joints of the same person. Coordinates stay raw
+// ([0,1] image space, y down) and are mapped straight onto the 4:3 frame; H_s is applied later, where the touch is used (principle #5).
+static int People(const Device& d, int slots[64]) {
+  int n = 0;
   for (auto& t : d.touches) {
     int s = t.id / 100; bool seen = false;
-    for (int i = 0; i < nsl; ++i) if (slots[i] == s) { seen = true; break; }
-    if (!seen && nsl < 64) slots[nsl++] = s;
+    for (int i = 0; i < n; ++i) if (slots[i] == s) { seen = true; break; }
+    if (!seen && n < 64) slots[n++] = s;
   }
-  char cnt[64]; snprintf(cnt, sizeof cnt, "%d fps \xC2\xB7 %d %s", d.fps, nsl, nsl == 1 ? "person" : "people");
-  TextR(ob.Min.x - 8, cy, MONO_R, 10, K(pal::t88), cnt);
-
-  ImRect area(r.Min.x, r.Min.y + 44, r.Max.x, r.Max.y);
+  return n;
+}
+static void SkeletonView(ImRect area, const Device& d) {
+  int slots[64]; const int nsl = People(d, slots);
   float avW = area.GetWidth() - 48, avH = area.GetHeight() - 48;
   if (avW < 40 || avH < 30) return;
   // shortcut: 4:3 matches the bridge's default 640x480 capture; if the bridge changes resolution,
@@ -366,49 +205,9 @@ static void SkeletonView(ImRect r, const Device& d) {
   if (d.touches.empty()) TextC(cx, (fr.Max.y + area.Max.y) * 0.5f, MONO_R, 10, K(pal::t66), "No camera data \xE2\x80\x94 run pose_bridge.py");
 }
 
-static void Radar(ImRect r) {
-  Device* cd = A.curDevice();
-  if (cd && cd->kind == DevKind::Skeleton) { A.editRoi = false; SkeletonView(r, *cd); return; }
-  const bool sim = cd && cd->kind == DevKind::Sim;   // the radar disc speaks the Sim's normalised units
-  const bool lidar = cd && dynamic_cast<mikmap::ScanSource*>(DeviceSource(*cd)) != nullptr;   // Hokuyo, or a plugin DLL
-  const mikmap::LaserScan* scan = lidar ? DeviceScan(*cd) : nullptr;
-  if (!sim && !lidar) A.editRoi = false;
-  Fill(r, K(pal::g050));
-  ImRect tb(r.Min.x, r.Min.y, r.Max.x, r.Min.y + 44);
-  Fill(tb, K(pal::g12)); HLine(tb.Min.x, tb.Max.x, tb.Max.y - 1, K(pal::g2a));
-  float cy = r.Min.y + 21.5f;
-  const char* title = lidar ? "LIDAR VIEW" : "RADAR VIEW";
-  Icon("activity", ImVec2(tb.Min.x + 8 + 6.5f, cy), 13, K(pal::mint));
-  Text(tb.Min.x + 8 + 13 + 6, cy, UI_B, 11, K(pal::white), title, 0.09f);
-  float lx = tb.Min.x + 8 + 13 + 6 + TextW(UI_B, 11, title, 0.09f) + 6;
-  // ROI button
-  {
-    const char* lb = A.editRoi ? "Finish ROI" : "Edit ROI";
-    float w = TextW(UI_B, 10, lb) + 10 + 6 + 12 + 10;
-    ImRect br(tb.Max.x - 8 - w, cy - 12, tb.Max.x - 8, cy + 12);
-    Hit h = HitR(br);
-    Box(br, A.editRoi ? K(pal::yellow) : K(pal::g1c), A.editRoi ? K(pal::yellow) : K(pal::g22), 3);
-    ImU32 fg = K(A.editRoi ? 0x0f0f0f : pal::t88);
-    Icon("target", ImVec2(br.Min.x + 10 + 6, cy), 12, fg);
-    Text(br.Min.x + 10 + 12 + 6, cy, UI_B, 10, fg, lb);
-    if (h.hover) CursorHand();
-    if (h.click && (sim || lidar)) A.editRoi = !A.editRoi;
-    const char* ol = "Output overlay";
-    float ow = TextW(UI_B, 10, ol) + 10 + 6 + 12 + 10;
-    ImRect ob(br.Min.x - 6 - ow, cy - 12, br.Min.x - 6, cy + 12);
-    Hit oh = HitR(ob);
-    Box(ob, A.sensorOverlay ? K(pal::mint, 0.18f) : K(pal::g1c), A.sensorOverlay ? K(pal::mint) : K(pal::g22), 3);
-    ImU32 ofg = K(A.sensorOverlay ? pal::mint : pal::t88);
-    Icon("activity", ImVec2(ob.Min.x + 10 + 6, cy), 12, ofg);
-    Text(ob.Min.x + 10 + 12 + 6, cy, UI_B, 10, ofg, ol);
-    if (oh.hover) CursorHand();
-    if (oh.click) A.sensorOverlay = !A.sensorOverlay;
-    char info[48];
-    if (lidar) snprintf(info, sizeof info, "%d Hz \xC2\xB7 %d %s", cd->fps, (int)cd->touches.size(), cd->touches.size() == 1 ? "blob" : "blobs");
-    else snprintf(info, sizeof info, "40.0 Hz real-time sweep");
-    TextEll(lx, cy, ob.Min.x - 8 - lx, MONO_R, 10, K(pal::t88), info);
-  }
-  ImRect area(r.Min.x, r.Min.y + 44, r.Max.x, r.Max.y);
+// ───────────────────────── Input: simulated radar ─────────────────────────
+// The Sim device speaks normalised units on a fixed disc; click injects a touch, or sets the wizard's point.
+static void Radar(ImRect area, Device& cd) {
   float D = std::min({area.GetWidth() - 32, 540.f, area.GetHeight() - 32 - 6 - 10});
   if (D < 60) return;
   float totalH = D + 6 + 10;
@@ -428,31 +227,12 @@ static void Radar(ImRect r) {
     float a = i * 3.14159265f / 4.f;
     dl->AddLine(c, ImVec2(c.x + cosf(a) * maxR, c.y + sinf(a) * maxR), Ca(K(0x181818)), std::max(1.f, k));
   }
-  // Lidar ↔ screen: front (0°) is up, +y is left. The disc is a fixed 4 m window.
-  const float mmToPx = maxR / kRadarRangeMm;
-  auto lidarToScreen = [&](float xmm, float ymm) { return ImVec2(c.x - ymm * mmToPx, c.y - xmm * mmToPx); };
-  auto screenToLidar = [&](ImVec2 p) { return ImVec2(-(p.y - c.y) / mmToPx, -(p.x - c.x) / mmToPx); };
-
-  // Raw scan: one 1 px dot per valid ray inside the disc (pal::t66, the same grey as the rest of the chrome).
-  if (lidar && scan) {
-    const ImU32 dot = Ca(K(pal::t66));
-    for (int i = 0; i < scan->count; ++i) {
-      const float rm = scan->rangeMm[i];
-      if (rm <= 0.f || rm > kRadarRangeMm) continue;
-      const float a = scan->angleRad[i];
-      const ImVec2 p = lidarToScreen(rm * std::cos(a), rm * std::sin(a));
-      dl->AddRectFilled(ImVec2(p.x - 0.5f, p.y - 0.5f), ImVec2(p.x + 0.5f, p.y + 0.5f), dot);
-    }
-  }
-
-  // ROI: Sim in normalised units, lidar in raw millimetres.
-  ImVec2 rp[4] = {};
-  if (sim || lidar) for (int i = 0; i < 4; ++i)
-    rp[i] = sim ? ImVec2(c.x + cd->roi[i].x * maxR, c.y + cd->roi[i].y * maxR) : lidarToScreen(cd->roi[i].x, cd->roi[i].y);
-  if (sim || lidar) for (int i = 1; i + 1 < 4; ++i) dl->AddTriangleFilled(rp[0], rp[i], rp[i + 1], Ca(A.editRoi ? K(pal::yellow, 0.15f) : K(pal::cyan, 0.10f)));
-  if (sim || lidar) dl->AddPolyline(rp, 4, Ca(K(A.editRoi ? pal::yellow : pal::cyan)), ImDrawFlags_Closed, 2 * k);
-  if (A.editRoi && (sim || lidar)) for (int i = 0; i < 4; ++i) dl->AddCircleFilled(rp[i], 6 * k, Ca(K(pal::yellow)), 20);
-  static int roiDrag = -1;   // while "Edit ROI" is on, the four yellow handles can be dragged (Sim clamps to the disc, lidar uses mm)
+  ImVec2 rp[4];
+  for (int i = 0; i < 4; ++i) rp[i] = ImVec2(c.x + cd.roi[i].x * maxR, c.y + cd.roi[i].y * maxR);
+  for (int i = 1; i + 1 < 4; ++i) dl->AddTriangleFilled(rp[0], rp[i], rp[i + 1], Ca(A.editRoi ? K(pal::yellow, 0.15f) : K(pal::cyan, 0.10f)));
+  dl->AddPolyline(rp, 4, Ca(K(A.editRoi ? pal::yellow : pal::cyan)), ImDrawFlags_Closed, 2 * k);
+  if (A.editRoi) for (int i = 0; i < 4; ++i) dl->AddCircleFilled(rp[i], 6 * k, Ca(K(pal::yellow)), 20);
+  static int roiDrag = -1;   // while "Edit ROI" is on, the four yellow handles can be dragged (clamped to the disc)
   if (!A.editRoi) roiDrag = -1;
   else {
     ImVec2 mm = ImGui::GetIO().MousePos;
@@ -462,64 +242,45 @@ static void Radar(ImRect r) {
       for (int i = 0; i < 4; ++i) if (std::hypot(mm.x - rp[i].x, mm.y - rp[i].y) <= 12 * k + 4) { roiDrag = i; break; }
     if (roiDrag >= 0) {
       if (ImGui::IsMouseDown(0)) {
-        if (sim) {
-          float nx = (mm.x - c.x) / maxR, ny = (mm.y - c.y) / maxR, len = std::hypot(nx, ny);
-          if (len > 1.f) { nx /= len; ny /= len; }
-          cd->roi[roiDrag] = ImVec2(std::round(nx * 1000) / 1000, std::round(ny * 1000) / 1000);
-        } else {   // millimetres, deliberately NOT clamped to the disc: a real lidar sees beyond 4 m
-          const ImVec2 p = screenToLidar(mm);
-          cd->roi[roiDrag] = ImVec2(std::round(p.x), std::round(p.y));
-        }
+        float nx = (mm.x - c.x) / maxR, ny = (mm.y - c.y) / maxR, len = std::hypot(nx, ny);
+        if (len > 1.f) { nx /= len; ny /= len; }
+        cd.roi[roiDrag] = ImVec2(std::round(nx * 1000) / 1000, std::round(ny * 1000) / 1000);
         ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
       } else roiDrag = -1;
     } else if (nearH) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
   }
-  // sweep
   float a = A.sweep;
-  if (sim) {
-    RadialFan(c, maxR, K(pal::mint, 0.30f), K(pal::mint, 0.f), a - 0.35f, a, 24);
-    dl->AddLine(c, ImVec2(c.x + cosf(a) * maxR, c.y + sinf(a) * maxR), Ca(K(pal::mint)), 1.5f * k);
-  }
-  if (lidar) for (auto& t : cd->touches) {   // touches are blob centroids in raw millimetres
-    const ImVec2 b = lidarToScreen(t.x, t.y);
-    dl->AddCircleFilled(b, 7 * k, Ca(K(pal::coral)), 24);
-    dl->AddCircle(b, 12 * k, Ca(K(pal::white)), 24, 1.5f * k);
-    char lb[64]; snprintf(lb, sizeof lb, "ID:%d [%d,%d mm]", t.id, (int)std::lround(t.x), (int)std::lround(t.y));
-    Text(b.x + 14 * k, b.y + 4 * k - 1, MONO_B, 11 * k, K(pal::white), lb);
-  }
-  if (sim) for (auto& t : cd->touches) {
+  RadialFan(c, maxR, K(pal::mint, 0.30f), K(pal::mint, 0.f), a - 0.35f, a, 24);
+  dl->AddLine(c, ImVec2(c.x + cosf(a) * maxR, c.y + sinf(a) * maxR), Ca(K(pal::mint)), 1.5f * k);
+  for (auto& t : cd.touches) {
     ImVec2 b(c.x + t.x * maxR, c.y + t.y * maxR);
     dl->AddCircleFilled(b, 7 * k, Ca(K(pal::coral)), 24);
     dl->AddCircle(b, 12 * k, Ca(K(pal::white)), 24, 1.5f * k);
     char lb[48]; snprintf(lb, sizeof lb, "ID:%d [%dmm]", t.id, (int)std::round(t.x * 2000));
     Text(b.x + 14 * k, b.y + 4 * k - 1, MONO_B, 11 * k, K(pal::white), lb);
   }
-  if ((sim || lidar) && A.wizardStep >= 1 && A.wizardStep <= 4) {
-    const Calib& cb = cd->calib[A.wizardStep - 1];
-    const bool known = !lidar || cb.mx != 0 || cb.my != 0;   // a lidar target only exists after Capture
-    if (known) {
-      ImVec2 t = sim ? ImVec2(c.x + cb.mx * maxR, c.y + cb.my * maxR) : lidarToScreen(cb.mx, cb.my);
-      dl->AddCircle(t, 18 * k, Ca(K(pal::yellow)), 32, 2 * k);
-      char lb[24]; snprintf(lb, sizeof lb, "TARGET %d/4", A.wizardStep);
-      Text(t.x + 22 * k, t.y - 6 * k - 1, MONO_B, 12 * k, K(pal::yellow), lb);
-    }
+  if (A.wizardStep >= 1 && A.wizardStep <= 4) {
+    const Calib& cb = cd.calib[A.wizardStep - 1];
+    ImVec2 t(c.x + cb.mx * maxR, c.y + cb.my * maxR);
+    dl->AddCircle(t, 18 * k, Ca(K(pal::yellow)), 32, 2 * k);
+    char lb[24]; snprintf(lb, sizeof lb, "TARGET %d/4", A.wizardStep);
+    Text(t.x + 22 * k, t.y - 6 * k - 1, MONO_B, 12 * k, K(pal::yellow), lb);
   }
   dl->AddCircle(c, D * 0.5f - 0.5f, Ca(K(pal::g2a)), 96, 1.f);
-  TextC(cx, top + D + 6 + 5, MONO_R, 10, K(pal::t66), A.editRoi ? "Drag the yellow handles to reshape the region of interest" : sim ? "Click the radar to inject a simulated touch point" : lidar ? "" : "Live view appears when this device is running");
-  // click
+  TextC(cx, top + D + 6 + 5, MONO_R, 10, K(pal::t66), A.editRoi ? "Drag the yellow handles to reshape the region of interest" : "Click the radar to inject a simulated touch point");
   ImVec2 m = ImGui::GetIO().MousePos;
   float dist = std::hypot(m.x - c.x, m.y - c.y);
-  if (sim && !A.editRoi && Hover(ImRect(c.x - D * 0.5f, c.y - D * 0.5f, c.x + D * 0.5f, c.y + D * 0.5f)) && dist <= D * 0.5f) {
+  if (!A.editRoi && Hover(ImRect(c.x - D * 0.5f, c.y - D * 0.5f, c.x + D * 0.5f, c.y + D * 0.5f)) && dist <= D * 0.5f) {
     ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
     if (ImGui::IsMouseClicked(0)) {
       float nx = (m.x - c.x) / maxR, ny = (m.y - c.y) / maxR;
       if (std::hypot(nx, ny) <= 1.05f) {
         if (A.wizardStep >= 1 && A.wizardStep <= 4) {
-          cd->calib[A.wizardStep - 1].mx = std::round(nx * 1000) / 1000; cd->calib[A.wizardStep - 1].my = std::round(ny * 1000) / 1000;
+          cd.calib[A.wizardStep - 1].mx = std::round(nx * 1000) / 1000; cd.calib[A.wizardStep - 1].my = std::round(ny * 1000) / 1000;
           A.wizardStep = A.wizardStep == 4 ? 0 : A.wizardStep + 1;
-          if (A.wizardStep == 0) cd->calibrated = true;
+          if (A.wizardStep == 0) cd.calibrated = true;
         } else {
-          cd->touches.assign(1, Touch{100 + rand() % 900, nx, ny});
+          cd.touches.assign(1, Touch{100 + rand() % 900, nx, ny});
           FireTouchRoutes();
         }
       }
@@ -527,38 +288,395 @@ static void Radar(ImRect r) {
   }
 }
 
-static void Routing(ImRect r) {
-  Fill(r, K(pal::g12));
-  VLine(r.Min.x, r.Min.y, r.Max.y, K(pal::g2a));
-  PanelHeader(Rc(r.Min.x + 1, r.Min.y, r.GetWidth() - 1, 24), "Parameter routing", pal::t88);
-  char cc[24]; snprintf(cc, sizeof cc, "%d cords", (int)A.routes.size());
-  TextR(r.Max.x - 7, r.Min.y + 11.5f, MONO_M, 10, K(pal::t66), cc);
-  static ScrollArea sa;
-  sa.Begin("##routing", ImRect(r.Min.x + 1, r.Min.y + 24, r.Max.x, r.Max.y));
-  float ox = sa.origin.x, oy = sa.origin.y, W = r.GetWidth() - 1 - 8, x = ox + 8, w = W - 16, y = 8;
-  Text(x, oy + y + 5, UI_B, 9, K(pal::t88), "BLOB TRACKING", 0.14f); y += 9 + 8;
-  {
-    Text(x, oy + y + 5, UI_S, 10, K(pal::t88), "Noise threshold");
-    char b[16]; snprintf(b, sizeof b, "%.1f", A.noise);
-    TextR(x + w, oy + y + 5, MONO_B, 10, K(pal::mint), b);
-    y += 10 + 4;
-    float v = (A.noise - 0.2f) / 3.8f * 100.f;
-    if (Slider(0x4001, Rc(x, oy + y + 4, w, 6), v, pal::mint)) A.noise = std::round((0.2f + v / 100.f * 3.8f) * 10) / 10;
-    y += 14 + 8;
-    Text(x, oy + y + 5, UI_S, 10, K(pal::t88), "Min blob size");
-    snprintf(b, sizeof b, "%dmm", (int)A.blobSize);
-    TextR(x + w, oy + y + 5, MONO_B, 10, K(pal::mint), b);
-    y += 10 + 4;
-    float v2 = std::clamp((A.blobSize - 5.f) / 295.f * 100.f, 0.f, 100.f);   // lidar blobs: 5-300 mm
-    if (Slider(0x4002, Rc(x, oy + y + 4, w, 6), v2, pal::mint)) A.blobSize = std::round(5 + v2 / 100.f * 295.f);
-    y += 14 + 8;
+// ───────────────────────── Input: a lidar placed on its screen, in mm ─────────────────────────
+// No real size yet: two fields in the middle of the stage, written straight into the Screen (the same numbers as Mapping's).
+static void ScreenSizeEntry(ImRect area, Screen& sc) {
+  const float w = 320, h = 112, cx = (area.Min.x + area.Max.x) * 0.5f, cy = (area.Min.y + area.Max.y) * 0.5f;
+  ImRect r(cx - w * 0.5f, cy - h * 0.5f, cx + w * 0.5f, cy + h * 0.5f);
+  Box(r, K(pal::g14), K(pal::coral, 0.5f), 4);
+  Icon("maximize", ImVec2(r.Min.x + 16, r.Min.y + 18), 12, K(pal::coral));
+  TextEll(r.Min.x + 28, r.Min.y + 18, w - 40, UI_B, 11, K(pal::white), ("Real size of " + sc.name).c_str());
+  TextEll(r.Min.x + 12, r.Min.y + 40, w - 24, UI_S, 10, K(pal::t88), "The lidar is placed in millimetres on this surface.");
+  static int ew = 0, eh = 0;   // applied when a field loses focus, so typing "4000" does not jump to the stage after the first digit
+  ImGuiID wid = ImGui::GetID("##realw"), hid = ImGui::GetID("##realh");
+  if (ImGui::GetActiveID() != wid) ew = (int)sc.realW;
+  if (ImGui::GetActiveID() != hid) eh = (int)sc.realH;
+  const float fw = (w - 24 - 12) * 0.5f, fy = r.Min.y + 58;
+  Text(r.Min.x + 12, fy + 5, MONO_R, 9, K(pal::t66), "WIDTH (MM)");
+  Text(r.Min.x + 12 + fw + 12, fy + 5, MONO_R, 9, K(pal::t66), "HEIGHT (MM)");
+  IntField("##realw", Rc(r.Min.x + 12, fy + 14, fw, 26), ew);
+  if (ImGui::IsItemDeactivatedAfterEdit()) { sc.realW = (float)std::clamp(ew, 0, 100000); A.pushHist(); }
+  IntField("##realh", Rc(r.Min.x + 12 + fw + 12, fy + 14, fw, 26), eh);
+  if (ImGui::IsItemDeactivatedAfterEdit()) { sc.realH = (float)std::clamp(eh, 0, 100000); A.pushHist(); }
+}
+
+static void LidarPlacementView(ImRect area, Device& d) {
+  Screen* sc = DeviceScreen(d);
+  if (!sc) { TextC((area.Min.x + area.Max.x) * 0.5f, (area.Min.y + area.Max.y) * 0.5f, MONO_R, 10, K(pal::t66), "No screen to place the sensor on"); return; }
+  if (sc->realW <= 0 || sc->realH <= 0) { ScreenSizeEntry(area, *sc); return; }
+  const float SW = sc->realW, SH = sc->realH;
+  static int drag = 0; static std::string dragDev; static ImVec2 off, mo0;   // 1 move the sensor, 2 turn it
+  if (drag && (!ImGui::IsMouseDown(0) || dragDev != d.id)) { drag = 0; A.pushHist(); }
+  bool rClick = false;
+  const StageXf X = StageViewUpdate(A.sensorView[0], area, SW, SH, StageBase(area, SW, SH), false, drag == 1, &rClick);
+  const mikmap::LidarPose& P = d.pose;
+  auto surf = [&](float xmm, float ymm) { const mikmap::Vec2 s = mikmap::lidarToSurface(P, {xmm, ymm}); return X.toPx(ImVec2((float)s.x, (float)s.y)); };
+  ImDrawList* dl = g.dl;
+  dl->PushClipRect(area.Min, area.Max, true);
+  // the screen, with a faint 1 m grid to place by
+  Box(X.cv, K(0x0d0d0d), 0, 2);
+  for (float gx = 1000; gx < SW; gx += 1000) dl->AddLine(X.toPx({gx, 0}), X.toPx({gx, SH}), Ca(K(pal::g1c)), 1.f);
+  for (float gy = 1000; gy < SH; gy += 1000) dl->AddLine(X.toPx({0, gy}), X.toPx({SW, gy}), Ca(K(pal::g1c)), 1.f);
+  Border(X.cv, K(pal::coral, 0.7f), 2, 1.5f);
+  char sz[96]; snprintf(sz, sizeof sz, "%s \xC2\xB7 %d \xC3\x97 %d mm", sc->name.c_str(), (int)SW, (int)SH);
+  Text(X.cv.Min.x, X.cv.Min.y - 10, MONO_B, 10, K(pal::coral), sz);
+  // raw scan, 1 px per ray; rays past the range limit are dimmed (the source drops them)
+  if (const mikmap::LaserScan* scan = DeviceScan(d)) {
+    const ImU32 dot = Ca(K(pal::t66)), dim = Ca(K(pal::t66, 0.3f));
+    for (int i = 0; i < scan->count; ++i) {
+      const float rm = scan->rangeMm[i];
+      if (rm <= 0.f) continue;
+      const ImVec2 p = surf(rm * std::cos(scan->angleRad[i]), rm * std::sin(scan->angleRad[i]));
+      dl->AddRectFilled(ImVec2(p.x - 0.5f, p.y - 0.5f), ImVec2(p.x + 0.5f, p.y + 0.5f), d.rangeMm > 0 && rm > d.rangeMm ? dim : dot);
+    }
   }
-  HLine(x, x + w, oy + y, K(pal::g2a)); y += 1 + 6;
-  int act = 0; for (auto& rt : A.routes) act += rt.active;
-  Text(x, oy + y + 5, UI_B, 9, K(pal::t88), "PATCH CORDS", 0.14f);
-  char ab[24]; snprintf(ab, sizeof ab, "%d ACTIVE", act);
-  TextR(x + w, oy + y + 5, MONO_R, 9, K(pal::coral), ab);
-  y += 10 + 8;
+  ImVec2 rp[4]; for (int i = 0; i < 4; ++i) rp[i] = surf(d.roi[i].x, d.roi[i].y);
+  dl->AddPolyline(rp, 4, Ca(K(pal::cyan, 0.6f)), ImDrawFlags_Closed, 1.f);   // ROI (raw mm; "ROI = screen" in Properties)
+  for (auto& t : d.touches) {   // blob centroids, raw mm
+    const ImVec2 b = surf(t.x, t.y);
+    dl->AddCircleFilled(b, 6, Ca(K(pal::coral)), 20);
+    dl->AddCircle(b, 10, Ca(K(pal::white)), 20, 1.2f);
+    char lb[16]; snprintf(lb, sizeof lb, "ID:%d", t.id);
+    Text(b.x + 13, b.y, MONO_B, 10, K(pal::white), lb);
+  }
+  if (A.wizardStep >= 1 && A.wizardStep <= 4 && A.curDevice() == &d) {   // the point Capture stored for this step
+    const Calib& cb = d.calib[A.wizardStep - 1];
+    if (cb.mx != 0 || cb.my != 0) dl->AddCircle(surf(cb.mx, cb.my), 16, Ca(K(pal::yellow)), 32, 2);
+  }
+  // the sensor: body, facing arrow, range ring, and the turn dot 60 px ahead
+  const ImVec2 c = X.toPx(ImVec2((float)P.x, (float)P.y));
+  const float a = (float)P.angleDeg * kDegToRad;
+  const ImVec2 fw(std::cos(a), std::sin(a)), hd(c.x + fw.x * 60, c.y + fw.y * 60);
+  const ImVec2 m = ImGui::GetIO().MousePos;
+  int hot = 0;
+  if (!drag && OverStage(area)) {
+    if (std::hypot(m.x - hd.x, m.y - hd.y) <= 9) hot = 2; else if (std::hypot(m.x - c.x, m.y - c.y) <= 13) hot = 1;
+  }
+  if (hot && ImGui::IsMouseClicked(0)) {
+    drag = hot; dragDev = d.id; mo0 = X.fromPx(m); off = ImVec2((float)P.x - mo0.x, (float)P.y - mo0.y);
+  }
+  if (drag == 1) {   // move, rounded to 10 mm; Shift: along the axis the pointer has moved further on
+    const ImVec2 mo = X.fromPx(m);
+    float nx = mo.x + off.x, ny = mo.y + off.y;
+    if (ImGui::GetIO().KeyShift) { if (std::fabs(mo.x - mo0.x) >= std::fabs(mo.y - mo0.y)) ny = mo0.y + off.y; else nx = mo0.x + off.x; }
+    d.pose.x = std::clamp(std::round(nx / 10.f) * 10.f, -20000.f, 40000.f); d.pose.y = std::clamp(std::round(ny / 10.f) * 10.f, -20000.f, 40000.f);
+  } else if (drag == 2) {   // turn about the sensor; Shift: 15 degree steps
+    float deg = std::atan2(m.y - c.y, m.x - c.x) / kDegToRad;
+    deg = ImGui::GetIO().KeyShift ? std::round(deg / 15.f) * 15.f : std::round(deg * 10.f) / 10.f;
+    d.pose.angleDeg = deg;
+  }
+  if (hot || drag) ImGui::SetMouseCursor(hot == 2 || drag == 2 ? ImGuiMouseCursor_ResizeAll : ImGuiMouseCursor_Hand);
+  if (d.rangeMm > 0) dl->AddCircle(c, d.rangeMm * X.s, Ca(K(pal::mint, 0.35f)), 96, 1.f);
+  dl->AddLine(c, hd, Ca(K(pal::mint, 0.7f)), 1.5f);
+  const ImVec2 tip(c.x + fw.x * 26, c.y + fw.y * 26), nrm(-fw.y, fw.x);
+  dl->AddTriangleFilled(tip, ImVec2(c.x + fw.x * 17 + nrm.x * 5, c.y + fw.y * 17 + nrm.y * 5), ImVec2(c.x + fw.x * 17 - nrm.x * 5, c.y + fw.y * 17 - nrm.y * 5), Ca(K(pal::mint)));
+  dl->AddCircleFilled(c, 9, Ca(K(pal::mint, hot == 1 || drag == 1 ? 0.45f : 0.25f)), 24);
+  dl->AddCircle(c, 9, Ca(K(hot == 1 || drag == 1 ? pal::white : pal::mint)), 24, 1.8f);
+  dl->AddCircleFilled(hd, 5, Ca(K(hot == 2 || drag == 2 ? pal::white : pal::mint)), 16);
+  char pl[64]; snprintf(pl, sizeof pl, "%d, %d mm \xC2\xB7 %.1f\xC2\xB0", (int)P.x, (int)P.y, P.angleDeg);
+  TextC(c.x, c.y + 20, MONO_R, 9, K(pal::mint), pl);
+  dl->PopClipRect();
+  const char* hint = !d.placed ? "Custom (4-point) calibration: moving the sensor does not change it \xE2\x80\x94 Re-apply placement on Output"
+                               : "Drag the sensor to move it, the dot to turn it \xC2\xB7 Shift: one axis / 15\xC2\xB0";
+  TextC((area.Min.x + area.Max.x) * 0.5f, area.Max.y - 12, MONO_R, 10, K(d.placed ? pal::t66 : pal::yellow), hint);
+}
+
+// ───────────────────────── Output: the 4 calibration targets on the screen ─────────────────────────
+static void SensorOutputView(ImRect area, Device& d) {
+  Screen* sc = DeviceScreen(d);
+  if (!sc || d.calib.size() != 4) return;
+  bool rClick = false;
+  // shortcut: no edge-scroll while dragging a quad point (EditQuad does not say a drag is in flight); add it if points hide under the panels
+  const StageXf X = StageViewUpdate(A.sensorView[1], area, 1920, 1080, StageBase(area, 1920, 1080), false, false, &rClick);
+  g.dl->PushClipRect(area.Min, area.Max, true);
+  DrawScreenBackdrop(*sc, X, (float)g.time * 1.2f, 0.6f);   // dimmed: the quad is what this page edits
+  Border(X.cv, K(pal::coral, 0.6f), 2, 1.f);
+  ImVec2 q[4]; for (int i = 0; i < 4; ++i) q[i] = ImVec2(d.calib[i].tx, d.calib[i].ty);
+  const std::string id = "##sensorquad" + d.id;
+  const bool released = EditQuad(id.c_str(), X, q, A.sensorTool, pal::mint, OverStage(area));
+  bool moved = false;
+  for (int i = 0; i < 4; ++i) if (q[i].x != d.calib[i].tx || q[i].y != d.calib[i].ty) { d.calib[i].tx = q[i].x; d.calib[i].ty = q[i].y; moved = true; }
+  if (moved) d.placed = false;   // a hand edit is Custom (4-point) from the first moved pixel, so the placement never pulls the point back mid-drag
+  if (released) A.pushHist();
+  static const char* kCorner[4] = {"1", "2", "3", "4"};
+  const ImVec2 qc = X.toPx(ImVec2((q[0].x + q[1].x + q[2].x + q[3].x) * 0.25f, (q[0].y + q[1].y + q[2].y + q[3].y) * 0.25f));
+  for (int i = 0; i < 4; ++i) {   // numbered inside the quad, so a corner at the stage edge keeps its label
+    const ImVec2 p = X.toPx(q[i]); const float dx = qc.x - p.x, dy = qc.y - p.y, l = std::max(1.f, std::hypot(dx, dy));
+    TextC(p.x + dx / l * 26, p.y + dy / l * 26, MONO_B, 10, K(pal::mint), kCorner[i]);
+  }
+  if (A.wizardStep >= 1 && A.wizardStep <= 4 && A.curDevice() == &d) g.dl->AddCircle(X.toPx(q[A.wizardStep - 1]), 18, Ca(K(pal::yellow)), 32, 2);
+  float H[9];
+  if (DeviceH(d, H)) for (auto& t : d.touches) {   // what the device sends, through its H_s
+    float ox, oy; ApplyH(H, t.x, t.y, ox, oy);
+    const ImVec2 p = X.toPx(ImVec2(ox, oy));
+    g.dl->AddCircleFilled(p, 6, Ca(K(pal::coral)), 20);
+    g.dl->AddCircle(p, 10, Ca(K(pal::white)), 20, 1.2f);
+  }
+  g.dl->PopClipRect();
+  TextC((area.Min.x + area.Max.x) * 0.5f, area.Max.y - 12, MONO_R, 10, K(pal::t66),
+        A.sensorTool == 0 ? "Drag a corner to fine-tune where the sensor lands \xC2\xB7 Shift: one axis" : "Move, scale or turn the whole quad \xC2\xB7 Shift: axis / aspect / 45\xC2\xB0");
+}
+
+static void SensorStage(ImRect r, Device* d) {
+  Fill(r, K(pal::g050));
+  ImRect tb(r.Min.x, r.Min.y, r.Max.x, r.Min.y + 44), area(r.Min.x, r.Min.y + 44, r.Max.x, r.Max.y);
+  const bool radar = d && A.spage == 0 && !IsLidar(*d);   // the Sim radar and the camera keep their own fixed views (no pan/zoom)
+  float lx = 0, xr = StageBar(tb, d && !radar, &lx);
+  if (!d) { TextC((area.Min.x + area.Max.x) * 0.5f, (area.Min.y + area.Max.y) * 0.5f, MONO_R, 10, K(pal::t66), "No sensor \xE2\x80\x94 add one with + Sensor"); return; }
+  if (A.spage != 0 || d->kind != DevKind::Sim) A.editRoi = false;
+  const float cy = tb.Min.y + 21.5f;
+  char info[64] = "";
+  if (A.spage == 0 && d->kind == DevKind::Sim) {   // Edit ROI: the Sim radar's handles
+    const char* lb = A.editRoi ? "Finish ROI" : "Edit ROI";
+    const float w = TextW(UI_B, 10, lb) + 10 + 6 + 12 + 10;
+    ImRect br(xr - w, cy - 12, xr, cy + 12);
+    Hit h = HitR(br);
+    Box(br, A.editRoi ? K(pal::yellow) : K(pal::g1c), A.editRoi ? K(pal::yellow) : K(pal::g22), 3);
+    const ImU32 fg = K(A.editRoi ? 0x0f0f0f : pal::t88);
+    Icon("target", ImVec2(br.Min.x + 10 + 6, cy), 12, fg);
+    Text(br.Min.x + 10 + 12 + 6, cy, UI_B, 10, fg, lb);
+    if (h.hover) CursorHand();
+    if (h.click) A.editRoi = !A.editRoi;
+    xr = br.Min.x - 8;
+    snprintf(info, sizeof info, "40.0 Hz real-time sweep");
+  } else if (A.spage == 0 && d->kind == DevKind::Skeleton) {
+    int slots[64]; const int n = People(*d, slots);
+    snprintf(info, sizeof info, "%d fps \xC2\xB7 %d %s", d->fps, n, n == 1 ? "person" : "people");
+  } else if (IsLidar(*d)) {
+    snprintf(info, sizeof info, "%d Hz \xC2\xB7 %d %s", d->fps, (int)d->touches.size(), d->touches.size() == 1 ? "blob" : "blobs");
+  }
+  if (xr - lx > 40) TextEll(lx, cy, xr - lx, MONO_R, 10, K(pal::t88), info);
+  if (A.spage == 1) SensorOutputView(area, *d);
+  else if (IsLidar(*d)) LidarPlacementView(area, *d);
+  else if (d->kind == DevKind::Skeleton) SkeletonView(area, *d);
+  else Radar(area, *d);
+}
+
+// ───────────────────────── Properties ─────────────────────────
+static void PLabel(float x, float y, const char* t) { Text(x, y + 4.5f, MONO_R, 9, K(pal::t88), Upper(t).c_str(), 0.09f); }
+// a 24 px row: label on the left, a number field on the right
+static bool NumRow(float x, float y, float w, const char* label, const char* id, float& v, int decimals = 0) {
+  Text(x, y + 12, MONO_R, 9, K(pal::t66), label);
+  return FloatField(id, Rc(x + 104, y, w - 104, 24), v, decimals);
+}
+static bool CheckRow(float x, float y, const char* label, bool& v) {
+  ImRect cb(x, y + 5, x + 14, y + 19);
+  Hit h = HitR(ImRect(x - 2, y, x + 20 + TextW(UI_S, 10, label), y + 24));
+  Box(cb, v ? K(pal::mint) : K(pal::g050), v ? K(pal::mint) : K(pal::g22), 2);
+  if (v) Check(ImVec2((cb.Min.x + cb.Max.x) * 0.5f, (cb.Min.y + cb.Max.y) * 0.5f), 12, K(0x0f0f0f));
+  Text(x + 20, y + 12, UI_S, 10, K(pal::tcc), label);
+  if (h.hover) CursorHand();
+  if (h.click) { v = !v; A.pushHist(); }
+  return h.click;
+}
+static bool WideButton(float x, float y, float w, const char* label, const char* icon, uint32_t hex) {
+  ImRect br(x, y, x + w, y + 26);
+  Hit h = HitR(br);
+  Box(br, h.hover ? K(hex, 0.25f) : K(hex, 0.14f), K(hex, 0.45f), 3);
+  const float tw = TextW(UI_B, 10, label), cx = (br.Min.x + br.Max.x) * 0.5f, cy = (br.Min.y + br.Max.y) * 0.5f;
+  if (icon) Icon(icon, ImVec2(cx - tw * 0.5f - 10, cy), 12, K(hex));
+  Text(cx - tw * 0.5f + (icon ? 2 : 0), cy, UI_B, 10, K(hex), label);
+  if (h.hover) CursorHand();
+  return h.click;
+}
+
+// a collapsible section header; open state per device kind (bit = PropSection), kept while the app runs
+static bool Section(float ox, float W, float x, float w, float oy, float& y, const char* title, DevKind k, PropSection s, const char* note = nullptr) {
+  HLine(ox, ox + W, oy + y, K(pal::g2a)); y += 1 + 3;
+  uint32_t& bits = A.sensorSecOpen.try_emplace((int)k, 0xffffffffu).first->second;   // absent = every section open
+  const uint32_t bit = 1u << (int)s;
+  ImRect hr(x, oy + y, x + w, oy + y + 20);
+  Hit hh = HitR(hr);
+  if (hh.hover) { Fill(ImRect(hr.Min.x - 4, hr.Min.y, hr.Max.x, hr.Max.y), K(pal::g1c), 2); CursorHand(); }
+  if (hh.click) bits ^= bit;
+  const bool open = (bits & bit) != 0;
+  Icon(open ? "chevron-down" : "chevron-right", ImVec2(x + 6, oy + y + 10), 11, K(hh.hover ? pal::white : pal::t88));
+  Text(x + 18, oy + y + 10, MONO_R, 9, K(pal::t88), Upper(title).c_str(), 0.09f);
+  if (note) TextR(x + w, oy + y + 10, MONO_R, 8, K(pal::t66), note);
+  y += 20 + 4;
+  return open;
+}
+
+static void ConnectionSection(Device& d, float x, float w, float oy, float& y) {
+  if (d.kind == DevKind::Sim) { PropertyRow(Rc(x - 6, oy + y, w + 12, 24), "Source", "simulated"); y += 24 + 6; return; }
+  if (d.kind == DevKind::Hokuyo) {   // applied when the field loses focus so typing does not restart the source on every key
+    static std::string hostEdit;
+    if (ImGui::GetActiveID() != ImGui::GetID("##devhost")) hostEdit = d.host;
+    Text(x, oy + y + 12, MONO_R, 9, K(pal::t66), "Host");
+    TextField("##devhost", Rc(x + 104, oy + y, w - 104, 24), hostEdit, MONO_R, 10);
+    if (ImGui::IsItemDeactivatedAfterEdit()) { d.host = hostEdit; A.pushHist(); }
+    y += 24 + 4;
+  }
+  if (d.kind == DevKind::Plugin) {
+    PropertyRow(Rc(x - 6, oy + y, w + 12, 24), "Plugin", d.plugin.empty() ? "\xE2\x80\x94" : d.plugin.c_str()); y += 24 + 4;
+    // shortcut: config is raw JSON; with a second plugin, add mikmap_sensor_params() to describe each field, like TouchDesigner's setupParameters
+    static std::string cfgEdit;
+    if (ImGui::GetActiveID() != ImGui::GetID("##devconfig")) cfgEdit = d.config;
+    Text(x, oy + y + 12, MONO_R, 9, K(pal::t66), "Config");
+    TextField("##devconfig", Rc(x + 104, oy + y, w - 104, 24), cfgEdit, MONO_R, 10);
+    if (ImGui::IsItemDeactivatedAfterEdit()) { d.config = cfgEdit; A.pushHist(); }
+    y += 24 + 4;
+  } else {
+    static int portEdit = 0;
+    if (ImGui::GetActiveID() != ImGui::GetID("##devport")) portEdit = d.port;
+    Text(x, oy + y + 12, MONO_R, 9, K(pal::t66), d.kind == DevKind::Skeleton ? "OSC UDP port" : "Port");
+    IntField("##devport", Rc(x + 104, oy + y, w - 104, 24), portEdit);
+    if (ImGui::IsItemDeactivatedAfterEdit()) { d.port = std::clamp(portEdit, 0, 65535); A.pushHist(); }
+    y += 24 + 4;
+  }
+  if (d.kind == DevKind::Skeleton) {   // how to start the sender that feeds this port
+    std::string cmd = "python tools/pose_bridge/pose_bridge.py --port " + std::to_string(d.port);
+    TextEll(x, oy + y + 6, w, MONO_R, 9, K(pal::t88), cmd.c_str()); y += 12 + 4;
+  }
+  PropertyRow(Rc(x - 6, oy + y, w + 12, 24), "Packets", std::to_string(d.packets).c_str()); y += 24 + 6;
+  if (WideButton(x, oy + y, w, "Reconnect", "rotate-ccw", pal::mint)) { RestartSource(d.id); A.notify("Reconnecting " + d.name); }
+  y += 26 + 8;
+}
+
+static void ScreenSizeSection(Device& d, float x, float w, float oy, float& y) {
+  Screen* sc = DeviceScreen(d);
+  if (!sc) return;
+  NumRow(x, oy + y, w, "Real width (mm)", "##prealw", sc->realW); y += 24 + 4;
+  NumRow(x, oy + y, w, "Real height (mm)", "##prealh", sc->realH); y += 24 + 4;
+  sc->realW = std::clamp(sc->realW, 0.f, 100000.f); sc->realH = std::clamp(sc->realH, 0.f, 100000.f);
+  if (sc->realW <= 0 || sc->realH <= 0) { TextEll(x, oy + y + 6, w, MONO_R, 9, K(pal::yellow), "Enter both to place the lidar"); y += 12 + 4; }
+  y += 4;
+}
+
+static void PlacementSection(Device& d, float x, float w, float oy, float& y) {
+  float px = (float)d.pose.x, py = (float)d.pose.y, pa = (float)d.pose.angleDeg;
+  if (NumRow(x, oy + y, w, "X (mm)", "##posex", px)) d.pose.x = px;
+  y += 24 + 4;
+  if (NumRow(x, oy + y, w, "Y (mm)", "##posey", py)) d.pose.y = py;
+  y += 24 + 4;
+  if (NumRow(x, oy + y, w, "Angle (\xC2\xB0)", "##posea", pa, 1)) d.pose.angleDeg = std::clamp(pa, -360.f, 360.f);
+  y += 24 + 4;
+  CheckRow(x, oy + y, "Mirror (mounted upside down)", d.pose.mirror); y += 24 + 4;
+  if (NumRow(x, oy + y, w, "Range limit (mm)", "##range", d.rangeMm)) d.rangeMm = std::clamp(d.rangeMm, 0.f, 100000.f);
+  y += 24 + 2;
+  TextEll(x, oy + y + 5, w, MONO_R, 8, K(pal::t66), "0 = unlimited"); y += 10 + 6;
+  if (WideButton(x, oy + y, w, "ROI = screen", "target", pal::cyan)) {
+    if (RoiToScreen(d)) A.pushHist(); else A.notify("Enter the screen's real size first");
+  }
+  y += 26 + 8;
+}
+
+static void BlobSection(Device& d, float x, float w, float oy, float& y) {
+  CheckRow(x, oy + y, "Blob tracking", d.blobOn); y += 24 + 4;
+  const float prev = g.alpha; if (!d.blobOn) g.alpha *= 0.5f;
+  if (NumRow(x, oy + y, w, "Min (mm)", "##blobmin", d.blobMinMm)) d.blobMinMm = std::clamp(d.blobMinMm, 0.f, 10000.f);
+  y += 24 + 4;
+  if (NumRow(x, oy + y, w, "Max (mm)", "##blobmax", d.blobMaxMm)) d.blobMaxMm = std::clamp(d.blobMaxMm, 0.f, 10000.f);
+  y += 24 + 4;
+  if (NumRow(x, oy + y, w, "Gap (mm)", "##blobgap", d.blobGapMm)) d.blobGapMm = std::clamp(d.blobGapMm, 0.f, 10000.f);
+  y += 24 + 4;
+  g.alpha = prev;
+  PropertyRow(Rc(x - 6, oy + y, w + 12, 24), "Blobs", std::to_string(d.touches.size()).c_str(), nullptr, pal::mint); y += 24 + 8;
+}
+
+static void CalibrationSection(Device& d, float x, float w, float oy, float& y) {
+  if (IsLidar(d)) {   // the badge says whether the quad follows the placement or is held by hand; Re-apply sits next to it
+    const char* bl = d.placed ? "Placed" : "Custom (4-point)";
+    Badge(x + BadgeW(bl, true), oy + y + 12, bl, d.placed ? T_AUDIO : T_STANDBY, true);
+    const char* rl = "Re-apply placement";
+    const float rw = TextW(UI_B, 9, rl) + 16;
+    ImRect rb(x + w - rw, oy + y, x + w, oy + y + 24);
+    Hit rh = HitR(rb);
+    Box(rb, rh.hover ? K(pal::mint, 0.25f) : K(pal::g1c), K(pal::mint, 0.45f), 3);
+    TextC((rb.Min.x + rb.Max.x) * 0.5f, (rb.Min.y + rb.Max.y) * 0.5f, UI_B, 9, K(pal::mint), rl);
+    if (rh.hover) CursorHand();
+    if (rh.click) {
+      const bool was = d.placed; d.placed = true;
+      if (ApplyPlacement(d)) A.pushHist(); else { d.placed = was; A.notify("Enter the screen's real size first"); }
+    }
+    y += 24 + 8;
+  }
+  static const char* CN[4] = {"1 \xC2\xB7 TL", "2 \xC2\xB7 TR", "3 \xC2\xB7 BR", "4 \xC2\xB7 BL"};
+  const float fw = (w - 52 - 6) * 0.5f;
+  for (int i = 0; i < 4 && i < (int)d.calib.size(); ++i) {   // the targets in output px; typing one is a hand edit (Custom)
+    Text(x, oy + y + 12, MONO_R, 9, K(pal::t66), CN[i]);
+    char ix[16], iy[16]; snprintf(ix, sizeof ix, "##ctx%d", i); snprintf(iy, sizeof iy, "##cty%d", i);
+    if (FloatField(ix, Rc(x + 52, oy + y, fw, 24), d.calib[i].tx, 0)) d.placed = false;
+    if (FloatField(iy, Rc(x + 52 + fw + 6, oy + y, fw, 24), d.calib[i].ty, 0)) d.placed = false;
+    y += 24 + 4;
+  }
+  float m[9], rms; if (!FitHomography(d.calib, m, &rms)) FitAffine(d.calib, m, &rms);
+  char rb[32]; if (d.calibrated) snprintf(rb, sizeof rb, "%.2f px", rms); else snprintf(rb, sizeof rb, "not calibrated");
+  PropertyRow(Rc(x - 6, oy + y, w + 12, 24), "RMS", rb, nullptr, d.calibrated ? pal::mint : pal::coral); y += 24 + 6;
+  // the 4-point wizard: touch / stand on the physical crosshair, Capture (a live sensor) or click the target (Sim)
+  if (A.wizardStep == 0) {
+    if (WideButton(x, oy + y, w, "Start 4-point wizard", "crosshair", pal::coral)) A.wizardStep = 1;
+    y += 26 + 6;
+  } else {
+    ImRect br(x, oy + y, x + w, oy + y + 6 + 13 + 4 + 15 + 4 + 24 + 6);
+    Box(br, K(pal::g18), K(pal::yellow, 0.5f), 3);
+    char st[24]; snprintf(st, sizeof st, "STEP %d OF 4", A.wizardStep);
+    static const char* WN[4] = {"TOP-LEFT", "TOP-RIGHT", "BOTTOM-RIGHT", "BOTTOM-LEFT"};
+    Text(br.Min.x + 7, br.Min.y + 6 + 6.5f, MONO_B, 11, K(pal::yellow), st);
+    TextR(br.Max.x - 7, br.Min.y + 6 + 6.5f, MONO_R, 10, K(pal::t88), WN[A.wizardStep - 1]);
+    const bool live = d.kind != DevKind::Sim;   // a real sensor reports where the target stands: Capture averages 30 frames of it
+    TextEll(br.Min.x + 7, br.Min.y + 6 + 13 + 4 + 7.5f, w - 14, UI_S, 10, K(pal::te0), live ? (d.kind == DevKind::Skeleton ? "Hold your right wrist on the target, then Capture" : "Stand alone on the target, then Capture") : "Click the target on the Input radar");
+    ImRect cr(br.Min.x + 7, br.Max.y - 6 - 24, br.Max.x - 7, br.Max.y - 6);
+    if (live) {
+      const float half = (cr.GetWidth() - 6) * 0.5f;
+      ImRect cap(cr.Min.x, cr.Min.y, cr.Min.x + half, cr.Max.y);
+      cr.Min.x += half + 6;
+      Hit ch = HitR(cap);
+      Box(cap, K(pal::coral, 0.18f), K(pal::coral, 0.5f), 3);
+      TextC((cap.Min.x + cap.Max.x) * 0.5f, (cap.Min.y + cap.Max.y) * 0.5f, UI_B, 10, K(pal::coral), "Capture");
+      if (ch.hover) CursorHand();
+      if (ch.click) { d.placed = false; StartCapture(A.wizardStep); }   // captured points are a hand calibration, not the placement
+    }
+    Hit h = HitR(cr);
+    Box(cr, K(pal::g050), K(pal::g22), 3);
+    TextC((cr.Min.x + cr.Max.x) * 0.5f, (cr.Min.y + cr.Max.y) * 0.5f, UI_S, 10, K(pal::t88), "Cancel");
+    if (h.hover) CursorHand();
+    if (h.click) A.wizardStep = 0;
+    y += br.GetHeight() + 6;
+  }
+  // G8: save/load the 4 calibration points + ROI/noise as their own file, independent of the project
+  const float gap = 6, bw = (w - gap) * 0.5f;
+  ImRect sb(x, oy + y, x + bw, oy + y + 26), lb(x + bw + gap, oy + y, x + w, oy + y + 26);
+  Hit sh = HitR(sb), lh = HitR(lb);
+  Box(sb, K(pal::g1c), K(pal::g22), 3);
+  Icon("save", ImVec2(sb.Min.x + 12, (sb.Min.y + sb.Max.y) * 0.5f), 12, K(pal::t88));
+  Text(sb.Min.x + 24, (sb.Min.y + sb.Max.y) * 0.5f, UI_S, 10, K(pal::t88), "Save profile");
+  if (sh.hover) CursorHand();
+  if (sh.click) A.notify(DoSaveCalibProfile());
+  Box(lb, K(pal::g1c), K(pal::g22), 3);
+  Icon("folder-open", ImVec2(lb.Min.x + 12, (lb.Min.y + lb.Max.y) * 0.5f), 12, K(pal::t88));
+  Text(lb.Min.x + 24, (lb.Min.y + lb.Max.y) * 0.5f, UI_S, 10, K(pal::t88), "Load profile");
+  if (lh.hover) CursorHand();
+  if (lh.click) {
+    std::vector<MenuItem> mi;
+    auto profiles = ListCalibProfiles();
+    if (profiles.empty()) { MenuItem it; it.label = "No saved profiles"; it.disabled = true; mi.push_back(it); }
+    for (auto& pf : profiles) {
+      MenuItem it; it.label = pf.name; it.icon = "folder-open";
+      it.run = [path = pf.path, name = pf.name] {
+        Device* cur = A.curDevice(); if (!cur) return;
+        std::string err;
+        if (LoadCalibProfile(path, *cur, A.noise, A.blobSize, err)) { cur->placed = false; A.wizardStep = 0; A.notify("Loaded profile: " + name); }
+        else A.notify("Load failed: " + err);
+      };
+      mi.push_back(it);
+    }
+    A.openCtx(ImVec2(lb.Min.x, lb.Max.y + 4), mi);
+  }
+  y += 26 + 8;
+}
+
+static void TriggersSection(float x, float w, float oy, float& y) {   // G17 patch cords (the old Parameter routing panel)
   for (auto& rt : A.routes) {
     ImRect cr(x, oy + y, x + w, oy + y + 6 + 14 + 4 + 12 + 6 + 2);
     float prev = g.alpha; if (!rt.active) g.alpha = 0.6f;
@@ -577,35 +695,95 @@ static void Routing(ImRect r) {
     if (h.click) rt.active = !rt.active;
     y += cr.GetHeight() + 8;
   }
-  {
-    ImRect br(x, oy + y, x + w, oy + y + 30);
-    Hit h = HitR(br);
-    Box(br, h.hover ? K(pal::ctrlHover) : K(pal::g1c), K(pal::g22), 3);
-    float tw = TextW(UI_B, 10, "Simulate particle trigger"), cx = (br.Min.x + br.Max.x) * 0.5f, cy = (br.Min.y + br.Max.y) * 0.5f;
-    Icon("zap", ImVec2(cx - tw * 0.5f - 11, cy), 13, K(pal::coral));
-    Text(cx - tw * 0.5f + 2, cy, UI_B, 10, K(pal::coral), "Simulate particle trigger");
+  if (WideButton(x, oy + y, w, "Simulate particle trigger", "zap", pal::coral)) {
+    for (auto& d : A.devices) if (d.kind == DevKind::Sim) {   // normalised units: only the simulated radar understands them
+      d.touches.assign(1, Touch{100 + rand() % 900, ((rand() % 1000) / 1000.f - 0.5f) * 1.4f, ((rand() % 1000) / 1000.f - 0.5f) * 1.4f});
+      break;
+    }
+  }
+  y += 26 + 8;
+}
+
+// Like Mapping's Properties: a block that is always there (name, status, Active, screen), then the sections of the open tab.
+// Input = what the sensor sees and how it is filtered; Output = where its points land on the screen and where they go next.
+static void SensorProps(ImRect r, Device* d) {
+  Fill(r, K(pal::g12));
+  VLine(r.Min.x, r.Min.y, r.Max.y, K(pal::g2a));
+  PanelHeader(Rc(r.Min.x + 1, r.Min.y, r.GetWidth() - 1, 24), "Sensor properties", pal::t88);
+  if (!d) return;
+  Badge(r.Max.x - 6, r.Min.y + 11.5f, DevKindName(d->kind), T_AUDIO, true);
+  static ScrollArea sa;
+  sa.Begin("##sensorprops", ImRect(r.Min.x + 1, r.Min.y + 24, r.Max.x, r.Max.y));
+  const float ox = sa.origin.x, oy = sa.origin.y, W = r.GetWidth() - 1 - 8, x = ox + 8, w = W - 16;
+  float y = 8;
+  PLabel(x, oy + y, "Sensor name"); y += 9 + 4;
+  if (TextField("##sensorname", Rc(x, oy + y, w, 28), d->name)) A.pushHist();
+  y += 28 + 8;
+  {   // status · fps · latency, and the Active switch
+    const int st = d->status;
+    const uint32_t dot = !d->enabled ? 0x555555 : st == (int)mikmap::SourceStatus::Error ? pal::red : st == (int)mikmap::SourceStatus::Connecting ? pal::yellow : pal::mint;
+    Dot(ImVec2(x + 4, oy + y + 12), 8, dot, d->enabled && st == (int)mikmap::SourceStatus::Running);
+    char sl[64];
+    if (!d->enabled) snprintf(sl, sizeof sl, "Inactive");
+    else if (d->kind == DevKind::Sim) snprintf(sl, sizeof sl, "Simulated");
+    else if (st == (int)mikmap::SourceStatus::Running) snprintf(sl, sizeof sl, "%d fps \xC2\xB7 %.0f ms", d->fps, d->latencyMs);
+    else snprintf(sl, sizeof sl, st == (int)mikmap::SourceStatus::Connecting ? "Connecting\xE2\x80\xA6" : st == (int)mikmap::SourceStatus::Error ? "Error" : "Stopped");
+    Text(x + 14, oy + y + 12, MONO_B, 10, K(d->enabled ? pal::tcc : pal::t66), sl);
+    const float aw = 20 + TextW(UI_S, 10, "Active");
+    CheckRow(x + w - aw, oy + y, "Active", d->enabled);
+    y += 24 + 2;
+    if (d->enabled && !d->error.empty()) { TextEll(x, oy + y + 6, w, MONO_R, 9, K(pal::red), d->error.c_str()); y += 12 + 4; }
+    y += 4;
+  }
+  {   // the screen this sensor belongs to (its calibration targets live on it)
+    PLabel(x, oy + y, "Screen"); y += 9 + 4;
+    bool fb = false; const Screen* cur = DeviceScreen(*d, &fb);
+    ImRect sr(x, oy + y, x + w, oy + y + 28);
+    Hit h = HitR(sr);
+    Box(sr, h.hover ? K(pal::ctrlHover) : K(pal::g1c), K(pal::g22), 3);
+    Icon("monitor", ImVec2(sr.Min.x + 14, (sr.Min.y + sr.Max.y) * 0.5f), 11, K(pal::coral));
+    TextEll(sr.Min.x + 28, (sr.Min.y + sr.Max.y) * 0.5f, w - 50, UI_S, 10, K(pal::tf3), cur ? cur->name.c_str() : "\xE2\x80\x94");
+    Icon("chevron-down", ImVec2(sr.Max.x - 12, (sr.Min.y + sr.Max.y) * 0.5f), 10, K(pal::t66));
     if (h.hover) CursorHand();
     if (h.click) {
-      for (auto& d : A.devices) if (d.kind == DevKind::Sim) {   // normalised units: only the simulated radar understands them
-        d.touches.assign(1, Touch{100 + rand() % 900, ((rand() % 1000) / 1000.f - 0.5f) * 1.4f, ((rand() % 1000) / 1000.f - 0.5f) * 1.4f});
+      std::vector<MenuItem> mi;
+      for (auto& s : A.screens) {
+        MenuItem it; it.label = s.name; it.icon = "monitor"; it.toneHex = cur && cur->id == s.id ? pal::coral : 0;
+        it.run = [dv = d->id, sid = s.id] { for (auto& e : A.devices) if (e.id == dv) { e.screenId = sid; A.pushHist(); } };
+        mi.push_back(it);
+      }
+      A.openCtx(ImVec2(sr.Min.x, sr.Max.y + 4), mi);
+    }
+    y += 28 + 4;
+    if (fb && cur) { TextEll(x, oy + y + 6, w, MONO_R, 9, K(pal::yellow), ("Screen not found \xE2\x80\x94 using " + cur->name).c_str()); y += 12 + 4; }
+    y += 4;
+  }
+  for (PropSection s : SensorPropSections(d->kind, A.spage)) {
+    switch (s) {
+      case PropSection::Connection: if (Section(ox, W, x, w, oy, y, "Connection", d->kind, s, d->kind == DevKind::Sim ? nullptr : Endpoint(*d).c_str())) ConnectionSection(*d, x, w, oy, y); break;
+      case PropSection::ScreenSize: if (Section(ox, W, x, w, oy, y, "Screen size", d->kind, s)) ScreenSizeSection(*d, x, w, oy, y); break;
+      case PropSection::Placement: if (Section(ox, W, x, w, oy, y, "Placement", d->kind, s)) PlacementSection(*d, x, w, oy, y); break;
+      case PropSection::Blobs: if (Section(ox, W, x, w, oy, y, "Blob tracking", d->kind, s)) BlobSection(*d, x, w, oy, y); break;
+      case PropSection::Calibration: if (Section(ox, W, x, w, oy, y, "Calibration", d->kind, s)) CalibrationSection(*d, x, w, oy, y); break;
+      case PropSection::SendOut: Section(ox, W, x, w, oy, y, "Send out", d->kind, s); break;   // Task 8 fills it
+      case PropSection::Triggers: {
+        int act = 0; for (auto& rt : A.routes) act += rt.active;
+        char nb[24]; snprintf(nb, sizeof nb, "%d active", act);
+        if (Section(ox, W, x, w, oy, y, "Triggers", d->kind, s, nb)) TriggersSection(x, w, oy, y);
         break;
       }
     }
-    y += 30 + 8;
   }
-  sa.End(W, y);
+  sa.End(W, y + 8);
 }
 
 void DrawSensor(ImRect body) {
   Fill(body, K(pal::g0f));
-  // interim: the shared tree sits left of the old device manager until the page is rebuilt around it
-  const float tw = A.sensorTreeCollapsed ? 46.f : 236.f;
+  const float tw = A.sensorTreeCollapsed ? 46.f : 236.f, pw = 280.f;
   ImRect tree(body.Min.x, body.Min.y, body.Min.x + tw, body.Max.y);
-  const float x0 = body.Min.x + tw;
+  Device* d = A.curDevice();
   DrawTree(tree, TreeMode::Sensors);
-  Devices(ImRect(x0, body.Min.y, x0 + 320, body.Max.y));
-  Routing(ImRect(body.Max.x - 300, body.Min.y, body.Max.x, body.Max.y));
-  Radar(ImRect(x0 + 320, body.Min.y, body.Max.x - 300, body.Max.y));
+  SensorProps(ImRect(body.Max.x - pw, body.Min.y, body.Max.x, body.Max.y), d);
+  SensorStage(ImRect(tree.Max.x, body.Min.y, body.Max.x - pw, body.Max.y), d);
   DrawTreePopover(tree, TreeMode::Sensors);
 }
-

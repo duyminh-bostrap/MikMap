@@ -639,6 +639,7 @@ int main(int argc, char** argv) {
   std::string shot; int startScreen = 0, frames = 12, W = 1440, H = 900, tab = -1, page = -1;
   bool sel = false, scaleGiven = false; int selLi = 0, selCi = 0, ctxTest = 0, cliScale = 100;
   bool fakeHokuyo = false, fakePlugin = false;
+  int spage = -1, stool = -1; std::string place;
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
     if (a == "--shot" && i + 1 < argc) shot = argv[++i];
@@ -647,6 +648,9 @@ int main(int argc, char** argv) {
     else if (a == "--size" && i + 2 < argc) { W = atoi(argv[++i]); H = atoi(argv[++i]); }
     else if (a == "--tab" && i + 1 < argc) tab = atoi(argv[++i]);
     else if (a == "--page" && i + 1 < argc) page = atoi(argv[++i]);
+    else if (a == "--spage" && i + 1 < argc) spage = atoi(argv[++i]);   // test aid: Sensor page tab, 0 Input / 1 Output
+    else if (a == "--stool" && i + 1 < argc) stool = atoi(argv[++i]);   // test aid: Sensor Output tool, 0 Edit points / 1 Transform
+    else if (a == "--place" && i + 1 < argc) place = argv[++i];         // test aid: --place W,H,x,y,angle = the selected sensor's screen in mm + its pose, placed
     else if (a == "--roundtrip" && i + 1 < argc) roundtrip = argv[++i];
     else if (a == "--menu") A.projectMenu = true;
     else if (a == "--out") openOut = true;
@@ -1736,6 +1740,13 @@ int main(int argc, char** argv) {
   if (startTool >= 0) A.outTool = startTool; if (startInTool >= 0) A.inTool = startInTool;   // (NewProject just reset the app state)
   if (tab >= 0) A.tab = tab;
   if (page >= 0) A.mpage = page;
+  if (spage >= 0) A.spage = spage;
+  if (stool >= 0) A.sensorTool = stool;
+  if (!place.empty()) if (Device* d = A.curDevice()) if (Screen* s = DeviceScreen(*d)) {
+    float v[5] = {}; const char* c = place.c_str();
+    for (int k = 0; k < 5 && *c; ++k) { char* e = nullptr; v[k] = std::strtof(c, &e); c = *e == ',' ? e + 1 : e; }
+    s->realW = v[0]; s->realH = v[1]; d->pose = mikmap::LidarPose{v[2], v[3], v[4], false}; d->placed = true;
+  }
   if (vout > 0) {   // N projectors side by side, 20 % overlap, soft edge on, each in its own Virtual Output window
     const float ov = 0.2f, iw = 1920.f / (vout - (vout - 1) * ov);
     std::vector<Screen> scs;

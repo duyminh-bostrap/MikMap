@@ -108,15 +108,17 @@ static void BoxCorners(const RectXf& R, ImVec2 c[4]) {   // tl, tr, br, bl of th
   const float lx[4] = {-hx, hx, hx, -hx}, ly[4] = {-hy, -hy, hy, hy};
   for (int i = 0; i < 4; ++i) c[i] = ImVec2(cx + lx[i] * co - ly[i] * si, cy + lx[i] * si + ly[i] * co);
 }
-bool EditQuad(const char* id, const StageXf& x, ImVec2 q[4], int tool, uint32_t tone) {
+bool EditQuad(const char* id, const StageXf& x, ImVec2 q[4], int tool, uint32_t tone, bool enabled) {
   // one drag at a time across every EditQuad; kind: 1 corner (Edit Points), 2 resize, 5 move, 6 turn (Transform)
-  static ImGuiID active = 0; static int kind = 0, idx = 0; static bool changed = false;
+  static ImGuiID active = 0; static int kind = 0, idx = 0, seenFrame = -1; static bool changed = false;
   static ImVec2 q0[4], off, mo0, anchor; static RectXf R0, Rnow; static float aspect = 1, ang0 = 0;
   const ImGuiID me = ImGui::GetID(id);
   const ImVec2 m = ImGui::GetIO().MousePos, mo = x.fromPx(m);
   const bool shift = ImGui::GetIO().KeyShift;
   auto dist = [](ImVec2 a, ImVec2 b) { return std::hypot(a.x - b.x, a.y - b.y); };
   bool released = false;
+  const int frame = ImGui::GetFrameCount();
+  if (active && seenFrame < frame - 1) active = 0;   // the dragged quad was not drawn last frame (tab, device or view changed): drop the drag, no release
   if (active == me && !ImGui::IsMouseDown(0)) { active = 0; released = changed; }
   // ---- drag (before the box is taken, so the frame drawn is this frame's) ----
   if (active == me && kind == 1) {
@@ -167,7 +169,7 @@ bool EditQuad(const char* id, const StageXf& x, ImVec2 q[4], int tool, uint32_t 
     cpx[i] = x.toPx(cp[i]); mpx[i] = x.toPx(mc[i]); qpx[i] = x.toPx(q[i]);
   }
   const ImVec2 ctr(R.x + R.w * 0.5f, R.y + R.h * 0.5f);
-  const bool idle = active == 0 && !g.blocked, click = idle && ImGui::IsMouseClicked(0);
+  const bool idle = active == 0 && enabled && !g.blocked, click = idle && ImGui::IsMouseClicked(0);
   int hot = 0, hotIdx = 0;
   if (idle && tool == 0) {
     for (int i = 0; i < 4 && !hot; ++i) if (dist(m, qpx[i]) <= 10.f + 4.f) { hot = 1; hotIdx = i; }
@@ -175,6 +177,12 @@ bool EditQuad(const char* id, const StageXf& x, ImVec2 q[4], int tool, uint32_t 
     for (int i = 0; i < 4 && !hot; ++i) if (dist(m, cpx[i]) <= 8.f) { hot = 2; hotIdx = i; }
     for (int i = 0; i < 4 && !hot; ++i) if (dist(m, mpx[i]) <= 8.f) { hot = 2; hotIdx = 10 + i; }
     for (int i = 0; i < 4 && !hot; ++i) if (dist(m, cpx[i]) <= 16.f) { hot = 6; hotIdx = i; }
+    for (int i = 0; i < 4 && !hot; ++i) {   // the whole side is a handle too, as in Mapping: grab anywhere along an edge to resize that side
+      const ImVec2 a = cpx[i], b = cpx[(i + 1) % 4], ab(b.x - a.x, b.y - a.y);
+      const float l2 = ab.x * ab.x + ab.y * ab.y; if (l2 < 1.f) continue;
+      const float t = std::clamp(((m.x - a.x) * ab.x + (m.y - a.y) * ab.y) / l2, 0.f, 1.f);
+      if (std::hypot(a.x + ab.x * t - m.x, a.y + ab.y * t - m.y) <= 6.f) { hot = 2; hotIdx = 10 + i; }
+    }
     if (!hot) {
       bool in = false;
       for (int i = 0, j = 3; i < 4; j = i++)
@@ -191,6 +199,7 @@ bool EditQuad(const char* id, const StageXf& x, ImVec2 q[4], int tool, uint32_t 
     else if (hot == 5) off = ImVec2(ctr.x - mo.x, ctr.y - mo.y);
     else ang0 = std::atan2(mo.y - ctr.y, mo.x - ctr.x);
   }
+  if (active == me) seenFrame = frame;
   // ---- draw ----
   const bool dragging = active == me;
   g.dl->AddPolyline(qpx, 4, Ca(K(tone)), ImDrawFlags_Closed, 2.f);

@@ -161,6 +161,7 @@ void SensorsTick(double now) {
   if (g_cap.on && A.wizardStep != g_cap.step) g_cap.on = false;   // wizard cancelled, or another device selected
   bool fire = false;
   for (auto& d : A.devices) {
+    ApplyPlacement(d);   // a placed lidar follows its pose and its screen's mm size wherever they were edited (Sensor page, Mapping, undo)
     if (d.kind == DevKind::Sim) { d.status = d.enabled ? (int)mikmap::SourceStatus::Running : (int)mikmap::SourceStatus::Stopped; continue; }
     d.fps = 0; d.latencyMs = 0; d.packets = 0;
     if (!d.enabled) { d.status = (int)mikmap::SourceStatus::Stopped; d.error.clear(); d.touches.clear(); continue; }
@@ -200,6 +201,7 @@ void SensorsTick(double now) {
 }
 
 void SensorsShutdown() { g_live.clear(); g_cap.on = false; }
+void RestartSource(const std::string& deviceId) { g_live.erase(deviceId); }
 
 mikmap::ISensorSource* DeviceSource(const Device& d) {
   auto it = g_live.find(d.id);
@@ -303,6 +305,32 @@ bool SensorSelfTest(std::string& why) {
   for (double t0 = now(); now() - t0 < 3.0 && A.wizardStep == 1;) { SensorsTick(now()); std::this_thread::sleep_for(std::chrono::milliseconds(5)); }
   if (A.wizardStep != 2 || std::fabs(dh.calib[0].mx - 1000.f) > 25.f) return fail("sensor: Hokuyo Capture did not average the blob at 1000 mm");
   A.wizardStep = 0;
+
+  // Sensor page: a placed lidar derives its calibration from its pose; a hand-tuned quad (placed = false) is never overwritten.
+  {
+    Screen& hs = *DeviceScreen(dh);
+    hs.realW = 4000; hs.realH = 2250;
+    dh.placed = true; dh.pose = mikmap::LidarPose{2000, 2250, -90, false};   // bottom middle, looking up the wall
+    float H[9], ox = 0, oy = 0;
+    if (!ApplyPlacement(dh) || !dh.calibrated || !DeviceH(dh, H)) return fail("sensor: a placed lidar on a sized screen must be calibrated");
+    ApplyH(H, 1000, 0, ox, oy);
+    if (std::fabs(ox - 960) > 2 || std::fabs(oy - 600) > 2) return fail("sensor: a blob 1 m in front of a bottom-middle lidar must land at (960, 600)");
+    dh.placed = false; dh.calib[0].tx += 50; const float hand = dh.calib[0].tx; dh.pose.x = 2500;
+    ApplyPlacement(dh); SensorsTick(now());
+    if (dh.calib[0].tx != hand) return fail("sensor: moving the lidar overwrote a hand-tuned (Custom 4-point) calibration");
+    if (!RoiToScreen(dh)) return fail("sensor: ROI = screen refused on a sized screen");
+    const mikmap::Vec2 tl = mikmap::surfaceToLidar(dh.pose, {0, 0});
+    if (std::fabs(dh.roi[0].x - (float)tl.x) > 0.5f || std::fabs(dh.roi[0].y - (float)tl.y) > 0.5f) return fail("sensor: ROI = screen must put roi[0] on the screen's top-left corner");
+    using P = PropSection;
+    const std::vector<P> lidarIn{P::Connection, P::ScreenSize, P::Placement, P::Blobs}, out{P::Calibration, P::SendOut, P::Triggers}, camIn{P::Connection};
+    for (DevKind k : {DevKind::Hokuyo, DevKind::Plugin})
+      if (SensorPropSections(k, 0) != lidarIn || SensorPropSections(k, 1) != out) return fail("sensor: lidar Properties sections are wrong");
+    if (SensorPropSections(DevKind::Skeleton, 0) != camIn || SensorPropSections(DevKind::Skeleton, 1) != out) return fail("sensor: Skeleton Properties sections are wrong");
+    RestartSource(dh.id);
+    if (DeviceSource(dh)) return fail("sensor: Reconnect must drop the live source");
+    SensorsTick(now());
+    if (!DeviceSource(dh)) return fail("sensor: after Reconnect the next tick must start the source again");
+  }
 
 #ifdef MIKMAP_FAKE_PLUGIN_FILE
   // Plugin ABI through the app: the same fake scan as Hokuyo, produced by the DLL this build wrote into plugins/sensors.

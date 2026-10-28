@@ -302,7 +302,8 @@ StageXf StageViewUpdate(StageView& v, ImRect area, float SW, float SH, float bas
 void DrawScreenBackdrop(const Screen& sc, const StageXf& x, float t, float alpha);
 // tool 0 Edit Points: the 4 big squares drag on their own (Shift = one axis). tool 1 Transform: a turned box around the 4 points —
 // move / scale / turn (Shift: one axis, same aspect, 45 degree steps). True on the frame the mouse is let go after a change.
-bool EditQuad(const char* id, const StageXf& x, ImVec2 q[4], int tool, uint32_t tone);
+// enabled: the pointer may grab (over the stage, window hovered, no hand tool) — a drag in flight carries on regardless.
+bool EditQuad(const char* id, const StageXf& x, ImVec2 q[4], int tool, uint32_t tone, bool enabled);
 
 struct App {
   int screen = 0;  // 0 deck, 1 mapping, 2 sensor
@@ -436,6 +437,10 @@ struct App {
   bool sensorTreeCollapsed = false;   // the Sensor page's own tree / rail flag
   std::string sensorRail;             // Sensor page rail: the screen whose sensors are open in the popover
   SensorWizard wizard;
+  int spage = 0;                      // Sensor page stage: 0 Input (what the sensor sees, in its units), 1 Output (where it lands, 1920x1080) — like mpage
+  StageView sensorView[2];            // each Sensor tab keeps its own pan/zoom
+  int sensorTool = 0;                 // Output tab: 0 Edit points, 1 Transform
+  std::map<int, uint32_t> sensorSecOpen;   // Properties sections open per DevKind (bit = PropSection); absent = all open. Runtime only
   std::map<std::string, bool> collapsedScreens;
   std::string railScreen;
 
@@ -677,6 +682,11 @@ void DrawTree(ImRect r, TreeMode m);   // full panel, or the 46 px rail when tha
 void OpenSensorWizard(const std::string& screenId);   // jumps to the Sensor page, wizard step 1, screen preselected
 Screen* DeviceScreen(const Device& d, bool* fellBack = nullptr);   // never null while A.screens is non-empty; *fellBack = a named screen is gone
 bool PlacementCalib(Device& d, const Screen& sc, const mikmap::LidarPose& pose);   // places a lidar by its pose (mm) on a screen of known real size: writes the 4 calib pairs; false + d untouched if the size is unknown
+bool ApplyPlacement(Device& d);   // only while d.placed: PlacementCalib on its own screen with d.pose (a hand-tuned "Custom (4-point)" quad is left alone)
+bool RoiToScreen(Device& d);      // lidar "ROI = screen": roi = the screen's 4 corners seen from d.pose; false while the screen has no real size
+// Sensor page Properties: which sections a device kind shows on the Input (0) / Output (1) tab. Pure, so --roundtrip checks it.
+enum class PropSection { Connection, ScreenSize, Placement, Blobs, Calibration, SendOut, Triggers };
+std::vector<PropSection> SensorPropSections(DevKind k, int spage);
 Device MakeDevice(DevKind k, const std::string& id);   // per-kind defaults (name, address, ROI, calibration targets)
 // Live sensors (sources.cpp): the real ISensorSource threads, one per enabled non-Sim device, kept OUT of App so undo never touches them.
 namespace mikmap { class ISensorSource; struct LaserScan; struct SensorPlugin; }
@@ -684,6 +694,7 @@ inline constexpr int kCalibJoint = 16;   // MediaPipe RIGHT_WRIST of person slot
 inline constexpr float kRadarRangeMm = 4000.f;   // fixed 4 m radar range; UST-20LX sees 20 m, so add zoom when the job needs it
 void SensorsTick(double now);            // render thread, once per frame: start/stop/restart sources from enabled+host/port, consume frames into d.touches, fire touch.down routes, refresh status/error/fps/latency/packets, run the capture
 void SensorsShutdown();
+void RestartSource(const std::string& deviceId);   // Reconnect: drop the live source; the next SensorsTick starts a fresh one
 mikmap::ISensorSource* DeviceSource(const Device& d);   // nullptr for a Sim device or one that is not running
 const mikmap::LaserScan* DeviceScan(const Device& d);   // latest raw scan of any lidar source (ScanSource), or nullptr after no scan yet
 // Sensor plugins (Task 9 ABI): <dir of the executable>/plugins/sensors, scanned once on the first tick. A load error is
