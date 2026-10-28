@@ -170,3 +170,26 @@ TEST_CASE("Lidar: clear phat Up va frame rong") {
     REQUIRE(dst.frames().consume());
     REQUIRE(dst.frames().readSlot().count == 0);
 }
+
+TEST_CASE("Lidar: maxRangeMm cat vat o xa, 0 = khong gioi han") {
+    const LaserScan s = scanWith(2000.f, {{Vec2{1000, 0}, 40.f}});
+    Vec2 out[64];
+    LidarParams p;
+    p.maxRangeMm = 800;
+    CHECK(extractBlobs(s, p, out, 64) == 0);
+    p.maxRangeMm = 1500;
+    CHECK(extractBlobs(s, p, out, 64) == 1);
+    p.maxRangeMm = 0;
+    CHECK(extractBlobs(s, p, out, 64) == 1);
+}
+
+TEST_CASE("Lidar: trackBlobs=false => 0 blob nhung scan van publish") {
+    Sink dst;
+    LidarTouchPublisher pub;
+    LidarParams p;
+    p.trackBlobs = false;
+    pub.publish(scanWith(2000.f, {{Vec2{1000, 0}, 40.f}}), p, 0.0, dst);
+    CHECK(drain(dst).empty());
+    REQUIRE(dst.frames().consume());
+    CHECK(dst.frames().readSlot().count == 0);
+}

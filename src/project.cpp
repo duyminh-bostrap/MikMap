@@ -345,6 +345,10 @@ JsonValue Serialize(const App& a) {
     dob.set("calib", cal);
     JsonValue roi = JsonValue::array(); for (int i = 0; i < 4; ++i) roi.push(V2(d.roi[i]));
     dob.set("roi", roi);
+    JsonValue po = JsonValue::object(); po.set("x", d.pose.x); po.set("y", d.pose.y); po.set("a", d.pose.angleDeg); po.set("mirror", d.pose.mirror);
+    dob.set("pose", po); dob.set("placed", d.placed); dob.set("range", d.rangeMm);
+    JsonValue bl = JsonValue::object(); bl.set("on", d.blobOn); bl.set("min", d.blobMinMm); bl.set("max", d.blobMaxMm); bl.set("gap", d.blobGapMm);
+    dob.set("blob", bl);
     ds.push(dob);
   }
   sensor.set("devices", ds);
@@ -468,6 +472,10 @@ bool Deserialize(const JsonValue& root, App& out, std::string& err) {
         v.plugin = d["plugin"].asString(v.plugin); v.config = d["config"].asString(v.config);
         v.enabled = d["enabled"].asBool(); v.calibrated = d["calibrated"].asBool();
         readCal(d, v);
+        const JsonValue& po = d["pose"]; v.pose = {po["x"].asNumber(0), po["y"].asNumber(0), po["a"].asNumber(0), po["mirror"].asBool(false)};
+        v.placed = d["placed"].asBool(false); v.rangeMm = (float)d["range"].asNumber(0);
+        const JsonValue& bl = d["blob"]; v.blobOn = bl["on"].asBool(true);
+        v.blobMinMm = (float)bl["min"].asNumber(v.blobMinMm); v.blobMaxMm = (float)bl["max"].asNumber(v.blobMaxMm); v.blobGapMm = (float)bl["gap"].asNumber(v.blobGapMm);
       } else {   // before per-device calibration: one global calib/roi in `sensor`, which belonged to the (only kind then) simulated radar
         v.enabled = false; v.calibrated = true;
         readCal(sn, v);

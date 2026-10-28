@@ -29,6 +29,8 @@ struct LidarParams {
     double minBlobMm = 15.0;    ///< bề rộng dây cung nhỏ nhất
     double maxBlobMm = 600.0;   ///< lớn hơn ⇒ coi là tường/nền
     double maxGapMm = 50.0;     ///< hai tia liền kề xa hơn ⇒ cụm mới
+    double maxRangeMm = 0;      ///< tia xa hơn bị bỏ qua; 0 = không giới hạn
+    bool   trackBlobs = true;   ///< false ⇒ 0 blob (scan vẫn publish)
 };
 
 /// Cắt cụm từ một scan. out[] nhận trọng tâm (mm), tối đa maxOut.

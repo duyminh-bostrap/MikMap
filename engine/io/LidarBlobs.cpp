@@ -16,7 +16,7 @@ bool anyRoiPoint(const Vec2 roi[4]) {
 } // namespace
 
 int extractBlobs(const LaserScan& s, const LidarParams& p, Vec2* out, int maxOut) {
-    if (!out || maxOut <= 0) return 0;
+    if (!out || maxOut <= 0 || !p.trackBlobs) return 0;
 
     const bool useRoi = anyRoiPoint(p.roi);
     int  nOut = 0;
@@ -38,7 +38,7 @@ int extractBlobs(const LaserScan& s, const LidarParams& p, Vec2* out, int maxOut
     for (int i = 0; i < static_cast<int>(s.count); ++i) {
         const double r = s.rangeMm[i];
         Vec2 pt;
-        bool ok = std::isfinite(r) && r > 0.0;
+        bool ok = std::isfinite(r) && r > 0.0 && (p.maxRangeMm <= 0.0 || r <= p.maxRangeMm);
 
         if (ok) {
             pt = Vec2{r * std::cos(s.angleRad[i]), r * std::sin(s.angleRad[i])};

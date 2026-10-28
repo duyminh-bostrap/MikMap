@@ -763,6 +763,15 @@ int main(int argc, char** argv) {
       MarkSaved();
       A.devices[0].fps = 99; A.devices[0].touches.push_back({1, 0.1f, 0.1f});
       if (ProjectDirty()) return fail("runtime device counters made the project dirty");
+      { NewProject(); Device& d = A.devices[2]; d.pose = {1234, 567, -90, true}; d.placed = true; d.rangeMm = 3500;
+        d.blobOn = false; d.blobMinMm = 22; d.blobMaxMm = 480; d.blobGapMm = 70;
+        std::string e2; if (!SaveProject(roundtrip, e2) || !LoadProject(roundtrip, e2)) return fail(e2.c_str());
+        const Device& r = A.devices[2];
+        if (r.pose.x != 1234 || r.pose.y != 567 || r.pose.angleDeg != -90 || !r.pose.mirror || !r.placed || r.rangeMm != 3500
+            || r.blobOn || r.blobMinMm != 22 || r.blobMaxMm != 480 || r.blobGapMm != 70) return fail("pose/range/blob did not round-trip");
+        const Device& f = A.devices[1]; if (f.placed || f.rangeMm != 0 || !f.blobOn || f.blobMinMm != 15 || f.blobMaxMm != 600 || f.blobGapMm != 50) return fail("device defaults");
+        MarkSaved(); SensorsTick(0.0); SensorsTick(1.0);
+        if (ProjectDirty()) return fail("SensorsTick alone made the project dirty"); }
     }
     NewBlankProject();
     if (A.layers.size() != 4 || A.screens.size() != 1) return fail("blank project shape");

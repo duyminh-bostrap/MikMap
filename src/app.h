@@ -217,6 +217,9 @@ struct Device {
   bool calibrated = false;
   std::vector<Calib> calib;          // exactly 4: tx,ty = output px of Screen 0; mx,my = THIS device's raw units
   ImVec2 roi[4] = {};                // this device's raw units
+  mikmap::LidarPose pose; bool placed = false;   // lidar: where it hangs on the screen's surface (mm); placed = the user confirmed it
+  float rangeMm = 0;                 // lidar: rays beyond this are ignored; 0 = unlimited
+  bool blobOn = true; float blobMinMm = 15, blobMaxMm = 600, blobGapMm = 50;   // lidar: blob tracking switch + chord-width / gap thresholds
   // runtime only, never serialized (a live counter must not make the project dirty)
   std::vector<Touch> touches; int status = 0; std::string error; int fps = 0; float latencyMs = 0; uint64_t packets = 0;
 };

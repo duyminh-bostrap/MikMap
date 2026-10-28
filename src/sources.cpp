@@ -171,7 +171,7 @@ void SensorsTick(double now) {
     mikmap::ISensorSource& S = *L.src;
     if (L.scan) {   // the ROI/blob sliders live in the app; the source picks up the latest copy on its next scan
       mikmap::LidarParams p;
-      p.minBlobMm = std::clamp(A.blobSize, 5.f, 300.f);
+      p.trackBlobs = d.blobOn; p.minBlobMm = d.blobMinMm; p.maxBlobMm = d.blobMaxMm; p.maxGapMm = d.blobGapMm; p.maxRangeMm = d.rangeMm;
       for (int i = 0; i < 4; ++i) p.roi[i] = mikmap::Vec2{d.roi[i].x, d.roi[i].y};
       L.scan->setParams(p);
     }
