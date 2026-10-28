@@ -238,6 +238,8 @@ void Icon(const char* n, ImVec2 c, float sz, ImU32 col) {
   }
   else if (is("crosshair")) { Circ(12, 12, 10); Line(22, 12, 18, 12); Line(6, 12, 2, 12); Line(12, 6, 12, 2); Line(12, 22, 12, 18); }
   else if (is("target")) { Circ(12, 12, 10); Circ(12, 12, 6); Circ(12, 12, 2); }
+  else if (is("radar")) { Circ(12, 12, 10); Circ(12, 12, 6); Circ(12, 12, 2); Line(12, 12, 19, 5); }   // a lidar sweeping
+  else if (is("camera")) { Poly({P(2, 8), P(6, 8), P(8, 5), P(16, 5), P(18, 8), P(22, 8), P(22, 20), P(2, 20)}, true); Circ(12, 13, 4); }
   else if (is("zap")) Poly({P(13, 2), P(3, 14), P(12, 14), P(11, 22), P(21, 10), P(12, 10)}, true);
   else if (is("arrow-up")) { Line(12, 19, 12, 5); Poly({P(5, 12), P(12, 5), P(19, 12)}); }
   else if (is("arrow-down")) { Line(12, 5, 12, 19); Poly({P(19, 12), P(12, 19), P(5, 12)}); }

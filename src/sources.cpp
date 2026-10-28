@@ -252,6 +252,17 @@ bool SensorSelfTest(std::string& why) {
   auto dev = [](const char* id) -> Device& { for (auto& d : A.devices) if (d.id == id) return d; return A.devices.back(); };
   auto fail = [&](const std::string& w) { why = w; SensorsShutdown(); return false; };
 
+  // Tree: a sensor is a child of its screen in Mapping; the Sensor page shows no slices. (The default Hokuyo is devices[2].)
+  {
+    A.devices[2].screenId = A.screens[1].id;
+    auto count = [](const std::vector<Node>& v, Node::Kind k, const std::string& sc) { int n = 0; for (auto& x : v) n += x.kind == k && (sc.empty() || x.sc == sc); return n; };
+    const auto mt = BuildTree(TreeMode::Mapping, false, ""), st = BuildTree(TreeMode::Sensors, false, "");
+    if (count(mt, Node::SensorN, A.screens[1].id) != 1 || count(mt, Node::SensorN, "") != (int)A.devices.size())
+      return fail("tree: Mapping must list the Hokuyo exactly once, under the screen it belongs to");
+    if (count(st, Node::SliceN, "") != 0 || count(st, Node::SensorN, A.screens[1].id) != 1) return fail("tree: the Sensor page lists sensors but never slices");
+    A.devices[2].screenId = A.screens[0].id;
+  }
+
   Device a = MakeDevice(DevKind::Skeleton, "selftest-a"); a.port = port; a.enabled = true;
   A.devices.push_back(a);
   MarkSaved();

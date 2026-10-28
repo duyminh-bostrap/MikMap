@@ -598,8 +598,14 @@ static void Routing(ImRect r) {
 
 void DrawSensor(ImRect body) {
   Fill(body, K(pal::g0f));
-  Devices(ImRect(body.Min.x, body.Min.y, body.Min.x + 320, body.Max.y));
+  // interim: the shared tree sits left of the old device manager until the page is rebuilt around it
+  const float tw = A.sensorTreeCollapsed ? 46.f : 236.f;
+  ImRect tree(body.Min.x, body.Min.y, body.Min.x + tw, body.Max.y);
+  const float x0 = body.Min.x + tw;
+  DrawTree(tree, TreeMode::Sensors);
+  Devices(ImRect(x0, body.Min.y, x0 + 320, body.Max.y));
   Routing(ImRect(body.Max.x - 300, body.Min.y, body.Max.x, body.Max.y));
-  Radar(ImRect(body.Min.x + 320, body.Min.y, body.Max.x - 300, body.Max.y));
+  Radar(ImRect(x0 + 320, body.Min.y, body.Max.x - 300, body.Max.y));
+  DrawTreePopover(tree, TreeMode::Sensors);
 }
 

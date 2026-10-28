@@ -224,6 +224,20 @@ struct Device {
   std::vector<Touch> touches; int status = 0; std::string error; int fps = 0; float latencyMs = 0; uint64_t packets = 0;
 };
 
+// The tree shared by Advanced Mapping and the Sensor page (mapping.cpp): Screen -> slices -> masks, and Screen -> sensors.
+enum class TreeMode { Mapping, Sensors };
+struct Node {
+  enum Kind { ScreenN, SliceN, MaskN, SensorN, NoteN } kind = ScreenN;   // NoteN = a dimmed, unclickable line ("3 slices")
+  std::string sc, sl, mk, dv, name, meta;
+  float h = 26, pad = 0;
+  bool open = true, canHide = true, vis = true;
+  uint32_t color = pal::coral;
+  DevKind dk = DevKind::Sim;
+};
+// Add-sensor wizard (Task 7 draws it). Runtime only, never serialized.
+struct SensorWizard { int step = 0; DevKind kind = DevKind::Hokuyo; std::string plugin, screenId, manualHost, config;
+                      int iface = 0; std::vector<std::string> found; std::vector<char> pick; std::vector<std::string> added; bool scanning = false; };
+
 inline uint32_t RoleHex(int r) { return r == 0 ? pal::coral : r == 1 ? pal::mint : pal::cyan; }
 extern const uint32_t CLIP_COLORS[6];
 extern const char* CLIP_COLOR_NAMES[6];
@@ -419,6 +433,9 @@ struct App {
   int MapKind() { return selKind >= 0 ? selKind : (selMk.empty() ? 1 : 2); }
   int mpage = 1;  // 0 input, 1 output
   bool treeCollapsed = false;
+  bool sensorTreeCollapsed = false;   // the Sensor page's own tree / rail flag
+  std::string sensorRail;             // Sensor page rail: the screen whose sensors are open in the popover
+  SensorWizard wizard;
   std::map<std::string, bool> collapsedScreens;
   std::string railScreen;
 
@@ -654,6 +671,10 @@ void FitAffine(const std::vector<Calib>& c, float out[9], float* rms);
 // G5 homography + G9 perf
 bool FitHomography(const std::vector<Calib>& pts, float H[9], float* rms);
 bool DeviceH(const Device& d, float H[9]);       // H_s of one device; false if it is not calibrated
+std::vector<Node> BuildTree(TreeMode m, bool onlyScreen, const std::string& only);   // mapping.cpp
+void DrawTreePopover(ImRect r, TreeMode m);   // the open rail popover: call after the stage so it floats over it
+void DrawTree(ImRect r, TreeMode m);   // full panel, or the 46 px rail when that page's collapse flag is on
+void OpenSensorWizard(const std::string& screenId);   // jumps to the Sensor page, wizard step 1, screen preselected
 Screen* DeviceScreen(const Device& d, bool* fellBack = nullptr);   // never null while A.screens is non-empty; *fellBack = a named screen is gone
 bool PlacementCalib(Device& d, const Screen& sc, const mikmap::LidarPose& pose);   // places a lidar by its pose (mm) on a screen of known real size: writes the 4 calib pairs; false + d untouched if the size is unknown
 Device MakeDevice(DevKind k, const std::string& id);   // per-kind defaults (name, address, ROI, calibration targets)

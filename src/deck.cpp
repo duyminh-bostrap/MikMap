@@ -346,6 +346,7 @@ void App::commitRename(const char* text) {
   else if (rename.kind == 1 && rename.idx >= 0 && rename.idx < colCount()) { colNames.resize(colCount()); colNames[rename.idx] = t; }
   else if (rename.kind == 3 && rename.idx >= 0 && rename.idx < (int)groups.size()) groups[rename.idx].name = t;
   else if (rename.kind == 4 && rename.idx >= 0 && rename.idx < (int)decks.size()) decks[rename.idx].name = t;
+  else if (rename.kind == 5 && rename.idx >= 0 && rename.idx < (int)devices.size()) devices[rename.idx].name = t;
   else if (rename.kind == 2) {   // clip: idx = layer * 1000 + column
     int li = rename.idx / 1000, ci = rename.idx % 1000;
     if (li >= 0 && li < (int)layers.size() && ci < (int)layers[li].clips.size() && layers[li].clips[ci].st != Clip::Empty) {
