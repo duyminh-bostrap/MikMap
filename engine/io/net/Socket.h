@@ -30,7 +30,9 @@
 using SocketHandle = SOCKET;
 static constexpr SocketHandle kInvalidSocket = INVALID_SOCKET;
 #else
+#  include <arpa/inet.h>
 #  include <fcntl.h>
+#  include <netdb.h>        // getaddrinfo / addrinfo (tcpConnect, TouchSender)
 #  include <netinet/in.h>
 #  include <sys/select.h>
 #  include <sys/socket.h>
