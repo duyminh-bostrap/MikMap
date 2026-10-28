@@ -97,6 +97,10 @@ không phải lệch. Chỗ nào đưa cỡ chữ thẳng cho ImGui (`ImGui::Pus
 | Output > **Edit Points**: kéo ô vuông lớn / nhỏ | Góc phối cảnh (keystone) / điểm warp của lưới (cả 4 góc lưới) |
 | Output > **Transform**: kéo hộp bao slice | Di chuyển / co giãn / xoay cả slice, warp giữ nguyên hình (Shift: khoá trục, giữ tỉ lệ, 45°) |
 | Kéo khung ở VÙNG LẤY | Đổi phần canvas mà slice lấy |
+| Sensor > **INPUT**: kéo cảm biến lidar trên sân khấu | Dời vị trí (làm tròn 10 mm; Shift: một trục) |
+| Sensor > **INPUT**: kéo chấm xoay | Xoay hướng lidar (Shift: bước 15°) |
+| Sensor > tab **OUTPUT**: Edit Points / Transform | Giống trang Mapping: kéo góc quad nơi cảm biến đổ vào screen / dời-co-xoay cả quad |
+| Cây Sensor: nút **+ Sensor** (mint) | Mở wizard thêm sensor (chọn loại, scan IP, thêm nhiều lidar một lần) |
 
 > **Đã đổi khỏi bản tham khảo (2026-09-22):** bản gốc dùng bấm-đơn=chọn/bấm-đúp=phát
 > cho toàn bộ ô clip, và bấm-đơn=chọn/bấm-đúp=bắn cho header cột. Theo yêu cầu người

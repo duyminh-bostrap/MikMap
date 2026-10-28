@@ -24,7 +24,7 @@ còn ở giai đoạn prototype:
 | Giao diện | 3 màn Composition · Advanced Mapping · Sensor I/O + cửa sổ Cài đặt, bám bản thiết kế `MikMap Workspace.dc.html` |
 | Engine dùng chung (`engine/core`, `engine/io`) | Đã biên dịch & link vào app; `src/` mới chỉ gọi `core/util/Json` (cho lưu/mở dự án), **chưa gọi model/calib/io thật** |
 | Mô hình dữ liệu app hiện tại | Struct riêng trong `src/app.h`, chưa dùng `core/model` thật |
-| Đối chiếu chi tiết | `features.md` — 56 mục `[x]` hành vi thật · 17 mục `[~]` một phần · 62 mục `[ ]`, trên 135 mục Resolume-parity |
+| Đối chiếu chi tiết | `features.md` — 71 mục `[x]` hành vi thật · 14 mục `[~]` một phần · 57 mục `[ ]`, trên 142 mục Resolume-parity |
 | Build đa nền tảng | **Đã kiểm chứng thật**: macOS (2026-09-22, build+chạy trên máy Mac thật) · Linux (2026-09-22, build native + chạy dưới Xvfb, chụp màn hình) · Windows — **hai đường kiểm chứng riêng**: cross-compile MinGW-w64 (2026-09-22, ra `mikmap.exe` PE32+ thật, chạy qua Wine, chụp màn hình) **và MSVC thật trên Windows thật** (2026-09-23, build Debug lẫn Release qua cả dòng lệnh lẫn task/F5 của VS Code, chạy được) — cả 3 OS cùng render đúng giao diện, cùng tiếng Việt có dấu |
 
 Xem [`features.md`](features.md) để biết chính xác cái gì thật/cái gì chỉ có
@@ -47,7 +47,7 @@ engine/     core/ + io/ + i18n — C++20 THUẦN, build bằng CMake gốc, khô
 src/        App GLFW + Dear ImGui hiện tại — CMake riêng (src/CMakeLists.txt)
 tests/      Unit test cho engine/ — chạy được trên CI, không cần GPU
 architecture.md   Kiến trúc đích: quy tắc phụ thuộc, chuỗi biến đổi toạ độ, mô hình thread
-features.md       Backlog 135 mục kiểu Resolume, chấm điểm theo code thật của src/
+features.md       Backlog 142 mục kiểu Resolume, chấm điểm theo code thật của src/
 ```
 
 ---
@@ -149,7 +149,7 @@ chuyển sang mô hình thật của `engine/`, làm từng mảng để luôn b
 4. `io/*` → nguồn sensor thật (G3, G14) thay cho radar mô phỏng trong
    `src/sensor.cpp`. OSC/UDP (G4), camera skeleton (G20), Hokuyo 2D lidar
    (G21, SCIP 2.0/TCP) và thiết bị Plugin DLL (G22, ABI C) đã chạy qua
-   `src/sources.cpp`; Serial/Arduino (G3) và YDLIDAR (G23, plugin) còn chờ.
+   `src/sources.cpp`; trang Sensor kiểu Advanced Output, đặt lidar theo mm, scan IP thêm nhiều sensor và gửi toạ độ OSC/UDP (G18, G24–G27) cũng đã chạy; Serial/Arduino (G3), YDLIDAR (G23, plugin), camera 2D và lidar 3D/depth còn chờ.
 5. `core/model/Composition` · `Layer` · `Clip` · `Transport` → thay mô hình
    deck trong `src/app.h`.
 

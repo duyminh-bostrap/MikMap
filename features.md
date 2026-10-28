@@ -166,11 +166,15 @@
 | [ ] | **G15** | Kinect / Femto Bolt depth source + blob detect | L | 🟠 P1 |
 | [ ] | **G16** | Ghi log + replay phiên sensor để debug | M | 🟡 P2 |
 | [~] | **G17** | Trigger clip / FX từ sự kiện sensor | M | 🟠 P1 |
-| [ ] | **G18** | Calibration nhiều sensor cho nhiều screen | M | 🟡 P2 |
+| [x] | **G18** | Calibration nhiều sensor cho nhiều screen | M | 🟡 P2 |
 | [ ] | **G19** | LiDAR source (Livox / Ouster) | L | 🟡 P2 |
 | [x] | **G20** | **Camera skeleton (MediaPipe sidecar)** | M | 🔴 P0 |
 | [~] | **G21** | Hokuyo 2D lidar (SCIP 2.0/TCP) | M | 🟠 P1 |
 | [x] | **G22** | Plugin cảm biến DLL (ABI C) | M | 🟠 P1 |
+| [x] | **G24** | Trang Sensor kiểu Advanced Output (cây sensor, tab Input/Output) | M | 🟠 P1 |
+| [x] | **G25** | Đặt lidar theo mm (vị trí + hướng → 4 cặp calib) | M | 🟠 P1 |
+| [x] | **G26** | Scan IP thêm nhiều sensor (wizard) | M | 🟠 P1 |
+| [x] | **G27** | Gửi toạ độ chạm ra OSC / UDP text | S | 🟠 P1 |
 
 ---
 
@@ -727,3 +731,15 @@ Nay khung input sửa giống khung transform của Preview Cue: **kéo trong kh
 - **Kiểm hình:** `mikmap --shot plugin.png --screen 2 --frames 60 --fake-plugin` — card **Fake scan** Running với fps/latency/packet thật, khung `LIDAR VIEW`, một blob coral `ID:1 [1000,0 mm]`; mở `+ Add device` thấy mục **Fake scan**.
 - **Chưa kiểm:** plugin bên thứ ba thật (YDLIDAR ở G23) và phần cứng; mới kiểm bằng plugin giả C. Không có cô lập tiến trình.
 - Đếm mới: 66 `[x]` · 14 `[~]` · 59 `[ ]`.
+
+### Trang Sensor kiểu Advanced Output, đặt lidar theo mm, scan IP, gửi OSC/UDP (2026-10-28)
+
+- **G18 `[ ]` → `[x]`:** mỗi thiết bị thuộc một Screen (`Device::screenId`, `DeviceScreen()` trong `src/calib.cpp`; `Screen::realW/realH` là kích thước thật tính bằng mm); calib/homography của thiết bị tính theo Screen của nó, nên nhiều sensor cho nhiều screen chạy độc lập. `SensorSelfTest` có thiết bị gán screen thứ hai.
+- **G24 `[x]` — trang Sensor ba cột:** cây sensor (`DrawTree(…, TreeMode::Sensors)`, nút "+ Sensor" màu mint) cùng cây Mapping; tab INPUT/OUTPUT; Output dùng `EditQuad` (Edit Points / Transform) như trang Mapping, mã sân khấu dùng chung ở `src/stage.cpp` (`StageViewUpdate`, `DrawScreenBackdrop`, `BoxOfPoints`, `MapBoxPoints`); mục Properties ghép theo loại thiết bị (`SensorPropSections`).
+- **G25 `[x]` — đặt lidar theo mm:** kéo cảm biến trên sân khấu Input để dời (làm tròn 10 mm; Shift: một trục), kéo chấm để xoay (Shift: bước 15°); `PlacementCalib` (`src/calib.cpp`, lõi `engine/core/calib/LidarPlacement`) đổi vị trí+hướng+kích thước thật của screen thành 4 cặp calib. Thêm giới hạn tầm theo thiết bị và công tắc blob (`Device::blobOn`). `PlacementCalib` có self-test trong `--roundtrip` (từ chối khi chưa biết kích thước thật; screen 4K).
+- **G26 `[x]` — scan IP:** wizard "+ Sensor" chọn loại, chọn card mạng, `StartIpScan` → `mikmap::scanTcpPort(hostsInSubnet(…), cổng Hokuyo, 300 ms)` quét subnet; tick nhiều lidar tìm thấy rồi Add một lần, có thể thêm tay theo host; lidar đã là thiết bị được liệt kê mờ và không thêm hai lần. Test engine `test_netscan.cpp`; wizard chạy trong `--roundtrip` với `FakeScipServer`.
+- **G27 `[x]` — gửi toạ độ:** mục "Send out" của thiết bị: `SendOut` (`src/sources.cpp`) áp `H_s` rồi chuẩn hoá 0–1 theo canvas 1920×1080, đẩy vào `TouchSender` (`engine/io/net/`) — thread riêng, hàng đợi drop-oldest nên render thread không chặn; OSC bundle hoặc UDP text. Kiểm `--roundtrip`: một receiver UDP thật qua loopback nhận gói. Test `test_touchsender.cpp`.
+- **Chưa kiểm:** phần cứng Hokuyo/YDLIDAR thật; quét một mạng LAN thật (mới có test loopback + server SCIP giả); một receiver OSC thật như TouchDesigner (mới có receiver tự viết); cuộn bằng bánh xe chuột trong danh sách kết quả của wizard (chỉ kiểm bằng ảnh/self-test).
+- **Giới hạn đã biết:** lidar không còn chỉnh ROI tay trên trang Sensor (chỉ "ROI = screen"; **Edit ROI** còn cho thiết bị Sim); bộ đếm gửi/lỗi của "Send out" dùng chung một sender cho mọi thiết bị; thiết bị đã đặt mà screen bị xoá sẽ tính lại calib theo screen dự phòng; "Scan again" chỉ dành cho Hokuyo.
+- **Chưa làm (không tính vào mục nào ở trên):** camera 2D (crop, chế độ nhận dạng, luồng preview, NDI/Spout) và lidar 3D/depth — thuộc các kế hoạch sau.
+- Đếm mới (đếm lại từ các dòng bảng): 71 `[x]` · 14 `[~]` · 57 `[ ]`, trên 142 dòng.

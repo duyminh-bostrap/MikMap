@@ -34,7 +34,7 @@ engine/i18n/    bảng chuỗi Tiếng Việt/English (Localization.h/cpp), ch�
 src/            app GLFW + Dear ImGui HIỆN TẠI (đổi tên từ newui/) — CMake riêng
 tests/          unit test cho engine/, chạy trên CI không cần GPU
 architecture.md kiến trúc ĐÍCH (xem ghi chú vị trí vật lý ở đầu file đó)
-features.md     backlog 135 mục, chấm điểm theo code thật của src/
+features.md     backlog 142 mục, chấm điểm theo code thật của src/
 ```
 
 `src/` hiện là struct riêng (`src/app.h` và các file phẳng
@@ -133,9 +133,9 @@ ngoài". Định nghĩa ở `engine/core/model/IWarp.h`; mọi `IWarp` mới ph�
 
 ## `src/` — tình trạng THẬT (theo `features.md`, không theo vẻ ngoài)
 
-56 mục `[x]` (hành vi thật) · 17 mục `[~]` (chỉ UI/một phần — đọc "Ghi chú
-kiểm tra" cuối `features.md` để biết chính xác cái gì còn giả) · 62 mục `[ ]`,
-trên 135 mục Resolume-parity (đếm lại 2026-09-26 từ các dòng bảng).
+71 mục `[x]` (hành vi thật) · 14 mục `[~]` (chỉ UI/một phần — đọc "Ghi chú
+kiểm tra" cuối `features.md` để biết chính xác cái gì còn giả) · 57 mục `[ ]`,
+trên 142 mục Resolume-parity (đếm lại 2026-10-28 từ các dòng bảng).
 
 **Đợt 2026-09-23:** F8/G8/A4 chuyển `[~]` → `[x]`. F8/G8: preset output
 (`Screen`) và calibration profile (điểm + ROI/noise) giờ lưu/nạp được thành
@@ -199,6 +199,13 @@ Hokuyo 2D lidar (`G21`) chạy qua SCIP 2.0/TCP nhưng **chưa kiểm với ph�
 (UST-10LX/20LX); plugin cảm biến DLL (`G22`, ABI C) đã chạy qua `PluginSource` + `DevKind::Plugin`
 nhưng **mới kiểm bằng plugin giả**, và plugin chạy chung tiến trình nên plugin sập thì app sập theo;
 YDLIDAR (`G23`, plugin bọc YDLidar-SDK) còn chờ.
+
+**Trang Sensor (2026-10-28, `G18`/`G24`–`G27`):** thiết bị thuộc một Screen (`Device::screenId`, `Screen::realW/realH` mm);
+lidar đặt theo mm (`PlacementCalib` → 4 cặp calib, lõi `engine/core/calib/LidarPlacement`); cây sensor + tab Input/Output,
+Output dùng `EditQuad` và mã sân khấu chung `src/stage.cpp` với Mapping; wizard scan IP (`engine/io/net/NetScan`);
+gửi toạ độ OSC/UDP (`engine/io/net/TouchSender`, `SendOut` ở `sources.cpp`, chuẩn hoá 0–1 theo canvas). **Chưa kiểm với phần cứng
+thật** (Hokuyo/YDLIDAR, quét LAN thật, receiver OSC thật như TouchDesigner). Lidar hết chỉnh ROI tay (chỉ "ROI = screen";
+Edit ROI còn cho Sim); camera 2D (crop, nhận dạng, preview, NDI/Spout) và lidar 3D/depth CHƯA làm. Chi tiết: "Ghi chú kiểm tra" cuối `features.md`.
 (`A4` thumbnail động đã `[x]` từ 2026-09-23 — giới hạn ≤3 ô vẽ lại/khung, xem đầu mục này.)
 `I2` (lưu/mở dự án) **đã chạy** qua `src/project.cpp` (đọc/ghi `.mikmap` bằng schema
 JSON tự viết riêng của `src/`) nhưng **vẫn chưa gọi `engine/core/model/ProjectIO`** —
