@@ -632,7 +632,7 @@ bool LoadProject(const std::string& path, std::string& err) {
   A.tlProgress = 0; A.tlLoopOn = false; A.tlIn = 0; A.tlOut = 100;   // timeline playhead/loop are runtime-only, never saved
   A.selSc = A.screens[0].id; A.selSl = A.screens[0].slices.empty() ? "" : A.screens[0].slices[0].id; A.selMk.clear(); A.selKind = -1;
   A.railScreen.clear(); A.mapView.scrollX = A.mapView.scrollY = 0;
-  A.wizardStep = 0; A.editRoi = false; A.selDevice = 0; A.pending.clear();
+  A.wizardStep = 0; A.wizard = SensorWizard{}; A.editRoi = false; A.selDevice = 0; A.pending.clear();   // the add-sensor wizard is runtime: closed, like NewProject
   A.idCounter = 1000;
   for (auto& l : A.layers) for (auto& c : l.clips) if (!c.media.empty()) PreloadMedia(c.media);
   A.cue(0, 0);
