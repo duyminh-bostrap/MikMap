@@ -165,6 +165,22 @@ Screen* DeviceScreen(const Device& d, bool* fellBack) {
   return &A.screens[0];
 }
 
+// The four screen corners in mm -> where the lidar sees them; paired with the four output-pixel corners this is an ordinary H_s,
+// so everything downstream (DeviceH, touch mapping) is unchanged.
+bool PlacementCalib(Device& d, const Screen& sc, const mikmap::LidarPose& pose) {
+  if (sc.realW <= 0 || sc.realH <= 0) return false;
+  const float W = (float)sc.w, H = (float)sc.h;
+  const float tx[4] = {0, W, W, 0}, ty[4] = {0, 0, H, H};
+  const mikmap::Vec2 corner[4] = {{0, 0}, {sc.realW, 0}, {sc.realW, sc.realH}, {0, sc.realH}};
+  d.calib.clear();
+  for (int i = 0; i < 4; ++i) {
+    const mikmap::Vec2 m = mikmap::surfaceToLidar(pose, corner[i]);
+    d.calib.push_back({tx[i], ty[i], (float)m.x, (float)m.y});
+  }
+  d.calibrated = true;
+  return true;
+}
+
 Device MakeDevice(DevKind k, const std::string& id) {
   Device d; d.id = id; d.kind = k;
   const float tx[4] = {100, 1820, 1820, 100}, ty[4] = {100, 100, 980, 980};   // the same output-pixel targets for every kind

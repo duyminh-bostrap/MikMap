@@ -1,6 +1,7 @@
 ﻿// Application state (a direct port of the prototype's React state) and screen entry points.
 #pragma once
 #include "ui.h"
+#include "core/calib/LidarPlacement.h"
 #include "core/math/EdgeBlend.h"
 #include "core/math/Triangulate.h"
 #include <algorithm>
@@ -625,6 +626,7 @@ void FitAffine(const std::vector<Calib>& c, float out[9], float* rms);
 bool FitHomography(const std::vector<Calib>& pts, float H[9], float* rms);
 bool DeviceH(const Device& d, float H[9]);       // H_s of one device; false if it is not calibrated
 Screen* DeviceScreen(const Device& d, bool* fellBack = nullptr);   // never null while A.screens is non-empty; *fellBack = a named screen is gone
+bool PlacementCalib(Device& d, const Screen& sc, const mikmap::LidarPose& pose);   // places a lidar by its pose (mm) on a screen of known real size: writes the 4 calib pairs; false + d untouched if the size is unknown
 Device MakeDevice(DevKind k, const std::string& id);   // per-kind defaults (name, address, ROI, calibration targets)
 // Live sensors (sources.cpp): the real ISensorSource threads, one per enabled non-Sim device, kept OUT of App so undo never touches them.
 namespace mikmap { class ISensorSource; struct LaserScan; struct SensorPlugin; }

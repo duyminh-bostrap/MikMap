@@ -741,6 +741,14 @@ int main(int argc, char** argv) {
       if (A.devices.size() != 1 || A.devices[0].id != "d" || A.devices[0].kind != DevKind::Sim || !A.devices[0].calibrated || A.devices[0].enabled) return fail("legacy device not migrated to a disabled, calibrated Sim");
       if (A.devices[0].screenId != A.screens[0].id) return fail("a file without a device screen must put the device on the first screen");
       if (A.devices[0].calib.size() != 4 || A.devices[0].calib[3].my != 16.f || A.devices[0].calib[0].tx != 1.f || A.devices[0].roi[2].y != 1.f) return fail("legacy global calibration/ROI not moved onto the device");
+      {  // placing a lidar by its pose in mm writes an ordinary H_s
+        Screen sc; Device d = MakeDevice(DevKind::Hokuyo, "pl"); const mikmap::LidarPose pose{2000, 2250, -90, false};
+        d.calibrated = false; const auto before = d.calib; sc.realW = 0; sc.realH = 2250;
+        if (PlacementCalib(d, sc, pose) || d.calibrated || d.calib.size() != before.size() || d.calib[1].mx != before[1].mx) return fail("PlacementCalib must refuse an unknown real size and leave the device untouched");
+        sc.realW = 4000; float H[9], ox, oy;
+        if (!PlacementCalib(d, sc, pose) || !d.calibrated || !DeviceH(d, H)) return fail("PlacementCalib with a known size must calibrate");
+        ApplyH(H, 1000.f, 0.f, ox, oy);
+        if (std::fabs(ox - 960.f) > 0.5f || std::fabs(oy - 1080.f * 1250.f / 2250.f) > 0.5f) return fail("lidar point (1000,0) not mapped to the expected output px"); }
       NewProject();
       A.devices[2].calib[2].mx = 5.5f;
       std::string pp = roundtrip + ".hokuyo.calib", cerr; float nz = 1.2f, bs = 15;
