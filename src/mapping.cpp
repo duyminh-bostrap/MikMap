@@ -33,9 +33,7 @@ static void QuadOf(Slice& s, float x, float y, float w, float h) {
 // The input rect is ix..ih rotated by irot about its centre. These convert it to/from a 4-point shape so it can be
 // exchanged with the output quad ("Match output shape" / "Swap"): the input lives in canvas px, the quad in the
 // screen's 1920x1080 output px, so the two spaces are scaled per axis.
-static constexpr float kDegToRad = 3.14159265f / 180.f;
-// A rotated rectangle in canvas px: what the slice's input rect and a mask both are, so one editor (the on-stage frame) serves both.
-struct RectXf { float x, y, w, h, rot; };   // Left/Top of the unrotated rect, size, degrees
+// RectXf (app.h), a rotated rectangle in canvas px: what the slice's input rect and a mask both are, so one editor (the on-stage frame) serves both.
 static RectXf RectOfSlice(const Slice& s) { return {(float)s.ix, (float)s.iy, (float)s.iw, (float)s.ih, s.irot}; }
 static RectXf RectOfMask(const Mask& m) { return {m.x, m.y, m.w, m.h, m.rot}; }
 static void RectCorners(const RectXf& r, ImVec2 c[4]) {   // canvas px: tl, tr, br, bl
@@ -467,29 +465,15 @@ static RectXf OutputBox(const Slice& s) {
   std::vector<std::vector<ImVec2>> g;
   if (s.kind == 1) g = {s.pout};   // a polygon slice: the box of its output points
   else { g = MeshGrid(s); if (s.pointMode == 1) g.push_back(SliceOutline(s)); }   // Bezier edges can bulge past the points
-  const float r = s.orot * kDegToRad, co = std::cos(r), si = std::sin(r);
-  float x0 = 1e9f, y0 = 1e9f, x1 = -1e9f, y1 = -1e9f;
-  for (auto& row : g) for (auto& p : row) {
-    float lx = p.x * co + p.y * si, ly = -p.x * si + p.y * co;   // into the box's own axes
-    x0 = std::min(x0, lx); x1 = std::max(x1, lx); y0 = std::min(y0, ly); y1 = std::max(y1, ly);
-  }
-  float lcx = (x0 + x1) * 0.5f, lcy = (y0 + y1) * 0.5f, w = std::max(1.f, x1 - x0), h = std::max(1.f, y1 - y0);
-  float cx = lcx * co - lcy * si, cy = lcx * si + lcy * co;
-  return {cx - w * 0.5f, cy - h * 0.5f, w, h, s.orot};
+  std::vector<ImVec2> pts; for (auto& row : g) pts.insert(pts.end(), row.begin(), row.end());
+  return BoxOfPoints(pts.data(), (int)pts.size(), s.orot);
 }
 static void ApplyBox(Slice& s, const RectXf& from, const RectXf& to) {
-  const float fr = from.rot * kDegToRad, tr = to.rot * kDegToRad, fc = std::cos(fr), fs = std::sin(fr), tc = std::cos(tr), ts = std::sin(tr);
-  const float fcx = from.x + from.w * 0.5f, fcy = from.y + from.h * 0.5f, tcx = to.x + to.w * 0.5f, tcy = to.y + to.h * 0.5f;
-  const float kx = to.w / std::max(1e-3f, from.w), ky = to.h / std::max(1e-3f, from.h);
-  auto map = [&](ImVec2& q) {
-    float dx = q.x - fcx, dy = q.y - fcy, lx = (dx * fc + dy * fs) * kx, ly = (-dx * fs + dy * fc) * ky;
-    q = ImVec2(std::clamp(tcx + lx * tc - ly * ts, -4000.f, 8000.f), std::clamp(tcy + lx * ts + ly * tc, -4000.f, 8000.f));
-  };
   if (s.kind == 1) {   // polygon: every output point; the -4000..8000 clamp could fold it, so a crossing result is refused
-    auto P = s.pout; for (auto& p : P) map(p);
+    auto P = s.pout; MapBoxPoints(P.data(), (int)P.size(), from, to);
     if (!PolySimple(P)) { A.notify(kCrossMsg); return; }
     s.pout = std::move(P);
-  } else for (auto& q : s.q) map(q);
+  } else MapBoxPoints(s.q, 4, from, to);
   s.orot = std::fabs(to.rot) < 0.05f ? 0.f : to.rot;
 }
 // Place the slice's box at an upright rectangle (the Output right-click presets), keeping its warp.
@@ -520,6 +504,12 @@ static ImVec2 MaskTanToUnit(const Mask& m, ImVec2 c);
 bool MappingSelfTest(std::string& why) {
   if (!GroupMoveSelfTest(why) || !SnapSelfTest(why)) return false;
   auto near2 = [](ImVec2 a, ImVec2 b, float tol) { return std::fabs(a.x - b.x) <= tol && std::fabs(a.y - b.y) <= tol; };
+  {   // stage.cpp's BoxOfPoints is OutputBox's core: on a default slice (1 x 1 grid = its 4 corners) both give the same box
+    Slice d; QuadOf(d, 100, 50, 1720, 980); d.q[2].x += 37; d.orot = 20.f; const RectXf ob = OutputBox(d), bp = BoxOfPoints(d.q, 4, d.orot);
+    if (std::fabs(ob.x - bp.x) > 1e-3f || std::fabs(ob.y - bp.y) > 1e-3f || std::fabs(ob.w - bp.w) > 1e-3f || std::fabs(ob.h - bp.h) > 1e-3f || ob.rot != bp.rot) {
+      why = "BoxOfPoints of a default slice's corners is not its Transform box"; return false;
+    }
+  }
   Slice s; s.q[0] = {200, 150}; s.q[1] = {1500, 120}; s.q[2] = {1600, 900}; s.q[3] = {150, 980};
   s.meshCols = 3; s.meshRows = 2;
   s.meshLocal = LocalGrid(s); s.meshLocal[0][0] = {0.08f, 0.05f}; s.meshLocal[1][1] = {0.4f, 0.62f}; s.meshLocal[2][3] = {0.93f, 1.04f};
@@ -1762,7 +1752,6 @@ static bool SnapSelfTest(std::string& why) {
 // ── stage view ──
 // Corner pins and mesh points can sit far outside the 1920x1080 output (-4000..8000), so the stage is a free pan/zoom
 // over output space — zoom below 100% to reach them — rather than a scroll clamped to the canvas box.
-constexpr float kMinZoom = 0.2f, kMaxZoom = 6.f;
 static ImRect StageArea(ImRect r) { return ImRect(r.Min.x, r.Min.y + 44, r.Max.x, r.Max.y); }
 // The stage draws ONE space at a time: page 0 (Input selection) is the composition canvas, page 1 (Output routing)
 // is the screen's output pixels (1920x1080). Every "1920"/"1080" the stage math used to hard-code is this space now.
@@ -1793,12 +1782,12 @@ static void FrameBox(ImRect area, ImVec2 mn, ImVec2 mx, float fill, float zHi) {
   float SW, SH; StageSpace(SW, SH);
   float z = std::min((area.GetWidth() - 40) * fill / (std::max(1.f, mx.x - mn.x) * bw / SW),
                      (area.GetHeight() - 40) * fill / (std::max(1.f, mx.y - mn.y) * bw / SW));
-  A.setZoom(std::clamp(z, kMinZoom, zHi), (mn.x + mx.x) * 0.5f / SW, (mn.y + mx.y) * 0.5f / SH);
+  A.mapView.setZoom(std::clamp(z, kMinZoom, zHi), (mn.x + mx.x) * 0.5f / SW, (mn.y + mx.y) * 0.5f / SH);
 }
 static void FitAll(ImRect area, const Screen& sc) {
   ImVec2 mn, mx; StageContentBox(sc, mn, mx);
   float SW, SH; StageSpace(SW, SH);
-  if (mn.x >= 0 && mn.y >= 0 && mx.x <= SW && mx.y <= SH) A.setZoom(1, 0.5f, 0.5f);   // all inside: plain 100%
+  if (mn.x >= 0 && mn.y >= 0 && mx.x <= SW && mx.y <= SH) A.mapView.setZoom(1, 0.5f, 0.5f);   // all inside: plain 100%
   else FrameBox(area, mn, mx, 1.f, 1.f);
 }
 static void ZoomToSlice(ImRect area, const Slice& s) { ImVec2 mn, mx; SliceOutputBounds(s, mn, mx); FrameBox(area, mn, mx, 0.85f, kMaxZoom); }
@@ -1938,7 +1927,7 @@ static void Stage(ImRect r) {
   // right side: zoom group, history/reset group, tools. Large icons; the zoom group is just − % + and focus mode.
   float xr = tb.Max.x - 6;
   {
-    char zl[16]; snprintf(zl, sizeof zl, "%d%%", (int)std::round(A.mapZ * 100));
+    char zl[16]; snprintf(zl, sizeof zl, "%d%%", (int)std::round(A.mapView.z * 100));
     const float pctW = 46.f;
     float gw = 3 + kBtnW + pctW + kBtnW + 5 + kBtnW + 3;
     ImRect zg(xr - gw, cy - kGrpH, xr, cy + kGrpH);
@@ -1952,7 +1941,7 @@ static void Stage(ImRect r) {
       if (h.hover) CursorHand();
       return h.click;
     };
-    if (iconBtn(zx, "zoom-out", false)) A.setZoom(A.mapZ / 1.4f);
+    if (iconBtn(zx, "zoom-out", false)) A.mapView.setZoom(A.mapView.z / 1.4f);
     zx += kBtnW;
     {   // the readout is also the "fit everything" button
       ImRect pr(zx, cy - kBtnH * 0.5f, zx + pctW, cy + kBtnH * 0.5f);
@@ -1962,7 +1951,7 @@ static void Stage(ImRect r) {
       if (h.click && sc) FitAll(StageArea(r), *sc);   // frames points dragged outside the output too
       zx += pctW;
     }
-    if (iconBtn(zx, "zoom-in", false)) A.setZoom(A.mapZ * 1.4f);
+    if (iconBtn(zx, "zoom-in", false)) A.mapView.setZoom(A.mapView.z * 1.4f);
     zx += kBtnW;
     VLine(zx + 2, cy - 8, cy + 8, K(pal::g2a)); zx += 5;
     if (iconBtn(zx, A.mapFocus ? "minimize-2" : "expand", A.mapFocus)) A.mapFocus = !A.mapFocus;
@@ -2024,58 +2013,16 @@ static void Stage(ImRect r) {
   }  // canvas viewport
   ImRect area = StageArea(r);
   if (area.GetWidth() - 20 < 60 || !sc) return;
-  // View: the canvas centre sits at the stage centre, shifted by a free pan (mapScrollX/Y, px). Nothing clamps the view
-  // to the canvas box — points outside it must stay visible and grabbable — only the view centre is kept inside the
-  // -4000..8000 range the points themselves are limited to, so you can't pan off into nothing.
   float baseW = StageBaseW(area);
   float SW, SH; StageSpace(SW, SH);   // the space this page draws (canvas px on the input page, 1920x1080 output px on the output page)
-  ImVec2 ac((area.Min.x + area.Max.x) * 0.5f, (area.Min.y + area.Max.y) * 0.5f);
-  if (A.mapReq.valid) {   // centre the requested output point
-    A.mapZ = std::clamp(A.mapReq.z, kMinZoom, kMaxZoom);
-    float sn = baseW * A.mapZ / SW;
-    A.mapScrollX = (A.mapReq.cx * SW - SW * 0.5f) * sn; A.mapScrollY = (A.mapReq.cy * SH - SH * 0.5f) * sn;
-    A.mapReq.valid = false;
-  }
+  bool rClick = false;   // right button released without dragging = context menu, not a pan
+  const StageXf X = StageViewUpdate(A.mapView, area, SW, SH, baseW, A.mapHand, dragKind == 1 || dragKind == 3 || dragKind == 4, &rClick);
   bool inArea = area.Contains(m) && !g.blocked;
   ImGuiIO& io = ImGui::GetIO();
-  float s = baseW * A.mapZ / SW;   // px per space px
-  // Mouse wheel = zoom about the cursor (the point under it stays put); Shift+wheel scrolls vertically; a sideways wheel / trackpad pans
-  // horizontally. Panning otherwise: the hand tool, or right-drag.
-  if (inArea && io.MouseWheelH != 0.f) A.mapScrollX -= io.MouseWheelH * 48.f;
-  if (inArea && io.MouseWheel != 0.f && io.KeyShift) A.mapScrollY -= io.MouseWheel * 48.f;
-  if (inArea && io.MouseWheel != 0.f && !io.KeyShift) {
-    ImVec2 p((m.x - ac.x + A.mapScrollX) / s + SW * 0.5f, (m.y - ac.y + A.mapScrollY) / s + SH * 0.5f);
-    A.mapZ = std::clamp(A.mapZ * std::pow(1.15f, std::clamp(io.MouseWheel, -3.f, 3.f)), kMinZoom, kMaxZoom);   // a wheel notch = one 15% step; trackpad fractions are smooth
-    s = baseW * A.mapZ / SW;
-    A.mapScrollX = (p.x - SW * 0.5f) * s + (ac.x - m.x); A.mapScrollY = (p.y - SH * 0.5f) * s + (ac.y - m.y);
-  }
-  static int panBtn = -1; static ImVec2 panM; static float panX, panY;   // right-drag pan, or left-drag while the hand tool is on
-  bool rClick = false;   // right button released without dragging = context menu, not a pan
-  if (panBtn < 0 && inArea) {
-    if (ImGui::IsMouseClicked(1)) panBtn = 1; else if (A.mapHand && ImGui::IsMouseClicked(0)) panBtn = 0;
-    if (panBtn >= 0) { panM = m; panX = A.mapScrollX; panY = A.mapScrollY; }
-  }
-  if (panBtn >= 0) {
-    if (ImGui::IsMouseDown(panBtn)) { A.mapScrollX = panX - (m.x - panM.x); A.mapScrollY = panY - (m.y - panM.y); ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll); }
-    else { rClick = panBtn == 1 && std::hypot(m.x - panM.x, m.y - panM.y) < 4.f; panBtn = -1; }
-  } else if (A.mapHand && inArea) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-  // dragging a point to (or past) the stage edge scrolls the view, so the point never slides under the side panels
-  if ((dragKind == 1 || dragKind == 3 || dragKind == 4) && ImGui::IsMouseDown(0)) {
-    const float edge = 28.f;
-    auto push = [&](float v, float lo, float hi) {
-      if (v < lo + edge) return -std::min(24.f, (lo + edge - v) * 0.35f);
-      if (v > hi - edge) return std::min(24.f, (v - (hi - edge)) * 0.35f);
-      return 0.f;
-    };
-    A.mapScrollX += push(m.x, area.Min.x, area.Max.x); A.mapScrollY += push(m.y, area.Min.y, area.Max.y);
-  }
-  A.mapScrollX = std::clamp(A.mapScrollX, (-4000.f - SW * 0.5f) * s, (8000.f - SW * 0.5f) * s);
-  A.mapScrollY = std::clamp(A.mapScrollY, (-4000.f - SH * 0.5f) * s, (8000.f - SH * 0.5f) * s);
-  A.mapCx = (SW * 0.5f + A.mapScrollX / s) / SW; A.mapCy = (SH * 0.5f + A.mapScrollY / s) / SH;
-  float cw = SW * s, ch = SH * s;
-  ImRect cv(ac.x - cw * 0.5f - A.mapScrollX, ac.y - ch * 0.5f - A.mapScrollY, ac.x + cw * 0.5f - A.mapScrollX, ac.y + ch * 0.5f - A.mapScrollY);
-  auto toPx = [&](ImVec2 p) { return ImVec2(cv.Min.x + p.x * s, cv.Min.y + p.y * s); };
-  ImVec2 mo((m.x - cv.Min.x) / s, (m.y - cv.Min.y) / s);   // cursor in output px, unclamped
+  const float s = X.s;   // px per space px
+  const ImRect cv = X.cv;
+  auto toPx = [&](ImVec2 p) { return X.toPx(p); };
+  ImVec2 mo = X.fromPx(m);   // cursor in output px, unclamped
   // The input rect (page 0) and masks pick from canvas CONTENT and stay inside it; corner pins and mesh points are output
   // geometry and reach as far as the numeric corner-pin fields allow (-4000..8000).
   auto inCanvas = [SW, SH](ImVec2 p) { return ImVec2(std::clamp(std::round(p.x), 0.f, SW), std::clamp(std::round(p.y), 0.f, SH)); };
@@ -2083,7 +2030,7 @@ static void Stage(ImRect r) {
   ImVec2 mu = inCanvas(mo);
 
   g.dl->PushClipRect(area.Min, area.Max, true);
-  Box(cv, K(0x0d0d0d), 0, 3);
+  if (A.mpage == 0 || !sc->visible) Box(cv, K(0x0d0d0d), 0, 3);   // a shown Output page draws its box with the thumbnails (DrawScreenBackdrop); nothing draws before them
   g.dl->PushClipRect(cv.Min, cv.Max, true);
   if (A.mpage == 0) {
     // Input selection shows what the selected slice actually takes: the live content of its source (the whole composition,
@@ -2570,14 +2517,8 @@ static void Stage(ImRect r) {
       }
     }
     sl = A.curSlice(); mk = A.curMask();
-    {   // what each slice actually sends out — after its input rect, warp, masks and the Screen's opacity / colour — drawn as its thumbnail
-      bool anySolo = false;
-      for (auto& S : sc->slices) if (S.solo && S.visible) anySolo = true;
-      const float t = (float)g.time * 1.2f;   // same time base as the projector and the Live Output monitor
-      g.dl->PushClipRect(cv.Min, cv.Max, true);   // the projector only shows the 1920x1080 box
-      for (auto& S : sc->slices) if (S.visible && !(anySolo && !S.solo)) DrawSliceOutput(*sc, S, cv.Min.x, cv.Min.y, s, s, t);
-      g.dl->PopClipRect();
-    }
+    // what each slice actually sends out — after its input rect, warp, masks and the Screen's opacity / colour — drawn as its thumbnail
+    DrawScreenBackdrop(*sc, X, (float)g.time * 1.2f, 1.f);   // same time base as the projector and the Live Output monitor
     for (auto& S : sc->slices) {
       if (!S.visible) continue;
       bool on = (sl && S.id == sl->id) || (A.MapKind() == 1 && A.mapSelCount() > 1 && A.mapIsSel(1, sc->id, S.id, ""));

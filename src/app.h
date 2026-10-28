@@ -260,6 +260,36 @@ struct Popup { bool open = false; ImVec2 pos; int li = 0, ci = 0; };
 struct RenameBox { bool open = false, fresh = false; int kind = 0, idx = 0; ImVec2 pos; char buf[64] = {}; };
 struct CtxMenu { bool open = false; ImVec2 pos; std::vector<ui::MenuItem> items; };
 
+// ── stage pieces shared by Advanced Mapping and the Sensor page (stage.cpp) ──
+static constexpr float kDegToRad = 3.14159265f / 180.f;
+struct RectXf { float x, y, w, h, rot; };   // Left/Top of the unrotated rect, size, degrees
+// The upright box (in its own frame turned by rotDeg) around n points.
+RectXf BoxOfPoints(const ImVec2* p, int n, float rotDeg);
+// The affine map that takes box `from` onto box `to` (move / scale / turn), applied to n points; results clamped to -4000..8000.
+void MapBoxPoints(ImVec2* p, int n, const RectXf& from, const RectXf& to);
+// A free pan/zoom over one stage space (canvas px, or a screen's 1920x1080 output px). Points can sit far outside the box
+// (-4000..8000), so nothing clamps the view to it. cx/cy: view centre in space-normalised units — may be <0 or >1.
+constexpr float kMinZoom = 0.2f, kMaxZoom = 6.f;
+struct StageView {
+  float z = 1, scrollX = 0, scrollY = 0, cx = 0.5f, cy = 0.5f;
+  struct { bool valid = false; float z = 1, cx = 0.5f, cy = 0.5f; } req;   // applied (and cleared) by the next StageViewUpdate
+  void setZoom(float z_) { setZoom(z_, cx, cy); }
+  void setZoom(float z_, float cx_, float cy_) { req.valid = true; req.z = z_; req.cx = cx_; req.cy = cy_; }
+};
+struct StageXf {   // this frame's mapping: space px -> window px
+  ImRect cv; float s = 1;   // cv: the SW x SH space box in window px; s: window px per space px
+  ImVec2 toPx(ImVec2 p) const { return ImVec2(cv.Min.x + p.x * s, cv.Min.y + p.y * s); }
+  ImVec2 fromPx(ImVec2 px) const { return ImVec2((px.x - cv.Min.x) / s, (px.y - cv.Min.y) / s); }
+};
+// Wheel = zoom about the cursor, Shift+wheel / sideways wheel scroll, right-drag (or left-drag with handTool) pans,
+// edgeScroll: the pointer near the edge pushes the view (a point is being dragged). *rClick: right button let go without a drag.
+StageXf StageViewUpdate(StageView& v, ImRect area, float SW, float SH, float baseW, bool handTool, bool edgeScroll, bool* rClick);
+// The screen's 1920x1080 box and every visible slice of it as the projector shows it (solo respected), like Mapping's Output page.
+void DrawScreenBackdrop(const Screen& sc, const StageXf& x, float t, float alpha);
+// tool 0 Edit Points: the 4 big squares drag on their own (Shift = one axis). tool 1 Transform: a turned box around the 4 points —
+// move / scale / turn (Shift: one axis, same aspect, 45 degree steps). True on the frame the mouse is let go after a change.
+bool EditQuad(const char* id, const StageXf& x, ImVec2 q[4], int tool, uint32_t tone);
+
 struct App {
   int screen = 0;  // 0 deck, 1 mapping, 2 sensor
   int canvasW = 1920, canvasH = 1080;  // A1: virtual composition canvas, independent of any projector
@@ -378,11 +408,7 @@ struct App {
   std::vector<Screen> screens;
   std::string selSc = "screen1", selSl = "slice1", selMk;
   int selKind = -1;  // -1 auto, 0 screen, 1 slice, 2 mask
-  float mapZ = 1, mapScrollX = 0, mapScrollY = 0, mapCx = 0.5f, mapCy = 0.5f;
-  struct MapReq { bool valid = false; float z = 1, cx = 0.5f, cy = 0.5f; } mapReq;
-  // cx/cy: view centre in canvas-normalised units — may be <0 or >1, since points can live outside the output box
-  void setZoom(float z) { setZoom(z, mapCx, mapCy); }
-  void setZoom(float z, float cx, float cy) { mapReq.valid = true; mapReq.z = z; mapReq.cx = cx; mapReq.cy = cy; }
+  StageView mapView;   // the Advanced Mapping stage's pan/zoom
   bool mapFocus = false;
   char meshArm = 0;   // 'u' / 'v': + Add col / + Add row is armed — a preview line follows the pointer and the next click places it
   // Undo/redo is global (project.cpp): snapshots are taken automatically when input goes idle, so pushHist() is a
