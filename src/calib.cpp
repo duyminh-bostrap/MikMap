@@ -183,8 +183,20 @@ bool PlacementCalib(Device& d, const Screen& sc, const mikmap::LidarPose& pose) 
 
 bool ApplyPlacement(Device& d) {
   if (!d.placed) return false;   // "Custom (4-point)": the hand-tuned quad wins until the user presses Re-apply placement
-  const Screen* sc = DeviceScreen(d);
+  bool fb = false; const Screen* sc = DeviceScreen(d, &fb);
+  if (fb) return false;          // its screen was deleted: keep the calibration it has rather than re-derive it on the fallback screen
   return sc && PlacementCalib(d, *sc, d.pose);
+}
+
+bool QuadEdit(Device& d, const ImVec2 q[4]) {
+  constexpr float eps = 0.01f;   // a Transform click that moves nothing still round-trips the points by ~1e-4 px
+  if (d.calib.size() != 4) return false;
+  bool moved = false;
+  for (int i = 0; i < 4; ++i) moved = moved || std::fabs(q[i].x - d.calib[i].tx) > eps || std::fabs(q[i].y - d.calib[i].ty) > eps;
+  if (!moved) return false;
+  for (int i = 0; i < 4; ++i) { d.calib[i].tx = q[i].x; d.calib[i].ty = q[i].y; }
+  d.placed = false;   // a hand edit is Custom (4-point) from the first real move, so the placement never pulls the point back mid-drag
+  return true;
 }
 
 bool RoiToScreen(Device& d) {

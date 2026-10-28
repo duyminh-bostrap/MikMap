@@ -215,7 +215,7 @@ struct Device {
   std::string config;                // Plugin: raw JSON handed to mikmap_sensor_create()
   bool enabled = false;              // the user wants it running (saved with the project)
   bool calibrated = false;
-  std::vector<Calib> calib;          // exactly 4: tx,ty = output px of Screen 0; mx,my = THIS device's raw units
+  std::vector<Calib> calib;          // exactly 4: tx,ty = output px of the device's screen (stage space 1920x1080); mx,my = THIS device's raw units
   ImVec2 roi[4] = {};                // this device's raw units
   mikmap::LidarPose pose; bool placed = false;   // lidar: where it hangs on the screen's surface (mm); placed = the user confirmed it
   float rangeMm = 0;                 // lidar: rays beyond this are ignored; 0 = unlimited
@@ -692,6 +692,7 @@ bool IpScanDone(std::vector<std::string>& out);                            // tr
 Screen* DeviceScreen(const Device& d, bool* fellBack = nullptr);   // never null while A.screens is non-empty; *fellBack = a named screen is gone
 bool PlacementCalib(Device& d, const Screen& sc, const mikmap::LidarPose& pose);   // places a lidar by its pose (mm) on a screen of known real size: writes the 4 calib pairs; false + d untouched if the size is unknown
 bool ApplyPlacement(Device& d);   // only while d.placed: PlacementCalib on its own screen with d.pose (a hand-tuned "Custom (4-point)" quad is left alone)
+bool QuadEdit(Device& d, const ImVec2 q[4]);   // Output quad edited by hand: a move over 0.01 px writes calib tx,ty and makes it Custom (placed = false); less is no edit
 bool RoiToScreen(Device& d);      // lidar "ROI = screen": roi = the screen's 4 corners seen from d.pose; false while the screen has no real size
 // Sensor page Properties: which sections a device kind shows on the Input (0) / Output (1) tab. Pure, so --roundtrip checks it.
 enum class PropSection { Connection, ScreenSize, Placement, Blobs, Calibration, SendOut, Triggers };

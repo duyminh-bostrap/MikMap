@@ -295,7 +295,10 @@ static void SendUdp(int port, const uint8_t* data, size_t n) {
 bool SensorSelfTest(std::string& why) {
   NewProject();
   A.routes.clear();   // a touch.down cord triggers a clip (selection, active column): a real project change, not the live state under test
-  const int port = 39517;
+  constexpr double kWait = 10.0;   // every wait loop exits on success; the long deadline only matters on a slow or loaded machine
+  int port = 0;   // a free UDP port the OS picked (a probe binds port 0, reads it back, lets it go); a fixed one may be taken
+  { mikmap::OscConfig pc; pc.port = 0; mikmap::OscSource probe(pc); if (probe.start()) port = probe.boundPort(); }
+  if (port == 0) { why = "sensor: cannot get a free UDP port"; return false; }
   // `/mikmap/touch 16 0.5 0.25 0.0` — byte for byte the vector tests/test_osc.cpp and the pose_bridge test share
   static const uint8_t pkt[40] = {0x2f,0x6d,0x69,0x6b,0x6d,0x61,0x70,0x2f,0x74,0x6f,0x75,0x63,0x68,0,0,0, 0x2c,0x69,0x66,0x66,0x66,0,0,0,
                                   0,0,0,0x10, 0x3f,0,0,0, 0x3e,0x80,0,0, 0,0,0,0};
@@ -319,7 +322,7 @@ bool SensorSelfTest(std::string& why) {
   MarkSaved();
   SensorsTick(now());
   SendUdp(port, pkt, sizeof pkt);
-  for (double t0 = now(); now() - t0 < 2.0 && dev("selftest-a").touches.empty();) { SensorsTick(now()); std::this_thread::sleep_for(std::chrono::milliseconds(5)); }
+  for (double t0 = now(); now() - t0 < kWait && dev("selftest-a").touches.empty();) { SensorsTick(now()); std::this_thread::sleep_for(std::chrono::milliseconds(5)); }
   Device& da = dev("selftest-a");
   if (da.touches.size() != 1 || da.touches[0].id != kCalibJoint) return fail("sensor: a UDP touch did not reach the Skeleton device");
   if (da.status != (int)mikmap::SourceStatus::Running || da.packets < 1) return fail("sensor: a running source must report Running and its packet count");
@@ -327,11 +330,11 @@ bool SensorSelfTest(std::string& why) {
 
   // Capture: 30 new frames of joint 16 average into calib[0] and the wizard moves on
   A.selDevice = (int)(&da - A.devices.data()); A.wizardStep = 1; StartCapture(1);
-  for (double t0 = now(); now() - t0 < 3.0 && A.wizardStep == 1;) { SendUdp(port, pkt, sizeof pkt); SensorsTick(now()); std::this_thread::sleep_for(std::chrono::milliseconds(5)); }
+  for (double t0 = now(); now() - t0 < kWait && A.wizardStep == 1;) { SendUdp(port, pkt, sizeof pkt); SensorsTick(now()); std::this_thread::sleep_for(std::chrono::milliseconds(5)); }
   if (A.wizardStep != 2 || std::fabs(da.calib[0].mx - 0.5f) > 1e-3f || std::fabs(da.calib[0].my - 0.25f) > 1e-3f) return fail("sensor: Capture did not average the wrist into the calibration point");
   // ...and a frame without exactly one candidate (the wrist let go) cancels it with a message
   StartCapture(2); A.toast.clear();
-  for (double t0 = now(); now() - t0 < 1.5 && A.toast.empty();) { SensorsTick(now()); std::this_thread::sleep_for(std::chrono::milliseconds(5)); }
+  for (double t0 = now(); now() - t0 < kWait && A.toast.empty();) { SensorsTick(now()); std::this_thread::sleep_for(std::chrono::milliseconds(5)); }
   if (A.toast.rfind("Need exactly one point", 0) != 0) return fail("sensor: Capture without a candidate point must say so");
   A.wizardStep = 0;
 
@@ -347,11 +350,11 @@ bool SensorSelfTest(std::string& why) {
   Device h = MakeDevice(DevKind::Hokuyo, "selftest-h");
   h.host = "127.0.0.1"; h.port = hokuyo.port(); h.enabled = true;
   A.devices.push_back(h);
-  for (double t0 = now(); now() - t0 < 2.0 && !(DeviceScan(dev("selftest-h")) && dev("selftest-h").touches.size() == 1);) { SensorsTick(now()); std::this_thread::sleep_for(std::chrono::milliseconds(5)); }
+  for (double t0 = now(); now() - t0 < kWait && !(DeviceScan(dev("selftest-h")) && dev("selftest-h").touches.size() == 1);) { SensorsTick(now()); std::this_thread::sleep_for(std::chrono::milliseconds(5)); }
   Device& dh = dev("selftest-h");
   if (!DeviceScan(dh) || dh.touches.size() != 1) return fail("sensor: a Hokuyo scan did not produce exactly one blob");
   A.selDevice = (int)(&dh - A.devices.data()); A.wizardStep = 1; StartCapture(1);
-  for (double t0 = now(); now() - t0 < 3.0 && A.wizardStep == 1;) { SensorsTick(now()); std::this_thread::sleep_for(std::chrono::milliseconds(5)); }
+  for (double t0 = now(); now() - t0 < kWait && A.wizardStep == 1;) { SensorsTick(now()); std::this_thread::sleep_for(std::chrono::milliseconds(5)); }
   if (A.wizardStep != 2 || std::fabs(dh.calib[0].mx - 1000.f) > 25.f) return fail("sensor: Hokuyo Capture did not average the blob at 1000 mm");
   A.wizardStep = 0;
 
@@ -366,19 +369,39 @@ bool SensorSelfTest(std::string& why) {
     if (std::fabs(ox - 960) > 2 || std::fabs(oy - 600) > 2) return fail("sensor: a blob 1 m in front of a bottom-middle lidar must land at (960, 600)");
     {   // Send out: that blob, as real OSC over loopback, arrives at (960/1920, 600/1080) of the screen
       mikmap::OutPacket nm; mikmap::setOutDevice(nm, dh.name.c_str());
-      mikmap::OscConfig oc; oc.port = 39533; oc.addressPrefix = std::string("/mikmap/") + nm.device + "/touch";
+      mikmap::OscConfig oc; oc.port = 0; oc.addressPrefix = std::string("/mikmap/") + nm.device + "/touch";
       mikmap::OscSource rx(oc);
-      if (!rx.start()) return fail("send out: cannot listen on UDP " + std::to_string(oc.port) + ": " + rx.lastError());
-      dh.outOn = true; dh.outProto = 0; dh.outHost = "127.0.0.1"; dh.outPort = oc.port;
+      if (!rx.start()) return fail("send out: cannot listen on UDP: " + rx.lastError());
+      dh.outOn = true; dh.outProto = 0; dh.outHost = "127.0.0.1"; dh.outPort = rx.boundPort();
       bool got = false;
-      for (double t0 = now(); now() - t0 < 2.0 && !got;) {
+      for (double t0 = now(); now() - t0 < kWait && !got;) {
         SensorsTick(now());
         if (rx.frames().consume() && rx.frames().readSlot().count == 1) got = true; else std::this_thread::sleep_for(std::chrono::milliseconds(5));
       }
-      if (!got) return fail("send out: no OSC touch from the placed Hokuyo within 2 s");
+      if (!got) return fail("send out: no OSC touch from the placed Hokuyo within 10 s");
       const mikmap::TouchPoint& tp = rx.frames().readSlot().points[0];
       if (std::fabs(tp.x - 0.5f) > 0.01f || std::fabs(tp.y - 0.556f) > 0.01f) return fail("send out: the touch must arrive normalised, about (0.5, 0.556)");
       dh.outOn = false; rx.stop();
+    }
+    {   // a Transform click that moves nothing (~1e-4 px round-trip) is no edit; a real move makes it Custom (4-point)
+      ImVec2 q[4]; for (int i = 0; i < 4; ++i) q[i] = ImVec2(dh.calib[i].tx + 1e-3f, dh.calib[i].ty - 1e-3f);
+      const float tx0 = dh.calib[0].tx;
+      if (QuadEdit(dh, q) || !dh.placed || dh.calib[0].tx != tx0) return fail("sensor: a quad edit under 0.01 px must not flip a placed lidar to Custom");
+      Device hand = dh; q[2].x += 0.5f;
+      if (!QuadEdit(hand, q) || hand.placed || hand.calib[2].tx != q[2].x) return fail("sensor: moving a quad point by hand must make the lidar Custom (4-point)");
+    }
+    {   // a placed lidar whose screen is deleted keeps its calibration: it is never re-derived on the fallback screen
+      Screen ns; ns.id = A.uid("screen"); ns.name = "Gone"; ns.realW = 3000; ns.realH = 1500;
+      A.screens.push_back(ns);   // invalidates hs: not used below
+      dh.screenId = ns.id;
+      if (!ApplyPlacement(dh)) return fail("sensor: a placed lidar on the extra screen must be calibrated");
+      const std::vector<Calib> kept = dh.calib;
+      A.deleteScreen(ns.id);
+      for (int k = 0; k < 5; ++k) SensorsTick(now());
+      bool same = dh.placed && dh.calibrated;
+      for (int i = 0; i < 4; ++i) same = same && dh.calib[i].tx == kept[i].tx && dh.calib[i].ty == kept[i].ty && dh.calib[i].mx == kept[i].mx && dh.calib[i].my == kept[i].my;
+      if (!same) return fail("sensor: a placed lidar whose screen was deleted must keep its calibration, not re-derive it on the fallback screen");
+      dh.screenId.clear(); ApplyPlacement(dh);   // back on screen 0 for the checks below
     }
     dh.placed = false; dh.calib[0].tx += 50; const float hand = dh.calib[0].tx; dh.pose.x = 2500;
     ApplyPlacement(dh); SensorsTick(now());
@@ -398,13 +421,13 @@ bool SensorSelfTest(std::string& why) {
   }
 
   // Add-sensor wizard: the scan thread finds a fake lidar, then step 1 Hokuyo -> step 2 typed 127.0.0.1:<port> -> step 3,
-  // one enabled device on the chosen screen that reaches Running within 2 s.
+  // one enabled device on the chosen screen that reaches Running within 10 s.
   {
     mikmap::test::FakeScipServer wz;
     if (!wz.error().empty()) return fail("wizard: the fake SCIP server did not start");
     StartIpScan("127.0.0.2", 30, wz.port());   // 127.0.0.0/30 without itself = just 127.0.0.1
     std::vector<std::string> found; bool got = false;
-    for (double t0 = now(); now() - t0 < 2.0 && !(got = IpScanDone(found));) std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    for (double t0 = now(); now() - t0 < kWait && !(got = IpScanDone(found));) std::this_thread::sleep_for(std::chrono::milliseconds(5));
     if (!got || found != std::vector<std::string>{"127.0.0.1"}) return fail("wizard: the IP scan thread did not report the listening fake lidar");
 
     const size_t before = A.devices.size();
@@ -420,8 +443,8 @@ bool SensorSelfTest(std::string& why) {
     Device& nw = dev(nid.c_str());
     if (nw.screenId != A.screens[1].id || !nw.enabled || nw.host != "127.0.0.1" || nw.port != wz.port() || nw.name != "Hokuyo 127.0.0.1:" + std::to_string(wz.port()))
       return fail("wizard: the new Hokuyo must be enabled, on the chosen screen, at the typed address");
-    for (double t0 = now(); now() - t0 < 2.0 && dev(nid.c_str()).status != (int)mikmap::SourceStatus::Running;) { SensorsTick(now()); std::this_thread::sleep_for(std::chrono::milliseconds(5)); }
-    if (dev(nid.c_str()).status != (int)mikmap::SourceStatus::Running) return fail("wizard: the new Hokuyo did not reach Running within 2 s");
+    for (double t0 = now(); now() - t0 < kWait && dev(nid.c_str()).status != (int)mikmap::SourceStatus::Running;) { SensorsTick(now()); std::this_thread::sleep_for(std::chrono::milliseconds(5)); }
+    if (dev(nid.c_str()).status != (int)mikmap::SourceStatus::Running) return fail("wizard: the new Hokuyo did not reach Running within 10 s");
     SensorWizardDone();
     if (A.wizard.step != 0 || !A.curDevice() || A.curDevice()->id != nid) return fail("wizard: Done must close it and select the new device");
     dev(nid.c_str()).enabled = false; SensorsTick(now());   // stop it before the fake server goes away
@@ -463,7 +486,7 @@ bool SensorSelfTest(std::string& why) {
   Device q = MakeDevice(DevKind::Plugin, "selftest-p");
   q.name = fp->name; q.plugin = MIKMAP_FAKE_PLUGIN_FILE; q.config = "{\"fail_after\":0}"; q.enabled = true;
   A.devices.push_back(q);
-  for (double t0 = now(); now() - t0 < 2.0 && !(DeviceScan(dev("selftest-p")) && dev("selftest-p").touches.size() == 1);) { SensorsTick(now()); std::this_thread::sleep_for(std::chrono::milliseconds(5)); }
+  for (double t0 = now(); now() - t0 < kWait && !(DeviceScan(dev("selftest-p")) && dev("selftest-p").touches.size() == 1);) { SensorsTick(now()); std::this_thread::sleep_for(std::chrono::milliseconds(5)); }
   if (!DeviceScan(dev("selftest-p")) || dev("selftest-p").touches.size() != 1) return fail("sensor: a plugin scan did not produce exactly one blob");
 
   // plugin + config are project data: save -> load must bring back the file name and the JSON unchanged

@@ -405,9 +405,7 @@ static void SensorOutputView(ImRect area, Device& d) {
   ImVec2 q[4]; for (int i = 0; i < 4; ++i) q[i] = ImVec2(d.calib[i].tx, d.calib[i].ty);
   const std::string id = "##sensorquad" + d.id;
   const bool released = EditQuad(id.c_str(), X, q, A.sensorTool, pal::mint, OverStage(area));
-  bool moved = false;
-  for (int i = 0; i < 4; ++i) if (q[i].x != d.calib[i].tx || q[i].y != d.calib[i].ty) { d.calib[i].tx = q[i].x; d.calib[i].ty = q[i].y; moved = true; }
-  if (moved) d.placed = false;   // a hand edit is Custom (4-point) from the first moved pixel, so the placement never pulls the point back mid-drag
+  QuadEdit(d, q);
   if (released) A.pushHist();
   static const char* kCorner[4] = {"1", "2", "3", "4"};
   const ImVec2 qc = X.toPx(ImVec2((q[0].x + q[1].x + q[2].x + q[3].x) * 0.25f, (q[0].y + q[1].y + q[2].y + q[3].y) * 0.25f));
@@ -543,7 +541,7 @@ static void ConnectionSection(Device& d, float x, float w, float oy, float& y) {
   if (WideButton(x, oy + y, w, "Reconnect", "rotate-ccw", pal::mint)) { RestartSource(d.id); A.notify("Reconnecting " + d.name); }
   y += 26 + 8;
   if (d.kind == DevKind::Hokuyo) {   // look for more lidars on the network: the add wizard at its scan step, on this sensor's screen
-    if (WideButton(x, oy + y, w, "Scan again", "radar", pal::mint)) { OpenSensorWizard(d.screenId); A.wizard.kind = DevKind::Hokuyo; SensorWizardNext(); }
+    if (WideButton(x, oy + y, w, "Scan again", "radar", pal::mint)) { OpenSensorWizard(DeviceScreen(d)->id); A.wizard.kind = DevKind::Hokuyo; SensorWizardNext(); }
     y += 26 + 8;
   }
 }
