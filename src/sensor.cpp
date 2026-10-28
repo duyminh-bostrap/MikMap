@@ -681,6 +681,52 @@ static void CalibrationSection(Device& d, float x, float w, float oy, float& y) 
   y += 26 + 8;
 }
 
+// Mapped touches go out from their own thread (sources.cpp) as 0..1 of the screen; the counters are the one shared sender's.
+static void SendOutSection(Device& d, float x, float w, float oy, float& y) {
+  CheckRow(x, oy + y, "Send touches out", d.outOn); y += 24 + 4;
+  const float prev = g.alpha; if (!d.outOn) g.alpha *= 0.5f;
+  Text(x, oy + y + 12, MONO_R, 9, K(pal::t66), "Format");
+  {   // OSC / UDP text, a two-button segmented choice
+    static const char* opt[2] = {"OSC", "UDP text"};
+    ImRect grp(x + 104, oy + y, x + w, oy + y + 24);
+    Box(grp, K(0x000000), K(pal::g2a), 3);
+    const float bw = (grp.GetWidth() - 6 - 2) * 0.5f;
+    for (int i = 0; i < 2; ++i) {
+      const float bx = grp.Min.x + 3 + i * (bw + 2);
+      ImRect br(bx, grp.Min.y + 3, bx + bw, grp.Max.y - 3);
+      Hit h = HitR(br);
+      const bool on = d.outProto == i;
+      if (on) Fill(br, K(pal::coral), 2); else if (h.hover) Fill(br, K(pal::g1c), 2);
+      TextC((br.Min.x + br.Max.x) * 0.5f, (br.Min.y + br.Max.y) * 0.5f, UI_B, 9, K(on ? pal::white : pal::t88), opt[i]);
+      if (h.hover) CursorHand();
+      if (h.click && !on) { d.outProto = i; A.pushHist(); }
+    }
+  }
+  y += 24 + 4;
+  {   // applied when the field loses focus, like Connection's Host / Port
+    static std::string hostEdit; static int portEdit = 0;
+    if (ImGui::GetActiveID() != ImGui::GetID("##outhost")) hostEdit = d.outHost;
+    Text(x, oy + y + 12, MONO_R, 9, K(pal::t66), "Host");
+    TextField("##outhost", Rc(x + 104, oy + y, w - 104, 24), hostEdit, MONO_R, 10);
+    if (ImGui::IsItemDeactivatedAfterEdit()) { d.outHost = hostEdit; A.pushHist(); }
+    y += 24 + 4;
+    if (ImGui::GetActiveID() != ImGui::GetID("##outport")) portEdit = d.outPort;
+    Text(x, oy + y + 12, MONO_R, 9, K(pal::t66), "Port");
+    IntField("##outport", Rc(x + 104, oy + y, w - 104, 24), portEdit);
+    if (ImGui::IsItemDeactivatedAfterEdit()) {
+      if (portEdit >= 1 && portEdit <= 65535) { d.outPort = portEdit; A.pushHist(); } else A.notify("Port must be 1-65535");
+    }
+    y += 24 + 4;
+  }
+  uint64_t sent = 0, dropped = 0; std::string err; SendOutStats(sent, dropped, err);
+  char sb[64]; snprintf(sb, sizeof sb, "%llu sent \xC2\xB7 %llu dropped", (unsigned long long)sent, (unsigned long long)dropped);
+  PropertyRow(Rc(x - 6, oy + y, w + 12, 24), "Packets", sb); y += 24 + 2;
+  if (!err.empty()) { TextEll(x, oy + y + 6, w, MONO_R, 9, K(pal::red), err.c_str()); y += 12 + 4; }
+  const char* hint = d.outProto == 1 ? "\"<name> <id> <x> <y>\" \xC2\xB7 x, y 0..1" : "/mikmap/<name>/touch id x y \xC2\xB7 x, y 0..1";
+  TextEll(x, oy + y + 5, w, MONO_R, 8, K(pal::t66), hint); y += 10 + 8;
+  g.alpha = prev;
+}
+
 static void TriggersSection(float x, float w, float oy, float& y) {   // G17 patch cords (the old Parameter routing panel)
   for (auto& rt : A.routes) {
     ImRect cr(x, oy + y, x + w, oy + y + 6 + 14 + 4 + 12 + 6 + 2);
@@ -770,7 +816,7 @@ static void SensorProps(ImRect r, Device* d) {
       case PropSection::Placement: if (Section(ox, W, x, w, oy, y, "Placement", d->kind, s)) PlacementSection(*d, x, w, oy, y); break;
       case PropSection::Blobs: if (Section(ox, W, x, w, oy, y, "Blob tracking", d->kind, s)) BlobSection(*d, x, w, oy, y); break;
       case PropSection::Calibration: if (Section(ox, W, x, w, oy, y, "Calibration", d->kind, s)) CalibrationSection(*d, x, w, oy, y); break;
-      case PropSection::SendOut: Section(ox, W, x, w, oy, y, "Send out", d->kind, s); break;   // Task 8 fills it
+      case PropSection::SendOut: if (Section(ox, W, x, w, oy, y, "Send out", d->kind, s, !d->outOn ? "off" : d->outProto == 1 ? "UDP text" : "OSC")) SendOutSection(*d, x, w, oy, y); break;
       case PropSection::Triggers: {
         int act = 0; for (auto& rt : A.routes) act += rt.active;
         char nb[24]; snprintf(nb, sizeof nb, "%d active", act);

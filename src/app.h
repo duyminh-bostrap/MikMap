@@ -220,6 +220,7 @@ struct Device {
   mikmap::LidarPose pose; bool placed = false;   // lidar: where it hangs on the screen's surface (mm); placed = the user confirmed it
   float rangeMm = 0;                 // lidar: rays beyond this are ignored; 0 = unlimited
   bool blobOn = true; float blobMinMm = 15, blobMaxMm = 600, blobGapMm = 50;   // lidar: blob tracking switch + chord-width / gap thresholds
+  bool outOn = false; int outProto = 0; std::string outHost = "127.0.0.1"; int outPort = 7000;   // Send out: mapped touches as OSC (0) / UDP text (1), x,y = 0..1 of the screen
   // runtime only, never serialized (a live counter must not make the project dirty)
   std::vector<Touch> touches; int status = 0; std::string error; int fps = 0; float latencyMs = 0; uint64_t packets = 0;
 };
@@ -701,6 +702,7 @@ namespace mikmap { class ISensorSource; struct LaserScan; struct SensorPlugin; }
 inline constexpr int kCalibJoint = 16;   // MediaPipe RIGHT_WRIST of person slot 0 (OSC touch id 16): the point a Skeleton calibrates with
 void SensorsTick(double now);            // render thread, once per frame: start/stop/restart sources from enabled+host/port, consume frames into d.touches, fire touch.down routes, refresh status/error/fps/latency/packets, run the capture
 void SensorsShutdown();
+void SendOutStats(uint64_t& sent, uint64_t& dropped, std::string& error);   // the one touch sender shared by every device (Send out section)
 void RestartSource(const std::string& deviceId);   // Reconnect: drop the live source; the next SensorsTick starts a fresh one
 mikmap::ISensorSource* DeviceSource(const Device& d);   // nullptr for a Sim device or one that is not running
 const mikmap::LaserScan* DeviceScan(const Device& d);   // latest raw scan of any lidar source (ScanSource), or nullptr after no scan yet

@@ -349,6 +349,8 @@ JsonValue Serialize(const App& a) {
     dob.set("pose", po); dob.set("placed", d.placed); dob.set("range", d.rangeMm);
     JsonValue bl = JsonValue::object(); bl.set("on", d.blobOn); bl.set("min", d.blobMinMm); bl.set("max", d.blobMaxMm); bl.set("gap", d.blobGapMm);
     dob.set("blob", bl);
+    JsonValue ou = JsonValue::object(); ou.set("on", d.outOn); ou.set("proto", d.outProto); ou.set("host", d.outHost); ou.set("port", d.outPort);
+    dob.set("out", ou);
     ds.push(dob);
   }
   sensor.set("devices", ds);
@@ -476,6 +478,8 @@ bool Deserialize(const JsonValue& root, App& out, std::string& err) {
         v.placed = d["placed"].asBool(false); v.rangeMm = (float)d["range"].asNumber(0);
         const JsonValue& bl = d["blob"]; v.blobOn = bl["on"].asBool(true);
         v.blobMinMm = (float)bl["min"].asNumber(v.blobMinMm); v.blobMaxMm = (float)bl["max"].asNumber(v.blobMaxMm); v.blobGapMm = (float)bl["gap"].asNumber(v.blobGapMm);
+        const JsonValue& ou = d["out"]; v.outOn = ou["on"].asBool(false); v.outProto = std::clamp(ou["proto"].asInt(0), 0, 1);
+        v.outHost = ou["host"].asString(v.outHost); v.outPort = ou["port"].asInt(v.outPort);   // a bad port is kept: Send out reports it
       } else {   // before per-device calibration: one global calib/roi in `sensor`, which belonged to the (only kind then) simulated radar
         v.enabled = false; v.calibrated = true;
         readCal(sn, v);

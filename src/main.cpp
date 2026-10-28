@@ -639,7 +639,7 @@ int main(int argc, char** argv) {
   std::string shot; int startScreen = 0, frames = 12, W = 1440, H = 900, tab = -1, page = -1;
   bool sel = false, scaleGiven = false; int selLi = 0, selCi = 0, ctxTest = 0, cliScale = 100;
   bool fakeHokuyo = false, fakePlugin = false;
-  int spage = -1, stool = -1, wizard = 0; std::string place;
+  int spage = -1, stool = -1, wizard = 0; std::string place, sendOut;
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
     if (a == "--shot" && i + 1 < argc) shot = argv[++i];
@@ -652,6 +652,7 @@ int main(int argc, char** argv) {
     else if (a == "--wizard" && i + 1 < argc) wizard = std::clamp(atoi(argv[++i]), 1, 3);   // test aid: the add-sensor wizard at step N (Hokuyo; 3 = after adding the fake lidar + an unreachable one)
     else if (a == "--stool" && i + 1 < argc) stool = atoi(argv[++i]);   // test aid: Sensor Output tool, 0 Edit points / 1 Transform
     else if (a == "--place" && i + 1 < argc) place = argv[++i];         // test aid: --place W,H,x,y,angle = the selected sensor's screen in mm + its pose, placed
+    else if (a == "--sendout" && i + 1 < argc) sendOut = argv[++i];     // test aid: --sendout host:port = the selected sensor sends its touches out (OSC)
     else if (a == "--roundtrip" && i + 1 < argc) roundtrip = argv[++i];
     else if (a == "--menu") A.projectMenu = true;
     else if (a == "--out") openOut = true;
@@ -770,11 +771,14 @@ int main(int argc, char** argv) {
       if (ProjectDirty()) return fail("runtime device counters made the project dirty");
       { NewProject(); Device& d = A.devices[2]; d.pose = {1234, 567, -90, true}; d.placed = true; d.rangeMm = 3500;
         d.blobOn = false; d.blobMinMm = 22; d.blobMaxMm = 480; d.blobGapMm = 70;
+        d.outOn = true; d.outProto = 1; d.outHost = "10.0.0.9"; d.outPort = 9001;
         std::string e2; if (!SaveProject(roundtrip, e2) || !LoadProject(roundtrip, e2)) return fail(e2.c_str());
         const Device& r = A.devices[2];
         if (r.pose.x != 1234 || r.pose.y != 567 || r.pose.angleDeg != -90 || !r.pose.mirror || !r.placed || r.rangeMm != 3500
             || r.blobOn || r.blobMinMm != 22 || r.blobMaxMm != 480 || r.blobGapMm != 70) return fail("pose/range/blob did not round-trip");
-        const Device& f = A.devices[1]; if (f.placed || f.rangeMm != 0 || !f.blobOn || f.blobMinMm != 15 || f.blobMaxMm != 600 || f.blobGapMm != 50) return fail("device defaults");
+        if (!r.outOn || r.outProto != 1 || r.outHost != "10.0.0.9" || r.outPort != 9001) return fail("send-out settings did not round-trip");
+        const Device& f = A.devices[1]; if (f.placed || f.rangeMm != 0 || !f.blobOn || f.blobMinMm != 15 || f.blobMaxMm != 600 || f.blobGapMm != 50
+            || f.outOn || f.outProto != 0 || f.outHost != "127.0.0.1" || f.outPort != 7000) return fail("device defaults");
         MarkSaved(); SensorsTick(0.0); SensorsTick(1.0);
         if (ProjectDirty()) return fail("SensorsTick alone made the project dirty"); }
     }
@@ -1761,6 +1765,10 @@ int main(int argc, char** argv) {
     float v[5] = {}; const char* c = place.c_str();
     for (int k = 0; k < 5 && *c; ++k) { char* e = nullptr; v[k] = std::strtof(c, &e); c = *e == ',' ? e + 1 : e; }
     s->realW = v[0]; s->realH = v[1]; d->pose = mikmap::LidarPose{v[2], v[3], v[4], false}; d->placed = true;
+  }
+  if (!sendOut.empty()) if (Device* d = A.curDevice()) {
+    const size_t c = sendOut.rfind(':');
+    d->outOn = true; d->outHost = sendOut.substr(0, c); if (c != std::string::npos) d->outPort = std::atoi(sendOut.c_str() + c + 1);
   }
   if (vout > 0) {   // N projectors side by side, 20 % overlap, soft edge on, each in its own Virtual Output window
     const float ov = 0.2f, iw = 1920.f / (vout - (vout - 1) * ov);

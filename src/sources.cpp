@@ -20,6 +20,7 @@
 #include "core/util/Clock.h"
 #include "io/ISensorSource.h"
 #include "io/net/NetScan.h"
+#include "io/net/TouchSender.h"
 #include "io/plugin/PluginLoader.h"
 #include "io/sources/HokuyoSource.h"
 #include "io/sources/OscSource.h"
@@ -29,6 +30,7 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cstring>
 #include <filesystem>
 #include <memory>
 #include <system_error>
@@ -49,6 +51,27 @@ struct Live {
   float latencyMs = 0;
 };
 std::map<std::string, Live> g_live;   // keyed by Device::id
+
+// Send out: one sender thread for every device, started on the first device that sends. Only SensorsTick pushes (its single producer).
+mikmap::TouchSender g_out;
+
+// A new frame of a calibrated device, through its H_s, as 0..1 of the 1920x1080 stage (not clamped). No allocation: render thread.
+void SendOut(const Device& d, const mikmap::SensorFrame& f) {
+  float H[9];
+  if (!d.outOn || !DeviceH(d, H)) return;
+  if (!g_out.running()) g_out.start();
+  mikmap::OutPacket p;
+  if (d.outHost.size() < sizeof p.host) std::memcpy(p.host, d.outHost.c_str(), d.outHost.size() + 1);   // too long = empty: the sender says "Host is empty"
+  p.port = d.outPort >= 1 && d.outPort <= 65535 ? (uint16_t)d.outPort : 0;   // 0: the sender reports the bad port
+  p.proto = (uint8_t)(d.outProto == 1);
+  mikmap::setOutDevice(p, d.name.c_str());
+  p.count = (uint8_t)std::min<int>(f.count, mikmap::kMaxTouchPoints);
+  for (int i = 0; i < p.count; ++i) {
+    float ox, oy; ApplyH(H, f.points[i].x, f.points[i].y, ox, oy);
+    p.ids[i] = f.points[i].id; p.xy[2 * i] = ox / 1920.f; p.xy[2 * i + 1] = oy / 1080.f;
+  }
+  g_out.push(p);
+}
 
 // Calibration capture: the average of one point over 30 consecutive new frames.
 constexpr int kCaptureFrames = 30;
@@ -204,6 +227,7 @@ void SensorsTick(double now) {
       d.touches.clear();
       for (int i = 0; i < f.count; ++i) d.touches.push_back(Touch{(int)f.points[i].id, f.points[i].x, f.points[i].y});
       L.latencyMs = (float)mikmap::Clock::nsToMs(mikmap::Clock::nowNs() - f.tCaptureNs) + (L.osc ? L.osc->senderLatencyMs() : 0.f);
+      SendOut(d, f);
     }
     mikmap::TouchEvent ev;
     while (S.events().pop(ev)) if (ev.state == mikmap::TouchState::Down) fire = true;
@@ -221,7 +245,11 @@ void SensorsTick(double now) {
   if (fire) FireTouchRoutes();
 }
 
-void SensorsShutdown() { g_live.clear(); g_cap.on = false; JoinIpScan(); }
+void SensorsShutdown() { g_live.clear(); g_cap.on = false; JoinIpScan(); g_out.stop(); }
+void SendOutStats(uint64_t& sent, uint64_t& dropped, std::string& error) {
+  sent = g_out.sent(); dropped = g_out.dropped();
+  error = g_out.lastError();   // lock-free (error code -> text)
+}
 void RestartSource(const std::string& deviceId) { g_live.erase(deviceId); }
 
 mikmap::ISensorSource* DeviceSource(const Device& d) {
@@ -336,6 +364,22 @@ bool SensorSelfTest(std::string& why) {
     if (!ApplyPlacement(dh) || !dh.calibrated || !DeviceH(dh, H)) return fail("sensor: a placed lidar on a sized screen must be calibrated");
     ApplyH(H, 1000, 0, ox, oy);
     if (std::fabs(ox - 960) > 2 || std::fabs(oy - 600) > 2) return fail("sensor: a blob 1 m in front of a bottom-middle lidar must land at (960, 600)");
+    {   // Send out: that blob, as real OSC over loopback, arrives at (960/1920, 600/1080) of the screen
+      mikmap::OutPacket nm; mikmap::setOutDevice(nm, dh.name.c_str());
+      mikmap::OscConfig oc; oc.port = 39533; oc.addressPrefix = std::string("/mikmap/") + nm.device + "/touch";
+      mikmap::OscSource rx(oc);
+      if (!rx.start()) return fail("send out: cannot listen on UDP " + std::to_string(oc.port) + ": " + rx.lastError());
+      dh.outOn = true; dh.outProto = 0; dh.outHost = "127.0.0.1"; dh.outPort = oc.port;
+      bool got = false;
+      for (double t0 = now(); now() - t0 < 2.0 && !got;) {
+        SensorsTick(now());
+        if (rx.frames().consume() && rx.frames().readSlot().count == 1) got = true; else std::this_thread::sleep_for(std::chrono::milliseconds(5));
+      }
+      if (!got) return fail("send out: no OSC touch from the placed Hokuyo within 2 s");
+      const mikmap::TouchPoint& tp = rx.frames().readSlot().points[0];
+      if (std::fabs(tp.x - 0.5f) > 0.01f || std::fabs(tp.y - 0.556f) > 0.01f) return fail("send out: the touch must arrive normalised, about (0.5, 0.556)");
+      dh.outOn = false; rx.stop();
+    }
     dh.placed = false; dh.calib[0].tx += 50; const float hand = dh.calib[0].tx; dh.pose.x = 2500;
     ApplyPlacement(dh); SensorsTick(now());
     if (dh.calib[0].tx != hand) return fail("sensor: moving the lidar overwrote a hand-tuned (Custom 4-point) calibration");
