@@ -115,6 +115,15 @@ void OscSource::threadLoop() {
         closeSocketHandle(sock);
         return;
     }
+    {   // port 0 = the OS picks one (tests); boundPort() reports it once start() has returned true
+        sockaddr_in got{};
+#if defined(_WIN32)
+        int len = sizeof(got);
+#else
+        socklen_t len = sizeof(got);
+#endif
+        if (::getsockname(sock, reinterpret_cast<sockaddr*>(&got), &len) == 0) m_boundPort.store(ntohs(got.sin_port));
+    }
 
     // Timeout khi nhận: thread phải tỉnh dậy định kỳ để (a) thấy cờ dừng
     // và (b) cho điểm cũ hết hạn. Nếu chặn vô hạn ở recvfrom, stop() sẽ

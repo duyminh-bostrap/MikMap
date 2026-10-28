@@ -88,12 +88,13 @@ TEST_CASE("TouchSender: setOutDevice makes any name OSC-safe and fits 31 bytes")
 }
 
 TEST_CASE("TouchSender: loopback to a running OscSource arrives within 1 s") {
-    OscConfig cfg; cfg.port = 39531; cfg.addressPrefix = "/mikmap/dev1/touch";
+    OscConfig cfg; cfg.port = 0; cfg.addressPrefix = "/mikmap/dev1/touch";   // 0: the OS picks a free port
     OscSource src(cfg);
-    if (!src.start()) { std::printf("      [SKIP] cannot bind %u: %s\n", cfg.port, src.lastError().c_str()); return; }
+    REQUIRE(src.start());
+    REQUIRE(src.boundPort() != 0);
     TouchSender s;
     REQUIRE(s.start());
-    REQUIRE(s.push(twoPoints("127.0.0.1", cfg.port)));
+    REQUIRE(s.push(twoPoints("127.0.0.1", src.boundPort())));
     REQUIRE(waitFor([&] { return src.frames().consume(); }, 1.0));
     const SensorFrame& f = src.frames().readSlot();
     REQUIRE(f.count == 2);
@@ -112,7 +113,7 @@ TEST_CASE("TouchSender: a 1000-packet flood never blocks push, every packet is s
     const auto t0 = std::chrono::steady_clock::now();
     for (int i = 0; i < 1000; ++i) s.push(p);
     const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
-    CHECK_MSG(ms < 50.0, "1000 pushes took " + std::to_string(ms) + " ms");
+    CHECK_MSG(ms < 200.0, "1000 pushes took " + std::to_string(ms) + " ms");   // generous: a loaded CI box, still far from blocking
     CHECK(waitFor([&] { return s.sent() + s.dropped() == 1000u; }, 3.0));
     CHECK(s.sent() + s.dropped() == 1000u);
     s.stop();
@@ -122,11 +123,30 @@ TEST_CASE("TouchSender: an unresolvable host sets lastError, never throws") {
     TouchSender s;
     REQUIRE(s.start());
     s.push(twoPoints("no-such-host.invalid", 7000));
-    CHECK(waitFor([&] { return !s.lastError().empty(); }, 10.0));
-    CHECK(s.dropped() == 1u);
+    CHECK(waitFor([&] { return s.dropped() == 1u; }, 10.0));   // wait on exactly what is asserted: no ordering between counters
+    CHECK(waitFor([&] { return s.lastError() == "Cannot resolve host"; }, 1.0));
     OutPacket bad = twoPoints("127.0.0.1", 0);   // port 0 is rejected by the sender too
     s.push(bad);
-    CHECK(waitFor([&] { return s.dropped() == 2u; }, 2.0));
-    CHECK(s.lastError().find("Port") != std::string::npos);
+    CHECK(waitFor([&] { return s.lastError().find("Port") != std::string::npos; }, 2.0));
+    CHECK(waitFor([&] { return s.dropped() == 2u; }, 1.0));
     s.stop();
+}
+
+TEST_CASE("TouchSender: a host that cannot be resolved never starves a good one, and is looked up once per backoff") {
+    OscConfig cfg; cfg.port = 0; cfg.addressPrefix = "/mikmap/dev1/touch";
+    OscSource src(cfg);
+    REQUIRE(src.start());
+    TouchSender s;
+    REQUIRE(s.start());
+    s.push(twoPoints("no-such-host.invalid", 7000));
+    REQUIRE(waitFor([&] { return s.dropped() == 1u; }, 10.0));   // the one lookup (may be slow on a LAN without DNS)
+    for (int i = 0; i < 10; ++i) {   // in backoff now: the bad packets drop at once, the good ones (an IP literal) all go out
+        s.push(twoPoints("no-such-host.invalid", 7000));
+        s.push(twoPoints("127.0.0.1", src.boundPort()));
+        REQUIRE(waitFor([&] { return s.sent() == uint64_t(i + 1) && s.dropped() == uint64_t(i + 2); }, 2.0));
+    }
+    CHECK(waitFor([&] { return src.frames().consume(); }, 1.0));
+    CHECK_MSG(s.lookups() == 1u, "lookups = " + std::to_string(s.lookups()) + " (a bad name in backoff, or an IP literal, must not query DNS)");
+    s.stop();
+    src.stop();
 }

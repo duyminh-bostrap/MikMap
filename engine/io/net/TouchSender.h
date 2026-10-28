@@ -59,6 +59,7 @@ public:
 
     uint64_t dropped() const { return m_dropped.load(std::memory_order_relaxed); }   // queue overflow + send/resolve failures
     uint64_t sent() const { return m_sent.load(std::memory_order_relaxed); }
+    uint64_t lookups() const { return m_lookups.load(std::memory_order_relaxed); }   // name lookups (DNS) done so far; an IP literal never needs one
     std::string lastError() const;   // "" while the last failing target has since sent fine; lock-free
 
 private:
@@ -77,7 +78,7 @@ private:
     std::thread m_thread;
     std::atomic<bool> m_running{false};
     std::atomic<uint32_t> m_wake{0};
-    std::atomic<uint64_t> m_dropped{0}, m_sent{0};
+    std::atomic<uint64_t> m_dropped{0}, m_sent{0}, m_lookups{0};
     std::atomic<int> m_errKind{0}, m_errCode{0};   // see lastError()
 };
 

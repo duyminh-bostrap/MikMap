@@ -37,8 +37,9 @@ bool safeChar(char c) {
 }
 
 using Clk = std::chrono::steady_clock;
+constexpr auto kRetry = std::chrono::seconds(5);
 
-// Resolved targets, sender thread only. A failure is retried after 2 s so a bad name does not query DNS per packet.
+// Resolved targets, sender thread only. A failure is retried kRetry after its lookup ended so a bad name does not query DNS per packet.
 // shortcut: a name is resolved once per host:port; a host whose IP changes needs its Host edited (or an app restart) to re-resolve.
 struct Target { std::string host; uint16_t port = 0; sockaddr_in addr{}; bool ok = false; Clk::time_point at{}; };
 
@@ -165,10 +166,10 @@ void TouchSender::threadLoop() {
     OutPacket p;
 
     auto fail = [&](int kind, int code, const std::string& key) {
+        m_dropped.fetch_add(1, std::memory_order_relaxed);   // counted BEFORE the error is published (release), so lastError() != "" implies dropped() counts it
         m_errCode.store(code, std::memory_order_relaxed);
-        m_errKind.store(kind, std::memory_order_release);
         failKey = key;
-        m_dropped.fetch_add(1, std::memory_order_relaxed);
+        m_errKind.store(kind, std::memory_order_release);
     };
 
     auto sendOne = [&] {
@@ -181,16 +182,27 @@ void TouchSender::threadLoop() {
 
         Target* t = nullptr;
         for (auto& c : cache) if (c.port == p.port && c.host == host) { t = &c; break; }
-        if (!t || (!t->ok && Clk::now() - t->at > std::chrono::seconds(2))) {   // new target, or retry a failed name
+        // A failed name is retried only kRetry after its lookup RETURNED (that can take seconds: LLMNR/NetBIOS on a LAN
+        // without DNS); until then its packets drop at once and every other target keeps flowing.
+        if (!t || (!t->ok && Clk::now() - t->at > kRetry)) {   // new target, or retry a failed name
             if (!t) t = &cache[nextSlot++ % cache.size()];
-            *t = Target{host, p.port, {}, false, Clk::now()};
+            *t = Target{host, p.port, {}, false, {}};
+            const std::string port = std::to_string(p.port);
             addrinfo hints{}; hints.ai_family = AF_INET; hints.ai_socktype = SOCK_DGRAM;   // shortcut: IPv4 only (lidar networks); add an AF_INET6 socket if a receiver needs v6
+            hints.ai_flags = AI_NUMERICHOST;   // an IP literal first: no DNS at all
             addrinfo* res = nullptr;
-            if (::getaddrinfo(host.c_str(), std::to_string(p.port).c_str(), &hints, &res) == 0 && res) {
+            if (::getaddrinfo(host.c_str(), port.c_str(), &hints, &res) != 0 || !res) {
+                if (res) { ::freeaddrinfo(res); res = nullptr; }
+                hints.ai_flags = 0;
+                m_lookups.fetch_add(1, std::memory_order_relaxed);
+                if (::getaddrinfo(host.c_str(), port.c_str(), &hints, &res) != 0) res = nullptr;
+            }
+            if (res) {
                 std::memcpy(&t->addr, res->ai_addr, sizeof t->addr);
                 t->ok = true;
+                ::freeaddrinfo(res);
             }
-            if (res) ::freeaddrinfo(res);
+            t->at = Clk::now();
         }
         if (!t->ok) return fail(1, 0, key);
 

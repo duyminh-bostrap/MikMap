@@ -79,6 +79,9 @@ public:
 
     const OscConfig& config() const { return m_cfg; }
 
+    /// The UDP port actually bound (differs from config().port only when that is 0 = let the OS pick). 0 before start().
+    uint16_t boundPort() const { return m_boundPort.load(); }
+
     /// Chỉ đổi được khi đang dừng — cổng UDP đã bind rồi thì không đổi được.
     void setConfig(const OscConfig& cfg);
 
@@ -117,6 +120,7 @@ private:
     std::atomic<uint64_t> m_packets{0};
     std::atomic<uint64_t> m_malformed{0};
     std::atomic<float> m_senderLatencyMs{0.0f};
+    std::atomic<uint16_t> m_boundPort{0};
 
     mutable std::mutex m_errorMutex;
     std::string m_error;
