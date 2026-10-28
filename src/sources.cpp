@@ -382,6 +382,28 @@ bool SensorSelfTest(std::string& why) {
     if (A.wizard.step != 0 || !A.curDevice() || A.curDevice()->id != nid) return fail("wizard: Done must close it and select the new device");
     dev(nid.c_str()).enabled = false; SensorsTick(now());   // stop it before the fake server goes away
 
+    // an address that is already a device (here disabled, so it would still answer a scan) is listed unticked and never
+    // created twice; Next adds exactly the ticked rows, even with more rows than fit on screen (the list scrolls)
+    {
+      OpenSensorWizard(A.screens[1].id); A.wizard.kind = DevKind::Hokuyo; SensorWizardNext();
+      const std::string taken = "127.0.0.1:" + std::to_string(wz.port());
+      std::vector<std::string> res{taken};
+      for (int k = 0; k < 20; ++k) res.push_back("192.0.2." + std::to_string(10 + k));   // TEST-NET, never connected here
+      SensorWizardMergeScan(res);
+      A.wizard.manualHost = taken; SensorWizardAddManual();
+      if (A.wizard.found.size() != 21 || A.wizard.pick[0] || !WizardHostAdded(taken)) return fail("wizard: a lidar that is already a device must be listed once, unticked");
+      int ticked = 0; for (char c : A.wizard.pick) ticked += c;
+      A.wizard.pick[0] = 1;   // a stale tick must still not create a second device for it
+      const size_t pre = A.devices.size();
+      SensorWizardNext();
+      if (ticked != 20 || A.devices.size() - pre != (size_t)ticked || A.wizard.added.size() != (size_t)ticked) return fail("wizard: Next must add exactly the ticked rows");
+      int same = 0; for (auto& e : A.devices) same += e.kind == DevKind::Hokuyo && e.host == "127.0.0.1" && e.port == wz.port();
+      if (same != 1) return fail("wizard: a known lidar address was added a second time");
+      const std::vector<std::string> made = A.wizard.added;   // drop them again: the checks below count from `before`
+      A.devices.erase(std::remove_if(A.devices.begin(), A.devices.end(), [&](const Device& e) { return std::find(made.begin(), made.end(), e.id) != made.end(); }), A.devices.end());
+      A.wizard.step = 0;
+    }
+
     OpenSensorWizard(A.screens[0].id); A.wizard.kind = DevKind::Skeleton; SensorWizardNext();
     for (auto& e : A.devices) if (e.port == A.wizard.port) return fail("wizard: a new camera must get a port no device uses");
     OpenSensorWizard(A.screens[0].id); A.wizard.kind = DevKind::Sim; SensorWizardNext();

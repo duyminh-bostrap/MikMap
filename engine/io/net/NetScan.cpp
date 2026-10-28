@@ -13,6 +13,7 @@
 #  if defined(_MSC_VER)
 #    pragma comment(lib, "iphlpapi.lib")
 #  endif
+static_assert(FD_SETSIZE >= 256, "one scan batch of 256 sockets must fit in a Winsock fd_set (FD_SETSIZE is set at the top of this file)");
 #else
 #  include <arpa/inet.h>
 #  include <ifaddrs.h>
@@ -133,12 +134,12 @@ void scanBatch(const std::vector<std::string>& hosts, size_t begin, size_t end, 
 
 std::vector<std::string> hostsInSubnet(const std::string& address, int prefix) {
     uint32_t ip = 0;
-    if (prefix < 22 || prefix > 32 || !parseIpv4(address, ip)) return {};
+    if (prefix < 22 || prefix > 30 || !parseIpv4(address, ip)) return {};   // /31 and /32 have no host besides itself to scan
     const uint32_t mask = 0xffffffffu << (32 - prefix);   // prefix >= 22: no undefined 32-bit shift
     const uint32_t net = ip & mask, bcast = net | ~mask;
     std::vector<std::string> out;
-    for (uint32_t h = net + 1; h < bcast; ++h)
-        if (h != ip) out.push_back(ipv4Text(h));
+    for (uint64_t h = uint64_t(net) + 1; h < bcast; ++h)   // 64-bit: cannot wrap at 255.255.255.255
+        if (h != ip) out.push_back(ipv4Text(static_cast<uint32_t>(h)));
     return out;
 }
 

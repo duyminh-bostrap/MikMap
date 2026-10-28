@@ -684,6 +684,8 @@ void OpenSensorWizard(const std::string& screenId);   // jumps to the Sensor pag
 void SensorWizardNext();         // step 1 -> 2 (Sim: straight to 3); step 2 -> 3 creates one enabled device per ticked item on wizard.screenId
 void SensorWizardAddManual();    // step 2 Hokuyo: wizard.manualHost ("ip" or "ip:port") joins the list, ticked
 void SensorWizardDone();         // step 3 -> 0, the first new device selected
+void SensorWizardMergeScan(const std::vector<std::string>& res);   // scan results join the list: new ones ticked, an address that is already a device listed unticked
+bool WizardHostAdded(const std::string& entry);   // "ip" / "ip:port" is already a Hokuyo device (offered dimmed, never created twice)
 void StartIpScan(const std::string& address, int prefix, uint16_t port);   // sources.cpp: one worker thread, result via an atomic done flag
 bool IpScanDone(std::vector<std::string>& out);                            // true once, with the hosts that accepted the port
 Screen* DeviceScreen(const Device& d, bool* fellBack = nullptr);   // never null while A.screens is non-empty; *fellBack = a named screen is gone

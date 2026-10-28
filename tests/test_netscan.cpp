@@ -32,6 +32,13 @@ TEST_CASE("NetScan: hostsInSubnet tu choi dai qua lon va dia chi hong") {
     CHECK(hostsInSubnet("not.an.ip", 24).empty());
 }
 
+TEST_CASE("NetScan: hostsInSubnet /31 /32 rong, khong tran o 255.255.255.255") {
+    CHECK(hostsInSubnet("255.255.255.255", 32).empty());
+    CHECK(hostsInSubnet("255.255.255.254", 31).empty());
+    CHECK(hostsInSubnet("10.0.0.1", 32).empty());
+    CHECK(hostsInSubnet("255.255.255.253", 30) == std::vector<std::string>{"255.255.255.254"});   // the last /30 of the address space
+}
+
 TEST_CASE("NetScan: scanTcpPort thay cong dang listen, bo cong dong") {
     uint16_t port = 0;
     std::string err;

@@ -810,15 +810,36 @@ static std::string Numbered(const std::string& base) {   // "Simulated radar", "
   return same ? base + " " + std::to_string(same + 1) : base;
 }
 
+// "ip" or "ip:port" -> host + port (10940 when absent; a bad port is kept: the device reports "Port must be 1-65535")
+static void SplitHost(const std::string& e, std::string& host, int& port) {
+  const size_t c = e.rfind(':');
+  host = e.substr(0, c); port = c == std::string::npos ? kHokuyoPort : std::atoi(e.c_str() + c + 1);
+}
+// a Hokuyo device at this address already exists: a UST serves one client, so a second device would fight it for the link
+bool WizardHostAdded(const std::string& e) {
+  std::string host; int port = 0; SplitHost(e, host, port);
+  for (auto& d : A.devices) if (d.kind == DevKind::Hokuyo && d.host == host && d.port == port) return true;
+  return false;
+}
+// one list entry: an already-added address is listed (so the user sees why) but never ticked
+static void WizardOffer(const std::string& h) {
+  SensorWizard& w = A.wizard;
+  w.pick.resize(w.found.size(), 0);
+  const char tick = WizardHostAdded(h) ? 0 : 1;
+  for (size_t i = 0; i < w.found.size(); ++i) if (w.found[i] == h) { w.pick[i] = tick; return; }
+  w.found.push_back(h); w.pick.push_back(tick);
+}
+
 void SensorWizardAddManual() {
   SensorWizard& w = A.wizard;
   std::string h = w.manualHost;
   h.erase(0, h.find_first_not_of(" \t")); h.erase(h.find_last_not_of(" \t") + 1);
   if (h.empty()) return;
-  w.pick.resize(w.found.size(), 0);
-  for (size_t i = 0; i < w.found.size(); ++i) if (w.found[i] == h) { w.pick[i] = 1; w.manualHost.clear(); return; }
-  w.found.push_back(h); w.pick.push_back(1); w.manualHost.clear();
+  if (WizardHostAdded(h)) A.notify(h + " is already added");
+  WizardOffer(h); w.manualHost.clear();
 }
+
+void SensorWizardMergeScan(const std::vector<std::string>& res) { for (auto& h : res) WizardOffer(h); }
 
 void SensorWizardNext() {
   SensorWizard& w = A.wizard;
@@ -840,12 +861,11 @@ void SensorWizardNext() {
   if (w.kind == DevKind::Hokuyo) {
     w.pick.resize(w.found.size(), 0);
     for (size_t i = 0; i < w.found.size(); ++i) {
-      if (!w.pick[i]) continue;
+      if (!w.pick[i] || WizardHostAdded(w.found[i])) continue;   // also catches "ip" and "ip:10940" both ticked: the first one wins
       const std::string& e = w.found[i];
-      const size_t c = e.rfind(':');
-      const int port = c == std::string::npos ? kHokuyoPort : std::atoi(e.c_str() + c + 1);   // a bad port is kept: the device reports "Port must be 1-65535"
+      std::string host; int port = 0; SplitHost(e, host, port);
       Device& d = add(DevKind::Hokuyo, "Hokuyo " + e);
-      d.host = e.substr(0, c); d.port = port;
+      d.host = host; d.port = port;
     }
     if (w.added.empty()) { A.notify("Tick at least one lidar, or type its IP and Add"); return; }
   } else if (w.kind == DevKind::Skeleton) {
@@ -882,14 +902,18 @@ static bool WizCard(ImRect r, const char* icon, const char* title, const char* s
   return h.click;
 }
 
-static void TickRow(ImRect r, const char* label, char& on) {
+static void TickRow(ImRect r, const char* label, char& on, bool taken) {   // taken: dimmed "already added", cannot be ticked
   Hit h = HitR(r);
-  if (h.hover) Fill(r, K(pal::g1c), 2);
+  if (h.hover && !taken) Fill(r, K(pal::g1c), 2);
+  const float prev = g.alpha; if (taken) { g.alpha *= 0.45f; on = 0; }
   const float cy = (r.Min.y + r.Max.y) * 0.5f;
   ImRect cb(r.Min.x + 6, cy - 7, r.Min.x + 20, cy + 7);
   Box(cb, on ? K(pal::mint) : K(pal::g050), on ? K(pal::mint) : K(pal::g22), 2);
   if (on) Check(ImVec2((cb.Min.x + cb.Max.x) * 0.5f, cy), 12, K(0x0f0f0f));
   Text(r.Min.x + 28, cy, MONO_R, 10, K(pal::tcc), label);
+  if (taken) TextR(r.Max.x - 8, cy, MONO_R, 9, K(pal::t88), "already added");
+  g.alpha = prev;
+  if (taken) return;
   if (h.hover) CursorHand();
   if (h.click) on = !on;
 }
@@ -994,25 +1018,28 @@ static void SensorWizardView(ImRect r) {
       std::vector<std::string> res;
       if (w.scanning && IpScanDone(res)) {
         w.scanning = false;
-        w.pick.resize(w.found.size(), 0);
-        for (auto& h : res) {   // found lidars join the list ticked; one already there just gets ticked
-          bool had = false;
-          for (size_t i = 0; i < w.found.size(); ++i) if (w.found[i] == h) { w.pick[i] = 1; had = true; }
-          if (!had) { w.found.push_back(h); w.pick.push_back(1); }
-        }
+        SensorWizardMergeScan(res);   // new lidars join ticked; one that is already a device is listed but not ticked
         A.notify(res.empty() ? "No lidar answered on port 10940" : "Found " + std::to_string(res.size()) + (res.size() == 1 ? " lidar" : " lidars"));
       }
       y += 26 + 14;
       PLabel(x, y, "Lidars"); y += 9 + 4;
       w.pick.resize(w.found.size(), 0);
       if (w.found.empty()) { Text(x, y + 12, MONO_R, 10, K(pal::t66), w.scanning ? "Scanning\xE2\x80\xA6" : "Nothing yet \xE2\x80\x94 Scan, or type an IP below"); y += 24; }
-      // shortcut: rows past the footer are not drawn (still ticked); add a ScrollArea if a site ever has more lidars than fit
-      for (size_t i = 0; i < w.found.size() && y + 26 < fy - 70; ++i) { TickRow(Rc(x, y, colW, 24), w.found[i].c_str(), w.pick[i]); y += 26; }
+      if (!w.found.empty()) {   // every row Next would add is reachable: the list scrolls when it is taller than the space left
+        const float contentH = w.found.size() * 26.f, listH = std::max(26.f, std::min(contentH, fy - 14 - 49 - y));
+        const float rowW = colW - (contentH > listH ? 12 : 0);   // room for the scrollbar
+        static ScrollArea la;
+        la.Begin("##wizlidars", Rc(x, y, colW, listH));
+        for (size_t i = 0; i < w.found.size(); ++i)
+          TickRow(Rc(la.origin.x, la.origin.y + i * 26.f, rowW, 24), w.found[i].c_str(), w.pick[i], WizardHostAdded(w.found[i]));
+        la.End(rowW, contentH);
+        y += listH;
+      }
       y += 10;
       PLabel(x, y, "Add by IP (ip or ip:port)"); y += 9 + 4;
       TextField("##wizhost", Rc(x, y, colW - 90, 26), w.manualHost, MONO_R, 10);
       if (WideButton(x + colW - 80, y, 80, "Add", "plus", pal::mint)) SensorWizardAddManual();
-      int n = 0; for (char c : w.pick) n += c;
+      int n = 0; for (size_t i = 0; i < w.found.size(); ++i) n += w.pick[i] && !WizardHostAdded(w.found[i]);
       char nl[48]; snprintf(nl, sizeof nl, n == 1 ? "Add 1 lidar" : "Add %d lidars", n);
       const float prev = g.alpha; if (n == 0) g.alpha *= 0.5f;
       const bool next = WideButton(x + colW - 180, fy, 180, nl, nullptr, pal::mint);

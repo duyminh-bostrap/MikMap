@@ -1746,9 +1746,10 @@ int main(int argc, char** argv) {
   if (wizard > 0 && !A.screens.empty()) {
     OpenSensorWizard(A.screens[0].id);
     if (wizard >= 2) { A.wizard.kind = DevKind::Hokuyo; SensorWizardNext(); }
-    if (wizard == 2) {   // a list as a scan would leave it: two lidars, one ticked
-      for (const char* h : {"192.168.0.10", "192.168.0.11"}) { A.wizard.manualHost = h; SensorWizardAddManual(); }
-      A.wizard.pick[1] = 0;
+    if (wizard == 2) {   // a list as a scan would leave it: .10 is the demo project's Hokuyo (already added), then more than fit, one unticked
+      std::vector<std::string> res; for (int k = 10; k < 30; ++k) res.push_back("192.168.0." + std::to_string(k));
+      SensorWizardMergeScan(res);
+      A.wizard.pick[2] = 0;
     }
     if (wizard == 3) {
       A.wizard.manualHost = fakeScip && fakeScip->error().empty() ? "127.0.0.1:" + std::to_string(fakeScip->port()) : "127.0.0.1"; SensorWizardAddManual();
