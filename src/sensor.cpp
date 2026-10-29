@@ -333,7 +333,7 @@ static void LidarPlacementView(ImRect area, Device& d) {
     }
   }
   ImVec2 rp[4]; for (int i = 0; i < 4; ++i) rp[i] = surf(d.roi[i].x, d.roi[i].y);
-  dl->AddPolyline(rp, 4, Ca(K(pal::cyan, 0.6f)), ImDrawFlags_Closed, 1.f);   // ROI (raw mm; "ROI = screen" in Properties)
+  dl->AddPolyline(rp, 4, Ca(K(pal::cyan, 0.6f)), ImDrawFlags_Closed, 1.f);   // ROI (raw mm; Count only: Screen in Properties makes it the screen)
   for (auto& t : d.touches) {   // blob centroids, raw mm
     const ImVec2 b = surf(t.x, t.y);
     dl->AddCircleFilled(b, 6, Ca(K(pal::coral)), 20);
@@ -607,14 +607,15 @@ static void ScreenSizeSection(Device& d, float x, float w, float oy, float& y) {
 static void PlacementSection(Device& d, float x, float w, float oy, float& y) {
   float px = (float)d.pose.x, py = (float)d.pose.y, pa = (float)d.pose.angleDeg;
   const Screen* sc = DeviceScreen(d);
-  const bool small = sc && std::max(sc->realW, sc->realH) < 2000.f;   // a small screen: sub-mm positions matter
-  auto typed = [&] {   // a typed pose places a lidar nobody aligned yet
+  const bool smallScreen = sc && std::max(sc->realW, sc->realH) < 2000.f;   // a small screen: sub-mm positions matter
+  auto typed = [&](bool isX) {   // a typed pose places a lidar nobody aligned yet; only the edited axis is written (the other keeps its exact value)
     if (sc && sc->realW > 0 && sc->realH > 0) ClampSensorPose(px, py, sc->realW, sc->realH);
-    d.pose.x = px; d.pose.y = py; CommitPose(d);
+    if (isX) d.pose.x = px; else d.pose.y = py;
+    CommitPose(d);
   };
-  if (NumRow(x, oy + y, w, "X (mm)", "##posex", px, small ? 1 : 0)) typed();
+  if (NumRow(x, oy + y, w, "X (mm)", "##posex", px, smallScreen ? 1 : 0)) typed(true);
   y += 24 + 4;
-  if (NumRow(x, oy + y, w, "Y (mm)", "##posey", py, small ? 1 : 0)) typed();
+  if (NumRow(x, oy + y, w, "Y (mm)", "##posey", py, smallScreen ? 1 : 0)) typed(false);
   y += 24 + 4;
   if (NumRow(x, oy + y, w, "Angle (\xC2\xB0)", "##posea", pa, 1)) { d.pose.angleDeg = std::clamp(pa, -360.f, 360.f); CommitPose(d); }
   y += 24 + 4;
@@ -623,10 +624,25 @@ static void PlacementSection(Device& d, float x, float w, float oy, float& y) {
   if (NumRow(x, oy + y, w, "Range limit (mm)", "##range", d.rangeMm)) d.rangeMm = std::clamp(d.rangeMm, 0.f, 100000.f);
   y += 24 + 2;
   TextEll(x, oy + y + 5, w, MONO_R, 8, K(pal::t66), "0 = unlimited"); y += 10 + 6;
-  if (WideButton(x, oy + y, w, "ROI = screen", "target", pal::cyan)) {
-    if (RoiToScreen(d)) A.pushHist(); else A.notify("Enter the screen's real size first");
+  // Count only: Screen keeps the ROI on the screen's 4 corners (ApplyRoiAuto, every tick); Zone (custom shapes) arrives with sensor masks
+  Text(x, oy + y + 12, MONO_R, 9, K(pal::t66), "Count only");
+  const float sx = x + 104, sw = (w - 104) * 0.5f;
+  ImRect scr(sx, oy + y, sx + sw, oy + y + 24), zon(sx + sw, oy + y, x + w, oy + y + 24);
+  Hit sh = HitR(scr);
+  Box(scr, d.roiAuto ? K(pal::cyan, 0.25f) : sh.hover ? K(pal::g1c, 1.f) : K(pal::g050), K(pal::cyan, d.roiAuto ? 0.7f : 0.3f), 3);
+  TextC((scr.Min.x + scr.Max.x) * 0.5f, (scr.Min.y + scr.Max.y) * 0.5f, UI_B, 9, K(pal::cyan, d.roiAuto ? 1.f : 0.7f), "Screen");
+  Box(zon, K(pal::g050), K(pal::g22), 3);   // not clickable yet
+  TextC((zon.Min.x + zon.Max.x) * 0.5f - 8, (zon.Min.y + zon.Max.y) * 0.5f, UI_B, 9, K(pal::t66, 0.6f), "Zone");
+  TextR(zon.Max.x - 5, (zon.Min.y + zon.Max.y) * 0.5f, MONO_R, 7, K(pal::t66, 0.6f), "soon");
+  if (sh.hover) CursorHand();
+  if (sh.click && !d.roiAuto) {
+    d.roiAuto = true;
+    if (!ApplyRoiAuto(d)) A.notify("Enter the screen's real size first");
+    A.pushHist();
   }
-  y += 26 + 8;
+  y += 24 + 4;
+  if (!d.roiAuto) { TextEll(x, oy + y + 5, w, MONO_R, 8, K(pal::t66), "Using the ROI saved in this project"); y += 10 + 4; }
+  y += 6;
 }
 
 static void BlobSection(Device& d, float x, float w, float oy, float& y) {

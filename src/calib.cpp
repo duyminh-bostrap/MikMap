@@ -205,12 +205,23 @@ bool QuadEdit(Device& d, const ImVec2 q[4]) {
   return true;
 }
 
-bool RoiToScreen(Device& d) {
-  const Screen* sc = DeviceScreen(d);
-  if (!sc || sc->realW <= 0 || sc->realH <= 0) return false;
-  const mikmap::Vec2 corner[4] = {{0, 0}, {sc->realW, 0}, {sc->realW, sc->realH}, {0, sc->realH}};
+static bool RoiFromScreen(Device& d, const Screen& sc) {
+  if (sc.realW <= 0 || sc.realH <= 0) return false;
+  const mikmap::Vec2 corner[4] = {{0, 0}, {sc.realW, 0}, {sc.realW, sc.realH}, {0, sc.realH}};
   for (int i = 0; i < 4; ++i) { const mikmap::Vec2 m = mikmap::surfaceToLidar(d.pose, corner[i]); d.roi[i] = ImVec2((float)m.x, (float)m.y); }
   return true;
+}
+
+bool RoiToScreen(Device& d) {
+  const Screen* sc = DeviceScreen(d);
+  return sc && RoiFromScreen(d, *sc);
+}
+
+bool ApplyRoiAuto(Device& d) {
+  if (!d.roiAuto) return false;
+  bool fb = false; const Screen* sc = DeviceScreen(d, &fb);
+  if (fb) return false;   // its screen was deleted: keep the ROI rather than derive it from the fallback screen
+  return sc && RoiFromScreen(d, *sc);
 }
 
 Device MakeDevice(DevKind k, const std::string& id) {
@@ -227,8 +238,9 @@ Device MakeDevice(DevKind k, const std::string& id) {
   } else if (k == DevKind::Hokuyo) {
     d.name = "Hokuyo 2D lidar"; d.host = "192.168.0.10"; d.port = 10940;
     d.roi[0] = {3000, 1500}; d.roi[1] = {3000, -1500}; d.roi[2] = {500, -1500}; d.roi[3] = {500, 1500};   // mm
+    d.roiAuto = true;   // ROI = its screen until the sensor's Properties say otherwise
   } else {   // Plugin: a lidar until the DLL says otherwise; the menu fills plugin/config from the scanned ABI
-    d.name = "Plugin";
+    d.name = "Plugin"; d.roiAuto = true;
     d.roi[0] = {3000, 1500}; d.roi[1] = {3000, -1500}; d.roi[2] = {500, -1500}; d.roi[3] = {500, 1500};   // mm
   }
   return d;

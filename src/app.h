@@ -216,6 +216,7 @@ struct Device {
   bool calibrated = false;
   std::vector<Calib> calib;          // exactly 4: tx,ty = output px of the device's screen (stage space 1920x1080); mx,my = THIS device's raw units
   ImVec2 roi[4] = {};                // this device's raw units
+  bool roiAuto = false;              // lidar: "Screen" mode — roi follows the screen's 4 corners seen from pose (ApplyRoiAuto); false = the saved/hand roi is kept
   mikmap::LidarPose pose; bool placed = false;   // lidar: where it hangs on the screen's surface (mm); placed = the user confirmed it
   float rangeMm = 0;                 // lidar: rays beyond this are ignored; 0 = unlimited
   bool blobOn = true; float blobMinMm = 15, blobMaxMm = 600, blobGapMm = 50;   // lidar: blob tracking switch + chord-width / gap thresholds
@@ -714,7 +715,8 @@ float SensorSnapStepMm(float realW, float realH);   // Ctrl-drag grid: the large
 ImVec2 SensorDragToMm(const StageXf& X, ImVec2 mouse, ImVec2 off, ImVec2 mo0, bool shift, float snapMm, float realW, float realH);   // pointer px -> clamped mm; snapMm 0 = exact
 void CommitPose(Device& d);       // end of a pose edit on INPUT (drag released, Placement field changed): a lidar never aligned (!placed && !calibrated) on a sized screen becomes placed; Custom (4-point) is left alone
 bool QuadEdit(Device& d, const ImVec2 q[4]);   // Output quad edited by hand: a move over 0.01 px writes calib tx,ty and makes it Custom (placed = false); less is no edit
-bool RoiToScreen(Device& d);      // lidar "ROI = screen": roi = the screen's 4 corners seen from d.pose; false while the screen has no real size
+bool RoiToScreen(Device& d);      // roi = the screen's 4 corners seen from d.pose; false while the screen has no real size
+bool ApplyRoiAuto(Device& d);     // only while d.roiAuto: RoiToScreen, but never on the fallback screen (deleted screen) or an unsized one; false = roi untouched
 // Sensor Properties: which sections a device kind shows on the Input (0) / Output (1) page. Pure, so --roundtrip checks it.
 enum class PropSection { Connection, ScreenSize, Placement, Blobs, Calibration, SendOut, Triggers };
 std::vector<PropSection> SensorPropSections(DevKind k, int page);

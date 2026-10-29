@@ -206,6 +206,7 @@ void SensorsTick(double now) {
   bool fire = false;
   for (auto& d : A.devices) {
     ApplyPlacement(d);   // a placed lidar follows its pose and its screen's mm size wherever they were edited (Mapping, undo)
+    ApplyRoiAuto(d);     // likewise its ROI in Screen mode; setParams below hands it to the source
     if (d.kind == DevKind::Sim) { d.status = d.enabled ? (int)mikmap::SourceStatus::Running : (int)mikmap::SourceStatus::Stopped; continue; }
     d.fps = 0; d.latencyMs = 0; d.packets = 0;
     if (!d.enabled) { d.status = (int)mikmap::SourceStatus::Stopped; d.error.clear(); d.touches.clear(); continue; }
@@ -555,6 +556,32 @@ bool SensorSelfTest(std::string& why) {
     if (!RoiToScreen(dh)) return fail("sensor: ROI = screen refused on a sized screen");
     const mikmap::Vec2 tl = mikmap::surfaceToLidar(dh.pose, {0, 0});
     if (std::fabs(dh.roi[0].x - (float)tl.x) > 0.5f || std::fabs(dh.roi[0].y - (float)tl.y) > 0.5f) return fail("sensor: ROI = screen must put roi[0] on the screen's top-left corner");
+    {   // ROI mode "Screen": roiAuto keeps the ROI on the screen's 4 corners as seen from the pose
+      for (DevKind k : {DevKind::Hokuyo, DevKind::Plugin}) if (!MakeDevice(k, "x").roiAuto) return fail("roi: a new lidar must start in Screen mode");
+      if (MakeDevice(DevKind::Sim, "x").roiAuto || MakeDevice(DevKind::Skeleton, "x").roiAuto) return fail("roi: Sim and Skeleton have no ROI mode");
+      const Screen& s0 = *DeviceScreen(dh);
+      auto onCorners = [&](const Device& q) {
+        const mikmap::Vec2 c[4] = {{0, 0}, {s0.realW, 0}, {s0.realW, s0.realH}, {0, s0.realH}};
+        for (int i = 0; i < 4; ++i) { const mikmap::Vec2 m = mikmap::surfaceToLidar(q.pose, c[i]); if (std::fabs(q.roi[i].x - (float)m.x) > 1e-3f || std::fabs(q.roi[i].y - (float)m.y) > 1e-3f) return false; }
+        return true;
+      };
+      Device r = dh; r.roiAuto = true; r.pose = mikmap::LidarPose{1000, 500, 30, false};
+      if (!ApplyRoiAuto(r) || !onCorners(r)) return fail("roi: Screen mode must put the ROI on the screen's 4 corners");
+      const ImVec2 r0 = r.roi[0]; r.pose.x = 2500; r.pose.angleDeg = -45;
+      if (!ApplyRoiAuto(r) || !onCorners(r) || (r.roi[0].x == r0.x && r.roi[0].y == r0.y)) return fail("roi: moving the sensor must move the ROI with it");
+      auto same4 = [](const Device& a, const Device& b) { for (int i = 0; i < 4; ++i) if (a.roi[i].x != b.roi[i].x || a.roi[i].y != b.roi[i].y) return false; return true; };
+      Device off = r; off.roiAuto = false; off.pose.x = 100; const Device offBefore = off;
+      if (ApplyRoiAuto(off) || !same4(off, offBefore)) return fail("roi: with roiAuto off the saved ROI must stay");
+      Screen ns; ns.id = A.uid("screen"); ns.name = "Unsized"; ns.realW = 0; ns.realH = 0; A.screens.push_back(ns);
+      Device un = r; un.screenId = ns.id; un.pose.x = 300; const Device unBefore = un;
+      if (ApplyRoiAuto(un) || !same4(un, unBefore)) return fail("roi: an unsized screen must leave the ROI alone");
+      A.deleteScreen(ns.id);
+      Device gone = unBefore; gone.screenId = ns.id;   // now points at a deleted screen
+      if (ApplyRoiAuto(gone) || !same4(gone, unBefore)) return fail("roi: a deleted screen (fallback) must leave the ROI alone");
+      // ticking a settled roiAuto lidar on a sized screen changes nothing
+      dh.roiAuto = true; ApplyRoiAuto(dh); MarkSaved(); SensorsTick(now()); SensorsTick(now());
+      if (ProjectDirty()) return fail("roi: SensorsTick on a settled roiAuto lidar must not make the project dirty");
+    }
     using P = PropSection;
     const std::vector<P> lidarIn{P::Connection, P::ScreenSize, P::Placement, P::Blobs}, out{P::Calibration, P::SendOut, P::Triggers}, camIn{P::Connection};
     for (DevKind k : {DevKind::Hokuyo, DevKind::Plugin})

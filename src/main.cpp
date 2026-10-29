@@ -782,6 +782,19 @@ int main(int argc, char** argv) {
             || f.outOn || f.outProto != 0 || f.outHost != "127.0.0.1" || f.outPort != 7000) return fail("device defaults");
         MarkSaved(); SensorsTick(0.0); SensorsTick(1.0);
         if (ProjectDirty()) return fail("SensorsTick alone made the project dirty"); }
+      { NewProject(); A.devices[2].roiAuto = true; A.devices[1].roiAuto = false;   // roiAuto is configuration: it round-trips; a file without the key loads false
+        std::string e3; if (!SaveProject(roundtrip, e3) || !LoadProject(roundtrip, e3)) return fail(e3.c_str());
+        if (!A.devices[2].roiAuto || A.devices[1].roiAuto) return fail("roiAuto did not round-trip");
+        std::ifstream f(roundtrip, std::ios::binary); std::stringstream ss; ss << f.rdbuf();
+        mikmap::JsonValue root; std::string jerr;
+        if (!mikmap::JsonValue::parse(ss.str(), root, jerr)) return fail("cannot re-read the saved project");
+        const mikmap::JsonValue& rc = root; mikmap::JsonValue ds = mikmap::JsonValue::array(), sn = mikmap::JsonValue::object();
+        for (auto& dv : rc["sensor"]["devices"].arrayItems()) { mikmap::JsonValue o = mikmap::JsonValue::object(); for (auto& kv : dv.objectItems()) if (kv.first != "roiAuto") o.set(kv.first, kv.second); ds.push(o); }
+        for (auto& kv : rc["sensor"].objectItems()) sn.set(kv.first, kv.first == "devices" ? ds : kv.second);
+        root.set("sensor", sn);
+        { std::ofstream o(roundtrip + ".noroi", std::ios::binary); o << root.dump(2); }
+        if (!LoadProject(roundtrip + ".noroi", e3)) return fail(e3.c_str());
+        if (A.devices[2].roiAuto) return fail("a device without \"roiAuto\" in the file must load as false, so an old ROI is never overwritten"); }
     }
     NewBlankProject();
     if (A.layers.size() != 4 || A.screens.size() != 1) return fail("blank project shape");

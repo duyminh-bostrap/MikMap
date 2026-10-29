@@ -344,7 +344,7 @@ JsonValue Serialize(const App& a) {
     JsonValue cal = JsonValue::array(); for (auto& c : d.calib) cal.push(CalibJ(c));
     dob.set("calib", cal);
     JsonValue roi = JsonValue::array(); for (int i = 0; i < 4; ++i) roi.push(V2(d.roi[i]));
-    dob.set("roi", roi);
+    dob.set("roi", roi); dob.set("roiAuto", d.roiAuto);
     JsonValue po = JsonValue::object(); po.set("x", d.pose.x); po.set("y", d.pose.y); po.set("a", d.pose.angleDeg); po.set("mirror", d.pose.mirror);
     dob.set("pose", po); dob.set("placed", d.placed); dob.set("range", d.rangeMm);
     JsonValue bl = JsonValue::object(); bl.set("on", d.blobOn); bl.set("min", d.blobMinMm); bl.set("max", d.blobMaxMm); bl.set("gap", d.blobGapMm);
@@ -474,6 +474,7 @@ bool Deserialize(const JsonValue& root, App& out, std::string& err) {
         v.plugin = d["plugin"].asString(v.plugin); v.config = d["config"].asString(v.config);
         v.enabled = d["enabled"].asBool(); v.calibrated = d["calibrated"].asBool();
         readCal(d, v);
+        v.roiAuto = d["roiAuto"].asBool(false);   // a file from before the Screen/Zone selector keeps its saved ROI
         const JsonValue& po = d["pose"]; v.pose = {po["x"].asNumber(0), po["y"].asNumber(0), po["a"].asNumber(0), po["mirror"].asBool(false)};
         v.placed = d["placed"].asBool(false); v.rangeMm = (float)d["range"].asNumber(0);
         const JsonValue& bl = d["blob"]; v.blobOn = bl["on"].asBool(true);
@@ -481,7 +482,7 @@ bool Deserialize(const JsonValue& root, App& out, std::string& err) {
         const JsonValue& ou = d["out"]; v.outOn = ou["on"].asBool(false); v.outProto = std::clamp(ou["proto"].asInt(0), 0, 1);
         v.outHost = ou["host"].asString(v.outHost); v.outPort = ou["port"].asInt(v.outPort);   // a bad port is kept: Send out reports it
       } else {   // before per-device calibration: one global calib/roi in `sensor`, which belonged to the (only kind then) simulated radar
-        v.enabled = false; v.calibrated = true;
+        v.enabled = false; v.calibrated = true; v.roiAuto = false;
         readCal(sn, v);
       }
       out.devices.push_back(v);
@@ -692,6 +693,7 @@ bool LoadCalibProfile(const std::string& path, Device& d, float& noise, float& b
   d.calib.clear(); for (auto& co : root["calib"].arrayItems()) d.calib.push_back(ReadCalibPoint(co));
   if (root["roi"].isArray() && root["roi"].size() == 4) for (int i = 0; i < 4; ++i) d.roi[i] = ReadV2(root["roi"].at(i));
   d.calibrated = true;
+  if (root["roi"].isArray() && root["roi"].size() == 4) d.roiAuto = false;   // the profile's ROI is now the ROI; Screen mode would overwrite it on the next tick
   noise = F(root, "noise", noise); blobSize = F(root, "blobSize", blobSize);
   return true;
 }
