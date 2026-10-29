@@ -760,6 +760,8 @@ static bool UndoApply(const std::string& snap) {
     break;
   }
   for (auto& l : tmp.layers) { l.live = false; for (auto& c : l.clips) if (c.isLive()) l.live = true; }
+  const Device* selDv = A.selKind == 3 ? A.curDevice() : nullptr;   // selDevice is an index into a list about to be replaced: keep the sensor by id
+  const std::string selId = selDv ? selDv->id : std::string();
   A.canvasW = tmp.canvasW; A.canvasH = tmp.canvasH; A.comp = tmp.comp; A.groups = tmp.groups; A.layers = tmp.layers; A.colNames = tmp.colNames;
   A.decks = tmp.decks; A.curDeckIdx = std::clamp(tmp.curDeckIdx, 0, (int)A.decks.size() - 1); A.deckMode = tmp.deckMode;   // undo also covers deck add/delete/switch
   A.screens = tmp.screens;
@@ -770,11 +772,18 @@ static bool UndoApply(const std::string& snap) {
   std::vector<std::pair<int, int>> keep;
   for (auto& c : A.selectedCells) if (c.first >= 0 && c.first < nl && c.second >= 0 && c.second < nc) keep.push_back(c);
   A.selectedCells = keep;
-  Screen* sc = nullptr; for (auto& s : A.screens) if (s.id == A.selSc) sc = &s;
-  if (!sc) { sc = &A.screens[0]; A.selSc = sc->id; A.selKind = -1; }
-  Slice* sl = nullptr; for (auto& s : sc->slices) if (s.id == A.selSl) sl = &s;
-  if (!sl) { A.selSl = sc->slices.empty() ? "" : sc->slices[0].id; A.selMk.clear(); A.selKind = -1; }
-  else if (!A.selMk.empty()) { bool found = false; for (auto& m : sl->masks) if (m.id == A.selMk) found = true; if (!found) { A.selMk.clear(); A.selKind = -1; } }
+  int dv = -1; for (int i = 0; i < (int)A.devices.size(); ++i) if (!selId.empty() && A.devices[i].id == selId) dv = i;
+  if (dv >= 0) {   // the selected sensor is still there: it stays the selection, on its (possibly moved) screen
+    A.selDevice = dv;
+    if (const Screen* ds = DeviceScreen(A.devices[dv])) A.selSc = ds->id;
+  } else {
+    if (!selId.empty()) A.selKind = 0;   // the selected sensor is gone: the screen it was on is the selection
+    Screen* sc = nullptr; for (auto& s : A.screens) if (s.id == A.selSc) sc = &s;
+    if (!sc) { sc = &A.screens[0]; A.selSc = sc->id; if (A.selKind != 0) A.selKind = -1; }
+    Slice* sl = nullptr; for (auto& s : sc->slices) if (s.id == A.selSl) sl = &s;
+    if (!sl) { A.selSl = sc->slices.empty() ? "" : sc->slices[0].id; A.selMk.clear(); if (A.selKind != 0) A.selKind = -1; }   // a selected screen stays selected
+    else if (!A.selMk.empty()) { bool found = false; for (auto& m : sl->masks) if (m.id == A.selMk) found = true; if (!found) { A.selMk.clear(); A.selKind = -1; } }
+  }
   A.pop.open = A.layerMenu.open = A.colMenu.open = A.deckMenu.open = A.ctx.open = A.blendDD.open = A.rename.open = false;
   return true;
 }

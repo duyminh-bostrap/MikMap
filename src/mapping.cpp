@@ -1410,7 +1410,10 @@ static std::vector<MenuItem> SensorMenu(const std::string& dvId) {
   bool fb = false; const Screen* cur = DeviceScreen(A.devices[idx], &fb);
   for (auto& sc : A.screens) {
     std::string label = "   " + sc.name;
-    m.push_back(mk(label.c_str(), "monitor", cur && cur->id == sc.id, false, [dvId, sid = sc.id] { for (auto& d : A.devices) if (d.id == dvId) d.screenId = sid; }));
+    m.push_back(mk(label.c_str(), "monitor", cur && cur->id == sc.id, false, [dvId, sid = sc.id] {
+      const Device* cd = A.selKind == 3 ? A.curDevice() : nullptr; const bool sel = cd && cd->id == dvId;
+      for (auto& d : A.devices) if (d.id == dvId) d.screenId = sid;
+      if (sel) SelectDevice(dvId); }));   // the selected sensor takes its screen selection along
   }
   m.push_back(dv);
   m.push_back(mk("Remove", "trash-2", false, true, [dvId] { RemoveDevice(dvId); }));
@@ -1430,12 +1433,8 @@ void RemoveDevice(const std::string& dvId) {   // its source stops on the next S
 
 void SelectDevice(const std::string& dvId) {
   for (int i = 0; i < (int)A.devices.size(); ++i) if (A.devices[i].id == dvId) {
-    A.selDevice = i; A.selKind = 3; A.mapMulti.clear(); A.selMk.clear();
-    if (Screen* sc = DeviceScreen(A.devices[i])) {   // its screen, or the fallback one when it was deleted
-      // selSl = the slice curSlice() falls back to anyway: left empty, an undo restore (project.cpp) would drop the sensor selection
-      if (sc->id != A.selSc) A.selSl = sc->slices.empty() ? "" : sc->slices[0].id;
-      A.selSc = sc->id;
-    }
+    A.selDevice = i; A.selKind = 3; A.mapMulti.clear(); A.selMk.clear(); A.selSl.clear();   // no slice is selected under a sensor
+    if (Screen* sc = DeviceScreen(A.devices[i])) A.selSc = sc->id;   // its screen, or the fallback one when it was deleted
     A.screen = 1; A.wizardStep = 0; A.editRoi = false;
     return;
   }

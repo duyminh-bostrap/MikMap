@@ -398,6 +398,31 @@ bool SensorSelfTest(std::string& why) {
     A.screen = 0; A.selKind = -1;
   }
 
+  // Undo / redo swap the device list: the selected sensor is kept by id, never by its old index.
+  {
+    // (a) undo of a popup add drops the new sensor: nothing is selected-as-sensor, not its neighbour
+    MarkSaved();
+    OpenSensorWizard(A.screens[0].id); A.wizard.kind = DevKind::Sim; SensorWizardNext(); SensorWizardDone();
+    if (A.MapKind() != 3 || !A.curDevice() || A.curDevice()->id != A.devices.back().id) return fail("undo: the popup must select the sensor it added");
+    UndoStep(false);
+    if (A.MapKind() != 0) return fail("undo: undoing a sensor add must select its screen, not another sensor (kind " + std::to_string(A.MapKind()) + ")");
+    // (b) a sensor on a screen with no slices stays selected through an undo
+    Screen bare; bare.id = A.uid("screen"); bare.name = "Bare"; A.screens.push_back(bare);
+    A.devices[2].screenId = bare.id; const std::string x = A.devices[2].id;
+    MarkSaved(); SelectDevice(x);
+    A.layers[0].name = "undo-me"; UndoStep(false);
+    if (A.MapKind() != 3 || !A.curDevice() || A.curDevice()->id != x) return fail("undo: a sensor on a screen without slices must stay selected through an undo");
+    // (c) remove device 0 while device 2 is selected: undo and redo keep device 2 selected
+    A.devices[2].screenId = A.screens[0].id; A.screens.pop_back();
+    MarkSaved(); SelectDevice(x);
+    RemoveDevice(A.devices[0].id);
+    UndoStep(false);
+    if (A.MapKind() != 3 || !A.curDevice() || A.curDevice()->id != x) return fail("undo: undoing a Remove of another sensor must keep the selected one");
+    UndoStep(true);
+    if (A.MapKind() != 3 || !A.curDevice() || A.curDevice()->id != x) return fail("redo: redoing a Remove of another sensor must keep the selected one");
+    NewProject(); A.routes.clear();
+  }
+
   Device a = MakeDevice(DevKind::Skeleton, "selftest-a"); a.port = port; a.enabled = true;
   A.devices.push_back(a);
   MarkSaved();
