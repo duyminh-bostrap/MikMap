@@ -637,8 +637,16 @@ static void PlacementSection(Device& d, float x, float w, float oy, float& y) {
     A.pushHist();
   }
   y += 24 + 4;
-  if (!d.roiAuto) { TextEll(x, oy + y + 5, w, MONO_R, 8, K(pal::t66), "Using the ROI saved in this project"); y += 10 + 4; }
+  const char* hint = d.roiAuto ? RoiHint(d, DeviceScreen(d)) : "Using the ROI saved in this project";
+  if (hint) { TextEll(x, oy + y + 5, w, MONO_R, 8, K(pal::t66), hint); y += 10 + 4; }
   y += 6;
+}
+
+const char* RoiHint(const Device& d, const Screen* sc) {
+  if (!d.roiAuto || (d.kind != DevKind::Hokuyo && d.kind != DevKind::Plugin)) return nullptr;
+  if (!sc || sc->realW <= 0 || sc->realH <= 0) return "Enter the screen's real size to use it as the ROI";
+  if (!d.placed && !d.calibrated) return "The ROI follows the screen from the sensor's pose \xE2\x80\x94 drag the sensor to where it hangs";
+  return nullptr;
 }
 
 static void BlobSection(Device& d, float x, float w, float oy, float& y) {

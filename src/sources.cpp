@@ -580,6 +580,18 @@ bool SensorSelfTest(std::string& why) {
       // ticking a settled roiAuto lidar on a sized screen changes nothing
       dh.roiAuto = true; ApplyRoiAuto(dh); MarkSaved(); SensorsTick(now()); SensorsTick(now());
       if (ProjectDirty()) return fail("roi: SensorsTick on a settled roiAuto lidar must not make the project dirty");
+      {   // RoiHint: what the operator is told under "Count only"
+        Screen us; us.realW = 0; us.realH = 0;
+        Device f = MakeDevice(DevKind::Hokuyo, "hint"); f.placed = false; f.calibrated = false;
+        const char* h1 = RoiHint(f, &us); const char* h2 = RoiHint(f, &s0);
+        if (!h1 || !std::strstr(h1, "real size")) return fail("roi hint: a fresh lidar on an unsized screen must ask for the real size");
+        if (!h2 || !std::strstr(h2, "drag the sensor")) return fail("roi hint: a fresh lidar on a sized screen must say to place it");
+        Device pl = f; pl.placed = true;
+        Device off2 = f; off2.roiAuto = false;
+        if (RoiHint(pl, &s0) || RoiHint(off2, &s0) || RoiHint(MakeDevice(DevKind::Sim, "x"), &us)) return fail("roi hint: placed / roiAuto off / Sim must show no hint");
+        Device cd = f; cd.calibrated = true;
+        if (RoiHint(cd, &s0)) return fail("roi hint: a calibrated lidar must show no hint");
+      }
     }
     using P = PropSection;
     const std::vector<P> lidarIn{P::Connection, P::ScreenSize, P::Placement, P::Blobs}, out{P::Calibration, P::SendOut, P::Triggers}, camIn{P::Connection};

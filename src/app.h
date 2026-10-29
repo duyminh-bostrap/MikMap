@@ -717,6 +717,7 @@ void CommitPose(Device& d);       // end of a pose edit on INPUT (drag released,
 bool QuadEdit(Device& d, const ImVec2 q[4]);   // Output quad edited by hand: a move over 0.01 px writes calib tx,ty and makes it Custom (placed = false); less is no edit
 bool RoiToScreen(Device& d);      // roi = the screen's 4 corners seen from d.pose; false while the screen has no real size
 bool ApplyRoiAuto(Device& d);     // only while d.roiAuto: RoiToScreen, but never on the fallback screen (deleted screen) or an unsized one; false = roi untouched
+const char* RoiHint(const Device& d, const Screen* sc);   // one-line hint under "Count only" while a lidar is in Screen mode and the ROI is not yet the real screen; nullptr = none
 // Sensor Properties: which sections a device kind shows on the Input (0) / Output (1) page. Pure, so --roundtrip checks it.
 enum class PropSection { Connection, ScreenSize, Placement, Blobs, Calibration, SendOut, Triggers };
 std::vector<PropSection> SensorPropSections(DevKind k, int page);
