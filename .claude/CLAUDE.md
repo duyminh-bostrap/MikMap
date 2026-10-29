@@ -206,7 +206,7 @@ YDLIDAR (`G23`, plugin bọc YDLidar-SDK) còn chờ.
 lidar đặt theo mm (`PlacementCalib` → 4 cặp calib, lõi `engine/core/calib/LidarPlacement`); cây gộp + tab Input/Output,
 Output dùng `EditQuad` và mã sân khấu chung `src/stage.cpp` với Mapping; wizard scan IP (`engine/io/net/NetScan`);
 gửi toạ độ OSC/UDP (`engine/io/net/TouchSender`, `SendOut` ở `sources.cpp`, chuẩn hoá 0–1 theo sân khấu 1920×1080 của Screen — không phải canvas `A1`). **Chưa kiểm với phần cứng
-thật** (Hokuyo/YDLIDAR, quét LAN thật, receiver OSC thật như TouchDesigner), và **chưa build Linux/macOS** code mới (`engine/io/net`). Lidar hết chỉnh ROI tay (chỉ "ROI = screen";
+thật** (Hokuyo/YDLIDAR, quét LAN thật, receiver OSC thật như TouchDesigner), và **chưa build Linux/macOS** code mới (`engine/io/net`). Lidar hết chỉnh ROI tay (chỉ ô chọn Count only: Screen — ROI tự theo screen; Zone dự kiến S2, chưa làm;
 Edit ROI còn cho Sim); camera 2D (crop, nhận dạng, preview, NDI/Spout) và lidar 3D/depth CHƯA làm. Chi tiết: "Ghi chú kiểm tra" cuối `features.md`.
 (`A4` thumbnail động đã `[x]` từ 2026-09-23 — giới hạn ≤3 ô vẽ lại/khung, xem đầu mục này.)
 `I2` (lưu/mở dự án) **đã chạy** qua `src/project.cpp` (đọc/ghi `.mikmap` bằng schema
