@@ -75,7 +75,7 @@ Thước đo thành công: người vận hành căn xong một sensor mà **kh�
 - **Chọn slice, mask hoặc screen:** giữ đúng hành vi Mapping hiện tại.
 - **Chọn sensor:** cùng thanh tab và cùng nhóm zoom; nội dung là phần sensor:
   - **INPUT:**
-    - Nền là hình live của screen chứa sensor, vẽ bằng `DrawScreenBackdrop`, đúng thứ máy chiếu đang chiếu.
+    - Nền là **hình live của composition** (đúng thứ ô LIVE OUTPUT của Deck đang hiện, gồm cả Show TestCard), vẽ bằng `DrawComposite` kéo giãn theo khung screen; không phải đầu ra của các slice (`DrawScreenBackdrop` chỉ còn dùng cho stage Mapping của slice). Người dùng xác nhận 2026-10-29.
     - Trên nền: biểu tượng sensor tại vị trí và góc của nó (kéo thân để dời, kéo chấm xoay để xoay; Shift làm tròn 10 mm và bước 15°), vòng tầm, các điểm scan, các blob kèm `ID:n`.
     - Lidar vẫn dùng mm thật của screen (`realW`, `realH`); vẽ lên nền theo tỉ lệ mm → pixel của screen. Nếu screen chưa có kích thước thật thì hiện ô nhập ngay trên stage, như hiện tại.
     - Đây cũng là chỗ vẽ **mask** của sensor ở S2 (§6.4).
