@@ -92,7 +92,7 @@ Thước đo thành công: người vận hành căn xong một sensor mà **kh�
 ### 5.4 Cột 3: Properties
 
 Đổi theo node đang chọn. Với sensor, giữ bố cục lai đã có (`SensorPropSections`): khối đầu luôn hiện, các mục còn lại theo tab.
-- **Luôn hiện:** tên, trạng thái + fps/latency, Active, cảnh báo vàng khi screen dự phòng đang được dùng.
+- **Luôn hiện:** tên, trạng thái + fps/latency, Active, cảnh báo vàng khi screen dự phòng đang được dùng. Không có ô chọn screen ở đây: đổi screen bằng "Move to screen" ở menu chuột phải của cây.
 - **INPUT:** Connection (host, port, Reconnect, Scan again) · Screen size (mm) · Placement · Blob tracking.
 - **OUTPUT:** Calibration (badge Placed/Custom, Re-apply placement, 4 toạ độ số, wizard chạm 4 điểm, RMS) · Send out · Triggers.
 

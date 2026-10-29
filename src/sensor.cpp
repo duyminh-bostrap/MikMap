@@ -839,28 +839,9 @@ void SensorProps(ImRect r, Device* d) {
     if (d->enabled && !d->error.empty()) { TextEll(x, oy + y + 6, w, MONO_R, 9, K(pal::red), d->error.c_str()); y += 12 + 4; }
     y += 4;
   }
-  {   // the screen this sensor belongs to (its calibration targets live on it)
-    PLabel(x, oy + y, "Screen"); y += 9 + 4;
+  {   // the screen is changed from the tree's right-click menu (Move to screen); here only the fallback warning
     bool fb = false; const Screen* cur = DeviceScreen(*d, &fb);
-    ImRect sr(x, oy + y, x + w, oy + y + 28);
-    Hit h = HitR(sr);
-    Box(sr, h.hover ? K(pal::ctrlHover) : K(pal::g1c), K(pal::g22), 3);
-    Icon("monitor", ImVec2(sr.Min.x + 14, (sr.Min.y + sr.Max.y) * 0.5f), 11, K(pal::coral));
-    TextEll(sr.Min.x + 28, (sr.Min.y + sr.Max.y) * 0.5f, w - 50, UI_S, 10, K(pal::tf3), cur ? cur->name.c_str() : "\xE2\x80\x94");
-    Icon("chevron-down", ImVec2(sr.Max.x - 12, (sr.Min.y + sr.Max.y) * 0.5f), 10, K(pal::t66));
-    if (h.hover) CursorHand();
-    if (h.click) {
-      std::vector<MenuItem> mi;
-      for (auto& s : A.screens) {
-        MenuItem it; it.label = s.name; it.icon = "monitor"; it.toneHex = cur && cur->id == s.id ? pal::coral : 0;
-        it.run = [dv = d->id, sid = s.id] { for (auto& e : A.devices) if (e.id == dv) { e.screenId = sid; A.pushHist(); } };
-        mi.push_back(it);
-      }
-      A.openCtx(ImVec2(sr.Min.x, sr.Max.y + 4), mi);
-    }
-    y += 28 + 4;
     if (fb && cur) { TextEll(x, oy + y + 6, w, MONO_R, 9, K(pal::yellow), ("Screen not found \xE2\x80\x94 using " + cur->name).c_str()); y += 12 + 4; }
-    y += 4;
   }
   for (PropSection s : SensorPropSections(d->kind, A.mpage)) {
     switch (s) {
