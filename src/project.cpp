@@ -350,7 +350,7 @@ JsonValue Serialize(const App& a) {
     JsonValue bl = JsonValue::object(); bl.set("on", d.blobOn); bl.set("min", d.blobMinMm); bl.set("max", d.blobMaxMm); bl.set("gap", d.blobGapMm);
     dob.set("blob", bl);
     JsonValue ou = JsonValue::object(); ou.set("on", d.outOn); ou.set("proto", d.outProto); ou.set("host", d.outHost); ou.set("port", d.outPort);
-    dob.set("out", ou);
+    dob.set("out", ou); dob.set("originBottom", d.originBottom);
     ds.push(dob);
   }
   sensor.set("devices", ds);
@@ -481,8 +481,9 @@ bool Deserialize(const JsonValue& root, App& out, std::string& err) {
         v.blobMinMm = (float)bl["min"].asNumber(v.blobMinMm); v.blobMaxMm = (float)bl["max"].asNumber(v.blobMaxMm); v.blobGapMm = (float)bl["gap"].asNumber(v.blobGapMm);
         const JsonValue& ou = d["out"]; v.outOn = ou["on"].asBool(false); v.outProto = std::clamp(ou["proto"].asInt(0), 0, 1);
         v.outHost = ou["host"].asString(v.outHost); v.outPort = ou["port"].asInt(v.outPort);   // a bad port is kept: Send out reports it
+        v.originBottom = d["originBottom"].asBool(false);   // a file from before the Origin selector keeps sending y from the top
       } else {   // before per-device calibration: one global calib/roi in `sensor`, which belonged to the (only kind then) simulated radar
-        v.enabled = false; v.calibrated = true; v.roiAuto = false;
+        v.enabled = false; v.calibrated = true; v.roiAuto = false; v.originBottom = false;
         readCal(sn, v);
       }
       out.devices.push_back(v);

@@ -602,16 +602,17 @@ static void ScreenSizeSection(Device& d, float x, float w, float oy, float& y) {
 }
 
 static void PlacementSection(Device& d, float x, float w, float oy, float& y) {
-  float px = (float)d.pose.x, py = (float)d.pose.y, pa = (float)d.pose.angleDeg;
   const Screen* sc = DeviceScreen(d);
+  const float realH = sc ? sc->realH : 0.f;   // Origin Bottom-left: the Y field counts up from the bottom edge (needs a sized screen); d.pose itself stays y-down
+  float px = (float)d.pose.x, py = PoseYToUi((float)d.pose.y, realH, d.originBottom), pa = (float)d.pose.angleDeg;
   const bool smallScreen = sc && std::max(sc->realW, sc->realH) < 2000.f;   // a small screen: sub-mm positions matter
   auto typed = [&](bool isX) {   // a typed pose places a lidar nobody aligned yet; only the edited axis is written (the other keeps its exact value), no screen-relative limit
-    if (isX) d.pose.x = SanePoseMm(px, (float)d.pose.x); else d.pose.y = SanePoseMm(py, (float)d.pose.y);
+    if (isX) d.pose.x = SanePoseMm(px, (float)d.pose.x); else d.pose.y = SanePoseMm(UiToPoseY(py, realH, d.originBottom), (float)d.pose.y);
     CommitPose(d);
   };
   if (NumRow(x, oy + y, w, "X (mm)", "##posex", px, smallScreen ? 1 : 0)) typed(true);
   y += 24 + 4;
-  if (NumRow(x, oy + y, w, "Y (mm)", "##posey", py, smallScreen ? 1 : 0)) typed(false);
+  if (NumRow(x, oy + y, w, d.originBottom && realH > 0 ? "Y (mm, from bottom)" : "Y (mm)", "##posey", py, smallScreen ? 1 : 0)) typed(false);
   y += 24 + 4;
   if (NumRow(x, oy + y, w, "Angle (\xC2\xB0)", "##posea", pa, 1)) { d.pose.angleDeg = std::clamp(pa, -360.f, 360.f); CommitPose(d); }
   y += 24 + 4;
@@ -758,24 +759,28 @@ static void CalibrationSection(Device& d, float x, float w, float oy, float& y) 
 static void SendOutSection(Device& d, float x, float w, float oy, float& y) {
   CheckRow(x, oy + y, "Send touches out", d.outOn); y += 24 + 4;
   const float prev = g.alpha; if (!d.outOn) g.alpha *= 0.5f;
-  Text(x, oy + y + 12, MONO_R, 9, K(pal::t66), "Format");
-  {   // OSC / UDP text, a two-button segmented choice
-    static const char* opt[2] = {"OSC", "UDP text"};
+  auto segmented = [&](const char* label, const char* const opt[2], int sel) {   // a two-button choice; returns the index clicked, or -1
+    Text(x, oy + y + 12, MONO_R, 9, K(pal::t66), label);
     ImRect grp(x + 104, oy + y, x + w, oy + y + 24);
     Box(grp, K(0x000000), K(pal::g2a), 3);
     const float bw = (grp.GetWidth() - 6 - 2) * 0.5f;
+    int clicked = -1;
     for (int i = 0; i < 2; ++i) {
       const float bx = grp.Min.x + 3 + i * (bw + 2);
       ImRect br(bx, grp.Min.y + 3, bx + bw, grp.Max.y - 3);
       Hit h = HitR(br);
-      const bool on = d.outProto == i;
+      const bool on = sel == i;
       if (on) Fill(br, K(pal::coral), 2); else if (h.hover) Fill(br, K(pal::g1c), 2);
       TextC((br.Min.x + br.Max.x) * 0.5f, (br.Min.y + br.Max.y) * 0.5f, UI_B, 9, K(on ? pal::white : pal::t88), opt[i]);
       if (h.hover) CursorHand();
-      if (h.click && !on) { d.outProto = i; A.pushHist(); }
+      if (h.click && !on) clicked = i;
     }
-  }
-  y += 24 + 4;
+    y += 24 + 4;
+    return clicked;
+  };
+  static const char* const fmt[2] = {"OSC", "UDP text"}, * const org[2] = {"Bottom-left", "Top-left"};
+  if (int c = segmented("Format", fmt, d.outProto); c >= 0) { d.outProto = c; A.pushHist(); }
+  if (int c = segmented("Origin", org, d.originBottom ? 0 : 1); c >= 0) { d.originBottom = c == 0; A.pushHist(); }
   {   // applied when the field loses focus, like Connection's Host / Port
     static std::string hostEdit; static int portEdit = 0;
     if (ImGui::GetActiveID() != ImGui::GetID("##outhost")) hostEdit = d.outHost;
@@ -795,8 +800,8 @@ static void SendOutSection(Device& d, float x, float w, float oy, float& y) {
   char sb[64]; snprintf(sb, sizeof sb, "%llu sent \xC2\xB7 %llu dropped", (unsigned long long)sent, (unsigned long long)dropped);
   PropertyRow(Rc(x - 6, oy + y, w + 12, 24), "Packets", sb); y += 24 + 2;
   if (!err.empty()) { TextEll(x, oy + y + 6, w, MONO_R, 9, K(pal::red), err.c_str()); y += 12 + 4; }
-  const char* hint = d.outProto == 1 ? "\"<name> <id> <x> <y>\" \xC2\xB7 x, y 0..1" : "/mikmap/<name>/touch id x y \xC2\xB7 x, y 0..1";
-  TextEll(x, oy + y + 5, w, MONO_R, 8, K(pal::t66), hint); y += 10 + 8;
+  const std::string hint = std::string(d.outProto == 1 ? "\"<name> <id> <x> <y>\" \xC2\xB7 x, y 0..1" : "/mikmap/<name>/touch id x y \xC2\xB7 x, y 0..1") + (d.originBottom ? " \xC2\xB7 y=0 bottom" : " \xC2\xB7 y=0 top");
+  TextEll(x, oy + y + 5, w, MONO_R, 8, K(pal::t66), hint.c_str()); y += 10 + 8;
   g.alpha = prev;
 }
 

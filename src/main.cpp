@@ -795,6 +795,19 @@ int main(int argc, char** argv) {
         { std::ofstream o(roundtrip + ".noroi", std::ios::binary); o << root.dump(2); }
         if (!LoadProject(roundtrip + ".noroi", e3)) return fail(e3.c_str());
         if (A.devices[2].roiAuto) return fail("a device without \"roiAuto\" in the file must load as false, so an old ROI is never overwritten"); }
+      { NewProject(); A.devices[2].originBottom = true; A.devices[1].originBottom = false;   // originBottom is configuration: it round-trips; a file without the key loads false (old projects keep y from the top)
+        std::string e3; if (!SaveProject(roundtrip, e3) || !LoadProject(roundtrip, e3)) return fail(e3.c_str());
+        if (!A.devices[2].originBottom || A.devices[1].originBottom) return fail("originBottom did not round-trip");
+        std::ifstream f(roundtrip, std::ios::binary); std::stringstream ss; ss << f.rdbuf();
+        mikmap::JsonValue root; std::string jerr;
+        if (!mikmap::JsonValue::parse(ss.str(), root, jerr)) return fail("cannot re-read the saved project");
+        mikmap::JsonValue ds = mikmap::JsonValue::array(), sn = mikmap::JsonValue::object();
+        for (auto& dv : root["sensor"]["devices"].arrayItems()) { mikmap::JsonValue o = mikmap::JsonValue::object(); for (auto& kv : dv.objectItems()) if (kv.first != "originBottom") o.set(kv.first, kv.second); ds.push(o); }
+        for (auto& kv : root["sensor"].objectItems()) sn.set(kv.first, kv.first == "devices" ? ds : kv.second);
+        root.set("sensor", sn);
+        { std::ofstream o(roundtrip + ".noorigin", std::ios::binary); o << root.dump(2); }
+        if (!LoadProject(roundtrip + ".noorigin", e3)) return fail(e3.c_str());
+        for (auto& dv : A.devices) if (dv.originBottom) return fail("a device without \"originBottom\" in the file must load as false, so an old project keeps sending y from the top"); }
     }
     NewBlankProject();
     if (A.layers.size() != 4 || A.screens.size() != 1) return fail("blank project shape");

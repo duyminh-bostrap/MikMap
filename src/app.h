@@ -221,6 +221,7 @@ struct Device {
   float rangeMm = 0;                 // lidar: rays beyond this are ignored; 0 = unlimited
   bool blobOn = true; float blobMinMm = 15, blobMaxMm = 600, blobGapMm = 50;   // lidar: blob tracking switch + chord-width / gap thresholds
   bool outOn = false; int outProto = 0; std::string outHost = "127.0.0.1"; int outPort = 7000;   // Send out: mapped touches as OSC (0) / UDP text (1), x,y = 0..1 of the screen
+  bool originBottom = true;          // Send out: y = 0 at the screen's BOTTOM edge (outgoing y and the Placement Y field only; inside the app y stays down). New devices true; a file without the key loads false = old behaviour
   // runtime only, never serialized (a live counter must not make the project dirty)
   std::vector<Touch> touches; int status = 0; std::string error; int fps = 0; float latencyMs = 0; uint64_t packets = 0;
   double lastSentAt = -1;            // seconds (glfwGetTime) of the last touch packet pushed by Send out; -1 = never
@@ -718,6 +719,10 @@ bool QuadEdit(Device& d, const ImVec2 q[4]);   // Output quad edited by hand: a 
 bool RoiToScreen(Device& d);      // roi = the screen's 4 corners seen from d.pose; false while the screen has no real size
 bool ApplyRoiAuto(Device& d);     // only while d.roiAuto: RoiToScreen, but never on the fallback screen (deleted screen) or an unsized one; false = roi untouched
 const char* RoiHint(const Device& d, const Screen* sc);   // one-line hint under "Count only" while a lidar is in Screen mode and the ROI is not yet the real screen; nullptr = none
+// Origin: only the outgoing y and the Placement Y field flip; everything inside the app keeps y down.
+inline float OutY(float y01, bool originBottom) { return originBottom ? 1.f - y01 : y01; }
+inline float PoseYToUi(float poseY, float realH, bool originBottom) { return originBottom && realH > 0 ? realH - poseY : poseY; }
+inline float UiToPoseY(float uiY, float realH, bool originBottom) { return originBottom && realH > 0 ? realH - uiY : uiY; }
 // Sensor Properties: which sections a device kind shows on the Input (0) / Output (1) page. Pure, so --roundtrip checks it.
 enum class PropSection { Connection, ScreenSize, Placement, Blobs, Calibration, SendOut, Triggers };
 std::vector<PropSection> SensorPropSections(DevKind k, int page);

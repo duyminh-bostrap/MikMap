@@ -68,7 +68,7 @@ void SendOut(Device& d, const mikmap::SensorFrame& f, double now) {
   p.count = (uint8_t)std::min<int>(f.count, mikmap::kMaxTouchPoints);
   for (int i = 0; i < p.count; ++i) {
     float ox, oy; ApplyH(H, f.points[i].x, f.points[i].y, ox, oy);
-    p.ids[i] = f.points[i].id; p.xy[2 * i] = ox / 1920.f; p.xy[2 * i + 1] = oy / 1080.f;
+    p.ids[i] = f.points[i].id; p.xy[2 * i] = ox / 1920.f; p.xy[2 * i + 1] = OutY(oy / 1080.f, d.originBottom);
   }
   if (g_out.push(p)) d.lastSentAt = now;
 }
@@ -519,15 +519,31 @@ bool SensorSelfTest(std::string& why) {
       mikmap::OscSource rx(oc);
       if (!rx.start()) return fail("send out: cannot listen on UDP: " + rx.lastError());
       dh.outOn = true; dh.outProto = 0; dh.outHost = "127.0.0.1"; dh.outPort = rx.boundPort();
-      bool got = false;
-      for (double t0 = now(); now() - t0 < kWait && !got;) {
-        SensorsTick(now());
-        if (rx.frames().consume() && rx.frames().readSlot().count == 1) got = true; else std::this_thread::sleep_for(std::chrono::milliseconds(5));
-      }
-      if (!got) return fail("send out: no OSC touch from the placed Hokuyo within 10 s");
-      const mikmap::TouchPoint& tp = rx.frames().readSlot().points[0];
-      if (std::fabs(tp.x - 0.5f) > 0.01f || std::fabs(tp.y - 0.556f) > 0.01f) return fail("send out: the touch must arrive normalised, about (0.5, 0.556)");
+      auto waitFor = [&](float wantY) {   // ticks until a received touch is at (0.5, wantY); false = none within kWait
+        for (double t0 = now(); now() - t0 < kWait;) {
+          SensorsTick(now());
+          if (rx.frames().consume() && rx.frames().readSlot().count == 1) {
+            const mikmap::TouchPoint& tp = rx.frames().readSlot().points[0];
+            if (std::fabs(tp.x - 0.5f) <= 0.01f && std::fabs(tp.y - wantY) <= 0.01f) return true;
+          } else std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+        return false;
+      };
+      dh.originBottom = false;
+      if (!waitFor(0.556f)) return fail("send out: Origin Top-left: the touch must arrive normalised, about (0.5, 0.556)");
+      dh.originBottom = true;
+      if (!waitFor(1.f - 0.556f)) return fail("send out: Origin Bottom-left: the touch must arrive flipped, about (0.5, 0.444)");
       dh.outOn = false; rx.stop();
+    }
+    {   // Origin helpers: only the outgoing y and the Placement Y field flip
+      for (DevKind k : {DevKind::Sim, DevKind::Skeleton, DevKind::Hokuyo, DevKind::Plugin}) if (!MakeDevice(k, "x").originBottom) return fail("origin: every new device must start Bottom-left");
+      if (OutY(0.25f, true) != 0.75f || OutY(0.25f, false) != 0.25f || OutY(-0.2f, true) != 1.2f) return fail("origin: OutY");
+      for (float rh : {500.f, 2250.f, 4000.f}) {
+        if (PoseYToUi(0, rh, true) != rh || PoseYToUi(rh, rh, true) != 0 || UiToPoseY(0, rh, true) != rh) return fail("origin: UI Y 0 must be the bottom edge (pose.y == realH)");
+        for (float py : {0.f, 123.5f, rh * 0.5f, rh})
+          if (std::fabs(UiToPoseY(PoseYToUi(py, rh, true), rh, true) - py) > 1e-3f || PoseYToUi(py, rh, false) != py || UiToPoseY(py, rh, false) != py) return fail("origin: Y round trip / identity when Top-left");
+      }
+      if (PoseYToUi(700, 0, true) != 700 || UiToPoseY(700, 0, true) != 700 || PoseYToUi(700, -5, true) != 700) return fail("origin: unsized screen must show and accept the raw pose.y");
     }
     {   // a Transform click that moves nothing (~1e-4 px round-trip) is no edit; a real move makes it Custom (4-point)
       ImVec2 q[4]; for (int i = 0; i < 4; ++i) q[i] = ImVec2(dh.calib[i].tx + 1e-3f, dh.calib[i].ty - 1e-3f);
