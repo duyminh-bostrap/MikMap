@@ -33,6 +33,7 @@ Thước đo thành công: người vận hành căn xong một sensor mà **kh�
 | D11 | x, y chuẩn hoá **0–1 trên toàn screen, chia cho độ phân giải của screen** (không phải 1920×1080). Sensor chỉ trả về toạ độ **trong vùng nó phủ** | nguyên văn |
 | D12 | Stage Output dùng **đúng độ phân giải của từng screen**; file cũ co một lần từ 1920×1080 khi mở | chọn phương án được khuyến nghị |
 | D13 | Sensor có **mask như slice** để cắt vùng dữ liệu nhiễu | nguyên văn |
+| D16 | Vùng tính của sensor có hai chế độ loại trừ nhau: **Screen** (tự giới hạn trong screen) hoặc **Zone** tuỳ chỉnh (hình như mask, chỉ tính toạ độ trong zone) | thay nút "ROI = screen" (§6.4b) |
 | D14 | **Làm UI/UX và luồng trước**, các hàm xử lý chi tiết sau | nguyên văn |
 | D15 | Trang Sensor cũ trở thành trang **Effect** (làm sau, §8) | nguyên văn |
 
@@ -91,7 +92,7 @@ Thước đo thành công: người vận hành căn xong một sensor mà **kh�
 ### 5.4 Cột 3: Properties
 
 Đổi theo node đang chọn. Với sensor, giữ bố cục lai đã có (`SensorPropSections`): khối đầu luôn hiện, các mục còn lại theo tab.
-- **Luôn hiện:** tên, trạng thái + fps/latency, Active, chọn screen, cảnh báo vàng khi screen dự phòng đang được dùng.
+- **Luôn hiện:** tên, trạng thái + fps/latency, Active, cảnh báo vàng khi screen dự phòng đang được dùng.
 - **INPUT:** Connection (host, port, Reconnect, Scan again) · Screen size (mm) · Placement · Blob tracking.
 - **OUTPUT:** Calibration (badge Placed/Custom, Re-apply placement, 4 toạ độ số, wizard chạm 4 điểm, RMS) · Send out · Triggers.
 
@@ -144,6 +145,16 @@ Không bước nào phải rời trang Mapping.
 - Dùng lại mask bezier của slice. Vẽ trên tab **INPUT** của sensor. Lưu trong không gian sensor: mm với lidar, UV với camera. Kéo lại vị trí sensor hay warp thì mask đi theo, không phải vẽ lại.
 - Điểm rơi trong vùng mask cắt bỏ thì bị loại. Với dữ liệu video, mask là alpha.
 - Đa giác đã làm phẳng được tính sẵn khi mask đổi, ở render thread, ngoài vòng lặp nóng. Vòng lặp nóng chỉ kiểm tra điểm trong đa giác bằng mảng có sẵn.
+
+### 6.4b Vùng tính của sensor: "Screen" hoặc "Zone" (D16, người dùng 2026-10-29)
+
+- Mỗi sensor có một chế độ **loại trừ nhau** (không giao nhau), chọn ở Properties › Placement thay cho nút "ROI = screen":
+  1. **Screen (mặc định cho lidar mới):** chỉ tính dữ liệu trong vùng screen. ROI luôn bằng 4 góc screen trong không gian của sensor và tự tính lại khi vị trí, góc xoay hay kích thước screen đổi.
+  2. **Zone (tuỳ chỉnh):** người dùng tạo một hay nhiều zone; **chỉ các toạ độ rơi trong một zone mới được tính**. Zone có thể là chữ nhật, elip, đa giác hoặc bezier, dùng đúng bộ hình và công cụ vẽ của mask (§6.4), vẽ trên INPUT, lưu trong không gian sensor (mm với lidar).
+- Zone khác mask ở chiều tác dụng: **mask cắt bỏ** vùng nhiễu, **zone giữ lại** vùng dùng. Mask vẫn áp trong cả hai chế độ.
+- Ở chế độ Zone, vùng screen không tự giới hạn thêm: zone có thể vươn ra ngoài screen (điểm ngoài vùng cover vẫn bị bỏ ở §6.3).
+- Dữ liệu: cờ chế độ cộng danh sách zone, mảng đa giác đã làm phẳng tính sẵn như mask; `engine/io` cần bộ lọc nhiều đa giác thay cho ROI một tứ giác hiện tại.
+- Làm theo hai bước: **(a)** chế độ Screen thành ô chọn, ROI tự tính lại (nhỏ, không cần engine mới); **(b)** Zone cùng mask ở S2.
 
 ### 6.5 Gộp điểm giữa các sensor (D10)
 
