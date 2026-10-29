@@ -423,6 +423,26 @@ bool SensorSelfTest(std::string& why) {
     NewProject(); A.routes.clear();
   }
 
+  // Placing a lidar on INPUT: the end of a pose edit places a lidar nobody has aligned; a Custom (4-point) one is never re-derived.
+  {
+    Screen& ps = A.screens[0]; ps.realW = 4000; ps.realH = 2250;
+    Device fresh = MakeDevice(DevKind::Hokuyo, "selftest-place"); fresh.enabled = true; fresh.status = (int)mikmap::SourceStatus::Running;
+    fresh.screenId = ps.id; fresh.pose = mikmap::LidarPose{2000, 2250, -90, false};
+    Device d1 = fresh; CommitPose(d1);
+    if (!d1.placed || !d1.calibrated || SensorProgress(d1, 0) < 2) return fail("place: ending a pose edit on a fresh lidar must place it");
+    Device custom = fresh; custom.calibrated = true; custom.calib[0].mx = 123; const std::vector<Calib> kept = custom.calib;
+    CommitPose(custom);
+    bool same = !custom.placed && custom.calibrated;
+    for (int i = 0; i < 4; ++i) same = same && custom.calib[i].mx == kept[i].mx && custom.calib[i].my == kept[i].my && custom.calib[i].tx == kept[i].tx;
+    if (!same) return fail("place: ending a pose edit must never re-derive a Custom (4-point) calibration");
+    ps.realW = 0; Device unsized = fresh; CommitPose(unsized);
+    if (unsized.placed || unsized.calibrated) return fail("place: on a screen without a real size nothing must change");
+    A.devices.push_back(fresh); A.sensorSecOpen[(int)DevKind::Hokuyo] = 0;
+    GoToSensorStep(fresh.id, 2);
+    if (A.mpage != 0 || !(A.sensorSecOpen[(int)DevKind::Hokuyo] & (1u << (int)PropSection::Placement))) return fail("place: GoToSensorStep(2) must open Placement on INPUT");
+    NewProject(); A.routes.clear();
+  }
+
   Device a = MakeDevice(DevKind::Skeleton, "selftest-a"); a.port = port; a.enabled = true;
   A.devices.push_back(a);
   MarkSaved();

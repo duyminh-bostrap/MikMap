@@ -62,7 +62,7 @@ void GoToSensorStep(const std::string& id, int step) {
   SelectDevice(id);
   const Device* d = A.curDevice(); if (!d || d->id != id || step < 1 || step > 4) return;
   A.mpage = step >= 3 ? 1 : 0;
-  if (step == 1 || step == 4) A.sensorSecOpen.try_emplace((int)d->kind, 0xffffffffu).first->second |= 1u << (int)(step == 1 ? PropSection::Connection : PropSection::SendOut);
+  if (step != 3) A.sensorSecOpen.try_emplace((int)d->kind, 0xffffffffu).first->second |= 1u << (int)(step == 1 ? PropSection::Connection : step == 2 ? PropSection::Placement : PropSection::SendOut);
 }
 
 static std::string Endpoint(const Device& d) {
@@ -273,7 +273,10 @@ static void LidarPlacementView(ImRect area, Device& d) {
   if (sc->realW <= 0 || sc->realH <= 0) { ScreenSizeEntry(area, *sc); return; }
   const float SW = sc->realW, SH = sc->realH;
   static int drag = 0; static std::string dragDev; static ImVec2 off, mo0;   // 1 move the sensor, 2 turn it
-  if (drag && (!ImGui::IsMouseDown(0) || dragDev != d.id)) { drag = 0; A.pushHist(); }
+  if (drag && (!ImGui::IsMouseDown(0) || dragDev != d.id)) {   // the drag ended: that pose places a lidar nobody aligned yet
+    for (auto& o : A.devices) if (o.id == dragDev) CommitPose(o);
+    drag = 0; A.pushHist();
+  }
   bool rClick = false;
   const StageXf X = StageViewUpdate(A.sensorView[0], area, SW, SH, StageBase(area, SW, SH), false, drag == 1, &rClick);
   const mikmap::LidarPose& P = d.pose;
@@ -345,8 +348,9 @@ static void LidarPlacementView(ImRect area, Device& d) {
   char pl[64]; snprintf(pl, sizeof pl, "%d, %d mm \xC2\xB7 %.1f\xC2\xB0", (int)P.x, (int)P.y, P.angleDeg);
   TextC(c.x, c.y + 20, MONO_R, 9, K(tone), pl);
   dl->PopClipRect();
-  const char* hint = !d.placed ? "Custom (4-point) calibration: moving the sensor does not change it \xE2\x80\x94 Re-apply placement on Output"
-                               : "Drag the sensor to move it, the dot to turn it \xC2\xB7 Shift: one axis / 15\xC2\xB0";
+  const char* hint = d.placed ? "Drag the sensor to move it, the dot to turn it \xC2\xB7 Shift: one axis / 15\xC2\xB0"
+                   : d.calibrated ? "Custom (4-point) calibration: moving the sensor does not change it \xE2\x80\x94 Re-apply placement on Output"
+                                  : "Drag the sensor to where it really is \xE2\x80\x94 that places it";
   TextC((area.Min.x + area.Max.x) * 0.5f, area.Max.y - 12, MONO_R, 10, K(d.placed ? pal::t66 : pal::yellow), hint);
 }
 
@@ -572,13 +576,14 @@ static void ScreenSizeSection(Device& d, float x, float w, float oy, float& y) {
 
 static void PlacementSection(Device& d, float x, float w, float oy, float& y) {
   float px = (float)d.pose.x, py = (float)d.pose.y, pa = (float)d.pose.angleDeg;
-  if (NumRow(x, oy + y, w, "X (mm)", "##posex", px)) d.pose.x = px;
+  if (NumRow(x, oy + y, w, "X (mm)", "##posex", px)) { d.pose.x = px; CommitPose(d); }   // a typed pose places a lidar nobody aligned yet
   y += 24 + 4;
-  if (NumRow(x, oy + y, w, "Y (mm)", "##posey", py)) d.pose.y = py;
+  if (NumRow(x, oy + y, w, "Y (mm)", "##posey", py)) { d.pose.y = py; CommitPose(d); }
   y += 24 + 4;
-  if (NumRow(x, oy + y, w, "Angle (\xC2\xB0)", "##posea", pa, 1)) d.pose.angleDeg = std::clamp(pa, -360.f, 360.f);
+  if (NumRow(x, oy + y, w, "Angle (\xC2\xB0)", "##posea", pa, 1)) { d.pose.angleDeg = std::clamp(pa, -360.f, 360.f); CommitPose(d); }
   y += 24 + 4;
-  CheckRow(x, oy + y, "Mirror (mounted upside down)", d.pose.mirror); y += 24 + 4;
+  if (CheckRow(x, oy + y, "Mirror (mounted upside down)", d.pose.mirror)) CommitPose(d);
+  y += 24 + 4;
   if (NumRow(x, oy + y, w, "Range limit (mm)", "##range", d.rangeMm)) d.rangeMm = std::clamp(d.rangeMm, 0.f, 100000.f);
   y += 24 + 2;
   TextEll(x, oy + y + 5, w, MONO_R, 8, K(pal::t66), "0 = unlimited"); y += 10 + 6;

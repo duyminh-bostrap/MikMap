@@ -685,7 +685,7 @@ std::vector<Node> BuildTree(bool onlyScreen, const std::string& only);   // mapp
 void DrawTreePopover(ImRect r);   // the open rail popover: call after the stage so it floats over it
 void DrawTree(ImRect r);   // full panel, or the 46 px rail while A.treeCollapsed
 void SelectTreeNode(const Node& n);   // a plain click on a tree row (screen / slice / mask / sensor)
-void SelectDevice(const std::string& deviceId);   // selKind = 3, selDevice, selSc = DeviceScreen(d); clears selMk / mapMulti; A.screen = 1; wizardStep = 0; editRoi = false. Unknown id: no change
+void SelectDevice(const std::string& deviceId);   // selKind = 3, selDevice, selSc = DeviceScreen(d); clears selSl / selMk / mapMulti; A.screen = 1; wizardStep = 0; editRoi = false. Unknown id: no change
 void RemoveDevice(const std::string& deviceId);   // the tree menu's Remove: the selected sensor gone = its screen becomes the selection
 bool MappingEditsSlices();                        // false while a sensor is selected: Mapping's delete / copy / paste / duplicate / nudge keys do nothing
 void MappingShortcut(ImGuiKey key, bool ctrl, bool shift);   // one press of a Mapping editing key (main.cpp feeds it)
@@ -711,6 +711,7 @@ bool IpScanDone(std::vector<std::string>& out);                            // tr
 Screen* DeviceScreen(const Device& d, bool* fellBack = nullptr);   // never null while A.screens is non-empty; *fellBack = a named screen is gone
 bool PlacementCalib(Device& d, const Screen& sc, const mikmap::LidarPose& pose);   // places a lidar by its pose (mm) on a screen of known real size: writes the 4 calib pairs; false + d untouched if the size is unknown
 bool ApplyPlacement(Device& d);   // only while d.placed: PlacementCalib on its own screen with d.pose (a hand-tuned "Custom (4-point)" quad is left alone)
+void CommitPose(Device& d);       // end of a pose edit on INPUT (drag released, Placement field changed): a lidar never aligned (!placed && !calibrated) on a sized screen becomes placed; Custom (4-point) is left alone
 bool QuadEdit(Device& d, const ImVec2 q[4]);   // Output quad edited by hand: a move over 0.01 px writes calib tx,ty and makes it Custom (placed = false); less is no edit
 bool RoiToScreen(Device& d);      // lidar "ROI = screen": roi = the screen's 4 corners seen from d.pose; false while the screen has no real size
 // Sensor Properties: which sections a device kind shows on the Input (0) / Output (1) page. Pure, so --roundtrip checks it.

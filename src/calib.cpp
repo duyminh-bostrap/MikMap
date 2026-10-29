@@ -188,6 +188,12 @@ bool ApplyPlacement(Device& d) {
   return sc && PlacementCalib(d, *sc, d.pose);
 }
 
+void CommitPose(Device& d) {
+  if (d.placed || d.calibrated || A.wizardStep != 0) return;   // placed: SensorsTick already follows the pose; Custom (4-point), or its points being captured: never re-derived by a move
+  d.placed = true;
+  if (!ApplyPlacement(d)) d.placed = false;   // no real size (or its screen is gone): nothing changes
+}
+
 bool QuadEdit(Device& d, const ImVec2 q[4]) {
   constexpr float eps = 0.01f;   // a Transform click that moves nothing still round-trips the points by ~1e-4 px
   if (d.calib.size() != 4) return false;
