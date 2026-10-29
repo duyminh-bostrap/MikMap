@@ -519,6 +519,19 @@ bool SensorSelfTest(std::string& why) {
       A.wizard.step = 0;
     }
 
+    // modality: nothing on the Composition page takes input under the popup; a menu open at frame start blocks the popup for
+    // that frame and owns Esc (the popup stays); with no menu open Esc closes the popup
+    {
+      A.wizard.step = 0; if (!DeckUiFree()) return fail("wizard: the deck must be free with no popup and no overlay");
+      OpenSensorWizard(A.screens[0].id);
+      if (DeckUiFree()) return fail("wizard: the deck (preview handles, wheel, pan) must not take input under the popup");
+      CaptureOverlayState();
+      if (A.overlayAtStart || !WizardEscCloses(false) || WizardEscCloses(true)) return fail("wizard: with no menu open Esc must close the popup (unless a text field is active)");
+      A.ctx.open = true; CaptureOverlayState(); A.ctx.open = false;   // the menu item click closed it during DrawOverlays, after the capture
+      if (!A.overlayAtStart) return fail("wizard: a menu open at frame start must block the popup that frame");
+      if (WizardEscCloses(false)) return fail("wizard: Esc with the card menu open must close only the menu, not the popup");
+      A.wizard.step = 0; CaptureOverlayState();
+    }
     // Close: steps 1-2 cancel without a device; step 3 closes and keeps what was made, without changing the selection
     {
       const size_t n0 = A.devices.size();

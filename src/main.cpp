@@ -608,7 +608,7 @@ void DrawOverlays(ImVec2 disp) {
     A.rename.fresh = false;
     g.blocked = true;
   }
-  if (ImGui::IsKeyPressed(ImGuiKey_Escape)) { A.cancelMaskPen(); A.pop.open = A.ctx.open = A.blendDD.open = A.projectMenu = A.rename.open = A.openDialog = A.helpOpen = A.deckMenu.open = false; }
+  if (ImGui::IsKeyPressed(ImGuiKey_Escape) && !WizardEscCloses(io.WantTextInput)) { A.cancelMaskPen(); A.pop.open = A.ctx.open = A.blendDD.open = A.projectMenu = A.rename.open = A.openDialog = A.helpOpen = A.deckMenu.open = false; }
   g.dl = rootDl;
 }
 
@@ -1952,7 +1952,7 @@ int main(int argc, char** argv) {
           for (ImGuiKey k : {ImGuiKey_LeftArrow, ImGuiKey_RightArrow, ImGuiKey_UpArrow, ImGuiKey_DownArrow}) if (ImGui::IsKeyPressed(k)) MappingShortcut(k, false, io.KeyShift);   // key repeat nudges on
         }
       }
-      if (!io.WantTextInput && io.KeyCtrl) {
+      if (!io.WantTextInput && io.KeyCtrl && A.wizard.step == 0) {
         if (ImGui::IsKeyPressed(ImGuiKey_S, false)) { A.notify(DoSave(io.KeyShift)); A.projectDirty = ProjectDirty(); }
         else if (ImGui::IsKeyPressed(ImGuiKey_O, false)) OpenDialogShow();
         else if (ImGui::IsKeyPressed(ImGuiKey_N, false)) RunProjectItem(0);
@@ -1971,7 +1971,8 @@ int main(int argc, char** argv) {
     g.dl = ImGui::GetWindowDrawList();
     g.alpha = 1.f;
     // input blocking from overlays that were open at frame start
-    g.blocked = A.pop.open || A.blendDD.open || A.ctx.open || A.layerMenu.open || A.colMenu.open || A.deckMenu.open || A.settingsOpen || A.rename.open || A.openDialog || A.helpOpen || A.wizard.step > 0 ||
+    CaptureOverlayState();
+    g.blocked = A.overlayAtStart || A.wizard.step > 0 ||
                 (A.projectMenu && Raw(ProjectMenuRect()));
     Fill(ImRect(0, 0, disp.x, disp.y), K(pal::g0f));
     ImRect body(0, 40, disp.x, disp.y - 22);

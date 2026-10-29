@@ -930,6 +930,11 @@ void SensorWizardDone() {
   if (!w.added.empty()) SelectDevice(w.added[0]);
 }
 
+void CaptureOverlayState() {
+  A.overlayAtStart = A.pop.open || A.blendDD.open || A.ctx.open || A.layerMenu.open || A.colMenu.open || A.deckMenu.open || A.settingsOpen || A.rename.open || A.openDialog || A.helpOpen;
+}
+bool WizardEscCloses(bool wantTextInput) { return A.wizard.step > 0 && !A.overlayAtStart && !wantTextInput; }
+
 void CloseSensorWizard() { A.wizard.step = 0; }   // a running IP scan is left to finish and be joined later, as before; devices made stay
 
 // one choice on step 1; a dimmed card only says it is planned
@@ -989,7 +994,7 @@ void SensorWizardView(ImRect r) {
     if (sc) TextR(xb.Min.x - 10, cy, MONO_R, 10, K(pal::coral), ("on " + sc->name).c_str());
   }
 
-  const float colW = std::min(640.f, r.GetWidth() - 48), x = (r.Min.x + r.Max.x - colW) * 0.5f;
+  const float colW = std::max(60.f, std::min(640.f, r.GetWidth() - 48)), x = (r.Min.x + r.Max.x - colW) * 0.5f;
   float y = tb.Max.y + 24;
 
   if (w.step == 1) {
@@ -1148,15 +1153,15 @@ void DrawSensorWizardPopup() {
                                            ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoNavInputs);
   ImGui::PopStyleVar();
   g.dl = ImGui::GetWindowDrawList(); g.alpha = 1.f;
-  g.blocked = A.ctx.open || A.rename.open || A.openDialog || A.helpOpen || A.settingsOpen;   // a menu opened from the popup (network card) owns the pointer
+  g.blocked = A.overlayAtStart;   // frame-start state: the click that picked a menu item already closed the menu in DrawOverlays, it must not also hit what is under it
   Fill(ImRect(0, 0, disp.x, disp.y), K(0x000000, 0.6f));
-  const float w = std::min(720.f, disp.x - 80.f), h = std::min(520.f, disp.y - 80.f);
+  const float w = std::max(120.f, std::min(720.f, disp.x - 80.f)), h = std::max(120.f, std::min(520.f, disp.y - 80.f));
   const ImRect r((disp.x - w) * 0.5f, (disp.y - h) * 0.5f, (disp.x + w) * 0.5f, (disp.y + h) * 0.5f);
   Box(r, K(pal::g14), K(pal::g2a), 6);
   g.dl->PushClipRect(r.Min, r.Max, true);
   SensorWizardView(r);
   g.dl->PopClipRect();
-  const bool esc = ImGui::IsKeyPressed(ImGuiKey_Escape, false) && !io.WantTextInput && !A.ctx.open;
+  const bool esc = ImGui::IsKeyPressed(ImGuiKey_Escape, false) && WizardEscCloses(io.WantTextInput);
   if (esc) CloseSensorWizard();
   if (A.wizard.step == 0) wasOpen = false;
   ImGui::End();

@@ -449,6 +449,7 @@ struct App {
   bool editRoi = false;
   bool sensorOverlay = false;   // G13: draw live sensor touches on the projector output window (debug aid, off by default)
   int wizardStep = 0;
+  bool overlayAtStart = false;   // a menu / dialog was open when this frame began (CaptureOverlayState); the add-sensor popup blocks and handles Esc from this, not from the live flags
   float noise = 1.2f, blobSize = 15;
   float sweep = 0;
 
@@ -682,13 +683,16 @@ void RemoveDevice(const std::string& deviceId);   // the tree menu's Remove: the
 bool MappingEditsSlices();                        // false while a sensor is selected: Mapping's delete / copy / paste / duplicate / nudge keys do nothing
 void MappingShortcut(ImGuiKey key, bool ctrl, bool shift);   // one press of a Mapping editing key (main.cpp feeds it)
 void ApplyStartScreen(int screen);                // --screen N: 0 / 1 as is; 2+ (the old Sensor page) = Mapping with the current sensor selected
-void OpenSensorWizard(const std::string& screenId);   // wizard step 1 on the Mapping page, screen preselected
+void OpenSensorWizard(const std::string& screenId);   // wizard step 1 as a popup over the current page (the page does not change), screen preselected
 uint32_t SensorSelTone(int page);                 // sensor.cpp: a selected sensor's tone = the slice selection tone of that page (0 INPUT cyan, 1 OUTPUT coral)
 void SensorStageBody(ImRect area, Device& d);    // sensor.cpp: a selected sensor's stage content below Mapping's 44 px bar (uses A.mpage)
 void SensorBarTools(ImRect tb, float lx, Device& d);    // sensor.cpp: the sensor's own items in Mapping's bar from lx to the right (zoom, overlay, info)
 void SensorProps(ImRect r, Device* d);            // sensor.cpp: Properties of the selected sensor (Mapping's right panel)
 void SensorWizardView(ImRect r);                  // sensor.cpp: the wizard's three steps, drawn inside the popup box r
 void DrawSensorWizardPopup();                    // no-op when wizard.step == 0; else a centred modal over the page (own full-window ImGui window: dims and blocks what is behind). Esc closes it
+void CaptureOverlayState();                      // frame start: A.overlayAtStart = any menu / dialog / popover open now
+bool WizardEscCloses(bool wantTextInput);        // Esc closes the popup only when no overlay was open at frame start and no text field is active
+bool DeckUiFree();                               // deck.cpp: the Composition page takes pointer input (no overlay and no add-sensor popup open)
 void CloseSensorWizard();                        // step 1-2: cancel, no device made; step 3: close, keep every device already made
 void SensorWizardNext();         // step 1 -> 2 (Sim: straight to 3); step 2 -> 3 creates one enabled device per ticked item on wizard.screenId
 void SensorWizardAddManual();    // step 2 Hokuyo: wizard.manualHost ("ip" or "ip:port") joins the list, ticked

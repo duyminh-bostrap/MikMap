@@ -814,13 +814,17 @@ void PreviewTransformMenu(int li, int ci, ImVec2 at) {
   A.openCtx(at, mi);
 }
 
+bool DeckUiFree() {
+  return !(A.ctx.open || A.pop.open || A.layerMenu.open || A.colMenu.open || A.deckMenu.open || A.blendDD.open ||
+           A.projectMenu || A.rename.open || A.settingsOpen || A.openDialog || A.helpOpen || A.wizard.step > 0);
+}
+
 static void PreviewTransformEditor(ImRect well, ImRect cv, ImRect ctl, int li, int ci) {
   Clip& c = A.layers[li].clips[ci];
   if (c.st == Clip::Empty || c.st == Clip::Armed) return;
   if (A.pvHand) return;   // hand tool: left-drag pans the view instead of editing the clip
   ImGuiIO& io = ImGui::GetIO();
-  const bool uiFree = !(A.ctx.open || A.pop.open || A.layerMenu.open || A.colMenu.open || A.deckMenu.open || A.blendDD.open ||
-                        A.projectMenu || A.rename.open || A.settingsOpen || A.openDialog || A.helpOpen);
+  const bool uiFree = DeckUiFree();
   float cw, ch; ClipContentExtent(c, cw, ch);
   float px, py; ClipEffectivePos(c, 960.f, px, py);
   const float k = cv.GetWidth() / 960.f;
@@ -952,8 +956,7 @@ static void Monitor(ImRect r, bool live) {
     gPvFitW = cvFit.GetWidth();
     ImGuiIO& pio = ImGui::GetIO();
     const ImVec2 pm = pio.MousePos;
-    const bool pvFree = !(A.ctx.open || A.pop.open || A.layerMenu.open || A.colMenu.open || A.deckMenu.open || A.blendDD.open ||
-                          A.projectMenu || A.rename.open || A.settingsOpen || A.openDialog || A.helpOpen);
+    const bool pvFree = DeckUiFree();
     // zoom + hand buttons, top-right of the monitor
     const ImRect handB = pvHandB, zoomB = pvZoomB;
     ImRect ctlR(zoomB.Min.x, zoomB.Min.y, handB.Max.x, handB.Max.y);
