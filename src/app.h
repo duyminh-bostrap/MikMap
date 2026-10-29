@@ -299,10 +299,8 @@ struct StageView {
 };
 struct StageXf {   // this frame's mapping: space px -> window px
   ImRect cv; float s = 1;   // cv: the SW x SH space box in window px; s: window px per space px
-  float sy = 0;             // px per space px on y when it differs from s (a sensor's backdrop stretches 1920x1080 over realW x realH); 0 = s
-  float syv() const { return sy > 0 ? sy : s; }
-  ImVec2 toPx(ImVec2 p) const { return ImVec2(cv.Min.x + p.x * s, cv.Min.y + p.y * syv()); }
-  ImVec2 fromPx(ImVec2 px) const { return ImVec2((px.x - cv.Min.x) / s, (px.y - cv.Min.y) / syv()); }
+  ImVec2 toPx(ImVec2 p) const { return ImVec2(cv.Min.x + p.x * s, cv.Min.y + p.y * s); }
+  ImVec2 fromPx(ImVec2 px) const { return ImVec2((px.x - cv.Min.x) / s, (px.y - cv.Min.y) / s); }
 };
 // Wheel = zoom about the cursor, Shift+wheel / sideways wheel scroll, right-drag (or left-drag with handTool) pans,
 // edgeScroll: the pointer near the edge pushes the view (a point is being dragged). *rClick: right button let go without a drag.

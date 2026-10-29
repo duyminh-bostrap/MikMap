@@ -244,6 +244,16 @@ static void ScreenSizeEntry(ImRect area, Screen& sc) {
   if (ImGui::IsItemDeactivatedAfterEdit()) { sc.realH = (float)std::clamp(eh, 0, 100000); A.pushHist(); }
 }
 
+// A sensor stage's background: what the Deck's Live Output monitor shows (the composition, or the test card), stretched to
+// the stage box; nothing over the dark box during blackout, as the monitor shows OUTPUT MUTED.
+static void CompBackdrop(ImRect cv, float alpha) {
+  Box(cv, K(0x0d0d0d), 0, 3);
+  if (A.blackout) return;
+  g.dl->PushClipRect(cv.Min, cv.Max, true);
+  DrawComposite(cv, (float)g.time * 1.2f, alpha);   // same time base as the Live Output monitor
+  g.dl->PopClipRect();
+}
+
 // The other sensors on this screen, grey and dim, not clickable; drawn before the selected one so it stays on top.
 template <class F> static void EachOtherSensor(const Device& d, const Screen* sc, F f) {
   for (auto& o : A.devices) if (o.id != d.id && o.enabled && DeviceScreen(o) == sc) f(o);   // a disabled one sends nothing: no ghost
@@ -283,8 +293,7 @@ static void LidarPlacementView(ImRect area, Device& d) {
   auto surf = [&](float xmm, float ymm) { const mikmap::Vec2 s = mikmap::lidarToSurface(P, {xmm, ymm}); return X.toPx(ImVec2((float)s.x, (float)s.y)); };
   ImDrawList* dl = g.dl;
   dl->PushClipRect(area.Min, area.Max, true);
-  // the screen as the projector shows it, stretched over its real surface (realW x realH mm), with a faint 1 m grid to place by
-  { StageXf B = X; B.s = X.cv.GetWidth() / 1920.f; B.sy = X.cv.GetHeight() / 1080.f; DrawScreenBackdrop(*sc, B, (float)g.time * 1.2f, 1.f); }
+  CompBackdrop(X.cv, 1.f);   // the live composition stretched over the screen's real surface (realW x realH mm), with a faint 1 m grid to place by
   EachOtherSensor(d, sc, [&](const Device& o) { if (IsLidar(o) && (o.placed || o.calibrated)) GhostLidar(X, o); });   // a never-placed pose is a default, not where it hangs
   for (float gx = 1000; gx < SW; gx += 1000) dl->AddLine(X.toPx({gx, 0}), X.toPx({gx, SH}), Ca(K(pal::g1c)), 1.f);
   for (float gy = 1000; gy < SH; gy += 1000) dl->AddLine(X.toPx({0, gy}), X.toPx({SW, gy}), Ca(K(pal::g1c)), 1.f);
@@ -362,7 +371,7 @@ static void SensorOutputView(ImRect area, Device& d) {
   // shortcut: no edge-scroll while dragging a quad point (EditQuad does not say a drag is in flight); add it if points hide under the panels
   const StageXf X = StageViewUpdate(A.sensorView[1], area, 1920, 1080, StageBase(area, 1920, 1080), false, false, &rClick);
   g.dl->PushClipRect(area.Min, area.Max, true);
-  DrawScreenBackdrop(*sc, X, (float)g.time * 1.2f, 0.6f);   // dimmed: the quad is what this page edits
+  CompBackdrop(X.cv, 0.6f);   // dimmed: the quad is what this page edits
   Border(X.cv, K(pal::coral, 0.6f), 2, 1.f);
   EachOtherSensor(d, sc, [&](const Device& o) {   // their calibration quads and touches, grey
     const ImU32 col = Ca(K(pal::t66, 0.45f));

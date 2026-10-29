@@ -94,7 +94,7 @@ void DrawScreenBackdrop(const Screen& sc, const StageXf& x, float t, float alpha
   bool anySolo = false;
   for (auto& S : sc.slices) if (S.solo && S.visible) anySolo = true;
   g.dl->PushClipRect(x.cv.Min, x.cv.Max, true);   // the projector only shows the 1920x1080 box
-  for (auto& S : sc.slices) if (S.visible && !(anySolo && !S.solo)) DrawSliceOutput(sc, S, x.cv.Min.x, x.cv.Min.y, x.s, x.syv(), t);
+  for (auto& S : sc.slices) if (S.visible && !(anySolo && !S.solo)) DrawSliceOutput(sc, S, x.cv.Min.x, x.cv.Min.y, x.s, x.s, t);
   g.dl->PopClipRect();
   g.alpha = prevA;
 }

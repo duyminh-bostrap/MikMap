@@ -630,14 +630,7 @@ bool MappingSelfTest(std::string& why) {
   MaskSetPoints(m, np);
   if (m.shape != -1 || std::fabs(m.rot - 30.f) > 1e-4f || m.pts.size() != np.size()) { why = "mask point edit lost its turn or points"; return false; }
   for (size_t i = 0; i < np.size(); ++i) if (!near2(m.pts[i], np[i], 0.05f)) { why = "mask outline does not go through the edited points"; return false; }
-  {   // StageXf with its own y scale (a sensor's live backdrop is realW x realH mm); sy == 0 is the old single scale
-    StageXf x; x.cv = ImRect(10, 20, 210, 120); x.s = 0.1f; x.sy = 0.05f;
-    if (!near2(x.toPx({1000, 1000}), ImVec2(110, 70), 1e-3f)) { why = "StageXf with sy: toPx ignored the y scale"; return false; }
-    if (!near2(x.fromPx(x.toPx({123, 456})), ImVec2(123, 456), 1e-3f)) { why = "StageXf with sy: fromPx is not toPx's inverse"; return false; }
-    x.sy = 0;
-    if (!near2(x.toPx({1000, 1000}), ImVec2(110, 120), 1e-3f)) { why = "StageXf with sy == 0 no longer uses s on y"; return false; }
-    if (SensorSelTone(0) != pal::cyan || SensorSelTone(1) != pal::coral) { why = "a selected sensor must take the page's selection tone (INPUT cyan, OUTPUT coral)"; return false; }
-  }
+  if (SensorSelTone(0) != pal::cyan || SensorSelTone(1) != pal::coral) { why = "a selected sensor must take the page's selection tone (INPUT cyan, OUTPUT coral)"; return false; }
   return true;
 }
 
