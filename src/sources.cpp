@@ -443,6 +443,26 @@ bool SensorSelfTest(std::string& why) {
     NewProject(); A.routes.clear();
   }
 
+  // Moving a lidar on INPUT: exact pointer->mm, Ctrl grid from the screen size, pose kept within the screen +-20%.
+  {
+    const float sn[][3] = {{500, 300, 10}, {4000, 2250, 50}, {40000, 22500, 500}, {20, 10, 0.2f}};
+    for (auto& c : sn) if (std::fabs(SensorSnapStepMm(c[0], c[1]) - c[2]) > c[2] * 1e-4f) return fail("snap: step for " + std::to_string((int)c[0]) + "x" + std::to_string((int)c[1]) + " is " + std::to_string(SensorSnapStepMm(c[0], c[1])) + ", want " + std::to_string(c[2]));
+    float x = 250, y = 150; ClampSensorPose(x, y, 500, 300);
+    if (x != 250 || y != 150) return fail("clamp: a pose inside the screen must not move");
+    x = 600; y = -60; ClampSensorPose(x, y, 500, 300);
+    if (std::fabs(x - 600) > 1e-3f || std::fabs(y + 60) > 1e-3f) return fail("clamp: the +-20% edge itself is allowed");
+    x = 9000; y = -9000; ClampSensorPose(x, y, 500, 300);
+    if (std::fabs(x - 600) > 1e-3f || std::fabs(y + 60) > 1e-3f) return fail("clamp: 500x300 far outside must land on 600 / -60");
+    x = -9000; y = 9000; ClampSensorPose(x, y, 4000, 2250);
+    if (std::fabs(x + 800) > 1e-3f || std::fabs(y - 2700) > 1e-3f) return fail("clamp: 4000x2250 far outside must land on -800 / 2700");
+    StageXf X; X.cv = ImRect(100, 50, 800, 470); X.s = 700.f / 500.f;   // a 500 mm screen drawn 700 px wide
+    const ImVec2 a = SensorDragToMm(X, ImVec2(400, 250), ImVec2(0, 0), ImVec2(0, 0), false, 0.f, 500, 300);
+    const ImVec2 b = SensorDragToMm(X, ImVec2(401, 250), ImVec2(0, 0), ImVec2(0, 0), false, 0.f, 500, 300);
+    if (std::fabs((b.x - a.x) - 500.f / 700.f) > 1e-3f) return fail("drag: 1 px must move the sensor realW/stageWidth mm, not a 10 mm step");
+    const ImVec2 sp = SensorDragToMm(X, ImVec2(401, 250), ImVec2(0, 0), ImVec2(0, 0), false, SensorSnapStepMm(500, 300), 500, 300);
+    if (std::fabs(std::fmod(sp.x, 10.f)) > 1e-3f) return fail("drag: Ctrl must snap to the 10 mm grid of a 500 mm screen");
+  }
+
   Device a = MakeDevice(DevKind::Skeleton, "selftest-a"); a.port = port; a.enabled = true;
   A.devices.push_back(a);
   MarkSaved();

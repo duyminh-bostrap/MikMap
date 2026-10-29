@@ -277,6 +277,28 @@ static void GhostLidar(const StageXf& X, const Device& o) {
   TextC(c.x, c.y + 20, MONO_R, 9, K(pal::t66, 0.45f), o.name.c_str());
 }
 
+// A sensor may hang a little off its screen (20% of each side) but not fly away.
+void ClampSensorPose(float& x, float& y, float realW, float realH) {
+  x = std::clamp(x, -0.2f * realW, 1.2f * realW); y = std::clamp(y, -0.2f * realH, 1.2f * realH);
+}
+// Largest 1-2-5 value (..., 1, 2, 5, 10, 20, 50, ...) that is <= max(realW, realH) / 50.
+float SensorSnapStepMm(float realW, float realH) {
+  const double t = std::max(realW, realH) / 50.0;
+  if (!(t > 0)) return 1.f;
+  const double base = std::pow(10.0, std::floor(std::log10(t) + 1e-9)), m = t / base;
+  return (float)(base * (m >= 5 - 1e-9 ? 5 : m >= 2 - 1e-9 ? 2 : 1));
+}
+// Pointer (window px) -> sensor position (mm): exact through the stage transform; snapMm > 0 rounds to that grid; shift keeps the axis
+// the pointer moved less on at its start. mo0 = the pointer at grab (mm), off = pose - mo0.
+ImVec2 SensorDragToMm(const StageXf& X, ImVec2 mouse, ImVec2 off, ImVec2 mo0, bool shift, float snapMm, float realW, float realH) {
+  const ImVec2 mo = X.fromPx(mouse);
+  float nx = mo.x + off.x, ny = mo.y + off.y;
+  if (shift) { if (std::fabs(mo.x - mo0.x) >= std::fabs(mo.y - mo0.y)) ny = mo0.y + off.y; else nx = mo0.x + off.x; }
+  if (snapMm > 0) { nx = std::round(nx / snapMm) * snapMm; ny = std::round(ny / snapMm) * snapMm; }
+  ClampSensorPose(nx, ny, realW, realH);
+  return ImVec2(nx, ny);
+}
+
 static void LidarPlacementView(ImRect area, Device& d) {
   Screen* sc = DeviceScreen(d);
   if (!sc) { TextC((area.Min.x + area.Max.x) * 0.5f, (area.Min.y + area.Max.y) * 0.5f, MONO_R, 10, K(pal::t66), "No screen to place the sensor on"); return; }
@@ -288,7 +310,7 @@ static void LidarPlacementView(ImRect area, Device& d) {
     drag = 0; A.pushHist();
   }
   bool rClick = false;
-  const StageXf X = StageViewUpdate(A.sensorView[0], area, SW, SH, StageBase(area, SW, SH), false, drag == 1, &rClick);
+  const StageXf X = StageViewUpdate(A.sensorView[0], area, SW, SH, StageBase(area, SW, SH), false, false, &rClick);   // no edge-scroll: the view must not run away under a sensor being dragged
   const mikmap::LidarPose& P = d.pose;
   auto surf = [&](float xmm, float ymm) { const mikmap::Vec2 s = mikmap::lidarToSurface(P, {xmm, ymm}); return X.toPx(ImVec2((float)s.x, (float)s.y)); };
   ImDrawList* dl = g.dl;
@@ -335,11 +357,10 @@ static void LidarPlacementView(ImRect area, Device& d) {
   if (hot && ImGui::IsMouseClicked(0)) {
     drag = hot; dragDev = d.id; mo0 = X.fromPx(m); off = ImVec2((float)P.x - mo0.x, (float)P.y - mo0.y);
   }
-  if (drag == 1) {   // move, rounded to 10 mm; Shift: along the axis the pointer has moved further on
-    const ImVec2 mo = X.fromPx(m);
-    float nx = mo.x + off.x, ny = mo.y + off.y;
-    if (ImGui::GetIO().KeyShift) { if (std::fabs(mo.x - mo0.x) >= std::fabs(mo.y - mo0.y)) ny = mo0.y + off.y; else nx = mo0.x + off.x; }
-    d.pose.x = std::clamp(std::round(nx / 10.f) * 10.f, -20000.f, 40000.f); d.pose.y = std::clamp(std::round(ny / 10.f) * 10.f, -20000.f, 40000.f);
+  if (drag == 1) {   // move: follows the pointer exactly; Ctrl: snap to the screen-size grid; Shift: along the axis the pointer has moved further on
+    const ImGuiIO& io = ImGui::GetIO();
+    const ImVec2 np = SensorDragToMm(X, m, off, mo0, io.KeyShift, io.KeyCtrl ? SensorSnapStepMm(SW, SH) : 0.f, SW, SH);
+    d.pose.x = np.x; d.pose.y = np.y;
   } else if (drag == 2) {   // turn about the sensor; Shift: 15 degree steps
     float deg = std::atan2(m.y - c.y, m.x - c.x) / kDegToRad;
     deg = ImGui::GetIO().KeyShift ? std::round(deg / 15.f) * 15.f : std::round(deg * 10.f) / 10.f;
@@ -357,7 +378,7 @@ static void LidarPlacementView(ImRect area, Device& d) {
   char pl[64]; snprintf(pl, sizeof pl, "%d, %d mm \xC2\xB7 %.1f\xC2\xB0", (int)P.x, (int)P.y, P.angleDeg);
   TextC(c.x, c.y + 20, MONO_R, 9, K(tone), pl);
   dl->PopClipRect();
-  const char* hint = d.placed ? "Drag the sensor to move it, the dot to turn it \xC2\xB7 Shift: one axis / 15\xC2\xB0"
+  const char* hint = d.placed ? "Drag the sensor to move it, the dot to turn it \xC2\xB7 Shift: one axis / 15\xC2\xB0 \xC2\xB7 Ctrl: snap"
                    : d.calibrated ? "Custom (4-point) calibration: moving the sensor does not change it \xE2\x80\x94 Re-apply placement on Output"
                                   : "Drag the sensor to where it really is \xE2\x80\x94 that places it";
   TextC((area.Min.x + area.Max.x) * 0.5f, area.Max.y - 12, MONO_R, 10, K(d.placed ? pal::t66 : pal::yellow), hint);
@@ -585,9 +606,15 @@ static void ScreenSizeSection(Device& d, float x, float w, float oy, float& y) {
 
 static void PlacementSection(Device& d, float x, float w, float oy, float& y) {
   float px = (float)d.pose.x, py = (float)d.pose.y, pa = (float)d.pose.angleDeg;
-  if (NumRow(x, oy + y, w, "X (mm)", "##posex", px)) { d.pose.x = px; CommitPose(d); }   // a typed pose places a lidar nobody aligned yet
+  const Screen* sc = DeviceScreen(d);
+  const bool small = sc && std::max(sc->realW, sc->realH) < 2000.f;   // a small screen: sub-mm positions matter
+  auto typed = [&] {   // a typed pose places a lidar nobody aligned yet
+    if (sc && sc->realW > 0 && sc->realH > 0) ClampSensorPose(px, py, sc->realW, sc->realH);
+    d.pose.x = px; d.pose.y = py; CommitPose(d);
+  };
+  if (NumRow(x, oy + y, w, "X (mm)", "##posex", px, small ? 1 : 0)) typed();
   y += 24 + 4;
-  if (NumRow(x, oy + y, w, "Y (mm)", "##posey", py)) { d.pose.y = py; CommitPose(d); }
+  if (NumRow(x, oy + y, w, "Y (mm)", "##posey", py, small ? 1 : 0)) typed();
   y += 24 + 4;
   if (NumRow(x, oy + y, w, "Angle (\xC2\xB0)", "##posea", pa, 1)) { d.pose.angleDeg = std::clamp(pa, -360.f, 360.f); CommitPose(d); }
   y += 24 + 4;
