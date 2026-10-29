@@ -49,6 +49,22 @@ std::vector<PropSection> SensorPropSections(DevKind k, int page) {
 uint32_t SensorSelTone(int page) { return page == 0 ? pal::cyan : pal::coral; }
 static bool IsLidar(const Device& d) { return d.kind == DevKind::Hokuyo || d.kind == DevKind::Plugin; }
 
+int SensorProgress(const Device& d, double now) {
+  const bool connected = d.enabled && (d.kind == DevKind::Sim || d.status == (int)mikmap::SourceStatus::Running) && d.error.empty();
+  const bool placed = !IsLidar(d) || d.placed || d.calibrated;   // calibrated by hand (Custom 4-point) counts as placed
+  const bool sending = d.outOn && d.lastSentAt >= 0 && now - d.lastSentAt <= 2.0;
+  const bool reached[4] = {connected, placed, d.calibrated, sending};
+  int n = 0; while (n < 4 && reached[n]) ++n;
+  return n;
+}
+
+void GoToSensorStep(const std::string& id, int step) {
+  SelectDevice(id);
+  const Device* d = A.curDevice(); if (!d || d->id != id || step < 1 || step > 4) return;
+  A.mpage = step >= 3 ? 1 : 0;
+  if (step == 1 || step == 4) A.sensorSecOpen.try_emplace((int)d->kind, 0xffffffffu).first->second |= 1u << (int)(step == 1 ? PropSection::Connection : PropSection::SendOut);
+}
+
 static std::string Endpoint(const Device& d) {
   if (d.kind == DevKind::Sim) return "simulated";
   if (d.kind == DevKind::Plugin) return d.plugin.empty() ? "plugin" : d.plugin;   // the file inside plugins/sensors, not a path

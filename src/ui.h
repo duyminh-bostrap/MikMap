@@ -15,7 +15,7 @@ inline uint32_t g050 = 0x050505, g0f = 0x0f0f0f, g10 = 0x101010, g12 = 0x121212,
 constexpr uint32_t g22 = 0x222222, g2a = 0x2a2a2a, g33 = 0x333333, g3a = 0x3a3a3a, ctrlHover = 0x232323, layerHover = 0x151515;
 // Text ramp
 constexpr uint32_t white = 0xffffff, tf3 = 0xf3f3f3, te0 = 0xe0e0e0, tcc = 0xcccccc, t88 = 0x888888,
-                   t77 = 0x777777, t66 = 0x666666;
+                   t77 = 0x777777, t66 = 0x666666, t44 = 0x444444;
 // Accents (coral/cyan/mint follow the selected "Signal colors")
 inline uint32_t coral = 0xff7f50, cyan = 0x118ab2, mint = 0x06d6a0;
 constexpr uint32_t yellow = 0xffd166, red = 0xef4444, violet = 0xb388ff;

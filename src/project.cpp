@@ -756,7 +756,7 @@ static bool UndoApply(const std::string& snap) {
       if (n.st != Clip::Empty && n.name == o.name) { n.st = o.st; n.progress = o.progress; }
     }
   for (auto& nd : tmp.devices) for (const auto& od : A.devices) if (od.id == nd.id) {   // device runtime state (live touches, counters) is not part of the snapshot: carry it across
-    nd.touches = od.touches; nd.status = od.status; nd.error = od.error; nd.fps = od.fps; nd.latencyMs = od.latencyMs; nd.packets = od.packets;
+    nd.touches = od.touches; nd.status = od.status; nd.error = od.error; nd.fps = od.fps; nd.latencyMs = od.latencyMs; nd.packets = od.packets; nd.lastSentAt = od.lastSentAt;
     break;
   }
   for (auto& l : tmp.layers) { l.live = false; for (auto& c : l.clips) if (c.isLive()) l.live = true; }

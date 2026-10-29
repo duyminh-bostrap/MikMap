@@ -1514,12 +1514,29 @@ static void TreeRow(ImRect r, const Node& n, bool railMode) {
     }
     right -= 11 + 6;
   }
-  if (!n.meta.empty()) { TextR(right, cy, MONO_R, 9, K(pal::t66), n.meta.c_str()); right -= TextW(MONO_R, 9, n.meta.c_str()) + 6; }
+  bool chipHit = false;
+  if (n.kind == Node::SensorN) {   // setup progress: 4 dots; a click goes to the first step that is missing
+    constexpr float kDot = 5.f, kGap = 4.f, kW = 4 * kDot + 3 * kGap;
+    ImRect cr(right - kW - 3, cy - 8, right + 3, cy + 8);
+    const Hit ch = HitR(cr);
+    for (int i = 0; i < 4; ++i) {
+      const ImVec2 c(right - kW + i * (kDot + kGap) + kDot * 0.5f, cy);
+      if (i < n.prog) ui::Dot(c, kDot, pal::mint, false);
+      else Border(ImRect(c.x - kDot * 0.5f, c.y - kDot * 0.5f, c.x + kDot * 0.5f, c.y + kDot * 0.5f), K(i == n.prog ? (n.err ? pal::red : pal::yellow) : pal::t44), kDot * 0.5f);
+    }
+    if (ch.hover) {
+      static const char* const next[] = {"Next: Connect", "Next: Place", "Next: Align", "Next: Send out", "Ready"};
+      ImGui::SetTooltip("%s%s%s", next[std::clamp(n.prog, 0, 4)], n.meta.empty() ? "" : "  \xC2\xB7  ", n.meta.c_str());
+      CursorHand();
+    }
+    if (ch.click) { chipHit = true; if (n.prog < 4) GoToSensorStep(n.dv, n.prog + 1); else SelectDevice(n.dv); A.wizard.step = 0; }
+    right -= kW + 6;
+  } else if (!n.meta.empty()) { TextR(right, cy, MONO_R, 9, K(pal::t66), n.meta.c_str()); right -= TextW(MONO_R, 9, n.meta.c_str()) + 6; }
   TextEll(x, cy, right - x, n.kind == Node::ScreenN ? UI_B : UI_S, 10, K(fg), n.name.c_str());
   g.alpha = prev;
   if (h.hover) CursorHand();
   if (n.kind == Node::SensorN) {
-    if (h.click) { SelectTreeNode(n); A.wizard.step = 0; }
+    if (h.click && !chipHit) { SelectTreeNode(n); A.wizard.step = 0; }
     if (h.rclick) A.openCtx(ImGui::GetIO().MousePos, SensorMenu(n.dv));
     return;
   }
@@ -1564,7 +1581,8 @@ std::vector<Node> BuildTree(bool onlyScreen, const std::string& only) {
       if (!ds || ds->id != sc.id) continue;
       Node k; k.kind = Node::SensorN; k.sc = sc.id; k.dv = d.id; k.dk = d.kind; k.name = d.name; k.h = onlyScreen ? 24.f : 26.f; k.pad = onlyScreen ? 6.f : 16.f;
       k.canHide = false; k.vis = d.enabled; k.color = pal::mint;
-      if (d.enabled) k.meta = d.status == (int)mikmap::SourceStatus::Error ? "ERR" : d.status == (int)mikmap::SourceStatus::Running ? std::to_string(d.fps) + " fps" : "";
+      k.prog = SensorProgress(d, g.time); k.err = d.enabled && d.status == (int)mikmap::SourceStatus::Error;
+      if (d.enabled) k.meta = k.err ? (d.error.empty() ? std::string("error") : d.error) : d.status == (int)mikmap::SourceStatus::Running ? std::to_string(d.fps) + " fps" : "";   // tooltip text
       out.push_back(k);
     }
   }

@@ -222,7 +222,13 @@ struct Device {
   bool outOn = false; int outProto = 0; std::string outHost = "127.0.0.1"; int outPort = 7000;   // Send out: mapped touches as OSC (0) / UDP text (1), x,y = 0..1 of the screen
   // runtime only, never serialized (a live counter must not make the project dirty)
   std::vector<Touch> touches; int status = 0; std::string error; int fps = 0; float latencyMs = 0; uint64_t packets = 0;
+  double lastSentAt = -1;            // seconds (glfwGetTime) of the last touch packet pushed by Send out; -1 = never
 };
+// Setup steps reached, 0..4, each counting only when every earlier one does: 1 connected · 2 placed (a non-lidar counts; Custom
+// 4-point counts) · 3 aligned (calibrated) · 4 sending (Send out on and a packet went out in the last 2 s).
+int  SensorProgress(const Device& d, double now);
+// SelectDevice, then open what `step` needs: 1 INPUT + Connection · 2 INPUT · 3 OUTPUT · 4 OUTPUT + Send out. Other step: just selects.
+void GoToSensorStep(const std::string& deviceId, int step);
 
 // The Mapping tree (mapping.cpp): Screen -> slices -> masks, and Screen -> sensors.
 struct Node {
@@ -232,6 +238,7 @@ struct Node {
   bool open = true, canHide = true, vis = true;
   uint32_t color = pal::coral;
   DevKind dk = DevKind::Sim;
+  int prog = 0; bool err = false;   // SensorN: SensorProgress, and whether the device is in error (the chip's first missing dot goes red)
 };
 // Add-sensor wizard (a modal popup over whatever page is open, while step > 0). Runtime only, never serialized.
 // step 1 type · 2 connect · 3 watch the new devices come up. found/pick: Hokuyo hosts ("ip" or "ip:port") and which are ticked.

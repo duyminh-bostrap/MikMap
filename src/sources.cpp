@@ -56,7 +56,7 @@ std::map<std::string, Live> g_live;   // keyed by Device::id
 mikmap::TouchSender g_out;
 
 // A new frame of a calibrated device, through its H_s, as 0..1 of the 1920x1080 stage (not clamped). No allocation: render thread.
-void SendOut(const Device& d, const mikmap::SensorFrame& f) {
+void SendOut(Device& d, const mikmap::SensorFrame& f, double now) {
   float H[9];
   if (!d.outOn || !DeviceH(d, H)) return;
   if (!g_out.running()) g_out.start();
@@ -70,7 +70,7 @@ void SendOut(const Device& d, const mikmap::SensorFrame& f) {
     float ox, oy; ApplyH(H, f.points[i].x, f.points[i].y, ox, oy);
     p.ids[i] = f.points[i].id; p.xy[2 * i] = ox / 1920.f; p.xy[2 * i + 1] = oy / 1080.f;
   }
-  g_out.push(p);
+  if (g_out.push(p)) d.lastSentAt = now;
 }
 
 // Calibration capture: the average of one point over 30 consecutive new frames.
@@ -227,7 +227,7 @@ void SensorsTick(double now) {
       d.touches.clear();
       for (int i = 0; i < f.count; ++i) d.touches.push_back(Touch{(int)f.points[i].id, f.points[i].x, f.points[i].y});
       L.latencyMs = (float)mikmap::Clock::nsToMs(mikmap::Clock::nowNs() - f.tCaptureNs) + (L.osc ? L.osc->senderLatencyMs() : 0.f);
-      SendOut(d, f);
+      SendOut(d, f, now);
     }
     mikmap::TouchEvent ev;
     while (S.events().pop(ev)) if (ev.state == mikmap::TouchState::Down) fire = true;
@@ -305,6 +305,41 @@ bool SensorSelfTest(std::string& why) {
   auto now = [] { return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); };
   auto dev = [](const char* id) -> Device& { for (auto& d : A.devices) if (d.id == id) return d; return A.devices.back(); };
   auto fail = [&](const std::string& w) { why = w; SensorsShutdown(); return false; };
+
+  // Setup progress: the chip in the tree counts steps in order; a step only counts when every earlier one does.
+  {
+    auto mk = [](DevKind k, bool running, bool placed, bool cal, bool out, double sent) {
+      Device d = MakeDevice(k, "selftest-p"); d.enabled = true;
+      d.status = (int)(running ? mikmap::SourceStatus::Running : mikmap::SourceStatus::Error); d.error = running ? "" : "no route";
+      d.placed = placed; d.calibrated = cal; d.outOn = out; d.lastSentAt = sent; return d;
+    };
+    struct Row { Device d; int want; const char* what; };
+    const Row rows[] = {
+      {mk(DevKind::Hokuyo, false, false, false, false, -1), 0, "a Hokuyo in error"},
+      {mk(DevKind::Hokuyo, true, false, false, false, -1), 1, "a connected Hokuyo, not placed"},
+      {mk(DevKind::Hokuyo, true, true, false, false, -1), 2, "a placed Hokuyo"},
+      {mk(DevKind::Hokuyo, true, true, true, false, -1), 3, "an aligned Hokuyo"},
+      {mk(DevKind::Hokuyo, true, true, true, true, 99.0), 4, "a Hokuyo that sent 1 s ago"},
+      {mk(DevKind::Hokuyo, true, true, true, true, 97.5), 3, "a Hokuyo that sent 2.5 s ago"},
+      {mk(DevKind::Sim, true, false, true, false, -1), 3, "a calibrated Sim"},
+      {mk(DevKind::Hokuyo, true, false, true, false, -1), 3, "a Custom (4-point) Hokuyo"},
+    };
+    for (const Row& r : rows) {
+      const int got = SensorProgress(r.d, 100.0);
+      if (got != r.want) return fail(std::string("progress: ") + r.what + " must be at step " + std::to_string(r.want) + ", got " + std::to_string(got));
+    }
+    Device off = rows[4].d; off.enabled = false;
+    if (SensorProgress(off, 100.0) != 0) return fail("progress: a disabled sensor must be at step 0");
+    A.screen = 0; A.mpage = 0; GoToSensorStep(A.devices[2].id, 3);
+    if (A.mpage != 1 || A.MapKind() != 3) return fail("progress: GoToSensorStep(3) must select the sensor on the OUTPUT page");
+    A.sensorSecOpen[(int)DevKind::Hokuyo] = 0; GoToSensorStep(A.devices[2].id, 4);
+    if (A.mpage != 1 || !(A.sensorSecOpen[(int)DevKind::Hokuyo] & (1u << (int)PropSection::SendOut))) return fail("progress: GoToSensorStep(4) must open Send out on OUTPUT");
+    GoToSensorStep(A.devices[2].id, 1);
+    if (A.mpage != 0 || !(A.sensorSecOpen[(int)DevKind::Hokuyo] & (1u << (int)PropSection::Connection))) return fail("progress: GoToSensorStep(1) must open Connection on INPUT");
+    A.sensorSecOpen.clear(); A.screen = 0; A.selKind = -1;
+    MarkSaved(); SensorsTick(now()); SensorsTick(now());
+    if (ProjectDirty()) return fail("progress: running SensorsTick must not make the project dirty");
+  }
 
   // Tree: a sensor is a child of its screen in Mapping. (The default Hokuyo is devices[2].)
   {
