@@ -10,10 +10,18 @@ or a slow model cannot take the show down.
 python -m venv tools/pose_bridge/.venv
 tools/pose_bridge/.venv/Scripts/activate        # Linux/macOS: source tools/pose_bridge/.venv/bin/activate
 pip install -r tools/pose_bridge/requirements.txt
-python tools/pose_bridge/pose_bridge.py          # first run downloads the .task model next to the script
 ```
 
-In MikMap enable the "Camera skeleton" device on the Sensor page (UDP port 9000 by default).
+In MikMap: **Mapping › tree footer › Sensor › Camera 2D**. The popup picks a free OSC port
+(the lowest port from 9000 up that no other sensor in the project uses, so often 9001+) and shows the exact command to run, with its
+`--port`, for example:
+
+```bash
+python tools/pose_bridge/pose_bridge.py --port 9001   # first run downloads the .task model next to the script
+```
+
+Run that command from the repo root (venv active). The same command is shown later under the
+camera's Properties › Connection.
 
 ## Wire protocol
 
