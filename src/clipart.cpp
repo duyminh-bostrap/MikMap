@@ -388,7 +388,7 @@ static void PaintTestPattern(float W, float H) {
   // checkerboard in two tones only: MikMap orange and near-black grey
   const int cols = (int)std::ceil(W / gs);
   for (int r = 0; r * gs < H; ++r) for (int c = 0; c < cols; ++c) {
-    ImU32 k = (c + r) % 2 == 0 ? C(0xFF7F50, .22f) : C(0x121212);
+    ImU32 k = (c + r) % 2 == 0 ? C(0xFF7F50, .45f) : C(0x121212);
     dl->AddRectFilled(ImVec2((float)c * gs, (float)r * gs), ImVec2((float)(c + 1) * gs, (float)(r + 1) * gs), k);
   }
   for (int p = gs, i = 1; p < W; p += gs, ++i) dl->AddLine(ImVec2(p + .5f, 0), ImVec2(p + .5f, H), C(0xffffff, i % 4 == 0 ? .18f : .08f), 1.f);
