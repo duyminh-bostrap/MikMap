@@ -2038,8 +2038,7 @@ static void Stage(ImRect r) {
   }
   if (Device* dv = A.MapKind() == 3 ? A.curDevice() : nullptr) {   // a sensor: same tabs and tools, its own zoom / readout and stage
     SensorBarTools(tb, barLeft, *dv);
-    if (A.wizard.step > 0) SensorWizardView(StageArea(r));   // Task 3 replaces this with the add-sensor popup
-    else SensorStageBody(StageArea(r), *dv);
+    SensorStageBody(StageArea(r), *dv);
     return;
   }
   // right side: zoom group, history/reset group, tools. Large icons; the zoom group is just − % + and focus mode.
@@ -2129,7 +2128,6 @@ static void Stage(ImRect r) {
       xr = tg.Min.x - 4;
     }
   }  // canvas viewport
-  if (A.wizard.step > 0) { SensorWizardView(StageArea(r)); return; }   // Task 3 replaces this with the add-sensor popup
   ImRect area = StageArea(r);
   if (area.GetWidth() - 20 < 60 || !sc) return;
   float baseW = StageBaseW(area);

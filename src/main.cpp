@@ -636,14 +636,14 @@ int main(int argc, char** argv) {
   bool openOut = false; std::string outShot; int vout = 0, voutBl = 0, voutPoly = 0; float voutGamma = 1.f;
   bool outKeyTest = false, scriptCtrl = false, startSnap = false, startHand = false, startCard = false; int startTool = -1, startInTool = -1;
   std::string roundtrip; std::vector<int> fxTest;
-  std::string shot; int startScreen = 0, frames = 12, W = 1440, H = 900, tab = -1, page = -1;
+  std::string shot; bool screenGiven = false; int startScreen = 0, frames = 12, W = 1440, H = 900, tab = -1, page = -1;
   bool sel = false, scaleGiven = false; int selLi = 0, selCi = 0, ctxTest = 0, cliScale = 100;
   bool fakeHokuyo = false, fakePlugin = false, secondLidar = false;
   int spage = -1, stool = -1, wizard = 0; std::string place, sendOut;   // spage / stool: the old Sensor page's flags, now Mapping's page / Output tool
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
     if (a == "--shot" && i + 1 < argc) shot = argv[++i];
-    else if (a == "--screen" && i + 1 < argc) startScreen = atoi(argv[++i]);
+    else if (a == "--screen" && i + 1 < argc) { startScreen = atoi(argv[++i]); screenGiven = true; }
     else if (a == "--frames" && i + 1 < argc) frames = atoi(argv[++i]);
     else if (a == "--size" && i + 2 < argc) { W = atoi(argv[++i]); H = atoi(argv[++i]); }
     else if (a == "--tab" && i + 1 < argc) tab = atoi(argv[++i]);
@@ -1754,7 +1754,8 @@ int main(int argc, char** argv) {
   if (spage >= 0) A.mpage = spage;
   if (stool >= 0) A.outTool = stool;
   if (wizard > 0 && !A.screens.empty()) {
-    A.screen = 1; OpenSensorWizard(A.screens[0].id);
+    if (!screenGiven) A.screen = 1;   // the popup floats over the page: Mapping unless --screen says otherwise
+    OpenSensorWizard(A.screens[0].id);
     if (wizard >= 2) { A.wizard.kind = DevKind::Hokuyo; SensorWizardNext(); }
     if (wizard == 2) {   // a list as a scan would leave it: .10 is the demo project's Hokuyo (already added), then more than fit, one unticked
       std::vector<std::string> res; for (int k = 10; k < 30; ++k) res.push_back("192.168.0." + std::to_string(k));
@@ -1928,7 +1929,7 @@ int main(int argc, char** argv) {
       std::string title = "MikMap Pro \xE2\x80\x94 " + A.projectName + ".mikmap" + (A.projectDirty ? " *" : "");
       if (title != lastTitle) { lastTitle = title; glfwSetWindowTitle(win, title.c_str()); }
       bool free = !io.WantTextInput && !A.settingsOpen && !A.openDialog && !A.helpOpen && !A.rename.open && !A.projectMenu &&
-                  !A.pop.open && !A.ctx.open && !A.layerMenu.open && !A.colMenu.open && !A.blendDD.open;
+                  !A.pop.open && !A.ctx.open && !A.layerMenu.open && !A.colMenu.open && !A.blendDD.open && A.wizard.step == 0;
       if ((free || A.showMode) && ImGui::IsKeyPressed(ImGuiKey_Tab, false)) { A.showMode = !A.showMode; if (A.showMode) A.notify("Show Mode \xE2\x80\x94 press Esc or Tab to leave", 3); }
       if (A.showMode && ImGui::IsKeyPressed(ImGuiKey_Escape, false)) A.showMode = false;
       if (!A.showMode && free && !io.KeyCtrl && !io.KeyAlt && A.screen == 0 && !A.layers.empty()) {
@@ -1970,7 +1971,7 @@ int main(int argc, char** argv) {
     g.dl = ImGui::GetWindowDrawList();
     g.alpha = 1.f;
     // input blocking from overlays that were open at frame start
-    g.blocked = A.pop.open || A.blendDD.open || A.ctx.open || A.layerMenu.open || A.colMenu.open || A.deckMenu.open || A.settingsOpen || A.rename.open || A.openDialog || A.helpOpen ||
+    g.blocked = A.pop.open || A.blendDD.open || A.ctx.open || A.layerMenu.open || A.colMenu.open || A.deckMenu.open || A.settingsOpen || A.rename.open || A.openDialog || A.helpOpen || A.wizard.step > 0 ||
                 (A.projectMenu && Raw(ProjectMenuRect()));
     Fill(ImRect(0, 0, disp.x, disp.y), K(pal::g0f));
     ImRect body(0, 40, disp.x, disp.y - 22);
@@ -1994,6 +1995,7 @@ int main(int argc, char** argv) {
       if (OutputOpen() && OutputWindowCount() == 0) A.notify("No screen is routed to a display or Virtual Output");
     }
     ImGui::End();
+    if (!A.showMode) DrawSensorWizardPopup();   // modal over whichever page is open
 
     if (A.osDrop.pending) {   // every drop target has had its chance this frame
       if (!A.osDrop.handled) A.notify("Drop files onto the Browser or onto a clip cell (Composition page)");

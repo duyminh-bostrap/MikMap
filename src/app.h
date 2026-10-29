@@ -233,7 +233,7 @@ struct Node {
   uint32_t color = pal::coral;
   DevKind dk = DevKind::Sim;
 };
-// Add-sensor wizard (Mapping's stage draws it in place of its content while step > 0). Runtime only, never serialized.
+// Add-sensor wizard (a modal popup over whatever page is open, while step > 0). Runtime only, never serialized.
 // step 1 type · 2 connect · 3 watch the new devices come up. found/pick: Hokuyo hosts ("ip" or "ip:port") and which are ticked.
 struct SensorWizard { int step = 0; DevKind kind = DevKind::Hokuyo; std::string plugin, screenId, manualHost, config;
                       int iface = 0, port = 0; std::vector<std::string> found; std::vector<char> pick; std::vector<std::string> added; bool scanning = false; };
@@ -687,7 +687,9 @@ uint32_t SensorSelTone(int page);                 // sensor.cpp: a selected sens
 void SensorStageBody(ImRect area, Device& d);    // sensor.cpp: a selected sensor's stage content below Mapping's 44 px bar (uses A.mpage)
 void SensorBarTools(ImRect tb, float lx, Device& d);    // sensor.cpp: the sensor's own items in Mapping's bar from lx to the right (zoom, overlay, info)
 void SensorProps(ImRect r, Device* d);            // sensor.cpp: Properties of the selected sensor (Mapping's right panel)
-void SensorWizardView(ImRect r);                  // sensor.cpp: the add-sensor wizard (Task 3 makes it a popup)
+void SensorWizardView(ImRect r);                  // sensor.cpp: the wizard's three steps, drawn inside the popup box r
+void DrawSensorWizardPopup();                    // no-op when wizard.step == 0; else a centred modal over the page (own full-window ImGui window: dims and blocks what is behind). Esc closes it
+void CloseSensorWizard();                        // step 1-2: cancel, no device made; step 3: close, keep every device already made
 void SensorWizardNext();         // step 1 -> 2 (Sim: straight to 3); step 2 -> 3 creates one enabled device per ticked item on wizard.screenId
 void SensorWizardAddManual();    // step 2 Hokuyo: wizard.manualHost ("ip" or "ip:port") joins the list, ticked
 void SensorWizardDone();         // step 3 -> 0, the first new device selected

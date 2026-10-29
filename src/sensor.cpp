@@ -926,9 +926,11 @@ void SensorWizardNext() {
 
 void SensorWizardDone() {
   SensorWizard& w = A.wizard;
-  w.step = 0; A.mpage = 0;
+  w.step = 0; A.mpage = 0;   // intended: the new sensor opens on INPUT (A.mpage is shared with slices)
   if (!w.added.empty()) SelectDevice(w.added[0]);
 }
+
+void CloseSensorWizard() { A.wizard.step = 0; }   // a running IP scan is left to finish and be joined later, as before; devices made stay
 
 // one choice on step 1; a dimmed card only says it is planned
 static bool WizCard(ImRect r, const char* icon, const char* title, const char* sub, bool dim) {
@@ -963,10 +965,9 @@ static void TickRow(ImRect r, const char* label, char& on, bool taken) {   // ta
 void SensorWizardView(ImRect r) {
   SensorWizard& w = A.wizard;
   if (w.step != 2) gIfsFresh = false;
-  Fill(r, K(pal::g050));
   // header: title, the three steps, the target screen, close
-  ImRect tb(r.Min.x, r.Min.y, r.Max.x, r.Min.y + 44);
-  Fill(tb, K(pal::g12)); HLine(tb.Min.x, tb.Max.x, tb.Max.y - 1, K(pal::g2a));
+  ImRect tb(r.Min.x + 1, r.Min.y + 1, r.Max.x - 1, r.Min.y + 44);
+  g.dl->AddRectFilled(tb.Min, tb.Max, Ca(K(pal::g12)), 5, ImDrawFlags_RoundCornersTop); HLine(tb.Min.x, tb.Max.x, tb.Max.y - 1, K(pal::g2a));
   const float cy = tb.Min.y + 21.5f;
   Icon("plus", ImVec2(tb.Min.x + 18, cy), 14, K(pal::mint));
   Text(tb.Min.x + 32, cy, UI_B, 11, K(pal::white), "ADD SENSOR", 0.09f);
@@ -981,7 +982,7 @@ void SensorWizardView(ImRect r) {
   Hit xh = HitR(xb);
   if (xh.hover) { Fill(xb, K(pal::g22), 3); CursorHand(); }
   Icon("x", ImVec2((xb.Min.x + xb.Max.x) * 0.5f, cy), 14, K(xh.hover ? pal::white : pal::t88));
-  if (xh.click) { if (w.step == 3) SensorWizardDone(); else w.step = 0; return; }   // devices made on step 3 stay
+  if (xh.click) { CloseSensorWizard(); return; }
   {
     const Screen* sc = nullptr; for (auto& s : A.screens) if (s.id == w.screenId) sc = &s;
     if (!sc && !A.screens.empty()) sc = &A.screens[0];
@@ -1128,4 +1129,36 @@ void SensorWizardView(ImRect r) {
   }
   TextEll(x, y + 10, colW, MONO_R, 9, K(pal::t66), "A sensor that does not connect stays in the list \xE2\x80\x94 fix its address in Properties");
   if (WideButton(x + colW - 140, r.Max.y - 24 - 26, 140, "Done", nullptr, pal::mint)) SensorWizardDone();
+}
+
+
+// The popup: its own full-window ImGui window drawn after the page, so it sits above everything (scroll children included)
+// and the page's IsWindowHovered-based hit tests fail behind it; main.cpp also sets g.blocked at frame start.
+void DrawSensorWizardPopup() {
+  if (A.wizard.step == 0) return;
+  ImGuiIO& io = ImGui::GetIO();
+  const ImVec2 disp = io.DisplaySize;
+  ImDrawList* prevDl = g.dl; const float prevAlpha = g.alpha; const bool prevBlocked = g.blocked;
+  static bool wasOpen = false;
+  if (!wasOpen) ImGui::SetNextWindowFocus();
+  wasOpen = true;
+  ImGui::SetNextWindowPos(ImVec2(0, 0)); ImGui::SetNextWindowSize(disp);
+  ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+  ImGui::Begin("##addsensor", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
+                                           ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoNavInputs);
+  ImGui::PopStyleVar();
+  g.dl = ImGui::GetWindowDrawList(); g.alpha = 1.f;
+  g.blocked = A.ctx.open || A.rename.open || A.openDialog || A.helpOpen || A.settingsOpen;   // a menu opened from the popup (network card) owns the pointer
+  Fill(ImRect(0, 0, disp.x, disp.y), K(0x000000, 0.6f));
+  const float w = std::min(720.f, disp.x - 80.f), h = std::min(520.f, disp.y - 80.f);
+  const ImRect r((disp.x - w) * 0.5f, (disp.y - h) * 0.5f, (disp.x + w) * 0.5f, (disp.y + h) * 0.5f);
+  Box(r, K(pal::g14), K(pal::g2a), 6);
+  g.dl->PushClipRect(r.Min, r.Max, true);
+  SensorWizardView(r);
+  g.dl->PopClipRect();
+  const bool esc = ImGui::IsKeyPressed(ImGuiKey_Escape, false) && !io.WantTextInput && !A.ctx.open;
+  if (esc) CloseSensorWizard();
+  if (A.wizard.step == 0) wasOpen = false;
+  ImGui::End();
+  g.dl = prevDl; g.alpha = prevAlpha; g.blocked = prevBlocked;
 }

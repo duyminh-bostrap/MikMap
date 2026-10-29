@@ -477,7 +477,8 @@ bool SensorSelfTest(std::string& why) {
     if (!got || found != std::vector<std::string>{"127.0.0.1"}) return fail("wizard: the IP scan thread did not report the listening fake lidar");
 
     const size_t before = A.devices.size();
-    A.wizardStep = 3; OpenSensorWizard(A.screens[1].id);
+    A.screen = 0; A.wizardStep = 3; OpenSensorWizard(A.screens[1].id);
+    if (A.screen != 0) return fail("wizard: opening it must not change the page (it is a popup)");
     if (A.wizardStep != 0 || A.wizard.step != 1) return fail("wizard: opening it must close the 4-point calibration wizard and start at step 1");
     A.wizard.kind = DevKind::Hokuyo; SensorWizardNext();
     if (A.wizard.step != 2) return fail("wizard: a Hokuyo goes to the connect step");
@@ -491,8 +492,9 @@ bool SensorSelfTest(std::string& why) {
       return fail("wizard: the new Hokuyo must be enabled, on the chosen screen, at the typed address");
     for (double t0 = now(); now() - t0 < kWait && dev(nid.c_str()).status != (int)mikmap::SourceStatus::Running;) { SensorsTick(now()); std::this_thread::sleep_for(std::chrono::milliseconds(5)); }
     if (dev(nid.c_str()).status != (int)mikmap::SourceStatus::Running) return fail("wizard: the new Hokuyo did not reach Running within 10 s");
-    SensorWizardDone();
+    A.mpage = 1; SensorWizardDone();   // A.mpage = 0 after Done is intended: the new sensor opens on INPUT
     if (A.wizard.step != 0 || !A.curDevice() || A.curDevice()->id != nid) return fail("wizard: Done must close it and select the new device");
+    if (A.MapKind() != 3 || A.screen != 1 || A.mpage != 0) return fail("wizard: Done must leave the new sensor selected on the Mapping page, INPUT tab");
     dev(nid.c_str()).enabled = false; SensorsTick(now());   // stop it before the fake server goes away
 
     // an address that is already a device (here disabled, so it would still answer a scan) is listed unticked and never
@@ -517,6 +519,22 @@ bool SensorSelfTest(std::string& why) {
       A.wizard.step = 0;
     }
 
+    // Close: steps 1-2 cancel without a device; step 3 closes and keeps what was made, without changing the selection
+    {
+      const size_t n0 = A.devices.size();
+      OpenSensorWizard(A.screens[0].id); CloseSensorWizard();
+      if (A.wizard.step != 0 || A.devices.size() != n0) return fail("wizard: closing step 1 must make no device");
+      OpenSensorWizard(A.screens[0].id); A.wizard.kind = DevKind::Skeleton; SensorWizardNext(); CloseSensorWizard();
+      if (A.wizard.step != 0 || A.devices.size() != n0) return fail("wizard: closing step 2 must make no device");
+      OpenSensorWizard(A.screens[0].id); A.wizard.kind = DevKind::Sim; SensorWizardNext();
+      if (A.wizard.step != 3 || A.devices.size() != n0 + 1) return fail("wizard: Simulated must reach step 3 with one device");
+      const std::string kept = A.wizard.added[0]; A.screen = 0;
+      CloseSensorWizard();
+      bool still = false; for (auto& e : A.devices) still |= e.id == kept;
+      if (A.wizard.step != 0 || !still || A.devices.size() != n0 + 1) return fail("wizard: closing step 3 must keep the devices already made");
+      if (A.screen != 0) return fail("wizard: closing must not change the page");
+      A.devices.erase(std::remove_if(A.devices.begin(), A.devices.end(), [&](const Device& e) { return e.id == kept; }), A.devices.end());
+    }
     OpenSensorWizard(A.screens[0].id); A.wizard.kind = DevKind::Skeleton; SensorWizardNext();
     for (auto& e : A.devices) if (e.port == A.wizard.port) return fail("wizard: a new camera must get a port no device uses");
     OpenSensorWizard(A.screens[0].id); A.wizard.kind = DevKind::Sim; SensorWizardNext();
