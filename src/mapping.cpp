@@ -1405,9 +1405,57 @@ static std::vector<MenuItem> SensorMenu(const std::string& dvId) {
     m.push_back(mk(label.c_str(), "monitor", cur && cur->id == sc.id, false, [dvId, sid = sc.id] { for (auto& d : A.devices) if (d.id == dvId) d.screenId = sid; }));
   }
   m.push_back(dv);
-  m.push_back(mk("Remove", "trash-2", false, true, [dvId] {
-    for (size_t i = 0; i < A.devices.size(); ++i) if (A.devices[i].id == dvId) { A.devices.erase(A.devices.begin() + i); A.wizardStep = 0; A.editRoi = false; break; } }));   // its source stops on the next SensorsTick
+  m.push_back(mk("Remove", "trash-2", false, true, [dvId] { RemoveDevice(dvId); }));
   return m;
+}
+
+void RemoveDevice(const std::string& dvId) {   // its source stops on the next SensorsTick
+  for (int i = 0; i < (int)A.devices.size(); ++i) if (A.devices[i].id == dvId) {
+    const bool sel = A.selKind == 3 && A.curDevice() == &A.devices[i];
+    A.devices.erase(A.devices.begin() + i);
+    if (sel) A.selKind = 0;                         // the screen it was on (selSc) is the selection now
+    else if (i < A.selDevice) --A.selDevice;        // the selected sensor stays selected
+    A.wizardStep = 0; A.editRoi = false;
+    return;
+  }
+}
+
+void SelectDevice(const std::string& dvId) {
+  for (int i = 0; i < (int)A.devices.size(); ++i) if (A.devices[i].id == dvId) {
+    A.selDevice = i; A.selKind = 3; A.mapMulti.clear(); A.selMk.clear();
+    if (Screen* sc = DeviceScreen(A.devices[i])) {   // its screen, or the fallback one when it was deleted
+      // selSl = the slice curSlice() falls back to anyway: left empty, an undo restore (project.cpp) would drop the sensor selection
+      if (sc->id != A.selSc) A.selSl = sc->slices.empty() ? "" : sc->slices[0].id;
+      A.selSc = sc->id;
+    }
+    A.screen = 1; A.wizardStep = 0; A.editRoi = false;
+    return;
+  }
+}
+
+bool MappingEditsSlices() { return A.MapKind() != 3; }
+
+void MappingShortcut(ImGuiKey key, bool ctrl, bool shift) {
+  if (!MappingEditsSlices()) return;   // a sensor is selected: the slice / screen still "selected" underneath must not move or go
+  if (ctrl) {   // Ctrl (Cmd on macOS)
+    if (key == ImGuiKey_C) { A.copySelection(); if (A.hasClip()) A.notify(A.mapClip.kind == 0 ? "Copied screen(s) with their slices and masks" : A.mapClip.kind == 1 ? "Copied slice(s) with their masks" : "Copied mask(s)", 1.5); }
+    else if (key == ImGuiKey_X) A.cutSelection();
+    else if (key == ImGuiKey_V) A.pasteSelection();
+    else if (key == ImGuiKey_D) A.duplicateSelection();
+    return;
+  }
+  if (key == ImGuiKey_Delete || key == ImGuiKey_Backspace) { if (!A.deletePickedPoints()) A.deleteSelection(); return; }   // picked polygon points go first, never the slice under them
+  const float st = shift ? 10.f : 1.f;   // arrows: 1 px, Shift = 10 px (the pixel space of the page being shown)
+  if (key == ImGuiKey_LeftArrow) A.nudgeSelection(-st, 0);
+  else if (key == ImGuiKey_RightArrow) A.nudgeSelection(st, 0);
+  else if (key == ImGuiKey_UpArrow) A.nudgeSelection(0, -st);
+  else if (key == ImGuiKey_DownArrow) A.nudgeSelection(0, st);
+}
+
+void ApplyStartScreen(int screen) {
+  if (screen <= 1) { A.screen = std::max(0, screen); return; }
+  A.screen = 1;   // the old Sensor page: Mapping with the current sensor selected
+  if (const Device* d = A.curDevice()) SelectDevice(d->id);
 }
 
 static void TreeRow(ImRect r, const Node& n, bool railMode) {
@@ -1415,16 +1463,11 @@ static void TreeRow(ImRect r, const Node& n, bool railMode) {
   bool scOn = cs && n.sc == cs->id;
   bool on;
   uint32_t hexOn;
-  if (n.kind == Node::NoteN) {   // "3 slices" on the Sensor page: a dimmed line, nothing to click
-    float prevA = g.alpha; g.alpha = 0.55f;
-    TextEll(r.Min.x + n.pad + 12 + 6, (r.Min.y + r.Max.y) * 0.5f, r.GetWidth() - n.pad - 24, UI_S, 9, K(pal::t66), n.name.c_str());
-    g.alpha = prevA;
-    return;
-  }
   const int mkind = A.MapKind(); const bool multi = A.mapSelCount() > 1;   // several of one kind are selected: mark exactly those
+  const bool sens = mkind == 3;   // a sensor is selected: its row lights up, not the slice under it
   if (n.kind == Node::ScreenN) { on = multi && mkind == 0 ? A.mapIsSel(0, n.sc, "", "") : scOn; hexOn = n.color; }
-  else if (n.kind == Node::SliceN) { on = multi && mkind == 1 ? A.mapIsSel(1, n.sc, n.sl, "") : scOn && csl && n.sl == csl->id && !cmk; hexOn = pal::coral; }
-  else if (n.kind == Node::SensorN) { const Device* cd = A.curDevice(); on = A.screen == 2 && cd && cd->id == n.dv; hexOn = pal::mint; }
+  else if (n.kind == Node::SliceN) { on = !sens && (multi && mkind == 1 ? A.mapIsSel(1, n.sc, n.sl, "") : scOn && csl && n.sl == csl->id && !cmk); hexOn = pal::coral; }
+  else if (n.kind == Node::SensorN) { const Device* cd = A.curDevice(); on = sens && cd && cd->id == n.dv; hexOn = pal::mint; }
   else { on = multi && mkind == 2 ? A.mapIsSel(2, n.sc, n.sl, n.mk) : cmk && cmk->id == n.mk; hexOn = pal::yellow; }
   Hit h = HitR(r);
   float prev = g.alpha;
@@ -1467,21 +1510,14 @@ static void TreeRow(ImRect r, const Node& n, bool railMode) {
   TextEll(x, cy, right - x, n.kind == Node::ScreenN ? UI_B : UI_S, 10, K(fg), n.name.c_str());
   g.alpha = prev;
   if (h.hover) CursorHand();
-  if (n.kind == Node::SensorN) {   // a sensor is not part of the Mapping selection: click jumps to its page
-    if (h.click) { for (int i = 0; i < (int)A.devices.size(); ++i) if (A.devices[i].id == n.dv) { A.screen = 2; A.selDevice = i; A.wizardStep = 0; A.wizard.step = 0; A.editRoi = false; } }
+  if (n.kind == Node::SensorN) {
+    if (h.click) { SelectTreeNode(n); A.wizard.step = 0; }
     if (h.rclick) A.openCtx(ImGui::GetIO().MousePos, SensorMenu(n.dv));
     return;
   }
-  if (h.click && !chevHit && !visHit && MultiMod()) {   // Ctrl / Cmd / Shift + click: add or remove (only within the same kind)
+  if (h.click && !chevHit && !visHit && MultiMod() && !sens) {   // Ctrl / Cmd / Shift + click: add or remove (only within the same kind)
     A.mapToggle(n.kind == Node::ScreenN ? 0 : n.kind == Node::SliceN ? 1 : 2, {n.sc, n.sl, n.kind == Node::MaskN ? n.mk : std::string()});
-  } else if (h.click && !chevHit && !visHit) {
-    A.mapMulti.clear();
-    if (n.kind == Node::ScreenN) {
-      Screen* sc = nullptr; for (auto& s : A.screens) if (s.id == n.sc) sc = &s;
-      bool keep = false; if (sc) for (auto& sl : sc->slices) if (sl.id == A.selSl) keep = true;
-      A.selSc = n.sc; A.selSl = keep ? A.selSl : (sc && !sc->slices.empty() ? sc->slices[0].id : ""); A.selMk.clear(); A.selKind = 0;
-    } else { A.selSc = n.sc; A.selSl = n.sl; A.selMk = n.kind == Node::MaskN ? n.mk : ""; A.selKind = n.kind == Node::MaskN ? 2 : 1; if (n.kind == Node::MaskN) A.mpage = 0; }   // masks are edited on the Input stage
-  }
+  } else if (h.click && !chevHit && !visHit) SelectTreeNode(n);
   if (h.rclick) {
     if (n.kind == Node::ScreenN) A.openCtx(ImGui::GetIO().MousePos, A.screenMenu(n.sc));
     else if (n.kind == Node::SliceN) A.openCtx(ImGui::GetIO().MousePos, A.sliceMenu(n.sc, n.sl));
@@ -1489,7 +1525,17 @@ static void TreeRow(ImRect r, const Node& n, bool railMode) {
   }
 }
 
-std::vector<Node> BuildTree(TreeMode mode, bool onlyScreen, const std::string& only) {
+void SelectTreeNode(const Node& n) {
+  if (n.kind == Node::SensorN) { SelectDevice(n.dv); return; }
+  A.mapMulti.clear();
+  if (n.kind == Node::ScreenN) {
+    Screen* sc = nullptr; for (auto& s : A.screens) if (s.id == n.sc) sc = &s;
+    bool keep = false; if (sc) for (auto& sl : sc->slices) if (sl.id == A.selSl) keep = true;
+    A.selSc = n.sc; A.selSl = keep ? A.selSl : (sc && !sc->slices.empty() ? sc->slices[0].id : ""); A.selMk.clear(); A.selKind = 0;
+  } else { A.selSc = n.sc; A.selSl = n.sl; A.selMk = n.kind == Node::MaskN ? n.mk : ""; A.selKind = n.kind == Node::MaskN ? 2 : 1; if (n.kind == Node::MaskN) A.mpage = 0; }   // masks are edited on the Input stage
+}
+
+std::vector<Node> BuildTree(bool onlyScreen, const std::string& only) {
   std::vector<Node> out;
   for (auto& sc : A.screens) {
     if (onlyScreen && sc.id != only) continue;
@@ -1499,14 +1545,11 @@ std::vector<Node> BuildTree(TreeMode mode, bool onlyScreen, const std::string& o
       n.h = 28; n.pad = 6; n.open = open; n.vis = sc.visible; n.color = RoleHex(sc.role); out.push_back(n);
       if (!open) continue;
     }
-    if (mode == TreeMode::Mapping) for (auto& sl : sc.slices) {
+    for (auto& sl : sc.slices) {
       Node s; s.kind = Node::SliceN; s.sc = sc.id; s.sl = sl.id; s.name = sl.name; s.meta = sl.solo ? "SOLO" : ""; s.h = onlyScreen ? 24 : 26; s.pad = onlyScreen ? 6 : 16; s.vis = sl.visible; out.push_back(s);
       for (auto& m : sl.masks) {
         Node k; k.kind = Node::MaskN; k.sc = sc.id; k.sl = sl.id; k.mk = m.id; k.name = m.name; k.h = 24; k.pad = onlyScreen ? 20 : 28; k.vis = m.visible; out.push_back(k);
       }
-    } else if (!onlyScreen) {   // the Sensor page: the slices are not its business, one dimmed line says how many there are
-      Node k; k.kind = Node::NoteN; k.sc = sc.id; k.h = 20; k.pad = 16; k.canHide = false;
-      k.name = std::to_string(sc.slices.size()) + (sc.slices.size() == 1 ? " slice" : " slices"); out.push_back(k);
     }
     for (auto& d : A.devices) {
       const Screen* ds = DeviceScreen(d);
@@ -1528,38 +1571,33 @@ static std::vector<MenuItem> AddSliceMenu() {
 }
 
 void OpenSensorWizard(const std::string& screenId) {
-  A.screen = 2; A.editRoi = false; A.wizardStep = 0;   // the 4-point calibration wizard belongs to the device being left
+  A.editRoi = false; A.wizardStep = 0;   // the 4-point calibration wizard belongs to the device being left
   A.wizard = SensorWizard(); A.wizard.step = 1; A.wizard.screenId = screenId;
 }
 
-// the screen a new sensor goes to: the one of the sensor being edited (Sensor page), else the selected screen
-static std::string SensorTargetScreen(TreeMode m) {
-  if (m == TreeMode::Sensors) if (const Device* cd = A.curDevice()) if (const Screen* s = DeviceScreen(*cd)) return s->id;
+// the screen a new sensor goes to: the selected screen (a selected sensor's own screen: SelectDevice keeps selSc on it)
+static std::string SensorTargetScreen() {
   for (auto& s : A.screens) if (s.id == A.selSc) return s.id;
   return A.screens.empty() ? std::string() : A.screens[0].id;
 }
 
-// Mapping and the Sensor page each remember their own collapse flag and open rail popover
-static bool& TreeCollapsed(TreeMode m) { return m == TreeMode::Mapping ? A.treeCollapsed : A.sensorTreeCollapsed; }
-static std::string& TreeRail(TreeMode m) { return m == TreeMode::Mapping ? A.railScreen : A.sensorRail; }
-
-static void TreePanel(ImRect r, TreeMode mode) {
+static void TreePanel(ImRect r) {
   Fill(r, K(pal::g12));
   VLine(r.Max.x - 1, r.Min.y, r.Max.y, K(pal::g2a));
-  PanelHeader(Rc(r.Min.x, r.Min.y, r.GetWidth() - 1, 24), mode == TreeMode::Mapping ? "Mapping tree" : "Sensor tree", pal::t88);
+  PanelHeader(Rc(r.Min.x, r.Min.y, r.GetWidth() - 1, 24), "Mapping tree", pal::t88);
   {
     float cy = r.Min.y + 11.5f, xr = r.Max.x - 1 - 6;
     Icon("panel-left-close", ImVec2(xr - 6, cy), 12, K(pal::t88));
-    if (HitR(ImRect(xr - 14, cy - 9, xr + 2, cy + 9)).click) { TreeCollapsed(mode) = true; TreeRail(mode) = A.selSc; }
+    if (HitR(ImRect(xr - 14, cy - 9, xr + 2, cy + 9)).click) { A.treeCollapsed = true; A.railScreen = A.selSc; }
     xr -= 12 + 8;
     std::string c = std::to_string(A.screens.size()) + " screens";
     TextR(xr, cy, MONO_M, 10, K(pal::t66), c.c_str());
   }
   float footH = 46;
   static ScrollArea sa;
-  sa.Begin(mode == TreeMode::Mapping ? "##tree" : "##sensortree", ImRect(r.Min.x, r.Min.y + 24, r.Max.x - 1, r.Max.y - footH));
+  sa.Begin("##tree", ImRect(r.Min.x, r.Min.y + 24, r.Max.x - 1, r.Max.y - footH));
   float ox = sa.origin.x, oy = sa.origin.y, y = 4;
-  auto nodes = BuildTree(mode, false, "");
+  auto nodes = BuildTree(false, "");
   for (auto& n : nodes) {
     ImRect rr(ox + 6, oy + y, ox + r.GetWidth() - 1 - 6, oy + y + n.h);
     TreeRow(rr, n, false);
@@ -1571,9 +1609,7 @@ static void TreePanel(ImRect r, TreeMode mode) {
   Fill(fr, K(pal::g14));
   HLine(fr.Min.x, fr.Max.x, fr.Min.y, K(pal::g2a));
   struct Ac { const char* l; const char* ic; uint32_t fg; uint32_t accent; };   // accent != 0: tinted button in that colour
-  std::vector<Ac> acts;   // Mask moved to Slice Properties > Input Mask
-  if (mode == TreeMode::Mapping) acts = {{"Screen", "monitor", pal::coral, pal::coral}, {"Slice", "plus", pal::white, 0}};
-  acts.push_back({"Sensor", "radar", pal::mint, pal::mint});
+  const std::vector<Ac> acts = {{"Screen", "monitor", pal::coral, pal::coral}, {"Slice", "plus", pal::white, 0}, {"Sensor", "radar", pal::mint, pal::mint}};   // Mask: Slice Properties > Input Mask
   const int na = (int)acts.size();
   float bw = (fr.GetWidth() - 12 - 6 * (na - 1)) / (float)na;
   for (int i = 0; i < na; ++i) {
@@ -1587,12 +1623,12 @@ static void TreePanel(ImRect r, TreeMode mode) {
     if (h.click) {
       if (!strcmp(acts[i].l, "Screen")) A.addScreen();
       else if (!strcmp(acts[i].l, "Slice")) A.openCtx(ImVec2(br.Min.x, br.Max.y + 4), AddSliceMenu());
-      else OpenSensorWizard(SensorTargetScreen(mode));
+      else OpenSensorWizard(SensorTargetScreen());
     }
   }
 }
 
-static void RailPanel(ImRect r, TreeMode mode) {
+static void RailPanel(ImRect r) {
   Fill(r, K(pal::g12));
   VLine(r.Max.x - 1, r.Min.y, r.Max.y, K(pal::g2a));
   float cx = (r.Min.x + r.Max.x - 1) * 0.5f, y = r.Min.y + 6;
@@ -1601,12 +1637,12 @@ static void RailPanel(ImRect r, TreeMode mode) {
   Box(eb, K(pal::g1c), K(pal::g22), 3);
   Icon("panel-left-open", ImVec2(cx, y + 13), 13, K(pal::t88));
   if (eh.hover) CursorHand();
-  if (eh.click) { TreeCollapsed(mode) = false; TreeRail(mode).clear(); }
+  if (eh.click) { A.treeCollapsed = false; A.railScreen.clear(); }
   y += 26 + 6;
   Fill(Rc(cx - 11, y, 22, 1), K(pal::g2a));
   y += 1 + 6;
   Screen* cs = A.curScreen();
-  std::string& rail = TreeRail(mode);
+  std::string& rail = A.railScreen;
   for (size_t i = 0; i < A.screens.size(); ++i) {
     Screen& sc = A.screens[i];
     ImRect br(cx - 14, y, cx + 14, y + 30);
@@ -1623,13 +1659,13 @@ static void RailPanel(ImRect r, TreeMode mode) {
   }
 }
 
-static void RailPopover(ImRect rail, TreeMode mode) {
-  const std::string railId = TreeRail(mode);
+static void RailPopover(ImRect rail) {
+  const std::string railId = A.railScreen;
   if (railId.empty()) return;
   int idx = 0; Screen* sc = nullptr;
   for (int i = 0; i < (int)A.screens.size(); ++i) if (A.screens[i].id == railId) { idx = i; sc = &A.screens[i]; }
   if (!sc) return;
-  auto nodes = BuildTree(mode, true, sc->id);
+  auto nodes = BuildTree(true, sc->id);
   float listH = std::min(260.f, (float)nodes.size() * 26 + 8);
   float w = 212, h = 24 + listH + 42;
   ImRect r(rail.Max.x + 6, rail.Min.y + 58 + idx * 36, rail.Max.x + 6 + w, rail.Min.y + 58 + idx * 36 + h);
@@ -1642,7 +1678,7 @@ static void RailPopover(ImRect rail, TreeMode mode) {
   TextEll(hd.Min.x + 6, (hd.Min.y + hd.Max.y) * 0.5f, w - 40, UI_B, 9, K(pal::tcc), t.c_str(), 0.09f);
   ImRect xb(hd.Max.x - 22, hd.Min.y, hd.Max.x, hd.Max.y);
   Icon("x", ImVec2(hd.Max.x - 12, (hd.Min.y + hd.Max.y) * 0.5f), 12, K(pal::t66));
-  if (HitR(xb).click) TreeRail(mode).clear();
+  if (HitR(xb).click) A.railScreen.clear();
   float y = r.Min.y + 24 + 4;
   for (auto& n : nodes) {
     ImRect rr(r.Min.x + 5, y, r.Max.x - 5, y + 24);
@@ -1652,18 +1688,17 @@ static void RailPopover(ImRect rail, TreeMode mode) {
   ImRect fr(r.Min.x + 1, r.Max.y - 43, r.Max.x - 1, r.Max.y - 1);
   Fill(fr, K(pal::g14)); HLine(fr.Min.x, fr.Max.x, fr.Min.y, K(pal::g2a));
   {
-    const bool sens = mode == TreeMode::Sensors;
     ImRect br(fr.Min.x + 6, fr.Min.y + 9, fr.Max.x - 6, fr.Min.y + 9 + 24);
     Hit h = HitR(br);
-    if (sens) Box(br, K(pal::mint, 0.15f), K(pal::mint, 0.4f), 3); else Box(br, h.hover ? K(pal::ctrlHover) : K(pal::g1c), K(pal::g22), 3);
-    TextC((br.Min.x + br.Max.x) * 0.5f, (br.Min.y + br.Max.y) * 0.5f, UI_B, 10, K(sens ? pal::mint : pal::white), sens ? "Sensor" : "Slice");
+    Box(br, h.hover ? K(pal::ctrlHover) : K(pal::g1c), K(pal::g22), 3);
+    TextC((br.Min.x + br.Max.x) * 0.5f, (br.Min.y + br.Max.y) * 0.5f, UI_B, 10, K(pal::white), "Slice");
     if (h.hover) CursorHand();
-    if (h.click) { if (sens) OpenSensorWizard(sc->id); else A.openCtx(ImVec2(br.Min.x, br.Max.y + 4), AddSliceMenu()); }
+    if (h.click) A.openCtx(ImVec2(br.Min.x, br.Max.y + 4), AddSliceMenu());
   }
 }
 
-void DrawTree(ImRect r, TreeMode m) { if (TreeCollapsed(m)) RailPanel(r, m); else TreePanel(r, m); }
-void DrawTreePopover(ImRect r, TreeMode m) { if (TreeCollapsed(m)) RailPopover(r, m); }   // after the stage, so it floats over it
+void DrawTree(ImRect r) { if (A.treeCollapsed) RailPanel(r); else TreePanel(r); }
+void DrawTreePopover(ImRect r) { if (A.treeCollapsed) RailPopover(r); }   // after the stage, so it floats over it
 
 // ───────────────────────── stage ─────────────────────────
 static int dragKind = 0, dragIdx = 0;  // 1 perspective corner, 2 frame resize (0..3 corners, 10..13 sides), 4 warp point (row*100+col), 5 frame move, 6 frame rotate, 7 picked points, 8 mask outline point
@@ -1971,6 +2006,7 @@ static void Stage(ImRect r) {
   // Resolume's two tools. Output Transformation: Edit Points (perspective corners + warp points) / Transform (one box around the slice).
   // Input Selection: the same pair for a selected mask (Edit Points = move its outline points one by one).
   const bool maskSel = A.mpage == 0 && mk && A.selKind == 2;
+  float barLeft = grp.Max.x + 8;   // where the bar's free middle starts (a selected sensor writes its readout there)
   if (A.mpage == 1 || maskSel) {
     int& tool = A.mpage == 1 ? A.outTool : A.inTool;
     const char* tl[2] = {"Edit points", "Transform"}; const char* ti[2] = {"plus", "frame"};
@@ -1990,6 +2026,13 @@ static void Stage(ImRect r) {
       if (h.click) { tool = i; A.meshArm = 0; }
       bx += bw[i] + 2;
     }
+    barLeft = tg.Max.x + 8;
+  }
+  if (Device* dv = A.MapKind() == 3 ? A.curDevice() : nullptr) {   // a sensor: same tabs and tools, its own zoom / readout and stage
+    SensorBarTools(tb, barLeft, *dv);
+    if (A.wizard.step > 0) SensorWizardView(StageArea(r));   // Task 3 replaces this with the add-sensor popup
+    else SensorStageBody(StageArea(r), *dv);
+    return;
   }
   // right side: zoom group, history/reset group, tools. Large icons; the zoom group is just − % + and focus mode.
   float xr = tb.Max.x - 6;
@@ -2078,6 +2121,7 @@ static void Stage(ImRect r) {
       xr = tg.Min.x - 4;
     }
   }  // canvas viewport
+  if (A.wizard.step > 0) { SensorWizardView(StageArea(r)); return; }   // Task 3 replaces this with the add-sensor popup
   ImRect area = StageArea(r);
   if (area.GetWidth() - 20 < 60 || !sc) return;
   float baseW = StageBaseW(area);
@@ -2821,6 +2865,7 @@ static float InputMaskBar(float ox, float oy, float W, float x, float w, float y
 }
 
 static void PropsPanel(ImRect r) {
+  if (A.MapKind() == 3) { SensorProps(r, A.curDevice()); return; }
   Fill(r, K(pal::g12));
   VLine(r.Min.x, r.Min.y, r.Max.y, K(pal::g2a));
   Screen* sc = A.curScreen(); Slice* sl = A.curSlice(); Mask* mk = A.curMask();
@@ -3330,13 +3375,15 @@ static void PropsPanel(ImRect r) {
 void DrawMapping(ImRect body) {
   float x0 = body.Min.x, x1 = body.Max.x;
   Fill(body, K(pal::g0f));
-  float lw = A.treeCollapsed ? 46.f : (A.mapFocus ? 0.f : 236.f);
-  float rw = A.mapFocus ? 0.f : 280.f;
+  if (A.selKind == 3 && !A.curDevice()) A.selKind = 0;   // the last sensor went (undo, load): its screen is the selection
+  const bool focus = A.mapFocus && A.MapKind() != 3;      // focus mode is a slice tool: a sensor keeps its tree and Properties
+  float lw = A.treeCollapsed ? 46.f : (focus ? 0.f : 236.f);
+  float rw = focus ? 0.f : 280.f;
   ImRect left(x0, body.Min.y, x0 + lw, body.Max.y);
-  if (lw > 0) DrawTree(left, TreeMode::Mapping);
+  if (lw > 0) DrawTree(left);
   if (rw > 0) PropsPanel(ImRect(x1 - rw, body.Min.y, x1, body.Max.y));
   Stage(ImRect(x0 + lw, body.Min.y, x1 - rw, body.Max.y));
-  DrawTreePopover(left, TreeMode::Mapping);
+  DrawTreePopover(left);
 }
 
 

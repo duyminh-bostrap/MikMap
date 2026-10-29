@@ -106,13 +106,13 @@ static void TitleBar(ImRect r) {
   x += 1 + 6;
 
   // screen tabs
-  struct T { const char* label; const char* icon; } tabs[3] = {{"Composition", "layers"}, {"Advanced Mapping", "move-3d"}, {"Sensor I/O", "activity"}};
-  float tw[3], total = 10 + 8;
-  for (int i = 0; i < 3; ++i) { tw[i] = 10 + 11 + 4 + TextW(UI_B, 12, Upper(tabs[i].label).c_str()) + 10 + 2; total += tw[i] + (i ? 4 : 0); }
+  struct T { const char* label; const char* icon; } tabs[2] = {{"Composition", "layers"}, {"Mapping", "move-3d"}};
+  float tw[2], total = 10 + 8;
+  for (int i = 0; i < 2; ++i) { tw[i] = 10 + 11 + 4 + TextW(UI_B, 12, Upper(tabs[i].label).c_str()) + 10 + 2; total += tw[i] + (i ? 4 : 0); }
   ImRect grp(x, cy - 12, x + total, cy + 12);
   Box(grp, K(pal::g12), K(pal::g2a), 4);
   float tx0 = grp.Min.x + 5 + 1;
-  for (int i = 0; i < 3; ++i) {
+  for (int i = 0; i < 2; ++i) {
     ImRect tr(tx0, cy - 10, tx0 + tw[i], cy + 10);
     bool on = A.screen == i;
     Hit h = HitR(tr);
@@ -639,7 +639,7 @@ int main(int argc, char** argv) {
   std::string shot; int startScreen = 0, frames = 12, W = 1440, H = 900, tab = -1, page = -1;
   bool sel = false, scaleGiven = false; int selLi = 0, selCi = 0, ctxTest = 0, cliScale = 100;
   bool fakeHokuyo = false, fakePlugin = false;
-  int spage = -1, stool = -1, wizard = 0; std::string place, sendOut;
+  int spage = -1, stool = -1, wizard = 0; std::string place, sendOut;   // spage / stool: the old Sensor page's flags, now Mapping's page / Output tool
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
     if (a == "--shot" && i + 1 < argc) shot = argv[++i];
@@ -648,9 +648,9 @@ int main(int argc, char** argv) {
     else if (a == "--size" && i + 2 < argc) { W = atoi(argv[++i]); H = atoi(argv[++i]); }
     else if (a == "--tab" && i + 1 < argc) tab = atoi(argv[++i]);
     else if (a == "--page" && i + 1 < argc) page = atoi(argv[++i]);
-    else if (a == "--spage" && i + 1 < argc) spage = atoi(argv[++i]);   // test aid: Sensor page tab, 0 Input / 1 Output
-    else if (a == "--wizard" && i + 1 < argc) wizard = std::clamp(atoi(argv[++i]), 1, 3);   // test aid: the add-sensor wizard at step N (Hokuyo; 3 = after adding the fake lidar + an unreachable one)
-    else if (a == "--stool" && i + 1 < argc) stool = atoi(argv[++i]);   // test aid: Sensor Output tool, 0 Edit points / 1 Transform
+    else if (a == "--spage" && i + 1 < argc) spage = atoi(argv[++i]);   // test aid: = --page (a selected sensor's 0 Input / 1 Output)
+    else if (a == "--wizard" && i + 1 < argc) wizard = std::clamp(atoi(argv[++i]), 1, 3);   // test aid: Mapping with the add-sensor wizard at step N (Hokuyo; 3 = after adding the fake lidar + an unreachable one)
+    else if (a == "--stool" && i + 1 < argc) stool = atoi(argv[++i]);   // test aid: = --tool (Output tool, 0 Edit points / 1 Transform)
     else if (a == "--place" && i + 1 < argc) place = argv[++i];         // test aid: --place W,H,x,y,angle = the selected sensor's screen in mm + its pose, placed
     else if (a == "--sendout" && i + 1 < argc) sendOut = argv[++i];     // test aid: --sendout host:port = the selected sensor sends its touches out (OSC)
     else if (a == "--roundtrip" && i + 1 < argc) roundtrip = argv[++i];
@@ -1740,15 +1740,15 @@ int main(int argc, char** argv) {
     }
 #endif
   }
-  A.screen = startScreen;
+  ApplyStartScreen(startScreen);
   A.mapSnap = startSnap; A.mapHand = startHand; A.testCard = startCard;
   if (startTool >= 0) A.outTool = startTool; if (startInTool >= 0) A.inTool = startInTool;   // (NewProject just reset the app state)
   if (tab >= 0) A.tab = tab;
   if (page >= 0) A.mpage = page;
-  if (spage >= 0) A.spage = spage;
-  if (stool >= 0) A.sensorTool = stool;
+  if (spage >= 0) A.mpage = spage;
+  if (stool >= 0) A.outTool = stool;
   if (wizard > 0 && !A.screens.empty()) {
-    OpenSensorWizard(A.screens[0].id);
+    A.screen = 1; OpenSensorWizard(A.screens[0].id);
     if (wizard >= 2) { A.wizard.kind = DevKind::Hokuyo; SensorWizardNext(); }
     if (wizard == 2) {   // a list as a scan would leave it: .10 is the demo project's Hokuyo (already added), then more than fit, one unticked
       std::vector<std::string> res; for (int k = 10; k < 30; ++k) res.push_back("192.168.0." + std::to_string(k));
@@ -1937,21 +1937,12 @@ int main(int argc, char** argv) {
           A.layers[li].live = false; for (auto& k : A.layers[li].clips) if (k.isLive()) A.layers[li].live = true;
         }
       }
-      if (!A.showMode && free && A.screen == 1 && !io.KeyAlt) {   // Advanced Mapping: copy / cut / paste / duplicate / delete / nudge what is selected
+      if (!A.showMode && free && A.screen == 1 && !io.KeyAlt) {   // Mapping: copy / cut / paste / duplicate / delete / nudge what is selected (MappingShortcut)
         if (io.KeyCtrl) {   // Ctrl (Cmd on macOS)
-          if (ImGui::IsKeyPressed(ImGuiKey_C, false)) { A.copySelection(); if (A.hasClip()) A.notify(A.mapClip.kind == 0 ? "Copied screen(s) with their slices and masks" : A.mapClip.kind == 1 ? "Copied slice(s) with their masks" : "Copied mask(s)", 1.5); }
-          else if (ImGui::IsKeyPressed(ImGuiKey_X, false)) A.cutSelection();
-          else if (ImGui::IsKeyPressed(ImGuiKey_V, false)) A.pasteSelection();
-          else if (ImGui::IsKeyPressed(ImGuiKey_D, false)) A.duplicateSelection();
+          for (ImGuiKey k : {ImGuiKey_C, ImGuiKey_X, ImGuiKey_V, ImGuiKey_D}) if (ImGui::IsKeyPressed(k, false)) { MappingShortcut(k, true, io.KeyShift); break; }
         } else {
-          if (ImGui::IsKeyPressed(ImGuiKey_Delete, false) || ImGui::IsKeyPressed(ImGuiKey_Backspace, false)) { if (!A.deletePickedPoints()) A.deleteSelection(); }   // picked polygon points go first, never the slice under them
-          float st = io.KeyShift ? 10.f : 1.f, dx = 0, dy = 0;   // arrows: 1 px, Shift = 10 px (the pixel space of the page being shown)
-          bool first = false;
-          if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) { dx = -st; first |= ImGui::IsKeyPressed(ImGuiKey_LeftArrow, false); }
-          if (ImGui::IsKeyPressed(ImGuiKey_RightArrow)) { dx = st; first |= ImGui::IsKeyPressed(ImGuiKey_RightArrow, false); }
-          if (ImGui::IsKeyPressed(ImGuiKey_UpArrow)) { dy = -st; first |= ImGui::IsKeyPressed(ImGuiKey_UpArrow, false); }
-          if (ImGui::IsKeyPressed(ImGuiKey_DownArrow)) { dy = st; first |= ImGui::IsKeyPressed(ImGuiKey_DownArrow, false); }
-          if (dx != 0 || dy != 0) { if (first) A.pushHist(); A.nudgeSelection(dx, dy); }   // one history step per press, not per key repeat
+          for (ImGuiKey k : {ImGuiKey_Delete, ImGuiKey_Backspace}) if (ImGui::IsKeyPressed(k, false)) { MappingShortcut(k, false, io.KeyShift); break; }
+          for (ImGuiKey k : {ImGuiKey_LeftArrow, ImGuiKey_RightArrow, ImGuiKey_UpArrow, ImGuiKey_DownArrow}) if (ImGui::IsKeyPressed(k)) MappingShortcut(k, false, io.KeyShift);   // key repeat nudges on
         }
       }
       if (!io.WantTextInput && io.KeyCtrl) {
@@ -1986,8 +1977,7 @@ int main(int argc, char** argv) {
     } else {
       switch (A.screen) {
         case 0: DrawDeck(body); break;
-        case 1: DrawMapping(body); break;
-        default: DrawSensor(body); break;
+        default: DrawMapping(body); break;
       }
       TitleBar(ImRect(0, 0, disp.x, 40));
       StatusBar(ImRect(0, disp.y - 22, disp.x, disp.y));

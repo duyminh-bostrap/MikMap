@@ -1,4 +1,4 @@
-﻿// Sensor page, laid out like Advanced Mapping: the shared tree · a stage with an INPUT / OUTPUT tab · Properties.
+﻿// A sensor selected on the Mapping page (selKind 3): what its stage shows under Mapping's INPUT / OUTPUT bar, and its Properties.
 // Input = what the sensor sees (a lidar placed in mm on its screen; the Sim radar; the camera skeleton).
 // Output = where its points land on the screen (1920x1080): the 4 calibration targets, edited with Mapping's own quad tools.
 #include "app.h"
@@ -39,9 +39,9 @@ void FitAffine(const std::vector<Calib>& c, float out[9], float* rms) {
   if (rms) *rms = err / 4;
 }
 
-std::vector<PropSection> SensorPropSections(DevKind k, int spage) {
+std::vector<PropSection> SensorPropSections(DevKind k, int page) {
   using P = PropSection;
-  if (spage != 0) return {P::Calibration, P::SendOut, P::Triggers};
+  if (page != 0) return {P::Calibration, P::SendOut, P::Triggers};
   if (k == DevKind::Hokuyo || k == DevKind::Plugin) return {P::Connection, P::ScreenSize, P::Placement, P::Blobs};   // a plugin is a 2D lidar today
   return {P::Connection};
 }
@@ -74,91 +74,6 @@ static bool OverStage(ImRect area) {   // the pointer may grab something on this
 }
 static float StageBase(ImRect area, float SW, float SH) {   // space width in px at 100%, as Mapping's stage
   return std::min(std::min(area.GetWidth() - 20, 960.f), (area.GetHeight() - 20) * SW / SH);
-}
-
-// ───────────────────────── stage bar ─────────────────────────
-// INPUT / OUTPUT tabs (mint / coral, Mapping's page switch), the Output tools, and on the right the zoom group (for stages that
-// pan/zoom) and the Output overlay switch. *lx / return value: where the bar's free middle starts / ends.
-static float StageBar(ImRect tb, bool zoom, float* lx) {
-  Fill(tb, K(pal::g12)); HLine(tb.Min.x, tb.Max.x, tb.Max.y - 1, K(pal::g2a));
-  const float cy = tb.Min.y + 21.5f, kBtnW = 28.f, kBtnH = 28.f, kGrpH = 17.f;
-  const char* pages[2] = {"Input", "Output"}; const uint32_t pcol[2] = {pal::mint, pal::coral};
-  float pw[2], tot = 4;
-  for (int i = 0; i < 2; ++i) { pw[i] = TextW(UI_B, 10, Upper(pages[i]).c_str(), 0.09f) + 18; tot += pw[i] + (i ? 0 : 2); }
-  ImRect grp(tb.Min.x + 6, cy - 14, tb.Min.x + 6 + tot + 2, cy + 14);
-  Box(grp, K(0x000000), K(pal::g2a), 4);
-  float px = grp.Min.x + 3;
-  for (int i = 0; i < 2; ++i) {
-    ImRect pr(px, cy - 11, px + pw[i], cy + 11);
-    Hit h = HitR(pr);
-    const bool on = A.spage == i;
-    if (on) Fill(pr, K(pcol[i]), 3);
-    TextC((pr.Min.x + pr.Max.x) * 0.5f, cy, UI_B, 10, K(on ? pal::white : pal::t77), Upper(pages[i]).c_str(), 0.09f);
-    if (h.hover) CursorHand();
-    if (h.click) A.spage = i;
-    px += pw[i] + 2;
-  }
-  float left = grp.Max.x + 8;
-  if (A.spage == 1) {   // Mapping's two Output tools, in the sensor's mint
-    const char* tl[2] = {"Edit points", "Transform"}; const char* ti[2] = {"plus", "frame"};
-    float bw[2]; for (int i = 0; i < 2; ++i) bw[i] = 8 + 16 + 6 + TextW(UI_B, 9, Upper(tl[i]).c_str(), 0.08f) + 10;
-    ImRect tg(grp.Max.x + 4, cy - kGrpH, grp.Max.x + 4 + 3 + bw[0] + 2 + bw[1] + 3, cy + kGrpH);
-    Box(tg, K(0x000000), K(pal::g2a), 4);
-    float bx = tg.Min.x + 3;
-    for (int i = 0; i < 2; ++i) {
-      ImRect br(bx, cy - kBtnH * 0.5f, bx + bw[i], cy + kBtnH * 0.5f);
-      const bool on = A.sensorTool == i;
-      Hit h = HitR(br);
-      Box(br, on ? K(pal::mint, 0.2f) : h.hover ? K(pal::g1c) : 0, on ? K(pal::mint, 0.6f) : 0, 3);
-      Icon(ti[i], ImVec2(br.Min.x + 8 + 8, cy), 14, K(on ? pal::mint : h.hover ? pal::white : pal::t88));
-      Text(br.Min.x + 8 + 16 + 6, cy, UI_B, 9, K(on ? pal::mint : h.hover ? pal::white : pal::t88), Upper(tl[i]).c_str(), 0.08f);
-      if (h.hover) CursorHand();
-      if (h.click) A.sensorTool = i;
-      bx += bw[i] + 2;
-    }
-    left = tg.Max.x + 8;
-  }
-  float xr = tb.Max.x - 6;
-  if (zoom) {   // − % + ; the readout goes back to 100 % centred
-    StageView& v = A.sensorView[A.spage];
-    const float pctW = 46.f, gw = 3 + kBtnW + pctW + kBtnW + 3;
-    ImRect zg(xr - gw, cy - kGrpH, xr, cy + kGrpH);
-    Box(zg, K(pal::g1c), K(pal::g22), 3);
-    float zx = zg.Min.x + 3;
-    auto iconBtn = [&](float x, const char* ic) {
-      ImRect br(x, cy - kBtnH * 0.5f, x + kBtnW, cy + kBtnH * 0.5f);
-      Hit h = HitR(br);
-      if (h.hover) { Fill(br, K(pal::g22), 3); CursorHand(); }
-      Icon(ic, ImVec2((br.Min.x + br.Max.x) * 0.5f, cy), 16, K(h.hover ? pal::white : pal::tcc));
-      return h.click;
-    };
-    if (iconBtn(zx, "zoom-out")) v.setZoom(v.z / 1.4f);
-    zx += kBtnW;
-    ImRect pr(zx, cy - kBtnH * 0.5f, zx + pctW, cy + kBtnH * 0.5f);
-    Hit ph = HitR(pr);
-    if (ph.hover) { Fill(pr, K(pal::g22), 3); CursorHand(); }
-    char zl[16]; snprintf(zl, sizeof zl, "%d%%", (int)std::round(v.z * 100));
-    TextC((pr.Min.x + pr.Max.x) * 0.5f, cy, MONO_B, 11, K(ph.hover ? pal::white : pal::tcc), zl);
-    if (ph.click) v.setZoom(1, 0.5f, 0.5f);
-    zx += pctW;
-    if (iconBtn(zx, "zoom-in")) v.setZoom(v.z * 1.4f);
-    xr = zg.Min.x - 6;
-  }
-  {   // G13: draw live touches on the projector window (a debug aid for every device)
-    const char* ol = "Output overlay";
-    const float ow = TextW(UI_B, 10, ol) + 10 + 6 + 12 + 10;
-    ImRect ob(xr - ow, cy - 12, xr, cy + 12);
-    Hit oh = HitR(ob);
-    Box(ob, A.sensorOverlay ? K(pal::mint, 0.18f) : K(pal::g1c), A.sensorOverlay ? K(pal::mint) : K(pal::g22), 3);
-    const ImU32 ofg = K(A.sensorOverlay ? pal::mint : pal::t88);
-    Icon("activity", ImVec2(ob.Min.x + 10 + 6, cy), 12, ofg);
-    Text(ob.Min.x + 10 + 12 + 6, cy, UI_B, 10, ofg, ol);
-    if (oh.hover) CursorHand();
-    if (oh.click) A.sensorOverlay = !A.sensorOverlay;
-    xr = ob.Min.x - 8;
-  }
-  if (lx) *lx = left;
-  return xr;
 }
 
 // ───────────────────────── Input: camera skeleton ─────────────────────────
@@ -404,7 +319,7 @@ static void SensorOutputView(ImRect area, Device& d) {
   Border(X.cv, K(pal::coral, 0.6f), 2, 1.f);
   ImVec2 q[4]; for (int i = 0; i < 4; ++i) q[i] = ImVec2(d.calib[i].tx, d.calib[i].ty);
   const std::string id = "##sensorquad" + d.id;
-  const bool released = EditQuad(id.c_str(), X, q, A.sensorTool, pal::mint, OverStage(area));
+  const bool released = EditQuad(id.c_str(), X, q, A.outTool, pal::mint, OverStage(area));
   QuadEdit(d, q);
   if (released) A.pushHist();
   static const char* kCorner[4] = {"1", "2", "3", "4"};
@@ -423,19 +338,57 @@ static void SensorOutputView(ImRect area, Device& d) {
   }
   g.dl->PopClipRect();
   TextC((area.Min.x + area.Max.x) * 0.5f, area.Max.y - 12, MONO_R, 10, K(pal::t66),
-        A.sensorTool == 0 ? "Drag a corner to fine-tune where the sensor lands \xC2\xB7 Shift: one axis" : "Move, scale or turn the whole quad \xC2\xB7 Shift: axis / aspect / 45\xC2\xB0");
+        A.outTool == 0 ? "Drag a corner to fine-tune where the sensor lands \xC2\xB7 Shift: one axis" : "Move, scale or turn the whole quad \xC2\xB7 Shift: axis / aspect / 45\xC2\xB0");
 }
 
-static void SensorStage(ImRect r, Device* d) {
-  Fill(r, K(pal::g050));
-  ImRect tb(r.Min.x, r.Min.y, r.Max.x, r.Min.y + 44), area(r.Min.x, r.Min.y + 44, r.Max.x, r.Max.y);
-  const bool radar = d && A.spage == 0 && !IsLidar(*d);   // the Sim radar and the camera keep their own fixed views (no pan/zoom)
-  float lx = 0, xr = StageBar(tb, d && !radar, &lx);
-  if (!d) { TextC((area.Min.x + area.Max.x) * 0.5f, (area.Min.y + area.Max.y) * 0.5f, MONO_R, 10, K(pal::t66), "No sensor \xE2\x80\x94 add one with + Sensor"); return; }
-  if (A.spage != 0 || d->kind != DevKind::Sim) A.editRoi = false;
-  const float cy = tb.Min.y + 21.5f;
+// The Sim radar and the camera keep their own fixed Input views (no pan/zoom).
+static bool FixedView(const Device& d) { return A.mpage == 0 && !IsLidar(d); }
+
+// Right of Mapping's bar while a sensor is selected: − % + (a stage that pans), Output overlay, Edit ROI (Sim radar), and a live
+// readout in the free middle from lx.
+void SensorBarTools(ImRect tb, float lx, Device& d) {
+  const float cy = tb.Min.y + 21.5f, kBtnW = 28.f, kBtnH = 28.f, kGrpH = 17.f;
+  float xr = tb.Max.x - 6;
+  if (!FixedView(d)) {   // − % + ; the readout goes back to 100 % centred
+    StageView& v = A.sensorView[A.mpage == 0 ? 0 : 1];
+    const float pctW = 46.f, gw = 3 + kBtnW + pctW + kBtnW + 3;
+    ImRect zg(xr - gw, cy - kGrpH, xr, cy + kGrpH);
+    Box(zg, K(pal::g1c), K(pal::g22), 3);
+    float zx = zg.Min.x + 3;
+    auto iconBtn = [&](float x, const char* ic) {
+      ImRect br(x, cy - kBtnH * 0.5f, x + kBtnW, cy + kBtnH * 0.5f);
+      Hit h = HitR(br);
+      if (h.hover) { Fill(br, K(pal::g22), 3); CursorHand(); }
+      Icon(ic, ImVec2((br.Min.x + br.Max.x) * 0.5f, cy), 16, K(h.hover ? pal::white : pal::tcc));
+      return h.click;
+    };
+    if (iconBtn(zx, "zoom-out")) v.setZoom(v.z / 1.4f);
+    zx += kBtnW;
+    ImRect pr(zx, cy - kBtnH * 0.5f, zx + pctW, cy + kBtnH * 0.5f);
+    Hit ph = HitR(pr);
+    if (ph.hover) { Fill(pr, K(pal::g22), 3); CursorHand(); }
+    char zl[16]; snprintf(zl, sizeof zl, "%d%%", (int)std::round(v.z * 100));
+    TextC((pr.Min.x + pr.Max.x) * 0.5f, cy, MONO_B, 11, K(ph.hover ? pal::white : pal::tcc), zl);
+    if (ph.click) v.setZoom(1, 0.5f, 0.5f);
+    zx += pctW;
+    if (iconBtn(zx, "zoom-in")) v.setZoom(v.z * 1.4f);
+    xr = zg.Min.x - 6;
+  }
+  {   // G13: draw live touches on the projector window (a debug aid for every device)
+    const char* ol = "Output overlay";
+    const float ow = TextW(UI_B, 10, ol) + 10 + 6 + 12 + 10;
+    ImRect ob(xr - ow, cy - 12, xr, cy + 12);
+    Hit oh = HitR(ob);
+    Box(ob, A.sensorOverlay ? K(pal::mint, 0.18f) : K(pal::g1c), A.sensorOverlay ? K(pal::mint) : K(pal::g22), 3);
+    const ImU32 ofg = K(A.sensorOverlay ? pal::mint : pal::t88);
+    Icon("activity", ImVec2(ob.Min.x + 10 + 6, cy), 12, ofg);
+    Text(ob.Min.x + 10 + 12 + 6, cy, UI_B, 10, ofg, ol);
+    if (oh.hover) CursorHand();
+    if (oh.click) A.sensorOverlay = !A.sensorOverlay;
+    xr = ob.Min.x - 8;
+  }
   char info[64] = "";
-  if (A.spage == 0 && d->kind == DevKind::Sim) {   // Edit ROI: the Sim radar's handles
+  if (A.mpage == 0 && d.kind == DevKind::Sim) {   // Edit ROI: the Sim radar's handles
     const char* lb = A.editRoi ? "Finish ROI" : "Edit ROI";
     const float w = TextW(UI_B, 10, lb) + 10 + 6 + 12 + 10;
     ImRect br(xr - w, cy - 12, xr, cy + 12);
@@ -448,18 +401,23 @@ static void SensorStage(ImRect r, Device* d) {
     if (h.click) A.editRoi = !A.editRoi;
     xr = br.Min.x - 8;
     snprintf(info, sizeof info, "40.0 Hz real-time sweep");
-  } else if (A.spage == 0 && d->kind == DevKind::Skeleton) {
-    int slots[64]; const int n = People(*d, slots);
-    snprintf(info, sizeof info, "%d fps \xC2\xB7 %d %s", d->fps, n, n == 1 ? "person" : "people");
-  } else if (IsLidar(*d)) {
-    snprintf(info, sizeof info, "%d Hz \xC2\xB7 %d %s", d->fps, (int)d->touches.size(), d->touches.size() == 1 ? "blob" : "blobs");
+  } else if (A.mpage == 0 && d.kind == DevKind::Skeleton) {
+    int slots[64]; const int n = People(d, slots);
+    snprintf(info, sizeof info, "%d fps \xC2\xB7 %d %s", d.fps, n, n == 1 ? "person" : "people");
+  } else if (IsLidar(d)) {
+    snprintf(info, sizeof info, "%d Hz \xC2\xB7 %d %s", d.fps, (int)d.touches.size(), d.touches.size() == 1 ? "blob" : "blobs");
   }
   if (xr - lx > 40) TextEll(lx, cy, xr - lx, MONO_R, 10, K(pal::t88), info);
-  if (A.spage == 1) SensorOutputView(area, *d);
-  else if (IsLidar(*d)) LidarPlacementView(area, *d);
-  else if (d->kind == DevKind::Skeleton) SkeletonView(area, *d);
-  else Radar(area, *d);
 }
+
+void SensorStageBody(ImRect area, Device& d) {
+  if (A.mpage != 0 || d.kind != DevKind::Sim) A.editRoi = false;
+  if (A.mpage != 0) SensorOutputView(area, d);
+  else if (IsLidar(d)) LidarPlacementView(area, d);
+  else if (d.kind == DevKind::Skeleton) SkeletonView(area, d);
+  else Radar(area, d);
+}
+
 
 // ───────────────────────── Properties ─────────────────────────
 static void PLabel(float x, float y, const char* t) { Text(x, y + 4.5f, MONO_R, 9, K(pal::t88), Upper(t).c_str(), 0.09f); }
@@ -755,7 +713,7 @@ static void TriggersSection(float x, float w, float oy, float& y) {   // G17 pat
 
 // Like Mapping's Properties: a block that is always there (name, status, Active, screen), then the sections of the open tab.
 // Input = what the sensor sees and how it is filtered; Output = where its points land on the screen and where they go next.
-static void SensorProps(ImRect r, Device* d) {
+void SensorProps(ImRect r, Device* d) {
   Fill(r, K(pal::g12));
   VLine(r.Min.x, r.Min.y, r.Max.y, K(pal::g2a));
   PanelHeader(Rc(r.Min.x + 1, r.Min.y, r.GetWidth() - 1, 24), "Sensor properties", pal::t88);
@@ -807,7 +765,7 @@ static void SensorProps(ImRect r, Device* d) {
     if (fb && cur) { TextEll(x, oy + y + 6, w, MONO_R, 9, K(pal::yellow), ("Screen not found \xE2\x80\x94 using " + cur->name).c_str()); y += 12 + 4; }
     y += 4;
   }
-  for (PropSection s : SensorPropSections(d->kind, A.spage)) {
+  for (PropSection s : SensorPropSections(d->kind, A.mpage)) {
     switch (s) {
       case PropSection::Connection: if (Section(ox, W, x, w, oy, y, "Connection", d->kind, s, d->kind == DevKind::Sim ? nullptr : Endpoint(*d).c_str())) ConnectionSection(*d, x, w, oy, y); break;
       case PropSection::ScreenSize: if (Section(ox, W, x, w, oy, y, "Screen size", d->kind, s)) ScreenSizeSection(*d, x, w, oy, y); break;
@@ -928,8 +886,8 @@ void SensorWizardNext() {
 
 void SensorWizardDone() {
   SensorWizard& w = A.wizard;
-  w.step = 0; A.spage = 0;
-  if (!w.added.empty()) for (int i = 0; i < (int)A.devices.size(); ++i) if (A.devices[i].id == w.added[0]) { A.selDevice = i; break; }
+  w.step = 0; A.mpage = 0;
+  if (!w.added.empty()) SelectDevice(w.added[0]);
 }
 
 // one choice on step 1; a dimmed card only says it is planned
@@ -962,7 +920,7 @@ static void TickRow(ImRect r, const char* label, char& on, bool taken) {   // ta
   if (h.click) on = !on;
 }
 
-static void SensorWizardView(ImRect r) {
+void SensorWizardView(ImRect r) {
   SensorWizard& w = A.wizard;
   if (w.step != 2) gIfsFresh = false;
   Fill(r, K(pal::g050));
@@ -1130,16 +1088,4 @@ static void SensorWizardView(ImRect r) {
   }
   TextEll(x, y + 10, colW, MONO_R, 9, K(pal::t66), "A sensor that does not connect stays in the list \xE2\x80\x94 fix its address in Properties");
   if (WideButton(x + colW - 140, r.Max.y - 24 - 26, 140, "Done", nullptr, pal::mint)) SensorWizardDone();
-}
-
-void DrawSensor(ImRect body) {
-  Fill(body, K(pal::g0f));
-  const float tw = A.sensorTreeCollapsed ? 46.f : 236.f, pw = 280.f;
-  ImRect tree(body.Min.x, body.Min.y, body.Min.x + tw, body.Max.y);
-  Device* d = A.curDevice();
-  DrawTree(tree, TreeMode::Sensors);
-  SensorProps(ImRect(body.Max.x - pw, body.Min.y, body.Max.x, body.Max.y), d);
-  const ImRect stage(tree.Max.x, body.Min.y, body.Max.x - pw, body.Max.y);
-  if (A.wizard.step > 0) SensorWizardView(stage); else SensorStage(stage, d);
-  DrawTreePopover(tree, TreeMode::Sensors);
 }

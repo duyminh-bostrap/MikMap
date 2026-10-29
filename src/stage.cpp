@@ -1,4 +1,4 @@
-// Stage pieces shared by Advanced Mapping and the Sensor page: box math (Output Transform), and later the pan/zoom view,
+// Stage pieces shared by Mapping's slice and sensor stages: box math (Output Transform), and later the pan/zoom view,
 // the screen backdrop and quad editing. Moved out of mapping.cpp unchanged so both pages run the same code.
 #include "app.h"
 #include <cmath>

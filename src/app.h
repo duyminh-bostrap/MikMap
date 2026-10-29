@@ -224,17 +224,16 @@ struct Device {
   std::vector<Touch> touches; int status = 0; std::string error; int fps = 0; float latencyMs = 0; uint64_t packets = 0;
 };
 
-// The tree shared by Advanced Mapping and the Sensor page (mapping.cpp): Screen -> slices -> masks, and Screen -> sensors.
-enum class TreeMode { Mapping, Sensors };
+// The Mapping tree (mapping.cpp): Screen -> slices -> masks, and Screen -> sensors.
 struct Node {
-  enum Kind { ScreenN, SliceN, MaskN, SensorN, NoteN } kind = ScreenN;   // NoteN = a dimmed, unclickable line ("3 slices")
+  enum Kind { ScreenN, SliceN, MaskN, SensorN } kind = ScreenN;
   std::string sc, sl, mk, dv, name, meta;
   float h = 26, pad = 0;
   bool open = true, canHide = true, vis = true;
   uint32_t color = pal::coral;
   DevKind dk = DevKind::Sim;
 };
-// Add-sensor wizard (sensor.cpp draws it in place of the stage while step > 0). Runtime only, never serialized.
+// Add-sensor wizard (Mapping's stage draws it in place of its content while step > 0). Runtime only, never serialized.
 // step 1 type · 2 connect · 3 watch the new devices come up. found/pick: Hokuyo hosts ("ip" or "ip:port") and which are ticked.
 struct SensorWizard { int step = 0; DevKind kind = DevKind::Hokuyo; std::string plugin, screenId, manualHost, config;
                       int iface = 0, port = 0; std::vector<std::string> found; std::vector<char> pick; std::vector<std::string> added; bool scanning = false; };
@@ -275,7 +274,7 @@ struct Popup { bool open = false; ImVec2 pos; int li = 0, ci = 0; };
 struct RenameBox { bool open = false, fresh = false; int kind = 0, idx = 0; ImVec2 pos; char buf[64] = {}; };
 struct CtxMenu { bool open = false; ImVec2 pos; std::vector<ui::MenuItem> items; };
 
-// ── stage pieces shared by Advanced Mapping and the Sensor page (stage.cpp) ──
+// ── stage pieces shared by Mapping's slice and sensor stages (stage.cpp) ──
 static constexpr float kDegToRad = 3.14159265f / 180.f;
 struct RectXf { float x, y, w, h, rot; };   // Left/Top of the unrotated rect, size, degrees
 // The upright box (in its own frame turned by rotDeg) around n points.
@@ -307,7 +306,7 @@ void DrawScreenBackdrop(const Screen& sc, const StageXf& x, float t, float alpha
 bool EditQuad(const char* id, const StageXf& x, ImVec2 q[4], int tool, uint32_t tone, bool enabled);
 
 struct App {
-  int screen = 0;  // 0 deck, 1 mapping, 2 sensor
+  int screen = 0;  // 0 deck, 1 mapping (sensors are a selection there: selKind 3)
   int canvasW = 1920, canvasH = 1080;  // A1: virtual composition canvas, independent of any projector
   CompProps comp;                      // Properties > Comp (master/speed/opacity/transform are live; audio + crossfader are stored only)
   void setCanvasSize(int w, int h);    // change the canvas resolution; every slice's input rect keeps covering the same part of it
@@ -423,7 +422,7 @@ struct App {
   // mapping
   std::vector<Screen> screens;
   std::string selSc = "screen1", selSl = "slice1", selMk;
-  int selKind = -1;  // -1 auto, 0 screen, 1 slice, 2 mask
+  int selKind = -1;  // -1 auto, 0 screen, 1 slice, 2 mask, 3 sensor (A.selDevice; selSc = its screen)
   StageView mapView;   // the Advanced Mapping stage's pan/zoom
   bool mapFocus = false;
   char meshArm = 0;   // 'u' / 'v': + Add col / + Add row is armed — a preview line follows the pointer and the next click places it
@@ -435,12 +434,8 @@ struct App {
   int MapKind() { return selKind >= 0 ? selKind : (selMk.empty() ? 1 : 2); }
   int mpage = 1;  // 0 input, 1 output
   bool treeCollapsed = false;
-  bool sensorTreeCollapsed = false;   // the Sensor page's own tree / rail flag
-  std::string sensorRail;             // Sensor page rail: the screen whose sensors are open in the popover
   SensorWizard wizard;
-  int spage = 0;                      // Sensor page stage: 0 Input (what the sensor sees, in its units), 1 Output (where it lands, 1920x1080) — like mpage
-  StageView sensorView[2];            // each Sensor tab keeps its own pan/zoom
-  int sensorTool = 0;                 // Output tab: 0 Edit points, 1 Transform
+  StageView sensorView[2];            // a selected sensor's stage pan/zoom, per Mapping page (mpage)
   std::map<int, uint32_t> sensorSecOpen;   // Properties sections open per DevKind (bit = PropSection); absent = all open. Runtime only
   std::map<std::string, bool> collapsedScreens;
   std::string railScreen;
@@ -448,7 +443,7 @@ struct App {
   // sensor
   std::vector<Device> devices;
   std::vector<Route> routes;
-  int selDevice = 0;            // runtime: the card the Sensor page edits; clamped by curDevice()
+  int selDevice = 0;            // runtime: the sensor Mapping edits while selKind == 3; clamped by curDevice()
   bool editRoi = false;
   bool sensorOverlay = false;   // G13: draw live sensor touches on the projector output window (debug aid, off by default)
   int wizardStep = 0;
@@ -546,7 +541,6 @@ struct ScrollArea {
 
 void DrawDeck(ImRect body);
 void DrawMapping(ImRect body);
-void DrawSensor(ImRect body);
 void DrawOverlays(ImVec2 display);
 void DrawSettings(ImVec2 display);
 void ApplyPrefs();
@@ -677,10 +671,20 @@ void FitAffine(const std::vector<Calib>& c, float out[9], float* rms);
 // G5 homography + G9 perf
 bool FitHomography(const std::vector<Calib>& pts, float H[9], float* rms);
 bool DeviceH(const Device& d, float H[9]);       // H_s of one device; false if it is not calibrated
-std::vector<Node> BuildTree(TreeMode m, bool onlyScreen, const std::string& only);   // mapping.cpp
-void DrawTreePopover(ImRect r, TreeMode m);   // the open rail popover: call after the stage so it floats over it
-void DrawTree(ImRect r, TreeMode m);   // full panel, or the 46 px rail when that page's collapse flag is on
-void OpenSensorWizard(const std::string& screenId);   // jumps to the Sensor page, wizard step 1, screen preselected
+std::vector<Node> BuildTree(bool onlyScreen, const std::string& only);   // mapping.cpp
+void DrawTreePopover(ImRect r);   // the open rail popover: call after the stage so it floats over it
+void DrawTree(ImRect r);   // full panel, or the 46 px rail while A.treeCollapsed
+void SelectTreeNode(const Node& n);   // a plain click on a tree row (screen / slice / mask / sensor)
+void SelectDevice(const std::string& deviceId);   // selKind = 3, selDevice, selSc = DeviceScreen(d); clears selMk / mapMulti; A.screen = 1; wizardStep = 0; editRoi = false. Unknown id: no change
+void RemoveDevice(const std::string& deviceId);   // the tree menu's Remove: the selected sensor gone = its screen becomes the selection
+bool MappingEditsSlices();                        // false while a sensor is selected: Mapping's delete / copy / paste / duplicate / nudge keys do nothing
+void MappingShortcut(ImGuiKey key, bool ctrl, bool shift);   // one press of a Mapping editing key (main.cpp feeds it)
+void ApplyStartScreen(int screen);                // --screen N: 0 / 1 as is; 2+ (the old Sensor page) = Mapping with the current sensor selected
+void OpenSensorWizard(const std::string& screenId);   // wizard step 1 on the Mapping page, screen preselected
+void SensorStageBody(ImRect area, Device& d);     // sensor.cpp: a selected sensor's stage content below Mapping's 44 px bar (uses A.mpage)
+void SensorBarTools(ImRect tb, float lx, Device& d);    // sensor.cpp: the sensor's own items in Mapping's bar from lx to the right (zoom, overlay, info)
+void SensorProps(ImRect r, Device* d);            // sensor.cpp: Properties of the selected sensor (Mapping's right panel)
+void SensorWizardView(ImRect r);                  // sensor.cpp: the add-sensor wizard (Task 3 makes it a popup)
 void SensorWizardNext();         // step 1 -> 2 (Sim: straight to 3); step 2 -> 3 creates one enabled device per ticked item on wizard.screenId
 void SensorWizardAddManual();    // step 2 Hokuyo: wizard.manualHost ("ip" or "ip:port") joins the list, ticked
 void SensorWizardDone();         // step 3 -> 0, the first new device selected
@@ -693,9 +697,9 @@ bool PlacementCalib(Device& d, const Screen& sc, const mikmap::LidarPose& pose);
 bool ApplyPlacement(Device& d);   // only while d.placed: PlacementCalib on its own screen with d.pose (a hand-tuned "Custom (4-point)" quad is left alone)
 bool QuadEdit(Device& d, const ImVec2 q[4]);   // Output quad edited by hand: a move over 0.01 px writes calib tx,ty and makes it Custom (placed = false); less is no edit
 bool RoiToScreen(Device& d);      // lidar "ROI = screen": roi = the screen's 4 corners seen from d.pose; false while the screen has no real size
-// Sensor page Properties: which sections a device kind shows on the Input (0) / Output (1) tab. Pure, so --roundtrip checks it.
+// Sensor Properties: which sections a device kind shows on the Input (0) / Output (1) page. Pure, so --roundtrip checks it.
 enum class PropSection { Connection, ScreenSize, Placement, Blobs, Calibration, SendOut, Triggers };
-std::vector<PropSection> SensorPropSections(DevKind k, int spage);
+std::vector<PropSection> SensorPropSections(DevKind k, int page);
 Device MakeDevice(DevKind k, const std::string& id);   // per-kind defaults (name, address, ROI, calibration targets)
 // Live sensors (sources.cpp): the real ISensorSource threads, one per enabled non-Sim device, kept OUT of App so undo never touches them.
 namespace mikmap { class ISensorSource; struct LaserScan; struct SensorPlugin; }

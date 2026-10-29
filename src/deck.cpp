@@ -2017,7 +2017,7 @@ static void TimelineView(ImRect r);  // implemented further down — Deck() belo
 // They shrink (label ellipsised) when they don't fit; tabs that still don't fit are left out — right-click Add deck
 // and Move left/right are on each tab's menu.
 static void DeckTabs(float x0, float xMax, float cy) {
-  // Same look as the top navigation (Composition / Advanced Mapping / Sensor I/O): one dark rounded group, the active
+  // Same look as the top navigation (Composition / Mapping): one dark rounded group, the active
   // tab outlined and glowing in coral, the others plain grey text. The active tab carries a small arrow that opens the
   // deck menu (right-click any tab opens it too).
   int n = (int)A.decks.size();

@@ -205,7 +205,7 @@ void SensorsTick(double now) {
   if (g_cap.on && A.wizardStep != g_cap.step) g_cap.on = false;   // wizard cancelled, or another device selected
   bool fire = false;
   for (auto& d : A.devices) {
-    ApplyPlacement(d);   // a placed lidar follows its pose and its screen's mm size wherever they were edited (Sensor page, Mapping, undo)
+    ApplyPlacement(d);   // a placed lidar follows its pose and its screen's mm size wherever they were edited (Mapping, undo)
     if (d.kind == DevKind::Sim) { d.status = d.enabled ? (int)mikmap::SourceStatus::Running : (int)mikmap::SourceStatus::Stopped; continue; }
     d.fps = 0; d.latencyMs = 0; d.packets = 0;
     if (!d.enabled) { d.status = (int)mikmap::SourceStatus::Stopped; d.error.clear(); d.touches.clear(); continue; }
@@ -306,15 +306,61 @@ bool SensorSelfTest(std::string& why) {
   auto dev = [](const char* id) -> Device& { for (auto& d : A.devices) if (d.id == id) return d; return A.devices.back(); };
   auto fail = [&](const std::string& w) { why = w; SensorsShutdown(); return false; };
 
-  // Tree: a sensor is a child of its screen in Mapping; the Sensor page shows no slices. (The default Hokuyo is devices[2].)
+  // Tree: a sensor is a child of its screen in Mapping. (The default Hokuyo is devices[2].)
   {
     A.devices[2].screenId = A.screens[1].id;
     auto count = [](const std::vector<Node>& v, Node::Kind k, const std::string& sc) { int n = 0; for (auto& x : v) n += x.kind == k && (sc.empty() || x.sc == sc); return n; };
-    const auto mt = BuildTree(TreeMode::Mapping, false, ""), st = BuildTree(TreeMode::Sensors, false, "");
+    const auto mt = BuildTree(false, "");
     if (count(mt, Node::SensorN, A.screens[1].id) != 1 || count(mt, Node::SensorN, "") != (int)A.devices.size())
       return fail("tree: Mapping must list the Hokuyo exactly once, under the screen it belongs to");
-    if (count(st, Node::SliceN, "") != 0 || count(st, Node::SensorN, A.screens[1].id) != 1) return fail("tree: the Sensor page lists sensors but never slices");
     A.devices[2].screenId = A.screens[0].id;
+  }
+
+  // One Mapping page: a sensor is selection kind 3; while it is selected, Mapping's slice shortcuts touch nothing.
+  {
+    A.screen = 0; A.mpage = 1;
+    SelectDevice(A.devices[2].id);
+    const Screen* ds = DeviceScreen(A.devices[2]);
+    if (A.MapKind() != 3 || A.screen != 1 || A.curDevice() != &A.devices[2] || !ds || A.selSc != ds->id || MappingEditsSlices())
+      return fail("select: a sensor must be selection kind 3 on the Mapping page, with its screen selected and slice shortcuts off");
+    // the slice still "selected" underneath, with a picked corner: Delete / arrows / Ctrl+D must leave it alone
+    Slice* hs = A.curSlice();
+    if (!hs) return fail("select: the default project has no slice under the sensor's screen");
+    const std::string hsId = hs->id; const size_t nsl = A.curScreen()->slices.size(); const ImVec2 q0 = hs->q[0];
+    A.mapPts = {{hsId, 0}};
+    MappingShortcut(ImGuiKey_RightArrow, false, true); MappingShortcut(ImGuiKey_DownArrow, false, false);
+    MappingShortcut(ImGuiKey_Delete, false, false); MappingShortcut(ImGuiKey_D, true, false); MappingShortcut(ImGuiKey_X, true, false);
+    hs = A.curSlice();
+    if (A.curScreen()->slices.size() != nsl || !hs || hs->id != hsId || hs->q[0].x != q0.x || hs->q[0].y != q0.y)
+      return fail("select: Mapping's Delete / nudge / duplicate / cut changed a slice while a sensor was selected");
+    A.mapPts.clear();
+    // the tree's own click path back to a slice brings slice editing back
+    Node sn; sn.kind = Node::SliceN; sn.sc = A.screens[0].id; sn.sl = A.screens[0].slices[0].id;
+    SelectTreeNode(sn);
+    if (A.MapKind() != 1 || !MappingEditsSlices()) return fail("select: clicking a slice in the tree must make it the selection again");
+    // a sensor whose screen is gone is shown on the fallback screen
+    A.devices[2].screenId = "no-such-screen";
+    SelectDevice(A.devices[2].id);
+    bool fb = false; DeviceScreen(A.devices[2], &fb);
+    if (A.selSc != A.screens[0].id || !fb || A.MapKind() != 3) return fail("select: a sensor whose screen was deleted must select the fallback screen");
+    A.devices[2].screenId = A.screens[0].id;
+    // Remove (the tree menu's own path) on the selected sensor: back to its screen, never a stale index
+    Device rm = MakeDevice(DevKind::Sim, "selftest-rm"); rm.screenId = A.screens[1].id; A.devices.push_back(rm);
+    SelectDevice("selftest-rm");
+    const std::string rmSc = A.selSc;
+    RemoveDevice("selftest-rm");
+    if (A.MapKind() != 0 || A.selSc != rmSc || rmSc != A.screens[1].id || (A.curDevice() && A.curDevice()->id == "selftest-rm"))
+      return fail("select: removing the selected sensor must fall back to its screen");
+    // removing a sensor BEFORE the selected one keeps the same sensor selected
+    rm.id = "selftest-rm2"; A.devices.insert(A.devices.begin(), rm);
+    SelectDevice(A.devices[3].id); const std::string keepId = A.devices[3].id;
+    RemoveDevice("selftest-rm2");
+    if (A.MapKind() != 3 || !A.curDevice() || A.curDevice()->id != keepId) return fail("select: removing another sensor must keep the selected one");
+    // --screen 2 (the old Sensor page): the Mapping page with a sensor selected
+    A.screen = 0; A.selKind = -1;
+    ApplyStartScreen(2);
+    if (A.screen != 1 || A.MapKind() != 3) return fail("select: --screen 2 must open Mapping with a sensor selected");
+    A.screen = 0; A.selKind = -1;
   }
 
   Device a = MakeDevice(DevKind::Skeleton, "selftest-a"); a.port = port; a.enabled = true;
@@ -358,7 +404,7 @@ bool SensorSelfTest(std::string& why) {
   if (A.wizardStep != 2 || std::fabs(dh.calib[0].mx - 1000.f) > 25.f) return fail("sensor: Hokuyo Capture did not average the blob at 1000 mm");
   A.wizardStep = 0;
 
-  // Sensor page: a placed lidar derives its calibration from its pose; a hand-tuned quad (placed = false) is never overwritten.
+  // A placed lidar derives its calibration from its pose; a hand-tuned quad (placed = false) is never overwritten.
   {
     Screen& hs = *DeviceScreen(dh);
     hs.realW = 4000; hs.realH = 2250;
