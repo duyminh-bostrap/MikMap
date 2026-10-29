@@ -1525,7 +1525,7 @@ static void TreeRow(ImRect r, const Node& n, bool railMode) {
     }
     if (ch.hover) {
       static const char* const next[] = {"Next: Connect", "Next: Place", "Next: Align", "Next: Send out", "Ready"};
-      ImGui::SetTooltip("%s%s%s", next[std::clamp(n.prog, 0, 4)], n.meta.empty() ? "" : "  \xC2\xB7  ", n.meta.c_str());
+      ImGui::SetTooltip("%s%s%s", n.vis ? next[std::clamp(n.prog, 0, 4)] : "Disabled \xE2\x80\x94 enable it from the menu", n.meta.empty() ? "" : "  \xC2\xB7  ", n.meta.c_str());   // vis = enabled
       CursorHand();
     }
     if (ch.click) { chipHit = true; if (n.prog < 4) GoToSensorStep(n.dv, n.prog + 1); else SelectDevice(n.dv); A.wizard.step = 0; }

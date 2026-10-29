@@ -246,7 +246,7 @@ static void ScreenSizeEntry(ImRect area, Screen& sc) {
 
 // The other sensors on this screen, grey and dim, not clickable; drawn before the selected one so it stays on top.
 template <class F> static void EachOtherSensor(const Device& d, const Screen* sc, F f) {
-  for (auto& o : A.devices) if (o.id != d.id && DeviceScreen(o) == sc) f(o);
+  for (auto& o : A.devices) if (o.id != d.id && o.enabled && DeviceScreen(o) == sc) f(o);   // a disabled one sends nothing: no ghost
 }
 static void GhostLidar(const StageXf& X, const Device& o) {
   const ImU32 col = Ca(K(pal::t66, 0.45f));
@@ -285,7 +285,7 @@ static void LidarPlacementView(ImRect area, Device& d) {
   dl->PushClipRect(area.Min, area.Max, true);
   // the screen as the projector shows it, stretched over its real surface (realW x realH mm), with a faint 1 m grid to place by
   { StageXf B = X; B.s = X.cv.GetWidth() / 1920.f; B.sy = X.cv.GetHeight() / 1080.f; DrawScreenBackdrop(*sc, B, (float)g.time * 1.2f, 1.f); }
-  EachOtherSensor(d, sc, [&](const Device& o) { if (IsLidar(o)) GhostLidar(X, o); });
+  EachOtherSensor(d, sc, [&](const Device& o) { if (IsLidar(o) && (o.placed || o.calibrated)) GhostLidar(X, o); });   // a never-placed pose is a default, not where it hangs
   for (float gx = 1000; gx < SW; gx += 1000) dl->AddLine(X.toPx({gx, 0}), X.toPx({gx, SH}), Ca(K(pal::g1c)), 1.f);
   for (float gy = 1000; gy < SH; gy += 1000) dl->AddLine(X.toPx({0, gy}), X.toPx({SW, gy}), Ca(K(pal::g1c)), 1.f);
   Border(X.cv, K(pal::coral, 0.7f), 2, 1.5f);
