@@ -21,7 +21,7 @@ còn ở giai đoạn prototype:
 
 | | |
 |---|---|
-| Giao diện | 2 trang Composition · Mapping (Mapping gộp máy chiếu và sensor; thêm sensor là popup trên mọi trang) + cửa sổ Cài đặt, bám bản thiết kế `MikMap Workspace.dc.html` |
+| Giao diện | 2 trang Composition · Mapping (Mapping gộp máy chiếu và sensor; cây chia mỗi screen thành hai phần Slices / Sensors, kéo-thả slice/sensor sang screen khác; thêm sensor là popup trên mọi trang) + cửa sổ Cài đặt, bám bản thiết kế `MikMap Workspace.dc.html` |
 | Engine dùng chung (`engine/core`, `engine/io`) | Đã biên dịch & link vào app; `src/` gọi `core/util/Json` (lưu/mở dự án), `core/calib/LidarPlacement`, `core/math` (EdgeBlend/Triangulate), `io/net`, `io/sources`, `io/plugin` (thread sensor); **chưa gọi model/warp/calib DLT/ProjectIO thật** |
 | Mô hình dữ liệu app hiện tại | Struct riêng trong `src/app.h`, chưa dùng `core/model` thật |
 | Đối chiếu chi tiết | `features.md` — 71 mục `[x]` hành vi thật · 14 mục `[~]` một phần · 57 mục `[ ]`, trên 142 mục Resolume-parity |

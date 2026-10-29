@@ -103,6 +103,9 @@ không phải lệch. Chỗ nào đưa cỡ chữ thẳng cho ImGui (`ImGui::Pus
 | Output > **Edit Points**: kéo ô vuông lớn / nhỏ | Góc phối cảnh (keystone) / điểm warp của lưới (cả 4 góc lưới) |
 | Output > **Transform**: kéo hộp bao slice | Di chuyển / co giãn / xoay cả slice, warp giữ nguyên hình (Shift: khoá trục, giữ tỉ lệ, 45°) |
 | Kéo khung ở VÙNG LẤY | Đổi phần canvas mà slice lấy |
+| Cây Mapping: bấm tiêu đề **Slices (n)** / **Sensors (n)** dưới một Screen | Gập / mở phần đó (chỉ runtime, không lưu) |
+| Cây Mapping: kéo dòng **slice** (rê > 4 px) sang dòng Screen / tiêu đề Slices / dòng trong phần Slices của screen KHÁC | Chuyển slice sang screen đó (giữ id, hình học, mask); screen nguồn còn 1 slice thì từ chối + toast. Thả lên slice CÙNG screen = đổi thứ tự z (chèn trước dòng đó). `Esc` huỷ, thả ra ngoài không làm gì |
+| Cây Mapping: kéo dòng **sensor** sang dòng Screen / tiêu đề Sensors / dòng sensor của screen khác | Chuyển sensor (như menu "Move to screen"); lidar đã đặt chỗ tự tính lại, calib tay giữ nguyên + toast. Chỉ kéo một dòng dù đang chọn nhiều |
 | Mapping > sensor đang chọn > **INPUT**: kéo cảm biến lidar trên sân khấu | Dời vị trí (làm tròn 10 mm; Shift: một trục) |
 | Mapping > sensor đang chọn > **INPUT**: kéo chấm xoay | Xoay hướng lidar (Shift: bước 15°) |
 | Mapping > sensor đang chọn > tab **OUTPUT**: Edit Points / Transform | Kéo góc quad nơi cảm biến đổ vào screen / dời-co-xoay cả quad |

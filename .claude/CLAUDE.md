@@ -202,6 +202,8 @@ Hokuyo 2D lidar (`G21`) chạy qua SCIP 2.0/TCP nhưng **chưa kiểm với ph�
 nhưng **mới kiểm bằng plugin giả**, và plugin chạy chung tiến trình nên plugin sập thì app sập theo;
 YDLIDAR (`G23`, plugin bọc YDLidar-SDK) còn chờ.
 
+**Cây Mapping (2026-10-29):** mỗi Screen chia hai phần gập được **Slices (n)** / **Sensors (n)**; kéo một dòng slice/sensor sang screen khác (`MoveSliceToScreen`, `MoveDeviceToScreen`, `CanDrop` ở `mapping.cpp`; slice thả lên slice cùng screen = đổi thứ tự z). Screen luôn giữ ≥1 slice. **Chưa kéo bằng chuột thật**, chỉ self-test + `--shot`.
+
 **Gốc toạ độ gửi ra (2026-10-29, D17):** y gửi ra (OSC + UDP text, `SendOut`/`OutY`) và ô Y (mm) ở Placement tính từ mép DƯỚI screen khi `Device::originBottom` (mặc định thiết bị mới); trên-trái = hành vi cũ, và file `.mikmap` không có khoá `originBottom` nạp thành trên-trái. Chỉ hai chỗ đó đảo, mọi thứ trong app (`pose`, slice, calib, stage) vẫn y xuống — đừng đảo bên trong.
 
 **Sensor trên trang Mapping (2026-10-28, gộp vào Mapping 2026-10-29; `G18`/`G24`–`G27`):** chỉ còn hai trang Composition · Mapping — sensor chọn trong cây (`SelectDevice`), dùng chung tab INPUT/OUTPUT (`SensorStageBody`, `SensorProps`), thêm sensor là popup trên mọi trang (`DrawSensorWizardPopup`), mỗi dòng sensor có chip 4 chấm (`SensorProgress`; chấm 4 chỉ nghĩa là gói đã giao cho bộ gửi, không chứng minh đã tới nơi). **Popup chặn chuột/Esc và chip hover/bấm mới kiểm bằng self-test + ảnh, chưa thao tác bằng chuột/bàn phím thật.** Thiết bị thuộc một Screen (`Device::screenId`, `Screen::realW/realH` mm);
