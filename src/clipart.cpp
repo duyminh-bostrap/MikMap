@@ -716,7 +716,6 @@ void RenderClipThumbnail(Clip& c) {
   }
   p_glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)prevFbo);
   glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
-  c.thumbAt = g.time;
 }
 
 // ── clip FX that can be done on vector art (E5 hue shift · E8 mirror · E10 strobe) ──

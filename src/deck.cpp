@@ -604,12 +604,10 @@ static CellOut ClipCell(ImRect r, Clip& cl, bool selectedCell, bool dragged, boo
     // ~16 s/frame (S_STARS worst) — so each Clip gets its own small texture, redrawn into an FBO at most a
     // few times a second, budgeted to a handful of clips per frame (ResetThumbBudget in DrawDeck). Falls
     // back to the flat gradient until the first render lands, or if the FBO functions never loaded.
-    // Only the cued/live clip actually animates; every other cell renders once and then freezes — a still
-    // frame, not a second copy of the same motion playing out of sync in 40 places at once.
+    // Every cell renders once and then stays a still frame, the live one too: refreshed a few times a second it
+    // read as a stuttering copy of the preview (the motion itself is in Preview / Live Output).
     if (!compact) {
-      bool active = live || preview;
-      bool stale = cl.thumbTex == 0 || (active && g.time - cl.thumbAt > 0.2);
-      if (stale && ThumbBudgetLeft()) RenderClipThumbnail(cl);
+      if (cl.thumbTex == 0 && ThumbBudgetLeft()) RenderClipThumbnail(cl);
       if (cl.thumbTex != 0) g.dl->AddImage((ImTextureID)(intptr_t)cl.thumbTex, bodyR.Min, bodyR.Max, ImVec2(0, 1), ImVec2(1, 0), Ca(IM_COL32_WHITE));
       else GradDiag(bodyR, col, Dark45(col), live ? 0.45f : 0.22f);
     }

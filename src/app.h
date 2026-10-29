@@ -50,7 +50,6 @@ struct Clip {
   // snapshots, App copies) gets the same texture id by value; that's a harmless alias, not a double-free —
   // nothing here ever calls glDeleteTextures. thumbTex == 0 means "not rendered yet", not "empty texture".
   unsigned thumbTex = 0;
-  double thumbAt = -1;
 };
 struct Layer {
   std::string id;   // F22: stable handle a slice's input source points at — names repeat and get renamed
