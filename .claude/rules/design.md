@@ -108,6 +108,7 @@ không phải lệch. Chỗ nào đưa cỡ chữ thẳng cho ImGui (`ImGui::Pus
 | Mapping > sensor đang chọn > tab **OUTPUT**: Edit Points / Transform | Kéo góc quad nơi cảm biến đổ vào screen / dời-co-xoay cả quad |
 | Bấm một dòng sensor trong cây Mapping | Chọn sensor (`SelectDevice`): sân khấu hiện hình máy chiếu bên dưới; sensor chọn lấy màu của trang (INPUT cyan, OUTPUT coral), sensor khác cùng screen xám và không bấm được |
 | Bấm chip 4 chấm ở dòng sensor | Nhảy tới bước kế tiếp chưa xong (1 Connection · 2 Placement · 3 Calibration · 4 Send out); đủ 4 chấm thì chỉ chọn sensor. Chấm 4 = gói đã giao cho bộ gửi, KHÔNG chứng minh bên nhận đã nhận |
+| Sensor Properties › Send out › **Origin** (Bottom-left / Top-left) | Gốc y của toạ độ gửi ra và ô Y (mm) ở Placement ("Y (mm, from bottom)" khi dưới-trái). Mặc định dưới-trái cho sensor mới; project cũ nạp thành trên-trái. Sân khấu INPUT không đổi |
 | Bấm nút **Sensor** ở chân cây | Mở popup thêm sensor giữa cửa sổ, trên trang đang mở; trang phía sau và menu của nó không nhận chuột |
 | **Esc** khi popup thêm sensor đang mở | Đóng popup (menu đang mở thì Esc đóng menu trước; không đóng khi đang gõ chữ) |
 

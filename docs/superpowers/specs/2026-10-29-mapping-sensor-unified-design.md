@@ -34,6 +34,7 @@ Thước đo thành công: người vận hành căn xong một sensor mà **kh�
 | D12 | Stage Output dùng **đúng độ phân giải của từng screen**; file cũ co một lần từ 1920×1080 khi mở | chọn phương án được khuyến nghị |
 | D13 | Sensor có **mask như slice** để cắt vùng dữ liệu nhiễu | nguyên văn |
 | D16 | Vùng tính của sensor có hai chế độ loại trừ nhau: **Screen** (tự giới hạn trong screen) hoặc **Zone** tuỳ chỉnh (hình như mask, chỉ tính toạ độ trong zone) | thay nút "ROI = screen" (§6.4b) |
+| D17 | **Gốc toạ độ gửi ra ở góc dưới-trái** (y = 0 ở mép dưới, 1 ở mép trên), cờ **per-sensor** `Device::originBottom`; sensor mới mặc định dưới-trái, **file cũ không có khoá này giữ góc trên-trái** (hành vi cũ). Chỉ đảo y gửi ra và ô Y (mm) của Placement; bên trong app y vẫn hướng xuống | người dùng 2026-10-29 (§6.3) |
 | D14 | **Làm UI/UX và luồng trước**, các hàm xử lý chi tiết sau | nguyên văn |
 | D15 | Trang Sensor cũ trở thành trang **Effect** (làm sau, §8) | nguyên văn |
 
@@ -136,7 +137,7 @@ Không bước nào phải rời trang Mapping.
 
 ### 6.3 Toạ độ trả về (D11)
 
-- `x = X / sc.w`, `y = Y / sc.h`, với X, Y là pixel trên screen. Giá trị 0–1 tính trên **toàn screen**.
+- `x = X / sc.w`, `y = Y / sc.h`, với X, Y là pixel trên screen (Y hướng xuống, gốc trên-trái). Giá trị 0–1 tính trên **toàn screen**. **Khi gốc gửi ra là dưới-trái (D17, mặc định cho sensor mới) y gửi ra = `1 − Y / sc.h`**; x không đổi; điểm ngoài screen vẫn không kẹp. Gốc trên-trái = hành vi cũ, dành cho project cũ. Ô Y (mm) của Placement cũng tính từ mép dưới khi gốc dưới-trái (`pose.y` lưu vẫn tính từ trên); góc quay giữ quy ước cũ (0 = +x, chiều kim đồng hồ trên màn hình).
 - Điểm có vị trí sau warp nằm **ngoài vùng cover** của sensor thì bị bỏ, không kẹp vào mép.
 - **Đệm mép:** một id đã nằm trong vùng chỉ bị bỏ khi ra ngoài quá 8 px của screen, để tránh nhấp nháy ở mép.
 
@@ -172,7 +173,7 @@ Không bước nào phải rời trang Mapping.
 4. Warp (4 góc + lưới) sang pixel screen.
 5. Loại điểm ngoài vùng cover (có đệm mép).
 6. Gộp điểm giữa các sensor cùng screen.
-7. Chia cho độ phân giải screen → 0–1 → gửi OSC/UDP.
+7. Chia cho độ phân giải screen → 0–1 → đảo y nếu gốc dưới-trái (D17) → gửi OSC/UDP.
 
 ### 6.7 Dữ liệu dạng video
 

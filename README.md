@@ -149,7 +149,7 @@ chuyển sang mô hình thật của `engine/`, làm từng mảng để luôn b
 4. `io/*` → nguồn sensor thật (G3, G14) thay cho radar mô phỏng trong
    `src/sensor.cpp`. OSC/UDP (G4), camera skeleton (G20), Hokuyo 2D lidar
    (G21, SCIP 2.0/TCP) và thiết bị Plugin DLL (G22, ABI C) đã chạy qua
-   `src/sources.cpp`; sensor chọn và chỉnh ngay trên trang Mapping (tab INPUT/OUTPUT), đặt lidar theo mm, scan IP thêm nhiều sensor và gửi toạ độ OSC/UDP (G18, G24–G27) cũng đã chạy; Serial/Arduino (G3), YDLIDAR (G23, plugin), camera 2D và lidar 3D/depth còn chờ.
+   `src/sources.cpp`; sensor chọn và chỉnh ngay trên trang Mapping (tab INPUT/OUTPUT), đặt lidar theo mm, scan IP thêm nhiều sensor và gửi toạ độ OSC/UDP (G18, G24–G27) (gốc toạ độ gửi ra mặc định dưới-trái, chọn được trên-trái; project cũ giữ trên-trái) cũng đã chạy; Serial/Arduino (G3), YDLIDAR (G23, plugin), camera 2D và lidar 3D/depth còn chờ.
 5. `core/model/Composition` · `Layer` · `Clip` · `Transport` → thay mô hình
    deck trong `src/app.h`.
 
