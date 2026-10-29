@@ -21,7 +21,7 @@ còn ở giai đoạn prototype:
 
 | | |
 |---|---|
-| Giao diện | 3 màn Composition · Advanced Mapping · Sensor I/O + cửa sổ Cài đặt, bám bản thiết kế `MikMap Workspace.dc.html` |
+| Giao diện | 2 trang Composition · Mapping (Mapping gộp máy chiếu và sensor; thêm sensor là popup trên mọi trang) + cửa sổ Cài đặt, bám bản thiết kế `MikMap Workspace.dc.html` |
 | Engine dùng chung (`engine/core`, `engine/io`) | Đã biên dịch & link vào app; `src/` gọi `core/util/Json` (lưu/mở dự án), `core/calib/LidarPlacement`, `core/math` (EdgeBlend/Triangulate), `io/net`, `io/sources`, `io/plugin` (thread sensor); **chưa gọi model/warp/calib DLT/ProjectIO thật** |
 | Mô hình dữ liệu app hiện tại | Struct riêng trong `src/app.h`, chưa dùng `core/model` thật |
 | Đối chiếu chi tiết | `features.md` — 71 mục `[x]` hành vi thật · 14 mục `[~]` một phần · 57 mục `[ ]`, trên 142 mục Resolume-parity |
@@ -149,7 +149,7 @@ chuyển sang mô hình thật của `engine/`, làm từng mảng để luôn b
 4. `io/*` → nguồn sensor thật (G3, G14) thay cho radar mô phỏng trong
    `src/sensor.cpp`. OSC/UDP (G4), camera skeleton (G20), Hokuyo 2D lidar
    (G21, SCIP 2.0/TCP) và thiết bị Plugin DLL (G22, ABI C) đã chạy qua
-   `src/sources.cpp`; trang Sensor kiểu Advanced Output, đặt lidar theo mm, scan IP thêm nhiều sensor và gửi toạ độ OSC/UDP (G18, G24–G27) cũng đã chạy; Serial/Arduino (G3), YDLIDAR (G23, plugin), camera 2D và lidar 3D/depth còn chờ.
+   `src/sources.cpp`; sensor chọn và chỉnh ngay trên trang Mapping (tab INPUT/OUTPUT), đặt lidar theo mm, scan IP thêm nhiều sensor và gửi toạ độ OSC/UDP (G18, G24–G27) cũng đã chạy; Serial/Arduino (G3), YDLIDAR (G23, plugin), camera 2D và lidar 3D/depth còn chờ.
 5. `core/model/Composition` · `Layer` · `Clip` · `Transport` → thay mô hình
    deck trong `src/app.h`.
 

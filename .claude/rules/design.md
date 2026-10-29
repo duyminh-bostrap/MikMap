@@ -20,14 +20,20 @@ kiểm tra" cuối `features.md` để biết chi tiết.
 
 ## Bố cục
 
-Ba trang cố định qua tab trên cùng — **không phải cửa sổ nổi**: trong phòng
+Hai trang cố định qua tab trên cùng — **không phải cửa sổ nổi**: trong phòng
 tối giữa buổi diễn không ai có thời gian sắp lại bàn làm việc, và một bảng
-trôi ra ngoài màn hình là chuyện xảy ra thật. `src/README` cũ (nay gộp vào
-`README.md` gốc) xác nhận đúng 3 màn này đã có trong `src/`:
+trôi ra ngoài màn hình là chuyện xảy ra thật. Trước đây là ba trang
+(Composition · Advanced Mapping · Sensor I/O); hai trang sau đã gộp thành
+**Mapping** (`src/main.cpp`: mảng tab chỉ có Composition và Mapping):
 
 ```
-Composition · Advanced Mapping · Sensor I/O    (+ cửa sổ Cài đặt riêng)
+Composition · Mapping    (+ cửa sổ Cài đặt riêng)
 ```
+
+Trang Mapping chứa cả phần máy chiếu (screen, slice, mask) lẫn sensor: cây bên
+trái có cả hai, chọn sensor trong cây thì tab INPUT/OUTPUT và panel Properties
+chuyển sang sensor đó. Trang **Effect** là kế hoạch sau, chưa có trong `src/`.
+Thêm sensor là popup trên mọi trang, không phải một trang riêng.
 
 **Cài đặt** cho phép chọn cả ngôn ngữ lẫn **font giao diện** (xem dưới) — đây
 là mô tả *máy/người*, không phải *một buổi diễn*, cùng lý do
@@ -97,10 +103,13 @@ không phải lệch. Chỗ nào đưa cỡ chữ thẳng cho ImGui (`ImGui::Pus
 | Output > **Edit Points**: kéo ô vuông lớn / nhỏ | Góc phối cảnh (keystone) / điểm warp của lưới (cả 4 góc lưới) |
 | Output > **Transform**: kéo hộp bao slice | Di chuyển / co giãn / xoay cả slice, warp giữ nguyên hình (Shift: khoá trục, giữ tỉ lệ, 45°) |
 | Kéo khung ở VÙNG LẤY | Đổi phần canvas mà slice lấy |
-| Sensor > **INPUT**: kéo cảm biến lidar trên sân khấu | Dời vị trí (làm tròn 10 mm; Shift: một trục) |
-| Sensor > **INPUT**: kéo chấm xoay | Xoay hướng lidar (Shift: bước 15°) |
-| Sensor > tab **OUTPUT**: Edit Points / Transform | Giống trang Mapping: kéo góc quad nơi cảm biến đổ vào screen / dời-co-xoay cả quad |
-| Cây Sensor: nút **+ Sensor** (mint) | Mở wizard thêm sensor (chọn loại, scan IP, thêm nhiều lidar một lần) |
+| Mapping > sensor đang chọn > **INPUT**: kéo cảm biến lidar trên sân khấu | Dời vị trí (làm tròn 10 mm; Shift: một trục) |
+| Mapping > sensor đang chọn > **INPUT**: kéo chấm xoay | Xoay hướng lidar (Shift: bước 15°) |
+| Mapping > sensor đang chọn > tab **OUTPUT**: Edit Points / Transform | Kéo góc quad nơi cảm biến đổ vào screen / dời-co-xoay cả quad |
+| Bấm một dòng sensor trong cây Mapping | Chọn sensor (`SelectDevice`): sân khấu hiện hình máy chiếu bên dưới; sensor chọn lấy màu của trang (INPUT cyan, OUTPUT coral), sensor khác cùng screen xám và không bấm được |
+| Bấm chip 4 chấm ở dòng sensor | Nhảy tới bước kế tiếp chưa xong (1 Connection · 2 Placement · 3 Calibration · 4 Send out); đủ 4 chấm thì chỉ chọn sensor. Chấm 4 = gói đã giao cho bộ gửi, KHÔNG chứng minh bên nhận đã nhận |
+| Bấm nút **Sensor** ở chân cây | Mở popup thêm sensor giữa cửa sổ, trên trang đang mở; trang phía sau và menu của nó không nhận chuột |
+| **Esc** khi popup thêm sensor đang mở | Đóng popup (menu đang mở thì Esc đóng menu trước; không đóng khi đang gõ chữ) |
 
 > **Đã đổi khỏi bản tham khảo (2026-09-22):** bản gốc dùng bấm-đơn=chọn/bấm-đúp=phát
 > cho toàn bộ ô clip, và bấm-đơn=chọn/bấm-đúp=bắn cho header cột. Theo yêu cầu người

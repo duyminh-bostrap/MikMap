@@ -171,7 +171,7 @@
 | [x] | **G20** | **Camera skeleton (MediaPipe sidecar)** | M | 🔴 P0 |
 | [~] | **G21** | Hokuyo 2D lidar (SCIP 2.0/TCP) | M | 🟠 P1 |
 | [x] | **G22** | Plugin cảm biến DLL (ABI C) | M | 🟠 P1 |
-| [x] | **G24** | Trang Sensor kiểu Advanced Output (cây sensor, tab Input/Output) | M | 🟠 P1 |
+| [x] | **G24** | Trang Mapping gộp máy chiếu + sensor (chọn sensor trong cây, tab Input/Output, popup thêm sensor, chip tiến độ) | M | 🟠 P1 |
 | [x] | **G25** | Đặt lidar theo mm (vị trí + hướng → 4 cặp calib) | M | 🟠 P1 |
 | [x] | **G26** | Scan IP thêm nhiều sensor (wizard) | M | 🟠 P1 |
 | [x] | **G27** | Gửi toạ độ chạm ra OSC / UDP text | S | 🟠 P1 |
@@ -237,7 +237,7 @@
 - E1/E2 chuỗi FX gắn riêng từng clip (thêm/xoá/nhân đôi/đổi thứ tự/bypass, kéo từ Browser thả vào clip) · E5/E6/E8/E9/E10 có tham số nhưng preview chỉ vẽ tác dụng của Strobe.
 - F1/F17 nhiều screen chỉ là dữ liệu, chưa có output thật · F12 mask đa giác (vuông/tam giác/lục giác/tròn/tim/bút; sửa ở trang Input; cắt hình ra output thật bằng stencil), chưa phải bezier và độ mờ viền (feather) chưa làm mờ thật · F14 thanh màu test card ở Live Output, chưa phủ lên output · F15 nhập số cho input rect, tọa độ góc chỉ đọc · F16 bật/tắt hiển thị bằng nút mắt, chưa có solo · F20 công tắc edge blending chưa có gamma/độ rộng.
 - G5 dùng affine 2 tỉ lệ + dịch (`FitAffine`), chưa phải DLT/RANSAC · G13 chấm sensor hiện trên radar, chưa phủ lên output · G17 bảng patch cord bật/tắt được nhưng chưa kích hoạt gì.
-- I6 danh sách Browser là dữ liệu mẫu, chưa đọc thư mục media · I7 undo/redo chỉ cho Advanced Mapping.
+- I6 danh sách Browser là dữ liệu mẫu, chưa đọc thư mục media · I7 undo/redo: xem dòng I7 (toàn app, không chỉ Mapping).
 
 **Chưa làm:** toàn bộ nhóm nguồn thật (HAP, ảnh, Spout/NDI, webcam…), transform clip (D1/D2/D5–D10), mọi mục H (MIDI/OSC/phím tắt/LFO/audio), save/load project và preset (F8, G8, I2), output ra máy chiếu/cửa sổ tách rời (F2, I1), thread + ring buffer sensor (G1), nguồn sensor thật (G3/G4/G14/G15/G19), PerfPanel (G9).
 
@@ -735,7 +735,7 @@ Nay khung input sửa giống khung transform của Preview Cue: **kéo trong kh
 ### Trang Sensor kiểu Advanced Output, đặt lidar theo mm, scan IP, gửi OSC/UDP (2026-10-28)
 
 - **G18 `[ ]` → `[x]`:** mỗi thiết bị thuộc một Screen (`Device::screenId`, `DeviceScreen()` trong `src/calib.cpp`; `Screen::realW/realH` là kích thước thật tính bằng mm); calib/homography của thiết bị tính theo Screen của nó, nên nhiều sensor cho nhiều screen chạy độc lập. `SensorSelfTest` có thiết bị gán screen thứ hai.
-- **G24 `[x]` — trang Sensor ba cột:** cây sensor (`DrawTree(…, TreeMode::Sensors)`, nút "+ Sensor" màu mint) cùng cây Mapping; tab INPUT/OUTPUT; Output dùng `EditQuad` (Edit Points / Transform) như trang Mapping, mã sân khấu dùng chung ở `src/stage.cpp` (`StageViewUpdate`, `DrawScreenBackdrop`, `BoxOfPoints`, `MapBoxPoints`); mục Properties ghép theo loại thiết bị (`SensorPropSections`).
+- **G24 `[x]` — trang Sensor ba cột (đã gộp vào Mapping 2026-10-29, xem mục cuối):** cây sensor (`DrawTree(…, TreeMode::Sensors)`, nút "+ Sensor" màu mint) cùng cây Mapping; tab INPUT/OUTPUT; Output dùng `EditQuad` (Edit Points / Transform) như trang Mapping, mã sân khấu dùng chung ở `src/stage.cpp` (`StageViewUpdate`, `DrawScreenBackdrop`, `BoxOfPoints`, `MapBoxPoints`); mục Properties ghép theo loại thiết bị (`SensorPropSections`).
 - **G25 `[x]` — đặt lidar theo mm:** kéo cảm biến trên sân khấu Input để dời (làm tròn 10 mm; Shift: một trục), kéo chấm để xoay (Shift: bước 15°); `PlacementCalib` (`src/calib.cpp`, lõi `engine/core/calib/LidarPlacement`) đổi vị trí+hướng+kích thước thật của screen thành 4 cặp calib. Thêm giới hạn tầm theo thiết bị và công tắc blob (`Device::blobOn`). `PlacementCalib` có self-test trong `--roundtrip` (từ chối khi chưa biết kích thước thật; screen 4K).
 - **G26 `[x]` — scan IP:** wizard "+ Sensor" chọn loại, chọn card mạng, `StartIpScan` → `mikmap::scanTcpPort(hostsInSubnet(…), cổng Hokuyo, 300 ms)` quét subnet; tick nhiều lidar tìm thấy rồi Add một lần, có thể thêm tay theo host; lidar đã là thiết bị được liệt kê mờ và không thêm hai lần. Test engine `test_netscan.cpp`; wizard chạy trong `--roundtrip` với `FakeScipServer`.
 - **G27 `[x]` — gửi toạ độ:** mục "Send out" của thiết bị: `SendOut` (`src/sources.cpp`) áp `H_s` rồi chuẩn hoá 0–1 theo sân khấu 1920×1080 của Screen thiết bị (không phải canvas `A1`), đẩy vào `TouchSender` (`engine/io/net/`) — thread riêng, hàng đợi drop-oldest nên render thread không chặn; OSC bundle hoặc UDP text. IP gõ số không tra DNS; một tên host không phân giải được chỉ tra lại sau 5 s kể từ lần tra trước kết thúc, gói tới nó bị bỏ ngay, các đích khác vẫn chạy. Kiểm `--roundtrip`: một receiver UDP thật qua loopback nhận gói. Test `test_touchsender.cpp`.
@@ -743,3 +743,12 @@ Nay khung input sửa giống khung transform của Preview Cue: **kéo trong kh
 - **Giới hạn đã biết:** lidar không còn chỉnh ROI tay trên trang Sensor (chỉ "ROI = screen"; **Edit ROI** còn cho thiết bị Sim); bộ đếm gửi/lỗi của "Send out" dùng chung một sender cho mọi thiết bị; thiết bị đã đặt mà screen bị xoá sẽ tính lại calib theo screen dự phòng; "Scan again" chỉ dành cho Hokuyo.
 - **Chưa làm (không tính vào mục nào ở trên):** camera 2D (crop, chế độ nhận dạng, luồng preview, NDI/Spout) và lidar 3D/depth — thuộc các kế hoạch sau.
 - Đếm mới (đếm lại từ các dòng bảng): 71 `[x]` · 14 `[~]` · 57 `[ ]`, trên 142 dòng.
+
+### Trang Mapping gộp: sensor chọn trong cây, popup thêm sensor, chip tiến độ (2026-10-29)
+
+- **G24 `[x]` (cập nhật):** thanh trên cùng chỉ còn hai trang **Composition · Mapping** (`src/main.cpp`); trang Sensor I/O đã bỏ. Chọn một sensor trong cây Mapping (`SelectDevice`, `selKind` 3) thì dùng chung tab INPUT/OUTPUT, sân khấu vẽ qua `SensorStageBody` và panel Properties qua `SensorProps`. Sân khấu sensor hiện hình máy chiếu bên dưới (`DrawScreenBackdrop`); sensor chọn lấy màu của trang (`SensorSelTone`: INPUT cyan, OUTPUT coral), sensor khác cùng screen xám và không bấm được.
+- **Thêm sensor là popup** (`DrawSensorWizardPopup`, `main.cpp` gọi trừ Show Mode) phủ mọi trang, không còn thay cột stage; `Esc` đóng (`CloseSensorWizard`), `CaptureOverlayState` + `DeckUiFree` chặn trang phía sau và menu của nó khi popup mở.
+- **Chip 4 chấm** ở mỗi dòng sensor (`SensorProgress`, `GoToSensorStep`): 1 kết nối · 2 đã đặt chỗ · 3 đã calib · 4 đang gửi; bấm chip nhảy tới bước kế tiếp chưa xong. Chấm 4 nghĩa là gói đã giao cho bộ gửi trong 2 s gần nhất, KHÔNG chứng minh bên nhận đã nhận gói.
+- **`--screen 2`** (cờ chụp ảnh) giờ vào trang Mapping với sensor hiện tại được chọn (`ApplyStartScreen`); các mục ngày 2026-10-27/28 ở trên là lịch sử, nói về trang Sensor cũ.
+- **Kiểm tự động:** self-test trong `--roundtrip` kiểm `SensorProgress`, `GoToSensorStep` (bước 1/3/4 chọn đúng trang và mở đúng mục), `DeckUiFree` khi popup mở/đóng, mở-đóng wizard (`src/sources.cpp`) và `SensorSelTone` (`src/mapping.cpp`). Kiểm hình bằng `--shot`.
+- **Chưa kiểm:** chặn chuột của popup, `Esc`, hover/bấm chip chưa từng được thao tác bằng chuột và bàn phím thật — chỉ có self-test và ảnh chụp; Hokuyo thật (192.168.1.12) và webcam thật chưa thử trên bản này; trang **Effect** mới là kế hoạch, chưa có trong `src/`.
