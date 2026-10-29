@@ -424,6 +424,119 @@ bool SensorSelfTest(std::string& why) {
     NewProject(); A.routes.clear();
   }
 
+  // Tree sections + drag & drop: each screen has a Slices and a Sensors header; slices / sensors move between screens.
+  {
+    NewProject(); A.routes.clear();
+    while (A.screens.size() < 2) A.addScreen();
+    Screen* s0 = &A.screens[0]; Screen* s1 = &A.screens[1];
+    if (s0->slices.size() < 2) { A.selSc = s0->id; A.selSl = s0->slices[0].id; A.selKind = 1; A.addSlice(); }
+    const std::string a = s0->id, b = s1->id;
+    // BuildTree: Screen, Slices (n), slices + masks, Sensors (n), sensors — per screen, counts right
+    {
+      A.devices[2].screenId = b;
+      const auto t = BuildTree(false, "");
+      int devB = 0; for (auto& d : A.devices) { const Screen* ds = DeviceScreen(d); devB += ds && ds->id == b; }
+      std::vector<Node::Kind> want;
+      for (auto& sc : A.screens) {
+        want.push_back(Node::ScreenN); want.push_back(Node::SlicesH);
+        for (auto& sl : sc.slices) { want.push_back(Node::SliceN); for (size_t k = 0; k < sl.masks.size(); ++k) want.push_back(Node::MaskN); }
+        want.push_back(Node::SensorsH);
+        for (auto& d : A.devices) { const Screen* ds = DeviceScreen(d); if (ds && ds->id == sc.id) want.push_back(Node::SensorN); }
+      }
+      bool ok = t.size() == want.size();
+      for (size_t i = 0; ok && i < t.size(); ++i) ok = t[i].kind == want[i];
+      if (!ok) return fail("tree: each screen must list Slices (n) then its slices, Sensors (n) then its sensors");
+      for (auto& n : t) if (n.sc == b && n.kind == Node::SensorsH && n.name != "Sensors (" + std::to_string(devB) + ")") return fail("tree: Sensors header count is wrong: " + n.name);
+      for (auto& n : t) if (n.sc == a && n.kind == Node::SlicesH && n.name != "Slices (" + std::to_string(A.screens[0].slices.size()) + ")") return fail("tree: Slices header count is wrong: " + n.name);
+      A.collapsedSensors[b] = true; A.collapsedSlices[a] = true;
+      const auto f = BuildTree(false, "");
+      for (auto& n : f) if ((n.sc == b && n.kind == Node::SensorN) || (n.sc == a && (n.kind == Node::SliceN || n.kind == Node::MaskN))) return fail("tree: a folded section must hide its rows");
+      A.collapsedSensors.clear(); A.collapsedSlices.clear();
+      if (BuildTree(true, a).size() != A.screens[0].slices.size() + [&] { size_t m = 0; for (auto& sl : A.screens[0].slices) m += sl.masks.size(); return m; }() +
+          [&] { size_t m = 0; for (auto& d : A.devices) { const Screen* ds = DeviceScreen(d); m += ds && ds->id == a; } return m; }())
+        return fail("tree: the rail popover's list must stay flat (no section headers)");
+    }
+    // CanDrop truth table
+    {
+      auto nd = [](Node::Kind k, const std::string& sc) { Node n; n.kind = k; n.sc = sc; return n; };
+      struct Row { int kind; Node t; bool want; const char* what; };
+      const Row rows[] = {
+        {0, nd(Node::ScreenN, b), true, "slice -> other screen row"}, {0, nd(Node::SlicesH, b), true, "slice -> other Slices header"},
+        {0, nd(Node::SliceN, b), true, "slice -> other screen's slice row"}, {0, nd(Node::MaskN, b), true, "slice -> other screen's mask row"},
+        {0, nd(Node::SensorsH, b), false, "slice -> Sensors header"}, {0, nd(Node::SensorN, b), false, "slice -> sensor row"},
+        {0, nd(Node::SliceN, a), true, "slice -> own screen slice row (reorder)"}, {0, nd(Node::ScreenN, a), false, "slice -> own screen row"},
+        {0, nd(Node::SlicesH, a), false, "slice -> own Slices header"}, {0, nd(Node::MaskN, a), false, "slice -> own mask row"},
+        {1, nd(Node::SensorsH, b), true, "sensor -> other Sensors header"}, {1, nd(Node::ScreenN, b), true, "sensor -> other screen row"},
+        {1, nd(Node::SensorN, b), true, "sensor -> other sensor row"}, {1, nd(Node::SlicesH, b), false, "sensor -> Slices header"},
+        {1, nd(Node::SliceN, b), false, "sensor -> slice row"}, {1, nd(Node::SensorN, a), false, "sensor -> own screen sensor row"},
+        {1, nd(Node::ScreenN, a), false, "sensor -> own screen row"},
+      };
+      for (const Row& r : rows) if (CanDrop(r.kind, a, r.t) != r.want) return fail(std::string("drop: ") + r.what + " must be " + (r.want ? "allowed" : "refused"));
+    }
+    // MoveSliceToScreen
+    {
+      s0 = &A.screens[0]; s1 = &A.screens[1];
+      const Slice mv = s0->slices[0]; const size_t n0 = s0->slices.size(), n1 = s1->slices.size();
+      A.selSc = a; A.selSl = mv.id; A.selKind = 1; A.mapMulti.clear();
+      MarkSaved();
+      if (!MoveSliceToScreen(mv.id, a, b)) return fail("move slice: a normal move was refused");
+      s0 = &A.screens[0]; s1 = &A.screens[1];
+      const Slice& got = s1->slices.back();
+      if (s0->slices.size() != n0 - 1 || s1->slices.size() != n1 + 1 || got.id != mv.id || got.name != mv.name || got.q[2].x != mv.q[2].x || got.ix != mv.ix || got.masks.size() != mv.masks.size())
+        return fail("move slice: the slice must leave its screen and arrive whole (id, name, geometry, masks) at the end of the other");
+      if (A.selSc != b || !A.curSlice() || A.curSlice()->id != mv.id || A.MapKind() != 1) return fail("move slice: the selection must follow the moved slice");
+      UndoStep(false);
+      if (A.screens[0].slices.size() != n0 || A.screens[1].slices.size() != n1 || A.screens[0].slices[0].id != mv.id) return fail("move slice: undo must put the slice back");
+      if (!A.curSlice()) return fail("move slice: undo left no current slice");
+      UndoStep(true);
+      if (A.screens[0].slices.size() != n0 - 1 || A.screens[1].slices.back().id != mv.id) return fail("move slice: redo must move it again");
+      // the last slice of a screen never leaves; unknown ids are refused; nothing changes
+      MarkSaved();
+      while (A.screens[0].slices.size() > 1) if (!MoveSliceToScreen(A.screens[0].slices[0].id, a, b)) return fail("move slice: emptying down to one slice was refused");
+      MarkSaved();
+      if (MoveSliceToScreen(A.screens[0].slices[0].id, a, b) || A.screens[0].slices.size() != 1 || ProjectDirty()) return fail("move slice: the last slice of a screen must stay (nothing changed)");
+      if (MoveSliceToScreen("no-such-slice", b, a) || MoveSliceToScreen(mv.id, b, "no-such-screen") || ProjectDirty()) return fail("move slice: unknown ids must be refused");
+      // reorder inside a screen: before index = z-order (later in the list draws on top)
+      s1 = &A.screens[1];
+      if (s1->slices.size() < 3) return fail("move slice: setup needs 3 slices on the second screen");
+      const std::string z0 = s1->slices[0].id, z1 = s1->slices[1].id, z2 = s1->slices[2].id;
+      if (!MoveSliceToScreen(z2, b, b, 0) || s1->slices[0].id != z2 || s1->slices[1].id != z0 || s1->slices[2].id != z1) return fail("move slice: dropping on the first row must put it first (bottom of the stack)");
+      if (!MoveSliceToScreen(z2, b, b, 2) || s1->slices[0].id != z0 || s1->slices[1].id != z2 || s1->slices[2].id != z1) return fail("move slice: dropping before the third row must land between");
+      if (MoveSliceToScreen(z2, b, b, 1) || MoveSliceToScreen(z2, b, b, 2)) return fail("move slice: a drop that keeps the order must be refused");
+      // the selected slice moved away while its old screen is the selection: the screen's current slice stays on that screen
+      NewProject(); A.routes.clear(); while (A.screens.size() < 2) A.addScreen();
+      A.selSc = A.screens[0].id; A.selSl = A.screens[0].slices[0].id; A.selKind = 1; A.addSlice();
+      const std::string mvId = A.selSl; A.selKind = 0;
+      if (!MoveSliceToScreen(mvId, A.screens[0].id, A.screens[1].id) || A.selSc != A.screens[0].id || A.MapKind() != 0 || !A.curSlice() || A.curSlice()->id == mvId)
+        return fail("move slice: with its screen selected, the screen's current slice must stay on it");
+    }
+    // MoveDeviceToScreen
+    {
+      NewProject(); A.routes.clear(); while (A.screens.size() < 2) A.addScreen();
+      const std::string sa = A.screens[0].id, sb = A.screens[1].id;
+      A.screens[0].realW = 4000; A.screens[0].realH = 2250; A.screens[1].realW = 2000; A.screens[1].realH = 1500;
+      Device& hd = A.devices[2]; hd.screenId = sa; hd.pose = mikmap::LidarPose{2000, 2250, -90, false}; hd.placed = true; ApplyPlacement(hd);
+      const std::vector<Calib> before = hd.calib; const std::string hid = hd.id;
+      SelectDevice(hid);
+      if (!MoveDeviceToScreen(hid, sb) || dev(hid.c_str()).screenId != sb || A.MapKind() != 3 || !A.curDevice() || A.curDevice()->id != hid || A.selSc != sb)
+        return fail("move sensor: screenId must change and the selected sensor stay selected on its new screen");
+      if (MoveDeviceToScreen(hid, sb) || MoveDeviceToScreen("no-such-device", sa) || MoveDeviceToScreen(hid, "no-such-screen")) return fail("move sensor: same screen / unknown ids must be refused");
+      SensorsTick(now());
+      bool moved = false; for (int i = 0; i < 4; ++i) moved = moved || dev(hid.c_str()).calib[i].mx != before[i].mx || dev(hid.c_str()).calib[i].my != before[i].my;   // tx,ty are the fixed stage corners; mm follow the new screen
+      if (!dev(hid.c_str()).placed || !moved) return fail("move sensor: a placed lidar must re-derive its calibration on the new screen");
+      MarkSaved(); SensorsTick(now()); SensorsTick(now());
+      if (ProjectDirty()) return fail("move sensor: ticks after a move must not make the project dirty");
+      Device& cd = dev(hid.c_str()); cd.placed = false; cd.calibrated = true; cd.calib[0].mx = 77; const std::vector<Calib> kept = cd.calib;
+      if (!MoveDeviceToScreen(hid, sa)) return fail("move sensor: moving a Custom sensor back was refused");
+      SensorsTick(now());
+      const Device& c2 = dev(hid.c_str());
+      bool same = !c2.placed && c2.calibrated;
+      for (int i = 0; i < 4; ++i) same = same && c2.calib[i].mx == kept[i].mx && c2.calib[i].my == kept[i].my && c2.calib[i].tx == kept[i].tx && c2.calib[i].ty == kept[i].ty;
+      if (!same) return fail("move sensor: a hand-calibrated (Custom) sensor must keep its calibration");
+    }
+    NewProject(); A.routes.clear();
+  }
+
   // Placing a lidar on INPUT: the end of a pose edit places a lidar nobody has aligned; a Custom (4-point) one is never re-derived.
   {
     Screen& ps = A.screens[0]; ps.realW = 4000; ps.realH = 2250;

@@ -232,9 +232,9 @@ int  SensorProgress(const Device& d, double now);
 // SelectDevice, then open what `step` needs: 1 INPUT + Connection · 2 INPUT · 3 OUTPUT · 4 OUTPUT + Send out. Other step: just selects.
 void GoToSensorStep(const std::string& deviceId, int step);
 
-// The Mapping tree (mapping.cpp): Screen -> slices -> masks, and Screen -> sensors.
+// The Mapping tree (mapping.cpp): Screen -> "Slices (n)" header -> slices -> masks, and Screen -> "Sensors (n)" header -> sensors.
 struct Node {
-  enum Kind { ScreenN, SliceN, MaskN, SensorN } kind = ScreenN;
+  enum Kind { ScreenN, SliceN, MaskN, SensorN, SlicesH, SensorsH } kind = ScreenN;   // SlicesH / SensorsH: a screen's two collapsible section headers (full tree only)
   std::string sc, sl, mk, dv, name, meta;
   float h = 26, pad = 0;
   bool open = true, canHide = true, vis = true;
@@ -447,6 +447,7 @@ struct App {
   StageView sensorView[2];            // a selected sensor's stage pan/zoom, per Mapping page (mpage)
   std::map<int, uint32_t> sensorSecOpen;   // Properties sections open per DevKind (bit = PropSection); absent = all open. Runtime only
   std::map<std::string, bool> collapsedScreens;
+  std::map<std::string, bool> collapsedSlices, collapsedSensors;   // a screen's Slices / Sensors section folded in the tree (by screen id). Runtime only
   std::string railScreen;
 
   // sensor
@@ -686,6 +687,17 @@ void DrawTreePopover(ImRect r);   // the open rail popover: call after the stage
 void DrawTree(ImRect r);   // full panel, or the 46 px rail while A.treeCollapsed
 void SelectTreeNode(const Node& n);   // a plain click on a tree row (screen / slice / mask / sensor)
 void SelectDevice(const std::string& deviceId);   // selKind = 3, selDevice, selSc = DeviceScreen(d); clears selSl / selMk / mapMulti; A.screen = 1; wizardStep = 0; editRoi = false. Unknown id: no change
+// Tree drag & drop (mapping.cpp). dragKind 0 = a slice row, 1 = a sensor row, dragged from screen srcScId: may it drop on `target`?
+// A slice: another screen's row / Slices header / any row of its Slices section, or a slice row of its own screen (= reorder).
+// A sensor: another screen's row / Sensors header / sensor row. Anything else: no.
+bool CanDrop(int dragKind, const std::string& srcScId, const Node& target);
+// Moves a slice (id, name, geometry, source, masks kept) to the end of `toScId` (or before its slice `beforeIndex`); from == to reorders.
+// Refused (false, nothing changes): unknown ids, the source would be left without a slice (toast), or the order would not change.
+// Selection (selSc / mapMulti) follows the slice. One frame = one undo step.
+bool MoveSliceToScreen(const std::string& slId, const std::string& fromScId, const std::string& toScId, int beforeIndex = -1);
+// The sensor menu's "Move to screen" and a sensor drop: screenId = toScId; a selected sensor stays selected (selSc follows).
+// A placed lidar re-derives on the next SensorsTick; a hand-calibrated (Custom) one keeps its calib (toast). False: unknown / same screen.
+bool MoveDeviceToScreen(const std::string& devId, const std::string& toScId);
 void RemoveDevice(const std::string& deviceId);   // the tree menu's Remove: the selected sensor gone = its screen becomes the selection
 bool MappingEditsSlices();                        // false while a sensor is selected: Mapping's delete / copy / paste / duplicate / nudge keys do nothing
 void MappingShortcut(ImGuiKey key, bool ctrl, bool shift);   // one press of a Mapping editing key (main.cpp feeds it)

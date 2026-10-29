@@ -1403,14 +1403,57 @@ static std::vector<MenuItem> SensorMenu(const std::string& dvId) {
   bool fb = false; const Screen* cur = DeviceScreen(A.devices[idx], &fb);
   for (auto& sc : A.screens) {
     std::string label = "   " + sc.name;
-    m.push_back(mk(label.c_str(), "monitor", cur && cur->id == sc.id, false, [dvId, sid = sc.id] {
-      const Device* cd = A.selKind == 3 ? A.curDevice() : nullptr; const bool sel = cd && cd->id == dvId;
-      for (auto& d : A.devices) if (d.id == dvId) d.screenId = sid;
-      if (sel) SelectDevice(dvId); }));   // the selected sensor takes its screen selection along
+    m.push_back(mk(label.c_str(), "monitor", cur && cur->id == sc.id, false, [dvId, sid = sc.id] { MoveDeviceToScreen(dvId, sid); }));
   }
   m.push_back(dv);
   m.push_back(mk("Remove", "trash-2", false, true, [dvId] { RemoveDevice(dvId); }));
   return m;
+}
+
+bool MoveDeviceToScreen(const std::string& dvId, const std::string& toScId) {
+  Device* d = nullptr; for (auto& x : A.devices) if (x.id == dvId) d = &x;
+  bool known = false; for (auto& s : A.screens) known = known || s.id == toScId;
+  if (!d || !known) return false;
+  const Screen* cur = DeviceScreen(*d);
+  if (cur && cur->id == toScId) return false;
+  const Device* cd = A.selKind == 3 ? A.curDevice() : nullptr; const bool sel = cd && cd->id == dvId;
+  d->screenId = toScId;   // a placed lidar re-derives from its pose on the next SensorsTick (ApplyPlacement); calib is never touched here
+  if (!d->placed && d->calibrated) A.notify("Calibration kept as is \xE2\x80\x94 check it on the new screen");
+  if (sel) SelectDevice(dvId);   // the selected sensor takes its screen selection along
+  return true;
+}
+
+bool CanDrop(int dragKind, const std::string& srcScId, const Node& t) {
+  const bool other = t.sc != srcScId;
+  if (dragKind == 0) return other ? (t.kind == Node::ScreenN || t.kind == Node::SlicesH || t.kind == Node::SliceN || t.kind == Node::MaskN)
+                                  : t.kind == Node::SliceN;   // own screen: a slice row = reorder
+  if (dragKind == 1) return other && (t.kind == Node::ScreenN || t.kind == Node::SensorsH || t.kind == Node::SensorN);
+  return false;
+}
+
+bool MoveSliceToScreen(const std::string& slId, const std::string& fromScId, const std::string& toScId, int beforeIndex) {
+  Screen* from = nullptr; Screen* to = nullptr;
+  for (auto& s : A.screens) { if (s.id == fromScId) from = &s; if (s.id == toScId) to = &s; }
+  if (!from || !to) return false;
+  const int i = SliceIndex(*from, slId);
+  if (i < 0) return false;
+  const int n = (int)to->slices.size();
+  int at = beforeIndex < 0 || beforeIndex > n ? n : beforeIndex;
+  if (from == to) {
+    if (at > i) --at;   // index once the slice is out of the list
+    if (at == i) return false;
+    Slice s = std::move(from->slices[i]); from->slices.erase(from->slices.begin() + i);
+    from->slices.insert(from->slices.begin() + at, std::move(s));
+    return true;   // same screen: every selection field still points right
+  }
+  if (from->slices.size() <= 1) { A.notify("A screen needs at least one slice"); return false; }
+  Slice s = std::move(from->slices[i]); from->slices.erase(from->slices.begin() + i);
+  to->slices.insert(to->slices.begin() + at, std::move(s));
+  // selection follows the slice (and its masks): selSl / selMk are ids, only the screen changes
+  if (A.selSl == slId && A.selKind != 0 && A.selKind != 3) A.selSc = toScId;
+  else if (A.selSl == slId && A.selSc == fromScId) A.selSl = from->slices[0].id;   // its screen stays selected; the screen's "current slice" must still be on it
+  for (auto& r : A.mapMulti) if (r.sl == slId) r.sc = toScId;
+  return true;
 }
 
 void RemoveDevice(const std::string& dvId) {   // its source stops on the next SensorsTick
@@ -1458,7 +1501,20 @@ void ApplyStartScreen(int screen) {
   if (const Device* d = A.curDevice()) SelectDevice(d->id);
 }
 
+// A press on a slice / sensor row arms a drag; it starts once the pointer has moved 4 px (a press that stays put is just the click).
+// Runtime only. kind 0 slice, 1 sensor, -1 none.
+static struct TreeDrag { int kind = -1; bool active = false; std::string sc, id, name; ImVec2 p0; } gTreeDrag;
+
 static void TreeRow(ImRect r, const Node& n, bool railMode) {
+  if (n.kind == Node::SlicesH || n.kind == Node::SensorsH) {   // section header: the whole row folds / unfolds it
+    const Hit h = HitR(r);
+    const float cy = (r.Min.y + r.Max.y) * 0.5f, x = r.Min.x + n.pad;
+    Icon(n.open ? "chevron-down" : "chevron-right", ImVec2(x + 5, cy), 10, K(pal::t66));
+    TextEll(x + 16, cy, r.Max.x - 6 - x - 16, UI_B, 9, K(h.hover ? pal::t88 : pal::t66), n.name.c_str());
+    if (h.hover) CursorHand();
+    if (h.click) (n.kind == Node::SlicesH ? A.collapsedSlices : A.collapsedSensors)[n.sc] = n.open;
+    return;
+  }
   Screen* cs = A.curScreen(); Slice* csl = A.curSlice(); Mask* cmk = A.curMask();
   bool scOn = cs && n.sc == cs->id;
   bool on;
@@ -1527,6 +1583,9 @@ static void TreeRow(ImRect r, const Node& n, bool railMode) {
   TextEll(x, cy, right - x, n.kind == Node::ScreenN ? UI_B : UI_S, 10, K(fg), n.name.c_str());
   g.alpha = prev;
   if (h.hover) CursorHand();
+  const bool press = h.click && !chevHit && !visHit && !chipHit;
+  if (press && !railMode && (n.kind == Node::SliceN || n.kind == Node::SensorN))
+    gTreeDrag = {n.kind == Node::SliceN ? 0 : 1, false, n.sc, n.kind == Node::SliceN ? n.sl : n.dv, n.name, ImGui::GetIO().MousePos};
   if (n.kind == Node::SensorN) {
     if (h.click && !chipHit) { SelectTreeNode(n); A.wizard.step = 0; }
     if (h.rclick) A.openCtx(ImGui::GetIO().MousePos, SensorMenu(n.dv));
@@ -1562,16 +1621,28 @@ std::vector<Node> BuildTree(bool onlyScreen, const std::string& only) {
       n.h = 28; n.pad = 6; n.open = open; n.vis = sc.visible; n.color = RoleHex(sc.role); out.push_back(n);
       if (!open) continue;
     }
+    // full tree: each screen splits into a "Slices (n)" and a "Sensors (n)" section, each folding on its own (the rail popover stays flat)
+    auto header = [&](Node::Kind kind, const char* label, int count, bool secOpen) {
+      Node hd; hd.kind = kind; hd.sc = sc.id; hd.name = std::string(label) + " (" + std::to_string(count) + ")"; hd.h = 20; hd.pad = 16; hd.open = secOpen; hd.canHide = false;
+      out.push_back(hd); return secOpen; };
+    const float in = onlyScreen ? 0.f : 12.f;   // section children sit one step in from their header
+    auto it = A.collapsedSlices.find(sc.id);
+    if (onlyScreen || header(Node::SlicesH, "Slices", (int)sc.slices.size(), it == A.collapsedSlices.end() || !it->second))
     for (auto& sl : sc.slices) {
-      Node s; s.kind = Node::SliceN; s.sc = sc.id; s.sl = sl.id; s.name = sl.name; s.meta = sl.solo ? "SOLO" : ""; s.h = onlyScreen ? 24 : 26; s.pad = onlyScreen ? 6 : 16; s.vis = sl.visible; out.push_back(s);
+      Node s; s.kind = Node::SliceN; s.sc = sc.id; s.sl = sl.id; s.name = sl.name; s.meta = sl.solo ? "SOLO" : ""; s.h = onlyScreen ? 24.f : 26.f; s.pad = (onlyScreen ? 6.f : 16.f) + in; s.vis = sl.visible; out.push_back(s);
       for (auto& m : sl.masks) {
-        Node k; k.kind = Node::MaskN; k.sc = sc.id; k.sl = sl.id; k.mk = m.id; k.name = m.name; k.h = 24; k.pad = onlyScreen ? 20 : 28; k.vis = m.visible; out.push_back(k);
+        Node k; k.kind = Node::MaskN; k.sc = sc.id; k.sl = sl.id; k.mk = m.id; k.name = m.name; k.h = 24; k.pad = (onlyScreen ? 20.f : 28.f) + in; k.vis = m.visible; out.push_back(k);
       }
+    }
+    if (!onlyScreen) {
+      int nd = 0; for (auto& d : A.devices) { const Screen* ds = DeviceScreen(d); nd += ds && ds->id == sc.id; }
+      auto jt = A.collapsedSensors.find(sc.id);
+      if (!header(Node::SensorsH, "Sensors", nd, jt == A.collapsedSensors.end() || !jt->second)) continue;
     }
     for (auto& d : A.devices) {
       const Screen* ds = DeviceScreen(d);
       if (!ds || ds->id != sc.id) continue;
-      Node k; k.kind = Node::SensorN; k.sc = sc.id; k.dv = d.id; k.dk = d.kind; k.name = d.name; k.h = onlyScreen ? 24.f : 26.f; k.pad = onlyScreen ? 6.f : 16.f;
+      Node k; k.kind = Node::SensorN; k.sc = sc.id; k.dv = d.id; k.dk = d.kind; k.name = d.name; k.h = onlyScreen ? 24.f : 26.f; k.pad = (onlyScreen ? 6.f : 16.f) + in;
       k.canHide = false; k.vis = d.enabled; k.color = pal::mint;
       k.prog = SensorProgress(d, g.time); k.err = d.enabled && d.status == (int)mikmap::SourceStatus::Error;
       if (d.enabled) k.meta = k.err ? (d.error.empty() ? std::string("error") : d.error) : d.status == (int)mikmap::SourceStatus::Running ? std::to_string(d.fps) + " fps" : "";   // tooltip text
@@ -1616,10 +1687,43 @@ static void TreePanel(ImRect r) {
   sa.Begin("##tree", ImRect(r.Min.x, r.Min.y + 24, r.Max.x - 1, r.Max.y - footH));
   float ox = sa.origin.x, oy = sa.origin.y, y = 4;
   auto nodes = BuildTree(false, "");
+  TreeDrag& td = gTreeDrag;
+  const ImVec2 mp = ImGui::GetIO().MousePos;
+  if (td.kind >= 0 && !td.active && ImGui::IsMouseDown(0) && std::hypot(mp.x - td.p0.x, mp.y - td.p0.y) > 4.f) td.active = true;
+  if (td.kind >= 0 && (ImGui::IsKeyPressed(ImGuiKey_Escape, false) || (!ImGui::IsMouseDown(0) && !ImGui::IsMouseReleased(0)))) td = TreeDrag();   // Esc cancels; a press lost elsewhere disarms
+  const Node* target = nullptr;   // the row under the pointer while dragging, when it is a valid drop
   for (auto& n : nodes) {
     ImRect rr(ox + 6, oy + y, ox + r.GetWidth() - 1 - 6, oy + y + n.h);
+    if (td.active && CanDrop(td.kind, td.sc, n)) {
+      const bool here = Hover(rr);
+      const uint32_t tone = td.kind == 0 ? pal::coral : pal::mint;
+      if (here && td.sc == n.sc) HLine(rr.Min.x, rr.Max.x, rr.Min.y - 1, K(tone));   // reorder: lands before this slice
+      else Border(rr, K(tone, here ? 0.9f : 0.3f), 3);
+      if (here) target = &n;
+    }
     TreeRow(rr, n, false);
     y += n.h + 2;
+  }
+  if (td.active) {
+    ImGui::SetMouseCursor(target ? ImGuiMouseCursor_Hand : ImGuiMouseCursor_NotAllowed);
+    ImDrawList* keep = g.dl; g.dl = ImGui::GetForegroundDrawList();   // the ghost floats over every panel
+    const float tw = TextW(UI_S, 10, td.name.c_str());
+    const ImRect gr(mp.x + 12, mp.y + 4, mp.x + 12 + tw + 16, mp.y + 24);
+    Box(gr, K(pal::g18, 0.92f), K(td.kind == 0 ? pal::coral : pal::mint, 0.6f), 3);
+    Text(gr.Min.x + 8, (gr.Min.y + gr.Max.y) * 0.5f, UI_S, 10, K(pal::tcc), td.name.c_str());
+    g.dl = keep;
+  }
+  if (td.kind >= 0 && ImGui::IsMouseReleased(0)) {
+    if (td.active && target) {
+      const Node t = *target;
+      if (td.kind == 1) MoveDeviceToScreen(td.id, t.sc);
+      else {
+        int before = -1;
+        if (t.kind == Node::SliceN || t.kind == Node::MaskN) for (auto& s : A.screens) if (s.id == t.sc) before = SliceIndex(s, t.sl);
+        MoveSliceToScreen(td.id, td.sc, t.sc, before);
+      }
+    }
+    td = TreeDrag();
   }
   sa.End(r.GetWidth() - 1, y + 4);
   // footer actions
