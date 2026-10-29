@@ -277,10 +277,8 @@ static void GhostLidar(const StageXf& X, const Device& o) {
   TextC(c.x, c.y + 20, MONO_R, 9, K(pal::t66, 0.45f), o.name.c_str());
 }
 
-// A sensor may hang a little off its screen (20% of each side) but not fly away.
-void ClampSensorPose(float& x, float& y, float realW, float realH) {
-  x = std::clamp(x, -0.2f * realW, 1.2f * realW); y = std::clamp(y, -0.2f * realH, 1.2f * realH);
-}
+// A sensor may hang anywhere (a lidar is often mounted far beside or behind a small screen); this only keeps garbage out of the pose.
+float SanePoseMm(float v, float keep) { return std::isfinite(v) ? std::clamp(v, -1e6f, 1e6f) : keep; }
 // Largest 1-2-5 value (..., 1, 2, 5, 10, 20, 50, ...) that is <= max(realW, realH) / 50.
 float SensorSnapStepMm(float realW, float realH) {
   const double t = std::max(realW, realH) / 50.0;
@@ -290,13 +288,12 @@ float SensorSnapStepMm(float realW, float realH) {
 }
 // Pointer (window px) -> sensor position (mm): exact through the stage transform; snapMm > 0 rounds to that grid; shift keeps the axis
 // the pointer moved less on at its start. mo0 = the pointer at grab (mm), off = pose - mo0.
-ImVec2 SensorDragToMm(const StageXf& X, ImVec2 mouse, ImVec2 off, ImVec2 mo0, bool shift, float snapMm, float realW, float realH) {
+ImVec2 SensorDragToMm(const StageXf& X, ImVec2 mouse, ImVec2 off, ImVec2 mo0, bool shift, float snapMm) {
   const ImVec2 mo = X.fromPx(mouse);
   float nx = mo.x + off.x, ny = mo.y + off.y;
   if (shift) { if (std::fabs(mo.x - mo0.x) >= std::fabs(mo.y - mo0.y)) ny = mo0.y + off.y; else nx = mo0.x + off.x; }
   if (snapMm > 0) { nx = std::round(nx / snapMm) * snapMm; ny = std::round(ny / snapMm) * snapMm; }
-  ClampSensorPose(nx, ny, realW, realH);
-  return ImVec2(nx, ny);
+  return ImVec2(SanePoseMm(nx, mo0.x + off.x), SanePoseMm(ny, mo0.y + off.y));
 }
 
 static void LidarPlacementView(ImRect area, Device& d) {
@@ -359,7 +356,7 @@ static void LidarPlacementView(ImRect area, Device& d) {
   }
   if (drag == 1) {   // move: follows the pointer exactly; Ctrl: snap to the screen-size grid; Shift: along the axis the pointer has moved further on
     const ImGuiIO& io = ImGui::GetIO();
-    const ImVec2 np = SensorDragToMm(X, m, off, mo0, io.KeyShift, io.KeyCtrl ? SensorSnapStepMm(SW, SH) : 0.f, SW, SH);
+    const ImVec2 np = SensorDragToMm(X, m, off, mo0, io.KeyShift, io.KeyCtrl ? SensorSnapStepMm(SW, SH) : 0.f);
     d.pose.x = np.x; d.pose.y = np.y;
   } else if (drag == 2) {   // turn about the sensor; Shift: 15 degree steps
     float deg = std::atan2(m.y - c.y, m.x - c.x) / kDegToRad;
@@ -608,9 +605,8 @@ static void PlacementSection(Device& d, float x, float w, float oy, float& y) {
   float px = (float)d.pose.x, py = (float)d.pose.y, pa = (float)d.pose.angleDeg;
   const Screen* sc = DeviceScreen(d);
   const bool smallScreen = sc && std::max(sc->realW, sc->realH) < 2000.f;   // a small screen: sub-mm positions matter
-  auto typed = [&](bool isX) {   // a typed pose places a lidar nobody aligned yet; only the edited axis is written (the other keeps its exact value)
-    if (sc && sc->realW > 0 && sc->realH > 0) ClampSensorPose(px, py, sc->realW, sc->realH);
-    if (isX) d.pose.x = px; else d.pose.y = py;
+  auto typed = [&](bool isX) {   // a typed pose places a lidar nobody aligned yet; only the edited axis is written (the other keeps its exact value), no screen-relative limit
+    if (isX) d.pose.x = SanePoseMm(px, (float)d.pose.x); else d.pose.y = SanePoseMm(py, (float)d.pose.y);
     CommitPose(d);
   };
   if (NumRow(x, oy + y, w, "X (mm)", "##posex", px, smallScreen ? 1 : 0)) typed(true);

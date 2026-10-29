@@ -710,9 +710,9 @@ bool IpScanDone(std::vector<std::string>& out);                            // tr
 Screen* DeviceScreen(const Device& d, bool* fellBack = nullptr);   // never null while A.screens is non-empty; *fellBack = a named screen is gone
 bool PlacementCalib(Device& d, const Screen& sc, const mikmap::LidarPose& pose);   // places a lidar by its pose (mm) on a screen of known real size: writes the 4 calib pairs; false + d untouched if the size is unknown
 bool ApplyPlacement(Device& d);   // only while d.placed: PlacementCalib on its own screen with d.pose (a hand-tuned "Custom (4-point)" quad is left alone)
-void ClampSensorPose(float& x, float& y, float realW, float realH);   // sensor position (mm) kept within the screen rectangle +-20% of each side
+float SanePoseMm(float v, float keep);   // sensor position (mm): any place is fine; non-finite -> keep, bounded to +-1e6
 float SensorSnapStepMm(float realW, float realH);   // Ctrl-drag grid: the largest 1-2-5 value (mm) <= max(realW, realH) / 50
-ImVec2 SensorDragToMm(const StageXf& X, ImVec2 mouse, ImVec2 off, ImVec2 mo0, bool shift, float snapMm, float realW, float realH);   // pointer px -> clamped mm; snapMm 0 = exact
+ImVec2 SensorDragToMm(const StageXf& X, ImVec2 mouse, ImVec2 off, ImVec2 mo0, bool shift, float snapMm);   // pointer px -> mm (free, only sanity-bounded); snapMm 0 = exact
 void CommitPose(Device& d);       // end of a pose edit on INPUT (drag released, Placement field changed): a lidar never aligned (!placed && !calibrated) on a sized screen becomes placed; Custom (4-point) is left alone
 bool QuadEdit(Device& d, const ImVec2 q[4]);   // Output quad edited by hand: a move over 0.01 px writes calib tx,ty and makes it Custom (placed = false); less is no edit
 bool RoiToScreen(Device& d);      // roi = the screen's 4 corners seen from d.pose; false while the screen has no real size
