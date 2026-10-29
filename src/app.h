@@ -292,8 +292,10 @@ struct StageView {
 };
 struct StageXf {   // this frame's mapping: space px -> window px
   ImRect cv; float s = 1;   // cv: the SW x SH space box in window px; s: window px per space px
-  ImVec2 toPx(ImVec2 p) const { return ImVec2(cv.Min.x + p.x * s, cv.Min.y + p.y * s); }
-  ImVec2 fromPx(ImVec2 px) const { return ImVec2((px.x - cv.Min.x) / s, (px.y - cv.Min.y) / s); }
+  float sy = 0;             // px per space px on y when it differs from s (a sensor's backdrop stretches 1920x1080 over realW x realH); 0 = s
+  float syv() const { return sy > 0 ? sy : s; }
+  ImVec2 toPx(ImVec2 p) const { return ImVec2(cv.Min.x + p.x * s, cv.Min.y + p.y * syv()); }
+  ImVec2 fromPx(ImVec2 px) const { return ImVec2((px.x - cv.Min.x) / s, (px.y - cv.Min.y) / syv()); }
 };
 // Wheel = zoom about the cursor, Shift+wheel / sideways wheel scroll, right-drag (or left-drag with handTool) pans,
 // edgeScroll: the pointer near the edge pushes the view (a point is being dragged). *rClick: right button let go without a drag.
@@ -681,7 +683,8 @@ bool MappingEditsSlices();                        // false while a sensor is sel
 void MappingShortcut(ImGuiKey key, bool ctrl, bool shift);   // one press of a Mapping editing key (main.cpp feeds it)
 void ApplyStartScreen(int screen);                // --screen N: 0 / 1 as is; 2+ (the old Sensor page) = Mapping with the current sensor selected
 void OpenSensorWizard(const std::string& screenId);   // wizard step 1 on the Mapping page, screen preselected
-void SensorStageBody(ImRect area, Device& d);     // sensor.cpp: a selected sensor's stage content below Mapping's 44 px bar (uses A.mpage)
+uint32_t SensorSelTone(int page);                 // sensor.cpp: a selected sensor's tone = the slice selection tone of that page (0 INPUT cyan, 1 OUTPUT coral)
+void SensorStageBody(ImRect area, Device& d);    // sensor.cpp: a selected sensor's stage content below Mapping's 44 px bar (uses A.mpage)
 void SensorBarTools(ImRect tb, float lx, Device& d);    // sensor.cpp: the sensor's own items in Mapping's bar from lx to the right (zoom, overlay, info)
 void SensorProps(ImRect r, Device* d);            // sensor.cpp: Properties of the selected sensor (Mapping's right panel)
 void SensorWizardView(ImRect r);                  // sensor.cpp: the add-sensor wizard (Task 3 makes it a popup)

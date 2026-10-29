@@ -46,6 +46,7 @@ std::vector<PropSection> SensorPropSections(DevKind k, int page) {
   return {P::Connection};
 }
 
+uint32_t SensorSelTone(int page) { return page == 0 ? pal::cyan : pal::coral; }
 static bool IsLidar(const Device& d) { return d.kind == DevKind::Hokuyo || d.kind == DevKind::Plugin; }
 
 static std::string Endpoint(const Device& d) {
@@ -98,7 +99,7 @@ static void SkeletonView(ImRect area, const Device& d) {
   float cx = (area.Min.x + area.Max.x) * 0.5f, cyc = (area.Min.y + area.Max.y) * 0.5f;
   ImRect fr(cx - w * 0.5f, cyc - h * 0.5f, cx + w * 0.5f, cyc + h * 0.5f);
   float k = w / 640.f;
-  Box(fr, K(0x070707), K(pal::g22), 4);
+  Box(fr, K(0x070707), K(SensorSelTone(0), 0.6f), 4);
   auto at = [&](int id, ImVec2& p) {
     for (auto& t : d.touches) if (t.id == id) { p = ImVec2(fr.Min.x + t.x * w, fr.Min.y + t.y * h); return true; }
     return false;
@@ -166,8 +167,9 @@ static void Radar(ImRect area, Device& cd) {
     } else if (nearH) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
   }
   float a = A.sweep;
-  RadialFan(c, maxR, K(pal::mint, 0.30f), K(pal::mint, 0.f), a - 0.35f, a, 24);
-  dl->AddLine(c, ImVec2(c.x + cosf(a) * maxR, c.y + sinf(a) * maxR), Ca(K(pal::mint)), 1.5f * k);
+  const uint32_t tone = SensorSelTone(0);
+  RadialFan(c, maxR, K(tone, 0.30f), K(tone, 0.f), a - 0.35f, a, 24);
+  dl->AddLine(c, ImVec2(c.x + cosf(a) * maxR, c.y + sinf(a) * maxR), Ca(K(tone)), 1.5f * k);
   for (auto& t : cd.touches) {
     ImVec2 b(c.x + t.x * maxR, c.y + t.y * maxR);
     dl->AddCircleFilled(b, 7 * k, Ca(K(pal::coral)), 24);
@@ -226,6 +228,29 @@ static void ScreenSizeEntry(ImRect area, Screen& sc) {
   if (ImGui::IsItemDeactivatedAfterEdit()) { sc.realH = (float)std::clamp(eh, 0, 100000); A.pushHist(); }
 }
 
+// The other sensors on this screen, grey and dim, not clickable; drawn before the selected one so it stays on top.
+template <class F> static void EachOtherSensor(const Device& d, const Screen* sc, F f) {
+  for (auto& o : A.devices) if (o.id != d.id && DeviceScreen(o) == sc) f(o);
+}
+static void GhostLidar(const StageXf& X, const Device& o) {
+  const ImU32 col = Ca(K(pal::t66, 0.45f));
+  const mikmap::LidarPose& P = o.pose;
+  if (const mikmap::LaserScan* scan = DeviceScan(o))
+    for (int i = 0; i < scan->count; ++i) {
+      const float rm = scan->rangeMm[i];
+      if (rm <= 0.f) continue;
+      const mikmap::Vec2 s = mikmap::lidarToSurface(P, {rm * std::cos(scan->angleRad[i]), rm * std::sin(scan->angleRad[i])});
+      const ImVec2 p = X.toPx(ImVec2((float)s.x, (float)s.y));
+      g.dl->AddRectFilled(ImVec2(p.x - 0.5f, p.y - 0.5f), ImVec2(p.x + 0.5f, p.y + 0.5f), col);
+    }
+  const ImVec2 c = X.toPx(ImVec2((float)P.x, (float)P.y));
+  const float a = (float)P.angleDeg * kDegToRad;
+  const ImVec2 fw(std::cos(a), std::sin(a));
+  g.dl->AddLine(c, ImVec2(c.x + fw.x * 26, c.y + fw.y * 26), col, 1.5f);
+  g.dl->AddCircle(c, 9, col, 24, 1.5f);
+  TextC(c.x, c.y + 20, MONO_R, 9, K(pal::t66, 0.45f), o.name.c_str());
+}
+
 static void LidarPlacementView(ImRect area, Device& d) {
   Screen* sc = DeviceScreen(d);
   if (!sc) { TextC((area.Min.x + area.Max.x) * 0.5f, (area.Min.y + area.Max.y) * 0.5f, MONO_R, 10, K(pal::t66), "No screen to place the sensor on"); return; }
@@ -239,8 +264,9 @@ static void LidarPlacementView(ImRect area, Device& d) {
   auto surf = [&](float xmm, float ymm) { const mikmap::Vec2 s = mikmap::lidarToSurface(P, {xmm, ymm}); return X.toPx(ImVec2((float)s.x, (float)s.y)); };
   ImDrawList* dl = g.dl;
   dl->PushClipRect(area.Min, area.Max, true);
-  // the screen, with a faint 1 m grid to place by
-  Box(X.cv, K(0x0d0d0d), 0, 2);
+  // the screen as the projector shows it, stretched over its real surface (realW x realH mm), with a faint 1 m grid to place by
+  { StageXf B = X; B.s = X.cv.GetWidth() / 1920.f; B.sy = X.cv.GetHeight() / 1080.f; DrawScreenBackdrop(*sc, B, (float)g.time * 1.2f, 1.f); }
+  EachOtherSensor(d, sc, [&](const Device& o) { if (IsLidar(o)) GhostLidar(X, o); });
   for (float gx = 1000; gx < SW; gx += 1000) dl->AddLine(X.toPx({gx, 0}), X.toPx({gx, SH}), Ca(K(pal::g1c)), 1.f);
   for (float gy = 1000; gy < SH; gy += 1000) dl->AddLine(X.toPx({0, gy}), X.toPx({SW, gy}), Ca(K(pal::g1c)), 1.f);
   Border(X.cv, K(pal::coral, 0.7f), 2, 1.5f);
@@ -292,15 +318,16 @@ static void LidarPlacementView(ImRect area, Device& d) {
     d.pose.angleDeg = deg;
   }
   if (hot || drag) ImGui::SetMouseCursor(hot == 2 || drag == 2 ? ImGuiMouseCursor_ResizeAll : ImGuiMouseCursor_Hand);
-  if (d.rangeMm > 0) dl->AddCircle(c, d.rangeMm * X.s, Ca(K(pal::mint, 0.35f)), 96, 1.f);
-  dl->AddLine(c, hd, Ca(K(pal::mint, 0.7f)), 1.5f);
+  const uint32_t tone = SensorSelTone(0);
+  if (d.rangeMm > 0) dl->AddCircle(c, d.rangeMm * X.s, Ca(K(tone, 0.35f)), 96, 1.f);
+  dl->AddLine(c, hd, Ca(K(tone, 0.7f)), 1.5f);
   const ImVec2 tip(c.x + fw.x * 26, c.y + fw.y * 26), nrm(-fw.y, fw.x);
-  dl->AddTriangleFilled(tip, ImVec2(c.x + fw.x * 17 + nrm.x * 5, c.y + fw.y * 17 + nrm.y * 5), ImVec2(c.x + fw.x * 17 - nrm.x * 5, c.y + fw.y * 17 - nrm.y * 5), Ca(K(pal::mint)));
-  dl->AddCircleFilled(c, 9, Ca(K(pal::mint, hot == 1 || drag == 1 ? 0.45f : 0.25f)), 24);
-  dl->AddCircle(c, 9, Ca(K(hot == 1 || drag == 1 ? pal::white : pal::mint)), 24, 1.8f);
-  dl->AddCircleFilled(hd, 5, Ca(K(hot == 2 || drag == 2 ? pal::white : pal::mint)), 16);
+  dl->AddTriangleFilled(tip, ImVec2(c.x + fw.x * 17 + nrm.x * 5, c.y + fw.y * 17 + nrm.y * 5), ImVec2(c.x + fw.x * 17 - nrm.x * 5, c.y + fw.y * 17 - nrm.y * 5), Ca(K(tone)));
+  dl->AddCircleFilled(c, 9, Ca(K(tone, hot == 1 || drag == 1 ? 0.45f : 0.25f)), 24);
+  dl->AddCircle(c, 9, Ca(K(hot == 1 || drag == 1 ? pal::white : tone)), 24, 1.8f);
+  dl->AddCircleFilled(hd, 5, Ca(K(hot == 2 || drag == 2 ? pal::white : tone)), 16);
   char pl[64]; snprintf(pl, sizeof pl, "%d, %d mm \xC2\xB7 %.1f\xC2\xB0", (int)P.x, (int)P.y, P.angleDeg);
-  TextC(c.x, c.y + 20, MONO_R, 9, K(pal::mint), pl);
+  TextC(c.x, c.y + 20, MONO_R, 9, K(tone), pl);
   dl->PopClipRect();
   const char* hint = !d.placed ? "Custom (4-point) calibration: moving the sensor does not change it \xE2\x80\x94 Re-apply placement on Output"
                                : "Drag the sensor to move it, the dot to turn it \xC2\xB7 Shift: one axis / 15\xC2\xB0";
@@ -317,16 +344,29 @@ static void SensorOutputView(ImRect area, Device& d) {
   g.dl->PushClipRect(area.Min, area.Max, true);
   DrawScreenBackdrop(*sc, X, (float)g.time * 1.2f, 0.6f);   // dimmed: the quad is what this page edits
   Border(X.cv, K(pal::coral, 0.6f), 2, 1.f);
+  EachOtherSensor(d, sc, [&](const Device& o) {   // their calibration quads and touches, grey
+    const ImU32 col = Ca(K(pal::t66, 0.45f));
+    if (o.calib.size() == 4) {
+      ImVec2 oq[4]; for (int i = 0; i < 4; ++i) oq[i] = X.toPx(ImVec2(o.calib[i].tx, o.calib[i].ty));
+      g.dl->AddPolyline(oq, 4, col, ImDrawFlags_Closed, 1.5f);
+    }
+    float oH[9];
+    if (DeviceH(o, oH)) for (auto& t : o.touches) {
+      float ox, oy; ApplyH(oH, t.x, t.y, ox, oy);
+      g.dl->AddCircleFilled(X.toPx(ImVec2(ox, oy)), 5, col, 20);
+    }
+  });
+  const uint32_t tone = SensorSelTone(1);
   ImVec2 q[4]; for (int i = 0; i < 4; ++i) q[i] = ImVec2(d.calib[i].tx, d.calib[i].ty);
   const std::string id = "##sensorquad" + d.id;
-  const bool released = EditQuad(id.c_str(), X, q, A.outTool, pal::mint, OverStage(area));
+  const bool released = EditQuad(id.c_str(), X, q, A.outTool, tone, OverStage(area));
   QuadEdit(d, q);
   if (released) A.pushHist();
   static const char* kCorner[4] = {"1", "2", "3", "4"};
   const ImVec2 qc = X.toPx(ImVec2((q[0].x + q[1].x + q[2].x + q[3].x) * 0.25f, (q[0].y + q[1].y + q[2].y + q[3].y) * 0.25f));
   for (int i = 0; i < 4; ++i) {   // numbered inside the quad, so a corner at the stage edge keeps its label
     const ImVec2 p = X.toPx(q[i]); const float dx = qc.x - p.x, dy = qc.y - p.y, l = std::max(1.f, std::hypot(dx, dy));
-    TextC(p.x + dx / l * 26, p.y + dy / l * 26, MONO_B, 10, K(pal::mint), kCorner[i]);
+    TextC(p.x + dx / l * 26, p.y + dy / l * 26, MONO_B, 10, K(tone), kCorner[i]);
   }
   if (A.wizardStep >= 1 && A.wizardStep <= 4 && A.curDevice() == &d) g.dl->AddCircle(X.toPx(q[A.wizardStep - 1]), 18, Ca(K(pal::yellow)), 32, 2);
   float H[9];

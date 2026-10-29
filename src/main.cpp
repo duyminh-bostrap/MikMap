@@ -638,7 +638,7 @@ int main(int argc, char** argv) {
   std::string roundtrip; std::vector<int> fxTest;
   std::string shot; int startScreen = 0, frames = 12, W = 1440, H = 900, tab = -1, page = -1;
   bool sel = false, scaleGiven = false; int selLi = 0, selCi = 0, ctxTest = 0, cliScale = 100;
-  bool fakeHokuyo = false, fakePlugin = false;
+  bool fakeHokuyo = false, fakePlugin = false, secondLidar = false;
   int spage = -1, stool = -1, wizard = 0; std::string place, sendOut;   // spage / stool: the old Sensor page's flags, now Mapping's page / Output tool
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
@@ -659,6 +659,7 @@ int main(int argc, char** argv) {
     else if (a == "--outkeytest") outKeyTest = true;
     else if (a == "--snap") startSnap = true;    // test aid: start with the Mapping magnet on
     else if (a == "--hand") startHand = true;    // test aid: start with the Mapping hand tool on
+    else if (a == "--second-lidar") secondLidar = true;   // test aid (with --fake-hokuyo): a second lidar on the same fake server and screen, placed elsewhere
     else if (a == "--fake-hokuyo") fakeHokuyo = true;   // test aid: point the Hokuyo device at an in-process fake SCIP server
     else if (a == "--fake-plugin") fakePlugin = true;   // test aid: add a Plugin device backed by the fake DLL this build wrote
     else if (a == "--wheel" && i + 1 < argc) {   // test aid: mouse wheel notch(es) at x,y,amount
@@ -1725,6 +1726,11 @@ int main(int argc, char** argv) {
       d.host = "127.0.0.1"; d.port = fakeScip->port(); d.enabled = true;
       A.selDevice = (int)(&d - A.devices.data());
       break;
+    }
+    if (secondLidar && fakeScip->error().empty()) {
+      Device d2 = A.devices[A.selDevice]; d2.id = "dev-hokuyo-b"; d2.name = "Hokuyo B"; d2.pose = mikmap::LidarPose{3000, 900, 180, false}; d2.placed = false;
+      for (auto& c : d2.calib) { c.tx = 480 + c.tx * 0.5f; c.ty = 270 + c.ty * 0.5f; }   // a smaller quad, so the grey one shows under the selected
+      A.devices.push_back(d2);   // a copy of the selected one: same fake server, same screen
     }
   }
   if (fakePlugin) {   // the plugin is a DLL in plugins/sensors, so it is only there when MIKMAP_TEST_PLUGINS built it
