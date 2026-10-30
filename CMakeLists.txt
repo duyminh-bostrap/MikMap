@@ -93,7 +93,7 @@ target_link_libraries(mikmap_io PUBLIC mikmap_core Threads::Threads ${CMAKE_DL_L
 # Windows bỏ qua nó và linker báo thiếu __imp_socket, __imp_WSAStartup...
 # PUBLIC vì test_osc.cpp cũng tự mở socket.
 if(WIN32)
-    target_link_libraries(mikmap_io PUBLIC ws2_32 iphlpapi)   # iphlpapi: GetAdaptersAddresses (NetScan.cpp)
+    target_link_libraries(mikmap_io PUBLIC ws2_32 iphlpapi winhttp)   # iphlpapi: GetAdaptersAddresses (NetScan.cpp); winhttp: HttpGet.cpp
 endif()
 
 # ── Thư viện i18n: bảng chuỗi giao diện ────────────────────────────────
