@@ -143,6 +143,13 @@ add_dependencies(mikmap_tests mikmap_fake_scan_plugin mikmap_fake_scan_plugin_v9
 
 add_test(NAME core_tests COMMAND mikmap_tests)
 
+# ── Công cụ đóng gói & ký .mikpack ──────────────────────────────────────
+add_executable(mikmap_packtool "${CMAKE_CURRENT_SOURCE_DIR}/tools/packs/packtool.cpp")
+target_link_libraries(mikmap_packtool PRIVATE mikmap_io)
+if(WIN32)
+    target_link_libraries(mikmap_packtool PRIVATE bcrypt)
+endif()
+
 # ── Báo cáo cấu hình ───────────────────────────────────────────────────
 list(LENGTH MIKMAP_CORE_SOURCES _n_core)
 list(LENGTH MIKMAP_IO_SOURCES   _n_io)

@@ -3,6 +3,7 @@
 #include "core/util/Ed25519.h"
 #include "core/util/Sha2.h"
 #include "io/packs/HttpGet.h"
+#include "io/packs/MikPack.h"
 
 #include <cstring>
 #include <filesystem>
@@ -318,10 +319,20 @@ void PackInstaller::runInstall(std::string packId) {
 }
 
 void PackInstaller::runInstallFromFile(std::string pathUtf8) {
-    (void)pathUtf8;
+    PackEntry installed;
+    std::string err;
+    if (!InstallMikPackFile(pathUtf8, m_pubKey, m_store, installed, err)) {
+        std::lock_guard<std::mutex> lk(m_mu);
+        m_progress.state = PackJobState::Failed;
+        m_progress.error = err;
+        return;
+    }
     std::lock_guard<std::mutex> lk(m_mu);
-    m_progress.state = PackJobState::Failed;
-    m_progress.error = ".mikpack installer not wired yet";
+    m_progress.state      = PackJobState::Done;
+    m_progress.packId     = installed.id;
+    m_progress.doneBytes  = installed.sizeBytes;
+    m_progress.totalBytes = installed.sizeBytes;
+    m_progress.error.clear();
 }
 
 } // namespace mikmap
