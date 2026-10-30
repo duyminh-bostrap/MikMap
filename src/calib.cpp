@@ -237,10 +237,12 @@ Device MakeDevice(DevKind k, const std::string& id) {
     d.name = "Camera skeleton"; d.port = 9000;
   } else if (k == DevKind::Hokuyo) {
     d.name = "Hokuyo 2D lidar"; d.host = "192.168.0.10"; d.port = 10940;
+    d.pose.angleDeg = -90;
     d.roi[0] = {3000, 1500}; d.roi[1] = {3000, -1500}; d.roi[2] = {500, -1500}; d.roi[3] = {500, 1500};   // mm
     d.roiAuto = true;   // ROI = its screen until the sensor's Properties say otherwise
   } else {   // Plugin: a lidar until the DLL says otherwise; the menu fills plugin/config from the scanned ABI
     d.name = "Plugin"; d.roiAuto = true;
+    d.pose.angleDeg = -90;
     d.roi[0] = {3000, 1500}; d.roi[1] = {3000, -1500}; d.roi[2] = {500, -1500}; d.roi[3] = {500, 1500};   // mm
   }
   return d;

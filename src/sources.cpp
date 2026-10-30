@@ -729,6 +729,7 @@ bool SensorSelfTest(std::string& why) {
     if (std::fabs(dh.roi[0].x - (float)tl.x) > 0.5f || std::fabs(dh.roi[0].y - (float)tl.y) > 0.5f) return fail("sensor: ROI = screen must put roi[0] on the screen's top-left corner");
     {   // ROI mode "Screen": roiAuto keeps the ROI on the screen's 4 corners as seen from the pose
       for (DevKind k : {DevKind::Hokuyo, DevKind::Plugin}) if (!MakeDevice(k, "x").roiAuto) return fail("roi: a new lidar must start in Screen mode");
+      for (DevKind k : {DevKind::Hokuyo, DevKind::Plugin}) if (MakeDevice(k, "x").pose.angleDeg != -90) return fail("lidar: a new lidar must start facing up (-90 deg)");
       if (MakeDevice(DevKind::Sim, "x").roiAuto || MakeDevice(DevKind::Skeleton, "x").roiAuto) return fail("roi: Sim and Skeleton have no ROI mode");
       const Screen& s0 = *DeviceScreen(dh);
       auto onCorners = [&](const Device& q) {
