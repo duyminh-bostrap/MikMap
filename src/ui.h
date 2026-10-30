@@ -1,7 +1,8 @@
-﻿// MikMap UI toolkit: design-system tokens + immediate-mode drawing primitives on top of Dear ImGui.
+// MikMap UI toolkit: design-system tokens + immediate-mode drawing primitives on top of Dear ImGui.
 #pragma once
 #include "imgui.h"
 #include "imgui_internal.h"
+#include <cmath>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -65,8 +66,8 @@ inline ImRect Inset(ImRect r, float dx, float dy) { return ImRect(r.Min.x + dx, 
 // (text only — panels, rows and icons keep their size). 1.2 = 20% larger than the reference, chosen for legibility at
 // projection-booth distances. Text/TextW apply it themselves; code that hands a size straight to ImGui (PushFont for
 // input fields) must pass it through TextPx(). Separate from Settings > Text size, which zooms the whole workspace.
-constexpr float kTextScale = 1.2f;
-inline float TextPx(float sz) { return sz * kTextScale; }
+inline float kTextScale = 1.2f;
+inline float TextPx(float sz) { return std::floor(sz * kTextScale + 0.5f); }
 ImFont* F(FontId f);
 float TextW(FontId f, float sz, const char* s, float ls = 0.f);
 void Text(float x, float cy, FontId f, float sz, ImU32 col, const char* s, float ls = 0.f);      // left, vertically centred on cy

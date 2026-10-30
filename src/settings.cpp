@@ -1,5 +1,6 @@
 // Settings window (language · fonts · theme colour · text size) and the font / theme machinery behind it.
 #include "app.h"
+#include "core/util/Json.h"
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -8,11 +9,30 @@
 #include <map>
 
 using namespace ui;
+using mikmap::JsonValue;
 namespace fs = std::filesystem;
 
 // ───────────────────────── fonts ─────────────────────────
-static ImFont* famUI[4][4];    // family × (regular, semibold, bold, extrabold)
-static ImFont* famMono[3][3];  // family × (regular, medium, bold)
+// To change or add fonts WITHOUT recompiling C++:
+//   Edit `assets/fonts/fonts.json` and drop `.ttf` files into `assets/fonts/`.
+//   Each entry in `"ui"` or `"mono"` can specify:
+//     - `"prefix": "MyFont"` (auto-resolves MyFont-Regular.ttf, MyFont-SemiBold.ttf, MyFont-Bold.ttf, MyFont-ExtraBold.ttf,
+//       automatically falling back to the closest existing weight or MyFont.ttf if a weight file is missing), OR
+//     - `"file": "MyFont.ttf"` (single TTF used across all weights), OR
+//     - explicit `"regular"`, `"semibold"` / `"medium"`, `"bold"`, `"extrabold"`.
+struct UiFontFam {
+  std::string name;
+  std::string files[4];       // regular, semibold, bold, extrabold
+  ImFont* weights[4] = {};
+};
+struct MonoFontFam {
+  std::string name;
+  std::string files[3];       // regular, medium, bold
+  ImFont* weights[3] = {};
+};
+
+static std::vector<UiFontFam> gUiFams;
+static std::vector<MonoFontFam> gMonoFams;
 
 static std::map<std::string, std::vector<char>>& Blobs() { static std::map<std::string, std::vector<char>> m; return m; }
 static const std::vector<char>* Blob(const std::string& path) {
@@ -25,32 +45,110 @@ static const std::vector<char>* Blob(const std::string& path) {
   return &(m[path] = std::move(b));
 }
 
+static std::string ResolveFontPath(const std::string& fd, const std::vector<std::string>& candidates) {
+  for (const auto& c : candidates) {
+    if (c.empty()) continue;
+    std::string full = (c.find('/') != std::string::npos || c.find('\\') != std::string::npos) ? c : (fd + c);
+    if (Blob(full)) return full;
+  }
+  return "";
+}
+
 static ImFont* AddFont(ImGuiIO& io, const std::string& path, const std::vector<std::string>& fallbacks) {
+  if (path.empty()) return nullptr;
   const std::vector<char>* b = Blob(path);
   if (!b) return nullptr;
-  ImFontConfig c; c.FontDataOwnedByAtlas = false;
+  ImFontConfig c; c.FontDataOwnedByAtlas = false; c.OversampleH = 3; c.OversampleV = 2; c.PixelSnapH = false;
   ImFont* f = io.Fonts->AddFontFromMemoryTTF((void*)b->data(), (int)b->size(), 0.f, &c);
   for (auto& fb : fallbacks) {
     const std::vector<char>* d = Blob(fb);
     if (!d) continue;
-    ImFontConfig m; m.MergeMode = true; m.FontDataOwnedByAtlas = false;
+    ImFontConfig m; m.MergeMode = true; m.FontDataOwnedByAtlas = false; m.OversampleH = 2; m.OversampleV = 1; m.PixelSnapH = false;
     io.Fonts->AddFontFromMemoryTTF((void*)d->data(), (int)d->size(), 0.f, &m);
   }
   return f;
 }
 
+static void LoadFontSpecs(const std::string& fd) {
+  gUiFams.clear();
+  gMonoFams.clear();
+  if (const auto* jb = Blob(fd + "fonts.json")) {
+    std::string text(jb->begin(), jb->end()), err;
+    JsonValue root;
+    if (JsonValue::parse(text, root, err) && root.isObject()) {
+      if (root["text_scale"].isNumber()) {
+        float ts = (float)root["text_scale"].asNumber(1.2);
+        if (ts >= 0.7f && ts <= 2.5f) ui::kTextScale = ts;
+      }
+      if (root["ui"].isArray()) {
+        for (const auto& it : root["ui"].arrayItems()) {
+          if (!it.isObject()) continue;
+          std::string name = it["name"].asString();
+          std::string pfx = it["prefix"].asString();
+          std::string single = it["file"].asString();
+          if (name.empty()) name = !pfx.empty() ? pfx : single;
+          if (name.empty()) continue;
+          UiFontFam fam; fam.name = name;
+          std::string r = it["regular"].asString(single);
+          std::string s = it["semibold"].asString(it["medium"].asString(single));
+          std::string b = it["bold"].asString(single);
+          std::string x = it["extrabold"].asString(single);
+          fam.files[0] = ResolveFontPath(fd, {r, pfx + "-Regular.ttf", pfx + "-Medium.ttf", pfx + "-Var.ttf", pfx + ".ttf", single});
+          fam.files[1] = ResolveFontPath(fd, {s, pfx + "-SemiBold.ttf", pfx + "-Medium.ttf", fam.files[0]});
+          fam.files[2] = ResolveFontPath(fd, {b, pfx + "-Bold.ttf", fam.files[1], fam.files[0]});
+          fam.files[3] = ResolveFontPath(fd, {x, pfx + "-ExtraBold.ttf", pfx + "-Black.ttf", fam.files[2], fam.files[0]});
+          gUiFams.push_back(std::move(fam));
+        }
+      }
+      if (root["mono"].isArray()) {
+        for (const auto& it : root["mono"].arrayItems()) {
+          if (!it.isObject()) continue;
+          std::string name = it["name"].asString();
+          std::string pfx = it["prefix"].asString();
+          std::string single = it["file"].asString();
+          if (name.empty()) name = !pfx.empty() ? pfx : single;
+          if (name.empty()) continue;
+          MonoFontFam fam; fam.name = name;
+          std::string r = it["regular"].asString(single);
+          std::string m = it["medium"].asString(it["semibold"].asString(single));
+          std::string b = it["bold"].asString(single);
+          fam.files[0] = ResolveFontPath(fd, {r, pfx + "-Regular.ttf", pfx + "-Var.ttf", pfx + ".ttf", single});
+          fam.files[1] = ResolveFontPath(fd, {m, pfx + "-Medium.ttf", pfx + "-SemiBold.ttf", fam.files[0]});
+          fam.files[2] = ResolveFontPath(fd, {b, pfx + "-Bold.ttf", fam.files[1], fam.files[0]});
+          gMonoFams.push_back(std::move(fam));
+        }
+      }
+    }
+  }
+  if (gUiFams.empty()) {
+    struct DefUi { const char* name; const char* pfx; };
+    const DefUi defs[] = {{"Inter", "Inter"}, {"Plus Jakarta Sans", "PlusJakartaSans"}, {"IBM Plex Sans", "IBMPlexSans"}, {"Space Grotesk", "SpaceGrotesk"}};
+    for (auto& d : defs) {
+      UiFontFam fam; fam.name = d.name; std::string p = d.pfx;
+      fam.files[0] = ResolveFontPath(fd, {p + "-Regular.ttf", p + "-Var.ttf", p + ".ttf"});
+      fam.files[1] = ResolveFontPath(fd, {p + "-SemiBold.ttf", p + "-Medium.ttf", fam.files[0]});
+      fam.files[2] = ResolveFontPath(fd, {p + "-Bold.ttf", fam.files[1], fam.files[0]});
+      fam.files[3] = ResolveFontPath(fd, {p + "-ExtraBold.ttf", fam.files[2], fam.files[0]});
+      gUiFams.push_back(std::move(fam));
+    }
+  }
+  if (gMonoFams.empty()) {
+    struct DefMono { const char* name; const char* pfx; };
+    const DefMono defs[] = {{"JetBrains Mono", "JetBrainsMono"}, {"IBM Plex Mono", "IBMPlexMono"}, {"Roboto Mono", "RobotoMono"}};
+    for (auto& d : defs) {
+      MonoFontFam fam; fam.name = d.name; std::string p = d.pfx;
+      fam.files[0] = ResolveFontPath(fd, {p + "-Regular.ttf", p + "-Var.ttf", p + ".ttf"});
+      fam.files[1] = ResolveFontPath(fd, {p + "-Medium.ttf", fam.files[0]});
+      fam.files[2] = ResolveFontPath(fd, {p + "-Bold.ttf", fam.files[1], fam.files[0]});
+      gMonoFams.push_back(std::move(fam));
+    }
+  }
+}
+
 void LoadAllFonts(ImGuiIO& io, const std::string& assets) {
-  // CJK/system-font fallback paths for merging glyphs the bundled UI fonts
-  // don't cover (user-entered clip/layer/device names are never translated —
-  // see the Settings text below — so a Chinese/Japanese/Korean name is
-  // plausible on any OS). Missing files fail silently in Blob() and just
-  // fall back to ImGui's built-in default font, same as before — this only
-  // changes WHICH paths get tried per platform, not the failure behavior.
-const std::string fd = assets + "/fonts/";
+  const std::string fd = assets + "/fonts/";
 #ifdef _WIN32
-  // %WINDIR% thay vì cứng C:\Windows — Windows không nhất thiết cài ở ổ C:.
   const char* winDir = std::getenv("WINDIR");
-  // Dấu "/" chạy được trên Windows (fopen/CreateFile đều nhận), khỏi phải escape "\\".
   const std::string sysFontDir = std::string(winDir ? winDir : "C:/Windows") + "/Fonts/";
   const std::vector<std::string> cjkFallback = {sysFontDir + "msyh.ttc", sysFontDir + "YuGothM.ttc", sysFontDir + "malgun.ttf"};
   const char* segoe[4] = {"segoeui.ttf", "seguisb.ttf", "segoeuib.ttf", "seguibl.ttf"};
@@ -64,30 +162,27 @@ const std::string fd = assets + "/fonts/";
       sysFontDir + "truetype/noto/NotoSansCJK-Regular.ttc"};
 #endif
   ImFont* dflt = io.Fonts->AddFontDefault();
-  const char* uiFiles[4][4] = {
-      {"Archivo-Regular.ttf", "Archivo-SemiBold.ttf", "Archivo-Bold.ttf", "Archivo-ExtraBold.ttf"},
-      {"BarlowCondensed-Regular.ttf", "BarlowCondensed-SemiBold.ttf", "BarlowCondensed-Bold.ttf", "BarlowCondensed-ExtraBold.ttf"},
-      {"IBMPlexSans-Var.ttf", "IBMPlexSans-Var.ttf", "IBMPlexSans-Var.ttf", "IBMPlexSans-Var.ttf"},
-      {"SpaceGrotesk-Var.ttf", "SpaceGrotesk-Var.ttf", "SpaceGrotesk-Var.ttf", "SpaceGrotesk-Var.ttf"}};
-  const char* monoFiles[3][3] = {{"JetBrainsMono-Regular.ttf", "JetBrainsMono-Medium.ttf", "JetBrainsMono-Bold.ttf"},
-                                 {"IBMPlexMono-Regular.ttf", "IBMPlexMono-Medium.ttf", "IBMPlexMono-Bold.ttf"},
-                                 {"RobotoMono-Var.ttf", "RobotoMono-Var.ttf", "RobotoMono-Var.ttf"}};
-  for (int f = 0; f < 4; ++f) for (int w = 0; w < 4; ++w) {
+  LoadFontSpecs(fd);
+  for (auto& fam : gUiFams) {
+    for (int w = 0; w < 4; ++w) {
 #ifdef _WIN32
-    std::vector<std::string> fb = {sysFontDir + segoe[w]};
-    fb.insert(fb.end(), cjkFallback.begin(), cjkFallback.end());
+      std::vector<std::string> fb = {sysFontDir + segoe[w]};
+      fb.insert(fb.end(), cjkFallback.begin(), cjkFallback.end());
 #else
-    std::vector<std::string> fb = cjkFallback;
+      std::vector<std::string> fb = cjkFallback;
 #endif
-    ImFont* x = AddFont(io, fd + uiFiles[f][w], fb);
+      ImFont* x = AddFont(io, fam.files[w], fb);
 #ifdef _WIN32
-    if (!x) x = AddFont(io, sysFontDir + segoe[w], cjkFallback);
+      if (!x) x = AddFont(io, sysFontDir + segoe[w], cjkFallback);
 #endif
-    famUI[f][w] = x ? x : dflt;
+      fam.weights[w] = x ? x : dflt;
+    }
   }
-  for (int f = 0; f < 3; ++f) for (int w = 0; w < 3; ++w) {
-    ImFont* x = AddFont(io, fd + monoFiles[f][w], {});
-    famMono[f][w] = x ? x : dflt;
+  for (auto& fam : gMonoFams) {
+    for (int w = 0; w < 3; ++w) {
+      ImFont* x = AddFont(io, fam.files[w], {});
+      fam.weights[w] = x ? x : dflt;
+    }
   }
 }
 
@@ -101,14 +196,18 @@ struct Surf { const char* name; uint32_t ramp[8]; };
 static const Surf SURF[3] = {{"Abyss", {0x050505, 0x0f0f0f, 0x101010, 0x121212, 0x141414, 0x161616, 0x181818, 0x1c1c1c}},
                              {"Graphite", {0x0c0c0c, 0x161616, 0x181818, 0x1b1b1b, 0x1d1d1d, 0x202020, 0x242424, 0x292929}},
                              {"True black", {0x000000, 0x040404, 0x060606, 0x090909, 0x0b0b0b, 0x0e0e0e, 0x111111, 0x151515}}};
-static const char* UI_NAMES[4] = {"Archivo", "Barlow Condensed", "IBM Plex Sans", "Space Grotesk"};
-static const char* MONO_NAMES[3] = {"JetBrains Mono", "IBM Plex Mono", "Roboto Mono"};
 static const int SIZES[5] = {90, 100, 110, 125, 150};
 
 void ApplyPrefs() {
-  const Prefs& p = A.prefs;
-  for (int i = 0; i < 4; ++i) g.fonts[UI_R + i] = famUI[p.ui][i];
-  for (int i = 0; i < 3; ++i) g.fonts[MONO_R + i] = famMono[p.mono][i];
+  Prefs& p = A.prefs;
+  if (!gUiFams.empty()) {
+    p.ui = std::clamp(p.ui, 0, (int)gUiFams.size() - 1);
+    for (int i = 0; i < 4; ++i) g.fonts[UI_R + i] = gUiFams[p.ui].weights[i];
+  }
+  if (!gMonoFams.empty()) {
+    p.mono = std::clamp(p.mono, 0, (int)gMonoFams.size() - 1);
+    for (int i = 0; i < 3; ++i) g.fonts[MONO_R + i] = gMonoFams[p.mono].weights[i];
+  }
   pal::coral = ACC[p.accent].c1; pal::cyan = ACC[p.accent].c2; pal::mint = ACC[p.accent].c3;
   const uint32_t* r = SURF[p.surface].ramp;
   pal::g050 = r[0]; pal::g0f = r[1]; pal::g10 = r[2]; pal::g12 = r[3]; pal::g14 = r[4]; pal::g16 = r[5]; pal::g18 = r[6]; pal::g1c = r[7];
@@ -287,28 +386,31 @@ void DrawSettings(ImVec2 disp) {
   } else if (A.setTab == 1) {
     Label(x, y + 5, t.fontUi); y += 9 + 6;
     float cw = (w - 6) / 2.f;
-    for (int i = 0; i < 4; ++i) {
+    int nUi = (int)gUiFams.size();
+    for (int i = 0; i < nUi; ++i) {
       ImRect r(x + (i % 2) * (cw + 6), y + (i / 2) * (40 + 6), x + (i % 2) * (cw + 6) + cw, y + (i / 2) * (40 + 6) + 40);
       bool on = p.ui == i, hv = RawHover(r);
       Skin(r, on, pal::cyan);
-      ImFont* save = g.fonts[UI_B]; g.fonts[UI_B] = famUI[i][2];
+      ImFont* save = g.fonts[UI_B]; g.fonts[UI_B] = gUiFams[i].weights[2];
       Text(r.Min.x + 6, r.Min.y + 6 + 8, UI_B, 13, K(on ? pal::cyan : pal::tcc), "LIVE OUTPUT", 0.09f);
       g.fonts[UI_B] = save;
-      Text(r.Min.x + 6, r.Min.y + 6 + 16 + 3 + 5, MONO_R, 9, K(pal::t66), UI_NAMES[i]);
+      Text(r.Min.x + 6, r.Min.y + 6 + 16 + 3 + 5, MONO_R, 9, K(pal::t66), gUiFams[i].name.c_str());
       if (hv) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
       if (hv && click) { p.ui = i; ApplyPrefs(); }
     }
-    y += 2 * 40 + 6 + 16;
+    int uiRows = (nUi + 1) / 2;
+    y += uiRows * 40 + std::max(0, uiRows - 1) * 6 + 16;
     Label(x, y + 5, t.fontMono); y += 9 + 6;
     float mw = (w - 12) / 3.f;
-    for (int i = 0; i < 3; ++i) {
-      ImRect r(x + i * (mw + 6), y, x + i * (mw + 6) + mw, y + 38);
+    int nMono = (int)gMonoFams.size();
+    for (int i = 0; i < nMono; ++i) {
+      ImRect r(x + (i % 3) * (mw + 6), y + (i / 3) * (38 + 6), x + (i % 3) * (mw + 6) + mw, y + (i / 3) * (38 + 6) + 38);
       bool on = p.mono == i, hv = RawHover(r);
       Skin(r, on, pal::cyan);
-      ImFont* save = g.fonts[MONO_M]; g.fonts[MONO_M] = famMono[i][1];
+      ImFont* save = g.fonts[MONO_M]; g.fonts[MONO_M] = gMonoFams[i].weights[1];
       Text(r.Min.x + 6, r.Min.y + 6 + 7, MONO_M, 11, K(on ? pal::cyan : pal::tcc), "1920\xC3\x97" "1080 59.94");
       g.fonts[MONO_M] = save;
-      Text(r.Min.x + 6, r.Min.y + 6 + 14 + 3 + 5, MONO_R, 9, K(pal::t66), MONO_NAMES[i]);
+      Text(r.Min.x + 6, r.Min.y + 6 + 14 + 3 + 5, MONO_R, 9, K(pal::t66), gMonoFams[i].name.c_str());
       if (hv) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
       if (hv && click) { p.mono = i; ApplyPrefs(); }
     }

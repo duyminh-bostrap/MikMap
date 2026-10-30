@@ -1,0 +1,60 @@
+{
+  "text_scale": 1.2,
+  "ui": [
+    {
+      "name": "Inter",
+      "prefix": "Inter",
+      "regular": "Inter-Regular.ttf",
+      "semibold": "Inter-SemiBold.ttf",
+      "bold": "Inter-Bold.ttf",
+      "extrabold": "Inter-ExtraBold.ttf"
+    },
+    {
+      "name": "Plus Jakarta Sans",
+      "prefix": "PlusJakartaSans",
+      "regular": "PlusJakartaSans-Regular.ttf",
+      "semibold": "PlusJakartaSans-SemiBold.ttf",
+      "bold": "PlusJakartaSans-Bold.ttf",
+      "extrabold": "PlusJakartaSans-ExtraBold.ttf"
+    },
+    {
+      "name": "IBM Plex Sans",
+      "prefix": "IBMPlexSans",
+      "regular": "IBMPlexSans-Regular.ttf",
+      "semibold": "IBMPlexSans-SemiBold.ttf",
+      "bold": "IBMPlexSans-Bold.ttf",
+      "extrabold": "IBMPlexSans-ExtraBold.ttf"
+    },
+    {
+      "name": "Space Grotesk",
+      "prefix": "SpaceGrotesk",
+      "regular": "SpaceGrotesk-Regular.ttf",
+      "semibold": "SpaceGrotesk-SemiBold.ttf",
+      "bold": "SpaceGrotesk-Bold.ttf",
+      "extrabold": "SpaceGrotesk-ExtraBold.ttf"
+    }
+  ],
+  "mono": [
+    {
+      "name": "JetBrains Mono",
+      "prefix": "JetBrainsMono",
+      "regular": "JetBrainsMono-Regular.ttf",
+      "medium": "JetBrainsMono-Medium.ttf",
+      "bold": "JetBrainsMono-Bold.ttf"
+    },
+    {
+      "name": "IBM Plex Mono",
+      "prefix": "IBMPlexMono",
+      "regular": "IBMPlexMono-Regular.ttf",
+      "medium": "IBMPlexMono-Medium.ttf",
+      "bold": "IBMPlexMono-Bold.ttf"
+    },
+    {
+      "name": "Roboto Mono",
+      "prefix": "RobotoMono",
+      "regular": "RobotoMono-Regular.ttf",
+      "medium": "RobotoMono-Medium.ttf",
+      "bold": "RobotoMono-Bold.ttf"
+    }
+  ]
+}

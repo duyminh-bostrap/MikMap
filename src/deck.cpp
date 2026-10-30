@@ -1,4 +1,4 @@
-﻿// Composition screen: browser · monitors · properties · layer/clip deck.
+// Composition screen: browser · monitors · properties · layer/clip deck.
 #include "app.h"
 #include <numeric>
 #include <array>
@@ -1652,7 +1652,7 @@ static void Browser(ImRect r) {
   PanelHeader(Rc(r.Min.x, r.Min.y, r.GetWidth() - 1, 24), "Browser", pal::t88);
   static ScrollArea sa;
   sa.Begin("##browser", ImRect(r.Min.x, r.Min.y + 24, r.Max.x - 1, r.Max.y));
-  float ox = sa.origin.x, oy = sa.origin.y, W = r.GetWidth() - 1;
+  float ox = sa.origin.x, oy = sa.origin.y, W = r.GetWidth() - 1 - (ImGui::GetCurrentWindow()->ScrollbarY ? 8.f : 0.f);
   float y = 2;
   // Build rows dynamically so Effects always mirrors FX_LIB (8 items, correct icons).
   struct Row { std::string name, icon, dur; int depth; int fxKind; bool folder; bool open; int count; std::string path; };

@@ -1,4 +1,4 @@
-﻿#include "ui.h"
+#include "ui.h"
 #include <cmath>
 #include <cstring>
 #include <cstdio>
@@ -21,7 +21,19 @@ ImU32 Lerp(ImU32 a, ImU32 b, float t) {
 ImU32 MixHex(uint32_t base, uint32_t tint, float t) { return Lerp(K(base), K(tint), t) | 0xFF000000u; }
 
 // ───────────────────────────── text ─────────────────────────────
-ImFont* F(FontId f) { return g.fonts[f]; }
+ImFont* F(FontId f) {
+  ImFont* fn = g.fonts[f];
+  if (fn && ImGui::GetCurrentContext()) {
+    float d = ImGui::GetIO().DisplayFramebufferScale.x;
+    if (d > 0.f) fn->CurrentRasterizerDensity = d;
+  }
+  return fn;
+}
+
+static float SnapPx(float v) {
+  float s = ImGui::GetCurrentContext() ? ImGui::GetIO().DisplayFramebufferScale.x : 1.f;
+  return s > 0.f ? std::floor(v * s + 0.5f) / s : std::floor(v + 0.5f);
+}
 
 static int Utf8(const char* s, unsigned int* out) {
   unsigned int c = (unsigned char)s[0];
@@ -37,7 +49,7 @@ static int Utf8(const char* s, unsigned int* out) {
 float TextW(FontId f, float sz, const char* s, float ls) {
   if (!s || !*s) return 0;
   sz = TextPx(sz);
-  if (ls == 0.f) return F(f)->CalcTextSizeA(sz, FLT_MAX, 0.f, s).x;
+  if (std::abs(ls) < 0.02f) return F(f)->CalcTextSizeA(sz, FLT_MAX, 0.f, s).x;
   float w = 0;
   for (const char* p = s; *p;) {
     unsigned int cp; int n = Utf8(p, &cp);
@@ -50,21 +62,27 @@ float TextW(FontId f, float sz, const char* s, float ls) {
 
 static void DrawText(float x, float y, FontId f, float sz, ImU32 col, const char* s, float ls) {
   col = Ca(col);
-  if (ls == 0.f) { g.dl->AddText(F(f), sz, ImVec2(x, y), col, s); return; }
+  ImFont* fn = F(f);
+  ImDrawListFlags prevFlags = g.dl->Flags;
+  g.dl->Flags |= ImDrawListFlags_TextNoPixelSnap;
+  if (std::abs(ls) < 0.02f) {
+    g.dl->AddText(fn, sz, ImVec2(x, y), col, s);
+    g.dl->Flags = prevFlags;
+    return;
+  }
   for (const char* p = s; *p;) {
     unsigned int cp; int n = Utf8(p, &cp);
     char buf[5] = {}; memcpy(buf, p, n);
-    // ImGui truncates each glyph's start x to a whole pixel; drawing tracked text glyph by glyph that makes the gaps
-    // uneven by up to 1px ("AD D"). Rounding to the nearest pixel keeps the error under half a pixel and even.
-    g.dl->AddText(F(f), sz, ImVec2(std::floor(x + 0.5f), y), col, buf);
-    x += F(f)->CalcTextSizeA(sz, FLT_MAX, 0.f, buf).x + ls * sz;
+    g.dl->AddText(fn, sz, ImVec2(x, y), col, buf);
+    x += fn->CalcTextSizeA(sz, FLT_MAX, 0.f, buf).x + ls * sz;
     p += n;
   }
+  g.dl->Flags = prevFlags;
 }
 
 void Text(float x, float cy, FontId f, float sz, ImU32 col, const char* s, float ls) {
   sz = TextPx(sz);
-  DrawText(std::floor(x + 0.5f), std::floor(cy - sz * 0.5f + 0.5f), f, sz, col, s, ls);
+  DrawText(SnapPx(x), SnapPx(cy - sz * 0.5f), f, sz, col, s, ls);
 }
 void TextR(float xr, float cy, FontId f, float sz, ImU32 col, const char* s, float ls) {
   Text(xr - TextW(f, sz, s, ls), cy, f, sz, col, s, ls);
@@ -178,12 +196,12 @@ void Check(ImVec2 c, float sz, ImU32 col) {
   g.dl->AddPolyline(p, 3, Ca(col), 0, std::max(1.4f, 2.6f * s));
 }
 
-// Lucide-flavoured glyphs, drawn on a 24-unit grid.
+// Lucide-flavoured glyphs, drawn on a 24-unit grid with smooth curves and zero miter spikes.
 void Icon(const char* n, ImVec2 c, float sz, ImU32 col) {
   ImDrawList* dl = g.dl;
   col = Ca(col);
-  float s = sz / 24.f, th = std::max(1.f, 2.f * s);
-  auto P = [&](float x, float y) { return ImVec2(c.x + (x - 12) * s, c.y + (y - 12) * s); };
+  float s = sz / 24.f, th = std::max(1.15f, 1.85f * s);
+  auto P = [&](float x, float y) { return ImVec2(c.x + (x - 12.f) * s, c.y + (y - 12.f) * s); };
   auto Poly = [&](std::initializer_list<ImVec2> pts, bool closed = false) {
     std::vector<ImVec2> v(pts);
     dl->AddPolyline(v.data(), (int)v.size(), col, closed ? ImDrawFlags_Closed : 0, th);
@@ -191,101 +209,284 @@ void Icon(const char* n, ImVec2 c, float sz, ImU32 col) {
   auto Line = [&](float a, float b, float x, float y) { dl->AddLine(P(a, b), P(x, y), col, th); };
   auto Rect = [&](float x0, float y0, float x1, float y1, float r) { dl->AddRect(P(x0, y0), P(x1, y1), col, r * s, 0, th); };
   auto Circ = [&](float x, float y, float r) { dl->AddCircle(P(x, y), r * s, col, 0, th); };
+  auto DotF = [&](float x, float y, float r) { dl->AddCircleFilled(P(x, y), std::max(1.1f, r * s), col, 12); };
   auto is = [&](const char* k) { return strcmp(n, k) == 0; };
 
   if (is("chevron-down")) Poly({P(6, 9), P(12, 15), P(18, 9)});
+  else if (is("chevron-up")) Poly({P(18, 15), P(12, 9), P(6, 15)});
   else if (is("chevron-right")) Poly({P(9, 6), P(15, 12), P(9, 18)});
-  else if (is("play")) Poly({P(6, 3), P(20, 12), P(6, 21)}, true);
-  else if (is("square")) Rect(6, 6, 18, 18, 1.5f);
-  else if (is("pause")) { Rect(14, 4, 18, 20, 1); Rect(6, 4, 10, 20, 1); }
-  else if (is("skip-back")) { Poly({P(19, 20), P(9, 12), P(19, 4)}, true); Line(5, 19, 5, 5); }
-  else if (is("skip-forward")) { Poly({P(5, 4), P(15, 12), P(5, 20)}, true); Line(19, 5, 19, 19); }
-  else if (is("folder") || is("folder-plus") || is("folder-open")) {
-    Poly({P(2, 6), P(2, 19), P(3, 20), P(21, 20), P(22, 19), P(22, 8), P(21, 7), P(12, 7), P(10, 4), P(3, 4), P(2, 5)}, true);
-    if (is("folder-plus")) { Line(12, 10, 12, 16); Line(9, 13, 15, 13); }
+  else if (is("chevron-left")) Poly({P(15, 18), P(9, 12), P(15, 6)});
+  else if (is("play")) Poly({P(6.5f, 4), P(19.5f, 12), P(6.5f, 20)}, true);
+  else if (is("square")) Rect(5.5f, 5.5f, 18.5f, 18.5f, 2.f);
+  else if (is("pause")) { Rect(6, 4.5f, 10, 19.5f, 1.2f); Rect(14, 4.5f, 18, 19.5f, 1.2f); }
+  else if (is("skip-back")) { Poly({P(19, 19), P(9, 12), P(19, 5)}, true); Line(5, 18.5f, 5, 5.5f); }
+  else if (is("skip-forward")) { Poly({P(5, 5), P(15, 12), P(5, 19)}, true); Line(19, 5.5f, 19, 18.5f); }
+  else if (is("folder") || is("folder-plus")) {
+    Poly({P(2.5f, 6), P(2.5f, 19), P(3.8f, 20), P(20.2f, 20), P(21.5f, 19), P(21.5f, 8.2f), P(20.2f, 7), P(11.8f, 7), P(9.6f, 4.5f), P(3.8f, 4.5f), P(2.5f, 5.5f)}, true);
+    if (is("folder-plus")) { Line(12, 10.5f, 12, 16.5f); Line(9, 13.5f, 15, 13.5f); }
   }
-  else if (is("file-plus")) { Poly({P(6, 2), P(14, 2), P(20, 8), P(20, 21), P(6, 21)}, true); Line(12, 11, 12, 17); Line(9, 14, 15, 14); }
-  else if (is("clock")) { Circ(12, 12, 10); Poly({P(12, 6), P(12, 12), P(16, 14)}); }
-  else if (is("save")) { Poly({P(4, 3), P(17, 3), P(21, 7), P(21, 21), P(4, 21)}, true); Rect(7, 3, 15, 8, 0); Rect(7, 14, 17, 21, 0); }
-  else if (is("download")) { Line(12, 3, 12, 15); Poly({P(7, 10), P(12, 15), P(17, 10)}); Poly({P(3, 15), P(3, 21), P(21, 21), P(21, 15)}); }
+  else if (is("folder-open")) {
+    Poly({P(2.5f, 19), P(2.5f, 5.5f), P(3.8f, 4.5f), P(9.5f, 4.5f), P(11.5f, 7), P(19.5f, 7), P(19.5f, 10)});
+    Poly({P(2.5f, 19), P(5.2f, 10.5f), P(22.f, 10.5f), P(19.5f, 19), P(2.5f, 19)}, true);
+  }
+  else if (is("file-plus")) {
+    Poly({P(5.5f, 2.5f), P(14, 2.5f), P(19.5f, 8), P(19.5f, 21.5f), P(5.5f, 21.5f)}, true);
+    Poly({P(14, 2.5f), P(14, 8), P(19.5f, 8)});
+    Line(12.5f, 11.5f, 12.5f, 17.5f); Line(9.5f, 14.5f, 15.5f, 14.5f);
+  }
+  else if (is("clock")) { Circ(12, 12, 9.5f); Poly({P(12, 6.5f), P(12, 12), P(16, 14.2f)}); }
+  else if (is("save")) {
+    Poly({P(3.5f, 3.5f), P(16.5f, 3.5f), P(20.5f, 7.5f), P(20.5f, 20.5f), P(3.5f, 20.5f)}, true);
+    Poly({P(7.5f, 3.5f), P(7.5f, 8.5f), P(15.5f, 8.5f), P(15.5f, 3.5f)});
+    Poly({P(7, 20.5f), P(7, 13.5f), P(17, 13.5f), P(17, 20.5f)});
+  }
+  else if (is("download")) {
+    Line(12, 3.5f, 12, 15);
+    Poly({P(7.5f, 10.5f), P(12, 15), P(16.5f, 10.5f)});
+    Poly({P(3.5f, 15.5f), P(3.5f, 20.5f), P(20.5f, 20.5f), P(20.5f, 15.5f)});
+  }
   else if (is("eye") || is("eye-off")) {
-    Poly({P(2, 12), P(6, 7), P(12, 5), P(18, 7), P(22, 12), P(18, 17), P(12, 19), P(6, 17)}, true);
-    Circ(12, 12, 3);
-    if (is("eye-off")) Line(3, 3, 21, 21);
+    dl->PathLineTo(P(2, 12));
+    dl->PathBezierCubicCurveTo(P(6, 5.2f), P(18, 5.2f), P(22, 12), 16);
+    dl->PathBezierCubicCurveTo(P(18, 18.8f), P(6, 18.8f), P(2, 12), 16);
+    dl->PathStroke(col, ImDrawFlags_Closed, th);
+    Circ(12, 12, 3.1f);
+    if (is("eye-off")) Line(3.5f, 3.5f, 20.5f, 20.5f);
   }
-  else if (is("settings")) { Circ(12, 12, 3); Circ(12, 12, 8); for (int i = 0; i < 8; ++i) { float a = i * 0.7853982f; dl->AddLine(P(12 + cosf(a) * 8, 12 + sinf(a) * 8), P(12 + cosf(a) * 10.5f, 12 + sinf(a) * 10.5f), col, th * 1.4f); } }
-  else if (is("circle-help")) { Circ(12, 12, 10); Poly({P(9.5f, 9), P(10.5f, 7.5f), P(13.5f, 7.5f), P(14.5f, 9.5f), P(12, 12), P(12, 13.5f)}); dl->AddCircleFilled(P(12, 17), 1.1f * s + 0.3f, col); }
-  else if (is("info")) { Circ(12, 12, 10); Line(12, 16, 12, 12); dl->AddCircleFilled(P(12, 8), 1.1f * s + 0.3f, col); }
-  else if (is("rotate-ccw")) { dl->PathArcTo(P(12, 12), 9 * s, -1.15f, 3.56f, 24); dl->PathStroke(col, 0, th); Poly({P(3, 3), P(3, 8), P(8, 8)}); }
-  else if (is("monitor")) { Rect(2, 3, 22, 16, 2); Line(8, 21, 16, 21); Line(12, 16, 12, 21); }
-  else if (is("maximize")) { Poly({P(8, 3), P(3, 3), P(3, 8)}); Poly({P(21, 8), P(21, 3), P(16, 3)}); Poly({P(3, 16), P(3, 21), P(8, 21)}); Poly({P(16, 21), P(21, 21), P(21, 16)}); }
+  else if (is("settings")) {
+    Circ(12, 12, 3.2f);
+    const int teeth = 8;
+    const float rIn = 7.4f, rOut = 9.8f, step = 6.2831853f / teeth;
+    for (int i = 0; i < teeth; ++i) {
+      float a = i * step;
+      dl->PathLineTo(P(12 + cosf(a - step * 0.28f) * rIn, 12 + sinf(a - step * 0.28f) * rIn));
+      dl->PathLineTo(P(12 + cosf(a - step * 0.16f) * rOut, 12 + sinf(a - step * 0.16f) * rOut));
+      dl->PathLineTo(P(12 + cosf(a + step * 0.16f) * rOut, 12 + sinf(a + step * 0.16f) * rOut));
+      dl->PathLineTo(P(12 + cosf(a + step * 0.28f) * rIn, 12 + sinf(a + step * 0.28f) * rIn));
+    }
+    dl->PathStroke(col, ImDrawFlags_Closed, th);
+  }
+  else if (is("circle-help")) {
+    Circ(12, 12, 9.5f);
+    dl->PathLineTo(P(9.3f, 9.2f));
+    dl->PathBezierCubicCurveTo(P(9.6f, 6.6f), P(14.6f, 6.6f), P(14.6f, 9.5f), 12);
+    dl->PathBezierCubicCurveTo(P(14.6f, 11.2f), P(12, 11.6f), P(12, 13.6f), 12);
+    dl->PathStroke(col, 0, th);
+    DotF(12, 17, 1.2f);
+  }
+  else if (is("info")) { Circ(12, 12, 9.5f); Line(12, 16.5f, 12, 11.2f); DotF(12, 8, 1.2f); }
+  else if (is("rotate-ccw")) {
+    dl->PathArcTo(P(12, 12), 8.5f * s, -2.35f, 3.14f, 24);
+    dl->PathStroke(col, 0, th);
+    Poly({P(3.5f, 4), P(3.5f, 9), P(8.5f, 9)});
+  }
+  else if (is("rotate-cw")) {
+    dl->PathArcTo(P(12, 12), 8.5f * s, 0.f, 5.49f, 24);
+    dl->PathStroke(col, 0, th);
+    Poly({P(20.5f, 4), P(20.5f, 9), P(15.5f, 9)});
+  }
+  else if (is("monitor")) { Rect(2.5f, 3.5f, 21.5f, 16.5f, 2); Line(8, 20.5f, 16, 20.5f); Line(12, 16.5f, 12, 20.5f); }
+  else if (is("maximize") || is("maximize-2")) {
+    Poly({P(8, 3.5f), P(3.5f, 3.5f), P(3.5f, 8)});
+    Poly({P(20.5f, 8), P(20.5f, 3.5f), P(16, 3.5f)});
+    Poly({P(3.5f, 16), P(3.5f, 20.5f), P(8, 20.5f)});
+    Poly({P(16, 20.5f), P(20.5f, 20.5f), P(20.5f, 16)});
+  }
   else if (is("pentagon")) Poly({P(12, 2.5f), P(21.5f, 9.4f), P(17.9f, 20.5f), P(6.1f, 20.5f), P(2.5f, 9.4f)}, true);
   else if (is("scissors")) { Circ(6, 6, 3); Circ(6, 18, 3); Line(20, 4, 8.1f, 15.9f); Line(14.5f, 14.5f, 20, 20); Line(8.1f, 8.1f, 12, 12); }
   else if (is("plus")) { Line(5, 12, 19, 12); Line(12, 5, 12, 19); }
   else if (is("x")) { Line(18, 6, 6, 18); Line(6, 6, 18, 18); }
-  else if (is("trash-2")) { Line(3, 6, 21, 6); Poly({P(19, 6), P(19, 20), P(18, 21), P(6, 21), P(5, 20), P(5, 6)}); Poly({P(8, 6), P(8, 4), P(9, 3), P(15, 3), P(16, 4), P(16, 6)}); Line(10, 11, 10, 17); Line(14, 11, 14, 17); }
-  else if (is("layers")) { Poly({P(12, 2), P(2, 7), P(12, 12), P(22, 7)}, true); Poly({P(2, 12), P(12, 17), P(22, 12)}); Poly({P(2, 17), P(12, 22), P(22, 17)}); }
-  else if (is("move-3d")) { Poly({P(5, 3), P(5, 19), P(21, 19)}); Line(5, 19, 16, 8); Poly({P(16, 12), P(16, 8), P(12, 8)}); }
-  else if (is("activity")) Poly({P(22, 12), P(18, 12), P(15, 21), P(9, 3), P(6, 12), P(2, 12)});
-  else if (is("video")) { Poly({P(16, 13), P(22, 8), P(22, 16), P(16, 11)}, true); Rect(2, 6, 16, 18, 2); }
-  else if (is("audio-waveform")) { Line(2, 10, 2, 13); Line(6, 6, 6, 17); Line(10, 3, 10, 21); Line(14, 8, 14, 15); Line(18, 5, 18, 18); Line(22, 10, 22, 13); }
-  else if (is("wand-sparkles") || is("wand-2")) { Line(4, 20, 16, 8); Line(14, 6, 18, 10); Line(19, 3, 19, 7); Line(17, 5, 21, 5); Line(20, 15, 20, 19); Line(18, 17, 22, 17); }
-  else if (is("sliders-horizontal")) { Line(21, 4, 14, 4); Line(10, 4, 3, 4); Line(21, 12, 12, 12); Line(8, 12, 3, 12); Line(21, 20, 16, 20); Line(12, 20, 3, 20); Line(14, 2, 14, 6); Line(8, 10, 8, 14); Line(16, 18, 16, 22); }
-  else if (is("film")) { Rect(3, 3, 21, 21, 2); Line(7, 3, 7, 21); Line(17, 3, 17, 21); Line(3, 12, 21, 12); Line(3, 7.5f, 7, 7.5f); Line(3, 16.5f, 7, 16.5f); Line(17, 7.5f, 21, 7.5f); Line(17, 16.5f, 21, 16.5f); }
+  else if (is("trash-2")) {
+    Line(3.5f, 6, 20.5f, 6);
+    Poly({P(18.5f, 6), P(18.5f, 19.5f), P(17.2f, 20.8f), P(6.8f, 20.8f), P(5.5f, 19.5f), P(5.5f, 6)});
+    Poly({P(8.5f, 6), P(8.5f, 3.8f), P(9.5f, 3), P(14.5f, 3), P(15.5f, 3.8f), P(15.5f, 6)});
+    Line(10, 10.5f, 10, 16.8f); Line(14, 10.5f, 14, 16.8f);
+  }
+  else if (is("layers")) { Poly({P(12, 2.5f), P(2.5f, 7.2f), P(12, 12), P(21.5f, 7.2f)}, true); Poly({P(2.5f, 12.2f), P(12, 16.8f), P(21.5f, 12.2f)}); Poly({P(2.5f, 16.8f), P(12, 21.5f), P(21.5f, 16.8f)}); }
+  else if (is("move-3d")) { Poly({P(5, 3.5f), P(5, 19), P(20.5f, 19)}); Line(5, 19, 16, 8); Poly({P(16, 12.5f), P(16, 8), P(11.5f, 8)}); }
+  else if (is("activity")) Poly({P(22, 12), P(18, 12), P(15, 20.5f), P(9, 3.5f), P(6, 12), P(2, 12)});
+  else if (is("video")) { Poly({P(16, 10.5f), P(21.5f, 7), P(21.5f, 17), P(16, 13.5f)}, true); Rect(2.5f, 6, 16, 18, 2); }
+  else if (is("audio-waveform")) { Line(2.5f, 10, 2.5f, 14); Line(6.3f, 6, 6.3f, 18); Line(10.1f, 3, 10.1f, 21); Line(13.9f, 8, 13.9f, 16); Line(17.7f, 5, 17.7f, 19); Line(21.5f, 10, 21.5f, 14); }
+  else if (is("wand-sparkles") || is("wand-2")) {
+    Line(3.5f, 20.5f, 15.5f, 8.5f);
+    Line(13.5f, 6.5f, 17.5f, 10.5f);
+    Line(19, 2.5f, 19, 6.5f); Line(17, 4.5f, 21, 4.5f);
+    Line(20, 14.5f, 20, 18.5f); Line(18, 16.5f, 22, 16.5f);
+    Line(9, 2.5f, 9, 5.5f); Line(7.5f, 4, 10.5f, 4);
+  }
+  else if (is("sliders-horizontal")) {
+    Line(21, 5, 14, 5); Line(10, 5, 3, 5); Circ(12, 5, 2.f);
+    Line(21, 12, 10, 12); Line(6, 12, 3, 12); Circ(8, 12, 2.f);
+    Line(21, 19, 18, 19); Line(14, 19, 3, 19); Circ(16, 19, 2.f);
+  }
+  else if (is("sliders-vertical")) {
+    Line(5, 21, 5, 14); Line(5, 10, 5, 3); Circ(5, 12, 2.f);
+    Line(12, 21, 12, 10); Line(12, 6, 12, 3); Circ(12, 8, 2.f);
+    Line(19, 21, 19, 18); Line(19, 14, 19, 3); Circ(19, 16, 2.f);
+  }
+  else if (is("film")) {
+    Rect(3, 3, 21, 21, 2.2f);
+    Line(7.2f, 3, 7.2f, 21); Line(16.8f, 3, 16.8f, 21); Line(3, 12, 21, 12);
+    Line(3, 7.5f, 7.2f, 7.5f); Line(3, 16.5f, 7.2f, 16.5f);
+    Line(16.8f, 7.5f, 21, 7.5f); Line(16.8f, 16.5f, 21, 16.5f);
+  }
   else if (is("panel-left-close") || is("panel-left-open")) {
     Rect(3, 3, 21, 21, 2); Line(9, 3, 9, 21);
     if (is("panel-left-close")) Poly({P(16, 15), P(13, 12), P(16, 9)}); else Poly({P(14, 9), P(17, 12), P(14, 15)});
   }
-  else if (is("crosshair")) { Circ(12, 12, 10); Line(22, 12, 18, 12); Line(6, 12, 2, 12); Line(12, 6, 12, 2); Line(12, 22, 12, 18); }
-  else if (is("target")) { Circ(12, 12, 10); Circ(12, 12, 6); Circ(12, 12, 2); }
-  else if (is("radar")) { Circ(12, 12, 10); Circ(12, 12, 6); Circ(12, 12, 2); Line(12, 12, 19, 5); }   // a lidar sweeping
-  else if (is("camera")) { Poly({P(2, 8), P(6, 8), P(8, 5), P(16, 5), P(18, 8), P(22, 8), P(22, 20), P(2, 20)}, true); Circ(12, 13, 4); }
-  else if (is("zap")) Poly({P(13, 2), P(3, 14), P(12, 14), P(11, 22), P(21, 10), P(12, 10)}, true);
-  else if (is("arrow-up")) { Line(12, 19, 12, 5); Poly({P(5, 12), P(12, 5), P(19, 12)}); }
-  else if (is("arrow-down")) { Line(12, 5, 12, 19); Poly({P(19, 12), P(12, 19), P(5, 12)}); }
-  else if (is("copy")) { Rect(8, 8, 22, 22, 2); Poly({P(4, 16), P(3, 16), P(2, 15), P(2, 3), P(3, 2), P(15, 2), P(16, 3), P(16, 4)}); }
-  else if (is("chevron-left")) Poly({P(15, 18), P(9, 12), P(15, 6)});
-  else if (is("droplet")) { Poly({P(12, 3), P(6, 11), P(5, 15), P(8, 20), P(12, 21), P(16, 20), P(19, 15), P(18, 11)}, true); }
-  else if (is("snowflake")) { Line(12, 2, 12, 22); Line(2, 12, 22, 12); Line(4.9f, 4.9f, 19.1f, 19.1f); Line(19.1f, 4.9f, 4.9f, 19.1f); }
-  else if (is("flip-horizontal")) { Line(12, 3, 12, 21); Poly({P(8, 8), P(3, 12), P(8, 16)}, true); Poly({P(16, 8), P(21, 12), P(16, 16)}, true); }
+  else if (is("crosshair")) { Circ(12, 12, 9); Line(22, 12, 17.5f, 12); Line(6.5f, 12, 2, 12); Line(12, 6.5f, 12, 2); Line(12, 22, 12, 17.5f); }
+  else if (is("target")) { Circ(12, 12, 9.5f); Circ(12, 12, 5.5f); DotF(12, 12, 1.8f); }
+  else if (is("radar")) { Circ(12, 12, 9.5f); Circ(12, 12, 5.5f); DotF(12, 12, 1.8f); Line(12, 12, 18.7f, 5.3f); }
+  else if (is("camera")) { Poly({P(2.5f, 7.5f), P(6.5f, 7.5f), P(8.5f, 4.5f), P(15.5f, 4.5f), P(17.5f, 7.5f), P(21.5f, 7.5f), P(21.5f, 19.5f), P(2.5f, 19.5f)}, true); Circ(12, 13.2f, 3.8f); }
+  else if (is("zap")) Poly({P(13, 2.5f), P(3.5f, 13.8f), P(11.8f, 13.8f), P(11, 21.5f), P(20.5f, 10.2f), P(12.2f, 10.2f)}, true);
+  else if (is("arrow-up")) { Line(12, 19, 12, 5); Poly({P(5.5f, 11.5f), P(12, 5), P(18.5f, 11.5f)}); }
+  else if (is("arrow-down")) { Line(12, 5, 12, 19); Poly({P(18.5f, 12.5f), P(12, 19), P(5.5f, 12.5f)}); }
+  else if (is("copy")) {
+    Rect(8.5f, 8.5f, 21, 21, 2);
+    Poly({P(5, 15.5f), P(3.8f, 15.5f), P(3, 14.5f), P(3, 4), P(3.8f, 3), P(14.5f, 3), P(15.5f, 4), P(15.5f, 5)});
+  }
+  else if (is("droplet")) {
+    dl->PathLineTo(P(12, 2.8f));
+    dl->PathBezierCubicCurveTo(P(16.8f, 8.5f), P(19, 11.8f), P(19, 14.8f), 14);
+    dl->PathArcTo(P(12, 14.6f), 7.f * s, 0.05f, 3.09f, 16);
+    dl->PathBezierCubicCurveTo(P(5, 11.8f), P(7.2f, 8.5f), P(12, 2.8f), 14);
+    dl->PathStroke(col, ImDrawFlags_Closed, th);
+  }
+  else if (is("snowflake")) {
+    Line(12, 2.5f, 12, 21.5f); Line(2.5f, 12, 21.5f, 12);
+    Line(5.3f, 5.3f, 18.7f, 18.7f); Line(18.7f, 5.3f, 5.3f, 18.7f);
+  }
+  else if (is("flip-horizontal")) { Line(12, 3, 12, 21); Poly({P(8, 7.5f), P(3, 12), P(8, 16.5f)}, true); Poly({P(16, 7.5f), P(21, 12), P(16, 16.5f)}, true); }
   else if (is("grid-3x3")) { Rect(3, 3, 21, 21, 2); Line(3, 9, 21, 9); Line(3, 15, 21, 15); Line(9, 3, 9, 21); Line(15, 3, 15, 21); }
-  else if (is("frame")) { Line(22, 6, 2, 6); Line(22, 18, 2, 18); Line(6, 2, 6, 22); Line(18, 2, 18, 22); }
-  else if (is("undo-2")) { Poly({P(9, 14), P(4, 9), P(9, 4)}); Poly({P(4, 9), P(15, 9), P(20, 12), P(20, 16), P(16, 20), P(11, 20)}); }
-  else if (is("redo-2")) { Poly({P(15, 14), P(20, 9), P(15, 4)}); Poly({P(20, 9), P(9, 9), P(4, 12), P(4, 16), P(8, 20), P(13, 20)}); }
-  else if (is("arrow-left-to-line")) { Line(3, 5, 3, 19); Line(21, 12, 7, 12); Poly({P(11, 16), P(7, 12), P(11, 8)}); }
-  else if (is("arrow-right-to-line")) { Line(21, 5, 21, 19); Line(3, 12, 17, 12); Poly({P(13, 8), P(17, 12), P(13, 16)}); }
-  else if (is("chevron-up")) Poly({P(18, 15), P(12, 9), P(6, 15)});
-  else if (is("pencil")) { Poly({P(17, 3), P(21, 7), P(8, 20), P(3, 21), P(4, 16)}, true); Line(14, 6, 18, 10); }
-  else if (is("eraser")) { Poly({P(7, 21), P(3, 17), P(14, 4), P(20, 10), P(11, 19), P(9, 21)}, true); Line(11, 8, 17, 14); Line(7, 21, 21, 21); }
-  else if (is("sliders-vertical")) { Line(4, 21, 4, 14); Line(4, 10, 4, 3); Line(12, 21, 12, 12); Line(12, 8, 12, 3); Line(20, 21, 20, 16); Line(20, 12, 20, 3); Line(2, 14, 6, 14); Line(10, 8, 14, 8); Line(18, 16, 22, 16); }
-  else if (is("languages")) { Line(5, 8, 11, 8); Line(4, 14, 10, 14); Line(8, 2, 8, 4); Poly({P(7, 8), P(6, 12), P(4, 15)}); Poly({P(5, 8), P(8, 14), P(11, 17)}); Poly({P(12, 21), P(17, 10), P(22, 21)}); Line(13.5f, 18, 20.5f, 18); }
-  else if (is("type")) { Poly({P(4, 7), P(4, 4), P(20, 4), P(20, 7)}); Line(9, 20, 15, 20); Line(12, 4, 12, 20); }
-  else if (is("palette")) { Circ(12, 12, 10); dl->AddCircleFilled(P(8, 10), 1.2f * s + 0.3f, col); dl->AddCircleFilled(P(12, 7), 1.2f * s + 0.3f, col); dl->AddCircleFilled(P(16, 10), 1.2f * s + 0.3f, col); dl->AddCircleFilled(P(8, 15), 1.2f * s + 0.3f, col); }
-  else if (is("a-large-small")) { Poly({P(3, 18), P(8, 5), P(13, 18)}); Line(4.5f, 14, 11.5f, 14); Poly({P(15, 18), P(18, 10), P(21, 18)}); Line(16, 15.5f, 20, 15.5f); }
+  else if (is("frame")) { Line(21.5f, 6.5f, 2.5f, 6.5f); Line(21.5f, 17.5f, 2.5f, 17.5f); Line(6.5f, 2.5f, 6.5f, 21.5f); Line(17.5f, 2.5f, 17.5f, 21.5f); }
+  else if (is("undo-2")) {
+    Poly({P(8.5f, 5), P(4, 9.2f), P(8.5f, 13.4f)});
+    dl->PathLineTo(P(4.2f, 9.2f));
+    dl->PathArcTo(P(14.5f, 14.4f), 5.2f * s, -1.5708f, 1.5708f, 16);
+    dl->PathLineTo(P(9.5f, 19.6f));
+    dl->PathStroke(col, 0, th);
+  }
+  else if (is("redo-2")) {
+    Poly({P(15.5f, 5), P(20, 9.2f), P(15.5f, 13.4f)});
+    dl->PathLineTo(P(19.8f, 9.2f));
+    dl->PathArcTo(P(9.5f, 14.4f), 5.2f * s, -1.5708f, -4.7124f, 16);
+    dl->PathLineTo(P(14.5f, 19.6f));
+    dl->PathStroke(col, 0, th);
+  }
+  else if (is("arrow-left-to-line")) { Line(3.5f, 5, 3.5f, 19); Line(20.5f, 12, 7.5f, 12); Poly({P(11.5f, 16), P(7.5f, 12), P(11.5f, 8)}); }
+  else if (is("arrow-right-to-line")) { Line(20.5f, 5, 20.5f, 19); Line(3.5f, 12, 16.5f, 12); Poly({P(12.5f, 8), P(16.5f, 12), P(12.5f, 16)}); }
+  else if (is("pencil")) { Poly({P(16.8f, 3.2f), P(20.8f, 7.2f), P(8, 20), P(3, 21), P(4, 16)}, true); Line(13.8f, 6.2f, 17.8f, 10.2f); }
+  else if (is("eraser")) { Poly({P(7, 20.5f), P(3, 16.5f), P(14, 4.5f), P(20, 10.5f), P(10.5f, 20.5f)}, true); Line(10.8f, 8.2f, 16.8f, 14.2f); Line(7, 20.5f, 21, 20.5f); }
+  else if (is("languages")) {
+    Line(2.5f, 6.2f, 11.2f, 6.2f);
+    Line(6.8f, 3.2f, 6.8f, 6.2f);
+    dl->PathLineTo(P(9.6f, 6.2f));
+    dl->PathBezierCubicCurveTo(P(9.2f, 11.2f), P(6.5f, 15.f), P(2.5f, 17.5f), 12);
+    dl->PathStroke(col, 0, th);
+    dl->PathLineTo(P(4.2f, 8.8f));
+    dl->PathBezierCubicCurveTo(P(6.f, 12.2f), P(8.5f, 15.f), P(11.2f, 17.f), 12);
+    dl->PathStroke(col, 0, th);
+    Poly({P(12.8f, 20.2f), P(17.2f, 8.8f), P(21.5f, 20.2f)});
+    Line(14.3f, 16.5f, 20.f, 16.5f);
+  }
+  else if (is("type")) { Poly({P(4, 7), P(4, 4), P(20, 4), P(20, 7)}); Line(8.5f, 20, 15.5f, 20); Line(12, 4, 12, 20); }
+  else if (is("palette")) {
+    dl->PathArcTo(P(12, 12), 9.5f * s, 0.55f, 5.95f, 24);
+    dl->PathBezierCubicCurveTo(P(21.f, 14.5f), P(18.5f, 16.2f), P(16.2f, 15.5f), 10);
+    dl->PathBezierCubicCurveTo(P(14.2f, 14.8f), P(13.2f, 16.8f), P(14.2f, 18.8f), 10);
+    dl->PathBezierCubicCurveTo(P(15.f, 20.2f), P(13.8f, 21.5f), P(12, 21.5f), 10);
+    dl->PathStroke(col, ImDrawFlags_Closed, th);
+    DotF(7.2f, 11.2f, 1.35f);
+    DotF(9.8f, 7.2f, 1.35f);
+    DotF(14.5f, 7.2f, 1.35f);
+    DotF(16.8f, 11.f, 1.35f);
+  }
+  else if (is("a-large-small")) {
+    Poly({P(2.5f, 18.5f), P(7.2f, 5.5f), P(12.f, 18.5f)});
+    Line(4.1f, 14.2f, 10.4f, 14.2f);
+    Poly({P(14.8f, 18.5f), P(18.2f, 9.8f), P(21.5f, 18.5f)});
+    Line(15.9f, 15.8f, 20.4f, 15.8f);
+  }
   else if (is("zoom-in") || is("zoom-out") || is("scan-search")) {
-    if (is("scan-search")) { Poly({P(3, 7), P(3, 3), P(7, 3)}); Poly({P(17, 3), P(21, 3), P(21, 7)}); Poly({P(21, 17), P(21, 21), P(17, 21)}); Poly({P(7, 21), P(3, 21), P(3, 17)}); Circ(11.5f, 11.5f, 4); Line(14.5f, 14.5f, 18, 18); }
-    else { Circ(11, 11, 8); Line(21, 21, 16.7f, 16.7f); Line(8, 11, 14, 11); if (is("zoom-in")) Line(11, 8, 11, 14); }
+    if (is("scan-search")) {
+      Poly({P(3, 7), P(3, 3), P(7, 3)}); Poly({P(17, 3), P(21, 3), P(21, 7)});
+      Poly({P(21, 17), P(21, 21), P(17, 21)}); Poly({P(7, 21), P(3, 21), P(3, 17)});
+      Circ(11.2f, 11.2f, 4.f); Line(14.2f, 14.2f, 18, 18);
+    } else {
+      Circ(10.8f, 10.8f, 7.5f); Line(20.5f, 20.5f, 16.2f, 16.2f);
+      Line(7.8f, 10.8f, 13.8f, 10.8f);
+      if (is("zoom-in")) Line(10.8f, 7.8f, 10.8f, 13.8f);
+    }
   }
-  else if (is("expand")) { Poly({P(15, 3), P(21, 3), P(21, 9)}); Poly({P(9, 21), P(3, 21), P(3, 15)}); Line(21, 3, 14, 10); Line(3, 21, 10, 14); }
-  else if (is("minimize-2")) { Poly({P(4, 14), P(10, 14), P(10, 20)}); Poly({P(20, 10), P(14, 10), P(14, 4)}); Line(14, 10, 21, 3); Line(3, 21, 10, 14); }
+  else if (is("expand")) { Poly({P(15, 3.5f), P(20.5f, 3.5f), P(20.5f, 9)}); Poly({P(9, 20.5f), P(3.5f, 20.5f), P(3.5f, 15)}); Line(20.5f, 3.5f, 14, 10); Line(3.5f, 20.5f, 10, 14); }
+  else if (is("minimize-2")) { Poly({P(4, 14), P(10, 14), P(10, 20)}); Poly({P(20, 10), P(14, 10), P(14, 4)}); Line(14, 10, 20.5f, 3.5f); Line(3.5f, 20.5f, 10, 14); }
   else if (is("hand")) {
-    Poly({P(8, 21), P(5, 15), P(4, 12), P(5.5f, 11), P(8, 13), P(8, 5), P(9, 4), P(10, 5), P(10, 11), P(10, 3), P(11, 2), P(12, 3), P(12, 11),
-          P(12, 4), P(13, 3), P(14, 4), P(14, 11), P(14, 6), P(15, 5), P(16, 6), P(16, 15), P(14, 21), P(8, 21)});
+    // Clean round-topped fingers and palm without self-reversing polyline spikes
+    dl->PathLineTo(P(7.5f, 12.5f));
+    dl->PathLineTo(P(7.5f, 5.8f));
+    dl->PathArcTo(P(9.0f, 5.8f), 1.5f * s, 3.14159f, 6.28318f, 8);
+    dl->PathLineTo(P(10.5f, 11.2f));
+    dl->PathStroke(col, 0, th);
+
+    dl->PathLineTo(P(10.5f, 11.2f));
+    dl->PathLineTo(P(10.5f, 4.2f));
+    dl->PathArcTo(P(12.0f, 4.2f), 1.5f * s, 3.14159f, 6.28318f, 8);
+    dl->PathLineTo(P(13.5f, 11.2f));
+    dl->PathStroke(col, 0, th);
+
+    dl->PathLineTo(P(13.5f, 11.2f));
+    dl->PathLineTo(P(13.5f, 5.5f));
+    dl->PathArcTo(P(15.0f, 5.5f), 1.5f * s, 3.14159f, 6.28318f, 8);
+    dl->PathLineTo(P(16.5f, 12.f));
+    dl->PathStroke(col, 0, th);
+
+    dl->PathLineTo(P(16.5f, 11.2f));
+    dl->PathLineTo(P(16.5f, 7.5f));
+    dl->PathArcTo(P(18.0f, 7.5f), 1.5f * s, 3.14159f, 6.28318f, 8);
+    dl->PathLineTo(P(19.5f, 14.5f));
+    dl->PathArcTo(P(13.2f, 14.8f), 6.3f * s, 0.f, 2.35f, 14);
+    dl->PathLineTo(P(4.2f, 13.f));
+    dl->PathArcTo(P(5.5f, 11.8f), 1.6f * s, 2.35f, 5.2f, 8);
+    dl->PathLineTo(P(7.5f, 13.5f));
+    dl->PathStroke(col, 0, th);
   }
-  else if (is("magnet")) {   // horseshoe: outer arc + inner arc joined by the two legs, pole tips marked
-    std::vector<ImVec2> pl;
-    for (int i = 0; i <= 12; ++i) { float a = 3.14159265f * (1.f - i / 12.f); pl.push_back(P(12 + 8 * std::cos(a), 11 - 8 * std::sin(a))); }
-    std::vector<ImVec2> pin;
-    for (int i = 0; i <= 12; ++i) { float a = 3.14159265f * (1.f - i / 12.f); pin.push_back(P(12 + 4 * std::cos(a), 11 - 4 * std::sin(a))); }
-    std::vector<ImVec2> poly; poly.push_back(P(4, 21)); poly.push_back(P(4, 11));
-    for (auto& q : pl) poly.push_back(q);
-    poly.push_back(P(20, 11)); poly.push_back(P(20, 21)); poly.push_back(P(16, 21)); poly.push_back(P(16, 11));
-    for (int i = (int)pin.size() - 1; i >= 0; --i) poly.push_back(pin[i]);
-    poly.push_back(P(8, 11)); poly.push_back(P(8, 21));
-    dl->AddPolyline(poly.data(), (int)poly.size(), col, ImDrawFlags_Closed, th);
-    Line(4, 16, 8, 16); Line(16, 16, 20, 16);
+  else if (is("magnet")) {
+    dl->PathLineTo(P(4.5f, 5));
+    dl->PathLineTo(P(4.5f, 12.5f));
+    dl->PathArcTo(P(12, 12.5f), 7.5f * s, 3.14159f, 0.f, 16);
+    dl->PathLineTo(P(19.5f, 5));
+    dl->PathLineTo(P(15.5f, 5));
+    dl->PathLineTo(P(15.5f, 12.5f));
+    dl->PathArcTo(P(12, 12.5f), 3.5f * s, 0.f, 3.14159f, 12);
+    dl->PathLineTo(P(8.5f, 5));
+    dl->PathStroke(col, ImDrawFlags_Closed, th);
+    Line(4.5f, 8.5f, 8.5f, 8.5f);
+    Line(15.5f, 8.5f, 19.5f, 8.5f);
   }
-  else if (is("repeat")) { Poly({P(17, 2), P(21, 6), P(17, 10)}); Poly({P(3, 11), P(3, 9), P(5, 6), P(21, 6)}); Poly({P(7, 22), P(3, 18), P(7, 14)}); Poly({P(21, 13), P(21, 15), P(19, 18), P(3, 18)}); }
+  else if (is("repeat")) {
+    Poly({P(17, 2.5f), P(20.5f, 6), P(17, 9.5f)});
+    dl->PathLineTo(P(3.5f, 11));
+    dl->PathArcTo(P(6.5f, 9), 3.f * s, 3.14159f, 4.71239f, 8);
+    dl->PathLineTo(P(20.5f, 6));
+    dl->PathStroke(col, 0, th);
+    Poly({P(7, 21.5f), P(3.5f, 18), P(7, 14.5f)});
+    dl->PathLineTo(P(20.5f, 13));
+    dl->PathArcTo(P(17.5f, 15), 3.f * s, 0.f, 1.5708f, 8);
+    dl->PathLineTo(P(3.5f, 18));
+    dl->PathStroke(col, 0, th);
+  }
+  else {
+    // Unknown name: draw a visible placeholder instead of nothing, and report it once in debug builds.
+    Rect(5.f, 5.f, 19.f, 19.f, 2.5f);
+    DotF(12.f, 12.f, 1.6f);
+#ifndef NDEBUG
+    static std::vector<std::string> reported;
+    if (std::find(reported.begin(), reported.end(), n) == reported.end()) {
+      reported.emplace_back(n);
+      fprintf(stderr, "[ui::Icon] unknown icon name \"%s\"\n", n);
+    }
+#endif
+  }
 }
 
 // ───────────────────────────── interaction ─────────────────────────────

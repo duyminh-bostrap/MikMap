@@ -863,7 +863,7 @@ void LoadSettings() {
   if (!JsonValue::parse(text, o, err) || !o.isObject()) return;   // a broken settings file just means defaults
   Prefs p;
   // Ranges match the option lists in settings.cpp; an out-of-range index from a hand-edited file would index past the tables.
-  p.lang = std::clamp(o["lang"].asInt(p.lang), 0, 4); p.ui = std::clamp(o["ui"].asInt(p.ui), 0, 3); p.mono = std::clamp(o["mono"].asInt(p.mono), 0, 2);
+  p.lang = std::clamp(o["lang"].asInt(p.lang), 0, 4); p.ui = std::max(0, o["ui"].asInt(p.ui)); p.mono = std::max(0, o["mono"].asInt(p.mono));
   p.accent = std::clamp(o["accent"].asInt(p.accent), 0, 3); p.surface = std::clamp(o["surface"].asInt(p.surface), 0, 2);
   int sc = o["scale"].asInt(p.scale); p.scale = (sc == 90 || sc == 100 || sc == 110 || sc == 125 || sc == 150) ? sc : p.scale;
   p.browserW = std::clamp(o["browserW"].asInt(p.browserW), 140, 320);
