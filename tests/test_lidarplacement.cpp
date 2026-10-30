@@ -7,6 +7,9 @@
 using namespace mikmap;
 
 TEST_CASE("lidar placement: lidar o giua mep duoi tuong 4000x2250, quay mat len") {
+    LidarPose def;
+    CHECK(def.angleDeg == -90);
+
     LidarPose p{2000, 2250, -90, false};
     REQUIRE_VEC_NEAR(lidarToSurface(p, {1000, 0}), 2000, 1250, 1e-9);
     REQUIRE_VEC_NEAR(lidarToSurface(p, {1000, 500}), 1500, 1250, 1e-9);

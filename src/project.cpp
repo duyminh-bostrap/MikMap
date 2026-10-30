@@ -477,7 +477,7 @@ bool Deserialize(const JsonValue& root, App& out, std::string& err) {
         v.enabled = d["enabled"].asBool(); v.calibrated = d["calibrated"].asBool();
         readCal(d, v);
         v.roiAuto = d["roiAuto"].asBool(false);   // a file from before the Screen/Zone selector keeps its saved ROI
-        const JsonValue& po = d["pose"]; v.pose = {po["x"].asNumber(0), po["y"].asNumber(0), po["a"].asNumber(0), po["mirror"].asBool(false)};
+        const JsonValue& po = d["pose"]; v.pose = {po["x"].asNumber(0), po["y"].asNumber(0), po["a"].asNumber(v.pose.angleDeg), po["mirror"].asBool(false)};
         v.placed = d["placed"].asBool(false); v.rangeMm = (float)d["range"].asNumber(0);
         const JsonValue& bl = d["blob"]; v.blobOn = bl["on"].asBool(true);
         v.blobMinMm = (float)bl["min"].asNumber(v.blobMinMm); v.blobMaxMm = (float)bl["max"].asNumber(v.blobMaxMm); v.blobGapMm = (float)bl["gap"].asNumber(v.blobGapMm);
