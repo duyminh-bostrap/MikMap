@@ -341,6 +341,7 @@ JsonValue Serialize(const App& a) {
     dob.set("host", d.host); dob.set("port", d.port); dob.set("enabled", d.enabled); dob.set("calibrated", d.calibrated);
     dob.set("screen", d.screenId);
     dob.set("plugin", d.plugin); dob.set("config", d.config);   // plugin file name + JSON; empty for every other kind
+    dob.set("needsPack", d.needsPack);
     JsonValue cal = JsonValue::array(); for (auto& c : d.calib) cal.push(CalibJ(c));
     dob.set("calib", cal);
     JsonValue roi = JsonValue::array(); for (int i = 0; i < 4; ++i) roi.push(V2(d.roi[i]));
@@ -472,6 +473,7 @@ bool Deserialize(const JsonValue& root, App& out, std::string& err) {
       if (d.has("kind")) {
         v.host = d["host"].asString(v.host); v.port = d["port"].asInt(v.port);
         v.plugin = d["plugin"].asString(v.plugin); v.config = d["config"].asString(v.config);
+        v.needsPack = d["needsPack"].asString(v.needsPack);
         v.enabled = d["enabled"].asBool(); v.calibrated = d["calibrated"].asBool();
         readCal(d, v);
         v.roiAuto = d["roiAuto"].asBool(false);   // a file from before the Screen/Zone selector keeps its saved ROI
@@ -528,6 +530,10 @@ static fs::path ConfigDir() {
   if (const char* x = std::getenv("XDG_CONFIG_HOME")) return fs::path(x) / "MikMap";
   return HomeDir() / ".config" / "MikMap";
 #endif
+}
+std::string PacksDir() {
+  const std::u8string u8 = (ConfigDir() / "packs").u8string();
+  return std::string(reinterpret_cast<const char*>(u8.data()), u8.size());
 }
 
 std::string MediaDir() { return (fs::path(ProjectsDir()) / "media").string(); }

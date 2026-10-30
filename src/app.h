@@ -1,4 +1,4 @@
-﻿// Application state (a direct port of the prototype's React state) and screen entry points.
+// Application state (a direct port of the prototype's React state) and screen entry points.
 #pragma once
 #include "ui.h"
 #include "core/calib/LidarPlacement.h"
@@ -212,6 +212,7 @@ struct Device {
   std::string screenId;              // the Screen this sensor is calibrated against (Screen::id); empty / unknown = first screen
   std::string plugin;                // Plugin: file name inside SensorPluginDir(), never an absolute path (portable projects)
   std::string config;                // Plugin: raw JSON handed to mikmap_sensor_create()
+  std::string needsPack;             // optional sensor pack id required by this device (empty = built-in)
   bool enabled = false;              // the user wants it running (saved with the project)
   bool calibrated = false;
   std::vector<Calib> calib;          // exactly 4: tx,ty = output px of the device's screen (stage space 1920x1080); mx,my = THIS device's raw units
@@ -241,6 +242,7 @@ struct Node {
   uint32_t color = pal::coral;
   DevKind dk = DevKind::Sim;
   int prog = 0; bool err = false;   // SensorN: SensorProgress, and whether the device is in error (the chip's first missing dot goes red)
+  bool missingPack = false; std::string needsPack;   // SensorN: !d.needsPack.empty() && !PackAvailableForDevice(d) -> orange first dot + tooltip
 };
 // Add-sensor wizard (a modal popup over whatever page is open, while step > 0). Runtime only, never serialized.
 // step 1 type · 2 connect · 3 watch the new devices come up. found/pick: Hokuyo hosts ("ip" or "ip:port") and which are ticked.
@@ -752,6 +754,41 @@ const mikmap::LaserScan* DeviceScan(const Device& d);   // latest raw scan of an
 // toasted once and the plugin is skipped; a device that names a missing plugin stays in the project and reports why.
 std::string SensorPluginDir();
 const std::vector<mikmap::SensorPlugin>& SensorPlugins();
+void RescanSensorPlugins();
+// Sensor packs (P1-P7, packs.cpp): on-demand runtime / plugin / model packs under ConfigDir()/packs.
+std::string PacksDir();
+enum class PackState { NotInstalled, Downloading, Installed, Failed, UpdateAvailable, Unavailable };
+struct PackRow {
+  std::string id, name, version, installedVersion, error;
+  uint64_t sizeBytes = 0;
+  PackState state = PackState::Unavailable;
+  bool inUse = false, loaded = false, pendingRemoval = false;
+  float progress = 0;
+};
+void PacksStartup();
+void PacksShutdown();
+void PacksTick();
+bool PackKeyConfigured();
+std::vector<PackRow> PackRows();
+void PackRefreshCatalog();
+void PackInstall(const std::string& id);
+void PackInstallFromFile(const std::string& path);
+void PackCancel();
+bool PackRemove(const std::string& id);
+void PackVerifyAll();
+bool PackAvailableForDevice(const Device& d);
+PackState PackStateFor(const std::string& id);
+std::vector<std::string> InstalledPluginPackDirs();
+void MarkPackDirLoaded(const std::string& dir);
+bool IsPackDirLoaded(const std::string& dir);
+void PacksResetForTest(const std::string& rootDir, const uint8_t pubKey[32], const std::string& catalogUrl, bool allowLoopbackHttp = true);
+void SetPacksDemoMode(const std::string& mode);
+const std::string& PacksDemoMode();
+std::string FormatBytes(uint64_t bytes);
+const char* PackActionLabel(const PackRow& r);
+bool PackActionEnabled(const PackRow& r);
+const char* PackActionHint(const PackRow& r);
+const char* SensorPackHint(const Device& d, PackState st);
 void StartCapture(int step);             // wizard: average the calibration point of curDevice() over 30 consecutive frames into calib[step-1], then advance
 bool SensorSelfTest(std::string& why);   // --roundtrip: a real OscSource over loopback UDP
 void FireTouchRoutes();                  // sensor.cpp: a "touch.down" patch cord fires its clip

@@ -128,8 +128,8 @@ void PackInstaller::runRefreshCatalog() {
         m_progress.error = msg;
     };
 
-    if (!m_keyConfigured) {
-        setFailed("Built without a pack signing key — use Install from file…");
+    if (!m_keyConfigured || m_catalogUrl.empty()) {
+        setFailed("Pack signing key or catalog URL is not configured");
         return;
     }
 
@@ -182,14 +182,20 @@ void PackInstaller::runInstall(std::string packId) {
         m_progress.error = msg;
     };
 
-    if (!m_keyConfigured) {
-        setTerminal(PackJobState::Failed, "Built without a pack signing key — use Install from file…");
+    if (!m_keyConfigured || m_catalogUrl.empty()) {
+        setTerminal(PackJobState::Failed, "Pack signing key or catalog URL is not configured");
         return;
     }
 
     PackCatalog cat;
     {
         std::lock_guard<std::mutex> lk(m_mu);
+        cat = m_catalog;
+    }
+    if (cat.packs.empty()) {
+        runRefreshCatalog();
+        std::lock_guard<std::mutex> lk(m_mu);
+        if (m_progress.state != PackJobState::Done) return;
         cat = m_catalog;
     }
 
@@ -319,6 +325,12 @@ void PackInstaller::runInstall(std::string packId) {
 }
 
 void PackInstaller::runInstallFromFile(std::string pathUtf8) {
+    if (!m_keyConfigured) {
+        std::lock_guard<std::mutex> lk(m_mu);
+        m_progress.state = PackJobState::Failed;
+        m_progress.error = "Pack signing key is not configured";
+        return;
+    }
     PackEntry installed;
     std::string err;
     if (!InstallMikPackFile(pathUtf8, m_pubKey, m_store, installed, err)) {

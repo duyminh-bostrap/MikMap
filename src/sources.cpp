@@ -15,9 +15,13 @@
 #  include <sys/socket.h>
 #  include <unistd.h>
 #endif
+#include "FakeHttpServer.h"
 #include "FakeScipServer.h"
 #include "app.h"
 #include "core/util/Clock.h"
+#include "core/util/Ed25519.h"
+#include "core/util/Json.h"
+#include "core/util/Sha2.h"
 #include "io/ISensorSource.h"
 #include "io/net/NetScan.h"
 #include "io/net/TouchSender.h"
@@ -32,7 +36,10 @@
 #include <cmath>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <memory>
+#include <set>
+#include <sstream>
 #include <system_error>
 #include <thread>
 #ifdef __APPLE__
@@ -78,8 +85,8 @@ constexpr int kCaptureFrames = 30;
 struct Capture { bool on = false; std::string dev; int step = 0, n = 0; double sx = 0, sy = 0, lastFrame = -1; } g_cap;
 
 std::string Sig(const Device& d) {
-  // plugin + config are part of the signature: editing the JSON restarts the source, exactly like a new address
-  return std::to_string((int)d.kind) + "|" + d.host + "|" + std::to_string(d.port) + "|" + d.plugin + "|" + d.config;
+  // plugin + config + needsPack are part of the signature: editing the JSON or pack restarts the source
+  return std::to_string((int)d.kind) + "|" + d.host + "|" + std::to_string(d.port) + "|" + d.plugin + "|" + d.config + "|" + d.needsPack;
 }
 
 std::string FileName(const std::string& path) {
@@ -186,28 +193,64 @@ std::string SensorPluginDir() {
   return std::string(reinterpret_cast<const char*>(u8.data()), u8.size());
 }
 
-const std::vector<mikmap::SensorPlugin>& SensorPlugins() {
-  static const std::vector<mikmap::SensorPlugin> plugins = [] {
+namespace {
+std::vector<mikmap::SensorPlugin> g_plugins;
+std::set<std::string> g_scannedPluginDirs;
+std::set<std::string> g_loadedPluginPaths;
+bool g_pluginsInitialized = false;
+}  // namespace
+
+void RescanSensorPlugins() {
+  g_pluginsInitialized = true;
+  const std::string baseDir = SensorPluginDir();
+  std::vector<std::string> dirs;
+  if (!baseDir.empty()) dirs.push_back(baseDir);
+  for (const auto& pd : InstalledPluginPackDirs()) {
+    if (!pd.empty()) dirs.push_back(pd);
+  }
+  for (const auto& dir : dirs) {
+    if (g_scannedPluginDirs.count(dir) > 0) continue;
+    std::error_code ec;
+    const std::filesystem::path dp(std::u8string(dir.begin(), dir.end()));
+    if (!std::filesystem::exists(dp, ec)) continue;
+    g_scannedPluginDirs.insert(dir);
     std::vector<std::string> errors;
-    auto found = mikmap::scanPluginDir(SensorPluginDir(), errors);
-    for (auto& e : errors) A.notify("Sensor plugin: " + e);   // once per bad DLL, not on every tick
-    return found;
-  }();
-  return plugins;
+    auto found = mikmap::scanPluginDir(dir, errors);
+    for (auto& e : errors) A.notify("Sensor plugin: " + e);
+    for (auto& p : found) {
+      if (g_loadedPluginPaths.insert(p.path).second) {
+        g_plugins.push_back(std::move(p));
+        if (dir != baseDir) MarkPackDirLoaded(dir);
+      }
+    }
+  }
+}
+
+const std::vector<mikmap::SensorPlugin>& SensorPlugins() {
+  if (!g_pluginsInitialized) RescanSensorPlugins();
+  return g_plugins;
 }
 
 void SensorsTick(double now) {
+  PacksTick();
   SensorPlugins();   // scan the plugin folder once on the first tick (a missing folder is not an error)
-  for (auto it = g_live.begin(); it != g_live.end();) {   // a removed or disabled device, or a changed address, stops its source
+  for (auto it = g_live.begin(); it != g_live.end();) {   // a removed or disabled device, a missing pack, or a changed address stops its source
     const Device* d = nullptr; for (auto& x : A.devices) if (x.id == it->first) { d = &x; break; }
-    if (!d || !d->enabled || d->kind == DevKind::Sim || it->second.sig != Sig(*d)) it = g_live.erase(it); else ++it;
+    if (!d || !d->enabled || !PackAvailableForDevice(*d) || d->kind == DevKind::Sim || it->second.sig != Sig(*d)) it = g_live.erase(it); else ++it;
   }
   if (g_cap.on && A.wizardStep != g_cap.step) g_cap.on = false;   // wizard cancelled, or another device selected
   bool fire = false;
   for (auto& d : A.devices) {
     ApplyPlacement(d);   // a placed lidar follows its pose and its screen's mm size wherever they were edited (Mapping, undo)
     ApplyRoiAuto(d);     // likewise its ROI in Screen mode; setParams below hands it to the source
-    if (d.kind == DevKind::Sim) { d.status = d.enabled ? (int)mikmap::SourceStatus::Running : (int)mikmap::SourceStatus::Stopped; continue; }
+    if (!PackAvailableForDevice(d)) {
+      d.fps = 0; d.latencyMs = 0; d.packets = 0;
+      d.status = (int)mikmap::SourceStatus::Error;
+      d.error = "Needs pack: " + d.needsPack;
+      d.touches.clear();
+      continue;
+    }
+    if (d.kind == DevKind::Sim) { d.status = d.enabled ? (int)mikmap::SourceStatus::Running : (int)mikmap::SourceStatus::Stopped; d.error.clear(); continue; }
     d.fps = 0; d.latencyMs = 0; d.packets = 0;
     if (!d.enabled) { d.status = (int)mikmap::SourceStatus::Stopped; d.error.clear(); d.touches.clear(); continue; }
     auto it = g_live.find(d.id);
@@ -849,6 +892,154 @@ bool SensorSelfTest(std::string& why) {
   ql.plugin = "no_such_plugin.dll"; ql.enabled = false; SensorsTick(now()); ql.enabled = true; SensorsTick(now());
   if (dev("selftest-p").status != (int)mikmap::SourceStatus::Error || dev("selftest-p").error.find("plugin not found") == std::string::npos)
     return fail("sensor: a missing plugin must keep the device and say where it looked");
+
+  // Sensor packs (P1-P7): needsPack round-trip, no auto-download on startup/tick, unconfigured key guard,
+  // install -> auto-connect on next tick, plugin rescan deduplication, in-use vs loaded pendingRemoval, and UI helpers.
+  {
+    if (FormatBytes(0) != "0 B" || FormatBytes(999) != "999 B" || FormatBytes(1536) != "1.5 KB" ||
+        FormatBytes(180ull * 1024 * 1024) != "180 MB" || FormatBytes(1500000000ull) != "1.4 GB")
+      return fail("packs: FormatBytes output mismatch");
+
+    PackRow rNot{"a", "A", "1.0.0", "", "", 1024, PackState::NotInstalled, false, false, false, 0.f};
+    PackRow rDl{"a", "A", "1.0.0", "", "", 1024, PackState::Downloading, false, false, false, 0.42f};
+    PackRow rInst{"a", "A", "1.0.0", "1.0.0", "", 1024, PackState::Installed, false, false, false, 1.f};
+    PackRow rInUse = rInst; rInUse.inUse = true;
+    PackRow rPend = rInst; rPend.pendingRemoval = true;
+    PackRow rUpd{"a", "A", "1.1.0", "1.0.0", "", 1024, PackState::UpdateAvailable, false, false, false, 0.f};
+    PackRow rUpdUse = rUpd; rUpdUse.inUse = true;
+    PackRow rFail{"a", "A", "1.0.0", "", "err", 1024, PackState::Failed, false, false, false, 0.f};
+    PackRow rUnav{"a", "A", "1.0.0", "", "", 1024, PackState::Unavailable, false, false, false, 0.f};
+    if (std::string(PackActionLabel(rNot)) != "Install" || !PackActionEnabled(rNot)) return fail("packs: NotInstalled action");
+    if (std::string(PackActionLabel(rDl)) != "Cancel" || !PackActionEnabled(rDl)) return fail("packs: Downloading action");
+    if (std::string(PackActionLabel(rInst)) != "Remove" || !PackActionEnabled(rInst)) return fail("packs: Installed action");
+    if (PackActionEnabled(rInUse) || std::string(PackActionHint(rInUse)) != "Turn the sensor off first") return fail("packs: InUse hint/enabled");
+    if (PackActionEnabled(rPend) || std::string(PackActionHint(rPend)) != "Removes when the app restarts") return fail("packs: pendingRemoval hint/enabled");
+    if (std::string(PackActionLabel(rUpd)) != "Update" || !PackActionEnabled(rUpd) || PackActionEnabled(rUpdUse)) return fail("packs: UpdateAvailable action");
+    if (std::string(PackActionLabel(rFail)) != "Retry" || !PackActionEnabled(rFail)) return fail("packs: Failed action");
+    if (std::string(PackActionLabel(rUnav)) != "" || PackActionEnabled(rUnav)) return fail("packs: Unavailable action");
+
+    const auto packDir = tmpdir / "mikmap_selftest_packs";
+    std::filesystem::remove_all(packDir, tec);
+    const std::u8string pdU8 = packDir.u8string();
+    const std::string packDirStr(reinterpret_cast<const char*>(pdU8.data()), pdU8.size());
+
+    // (c) unconfigured signing key: PackRows shows Unavailable and PackInstall fails with "not configured"
+    const uint8_t zeroKey[32]{};
+    PacksResetForTest(packDirStr, zeroKey, "");
+    if (PackKeyConfigured()) return fail("packs: zero key must report !PackKeyConfigured()");
+    for (const auto& r : PackRows()) if (r.state != PackState::Unavailable) return fail("packs: zero key must mark rows Unavailable");
+
+    // (a) needsPack round-trips in project file; old file without "needsPack" loads ""
+    ql.enabled = false; ql.plugin = MIKMAP_FAKE_PLUGIN_FILE; ql.needsPack = "pose-onnx";
+    if (!SaveProject(ppath, perr) || !LoadProject(ppath, perr)) return fail("packs: cannot save/load device with needsPack");
+    if (dev("selftest-p").needsPack != "pose-onnx") return fail("packs: needsPack did not survive save/load");
+    {
+      std::ifstream f(ppath, std::ios::binary); std::stringstream ss; ss << f.rdbuf();
+      mikmap::JsonValue root; std::string jerr;
+      if (!mikmap::JsonValue::parse(ss.str(), root, jerr)) return fail("packs: cannot parse saved project");
+      mikmap::JsonValue ds = mikmap::JsonValue::array(), sn = mikmap::JsonValue::object();
+      for (auto& dv : root["sensor"]["devices"].arrayItems()) {
+        mikmap::JsonValue o = mikmap::JsonValue::object();
+        for (auto& kv : dv.objectItems()) if (kv.first != "needsPack") o.set(kv.first, kv.second);
+        ds.push(o);
+      }
+      for (auto& kv : root["sensor"].objectItems()) sn.set(kv.first, kv.first == "devices" ? ds : kv.second);
+      root.set("sensor", sn);
+      std::ofstream out(ppath, std::ios::binary | std::ios::trunc); out << root.dump(2);
+    }
+    if (!LoadProject(ppath, perr)) return fail("packs: cannot load project without needsPack");
+    if (!dev("selftest-p").needsPack.empty()) return fail("packs: file without needsPack must load empty string");
+    std::filesystem::remove(ppath, tec);
+
+    // (b), (d), (e), (f), (g) full loopback cycle with FakeHttpServer + Ed25519 signed catalog + real plugin DLL
+    uint8_t seed[32]{}; for (int i = 0; i < 32; ++i) seed[i] = (uint8_t)(i + 17);
+    uint8_t pub[32]{}; mikmap::ed25519PublicFromSeed(seed, pub);
+
+    std::string dllBytes;
+    {
+      std::ifstream df( std::filesystem::path(std::u8string(fp->path.begin(), fp->path.end())), std::ios::binary);
+      std::stringstream dss; dss << df.rdbuf(); dllBytes = dss.str();
+    }
+    if (dllBytes.empty()) return fail("packs: could not read fake scan plugin DLL bytes");
+    const auto dllHash = mikmap::sha256(dllBytes.data(), dllBytes.size());
+    const std::string dllShaHex = mikmap::toHex(dllHash.data(), dllHash.size());
+
+    mikmap::test::FakeHttpServer srv;
+    if (srv.port() == 0) return fail("packs: FakeHttpServer did not bind a port");
+    srv.addRoute("/pack_pose_scan.dll", dllBytes, 200);
+    const std::string catJson =
+        "{\"packs\":[{\"id\":\"pose-onnx\",\"name\":\"Pose ONNX\",\"version\":\"1.0.0\",\"kind\":\"plugin\","
+        "\"sizeBytes\":" + std::to_string(dllBytes.size()) + ","
+        "\"files\":[{\"path\":\"pack_pose_scan.dll\",\"sha256\":\"" + dllShaHex + "\","
+        "\"size\":" + std::to_string(dllBytes.size()) + ",\"url\":\"" + srv.url("/pack_pose_scan.dll") + "\"}]}]}";
+    uint8_t sig[64]{};
+    mikmap::ed25519Sign(sig, reinterpret_cast<const uint8_t*>(catJson.data()), catJson.size(), seed);
+    srv.addRoute("/catalog.json", catJson, 200);
+    srv.addRoute("/catalog.json.sig", mikmap::toHex(sig, 64), 200);
+
+    PacksResetForTest(packDirStr, pub, srv.url("/catalog.json"), true);
+    if (srv.hits("/catalog.json") != 0 || srv.hits("/pack_pose_scan.dll") != 0)
+      return fail("packs: PacksStartup must make zero network requests");
+
+    Device& dp = dev("selftest-p");
+    dp.plugin = "pack_pose_scan.dll"; dp.config = "{\"fail_after\":0}"; dp.needsPack = "pose-onnx"; dp.enabled = true;
+    MarkSaved();
+    SensorsTick(now());
+    SensorsTick(now());
+    if (dp.status != (int)mikmap::SourceStatus::Error || dp.error != "Needs pack: pose-onnx" || DeviceSource(dp) != nullptr)
+      return fail("packs: device with missing pack must report 'Needs pack: pose-onnx' and start no source");
+    if (ProjectDirty()) return fail("packs: SensorsTick on a missing-pack device must not dirty the project");
+    if (srv.hits("/catalog.json") != 0 || srv.hits("/pack_pose_scan.dll") != 0)
+      return fail("packs: SensorsTick must never auto-download a missing pack");
+
+    // SensorPackHint pure checks
+    Device noPackDev = MakeDevice(DevKind::Sim, "np");
+    if (SensorPackHint(noPackDev, PackState::NotInstalled) != nullptr) return fail("packs: SensorPackHint must be null when needsPack is empty");
+    if (SensorPackHint(dp, PackState::Installed) != nullptr) return fail("packs: SensorPackHint must be null when pack is Installed");
+    const char* hNot = SensorPackHint(dp, PackState::NotInstalled);
+    const char* hDl  = SensorPackHint(dp, PackState::Downloading);
+    const char* hFl  = SensorPackHint(dp, PackState::Failed);
+    if (!hNot || std::string(hNot).find("Needs pack:") == std::string::npos) return fail("packs: SensorPackHint NotInstalled text");
+    if (!hDl || std::string(hDl).find("Installing ") == std::string::npos) return fail("packs: SensorPackHint Downloading text");
+    if (!hFl || std::string(hFl) != "Pack install failed \xE2\x80\x94 Retry") return fail("packs: SensorPackHint Failed text");
+
+    // (d) explicit PackInstall -> installs pack, loads plugin, and connects device on the next tick without restart
+    PackInstall("pose-onnx");
+    for (double t0 = now(); now() - t0 < kWait && !(PackAvailableForDevice(dev("selftest-p")) && DeviceScan(dev("selftest-p")));) {
+      SensorsTick(now());
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    if (!PackAvailableForDevice(dev("selftest-p")) || !DeviceSource(dev("selftest-p")) || !DeviceScan(dev("selftest-p")))
+      return fail("packs: after PackInstall the device did not auto-connect and scan on the next tick");
+
+    // (f) RescanSensorPlugins loaded pack_pose_scan.dll once; a second call does not duplicate it
+    const size_t plugCountAfterInstall = SensorPlugins().size();
+    int seenPackPlug = 0;
+    for (const auto& sp : SensorPlugins()) if (FileName(sp.path) == "pack_pose_scan.dll") ++seenPackPlug;
+    if (seenPackPlug != 1) return fail("packs: installed plugin pack must appear in SensorPlugins() exactly once");
+    RescanSensorPlugins();
+    if (SensorPlugins().size() != plugCountAfterInstall) return fail("packs: second RescanSensorPlugins() must not duplicate loaded plugins");
+
+    // (e) PackRemove while device is enabled/running is refused; when disabled, loaded plugin pack is marked pendingRemoval
+    if (PackRemove("pose-onnx")) return fail("packs: PackRemove must refuse while a device using the pack is enabled");
+    dev("selftest-p").enabled = false;
+    SensorsTick(now());
+    if (!PackRemove("pose-onnx")) return fail("packs: PackRemove must succeed once the device is turned off");
+    bool sawPending = false;
+    for (const auto& r : PackRows()) if (r.id == "pose-onnx" && r.pendingRemoval) sawPending = true;
+    if (!sawPending) return fail("packs: removing a loaded plugin pack must set pendingRemoval = true");
+    const auto installedPackSubdir = packDir / "installed" / "pose-onnx" / "1.0.0";
+    if (!std::filesystem::exists(installedPackSubdir, tec))
+      return fail("packs: pendingRemoval pack files must remain on disk until next startup");
+
+    // Next startup cleans up pendingRemoval directory
+    PacksResetForTest(packDirStr, pub, srv.url("/catalog.json"), true);
+    if (std::filesystem::exists(installedPackSubdir, tec))
+      return fail("packs: PacksStartup must delete pendingRemoval pack directory");
+
+    PacksStartup();
+    std::filesystem::remove_all(packDir, tec);
+  }
 #endif
 
   dev("selftest-a").enabled = false; dev("selftest-b").enabled = false;

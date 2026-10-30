@@ -1,4 +1,4 @@
-﻿// MikMap Pro — VJ / projection-mapping workspace (C++ / Dear ImGui / OpenGL).
+// MikMap Pro — VJ / projection-mapping workspace (C++ / Dear ImGui / OpenGL).
 #include "app.h"
 #include "core/util/Json.h"
 #include "FakeScipServer.h"
@@ -639,6 +639,7 @@ int main(int argc, char** argv) {
   std::string shot; bool screenGiven = false; int startScreen = 0, frames = 12, W = 1440, H = 900, tab = -1, page = -1;
   bool sel = false, scaleGiven = false; int selLi = 0, selCi = 0, ctxTest = 0, cliScale = 100;
   bool fakeHokuyo = false, fakePlugin = false, secondLidar = false;
+  std::string packsDemo, missingPack;
   int spage = -1, stool = -1, wizard = 0; std::string place, sendOut;   // spage / stool: the old Sensor page's flags, now Mapping's page / Output tool
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
@@ -662,6 +663,8 @@ int main(int argc, char** argv) {
     else if (a == "--second-lidar") secondLidar = true;   // test aid (with --fake-hokuyo): a second lidar on the same fake server and screen, placed elsewhere
     else if (a == "--fake-hokuyo") fakeHokuyo = true;   // test aid: point the Hokuyo device at an in-process fake SCIP server
     else if (a == "--fake-plugin") fakePlugin = true;   // test aid: add a Plugin device backed by the fake DLL this build wrote
+    else if (a == "--packs-demo" && i + 1 < argc) packsDemo = argv[++i];   // test aid: seed PackRows with empty / installed / downloading / unconfigured
+    else if (a == "--missing-pack" && i + 1 < argc) missingPack = argv[++i];   // test aid: set needsPack on the selected sensor device
     else if (a == "--wheel" && i + 1 < argc) {   // test aid: mouse wheel notch(es) at x,y,amount
       Script sc{}; sc.kind = 4; sscanf(argv[++i], "%f,%f,%f", &sc.x0, &sc.y0, &sc.x1); script.push_back(sc);
     }
@@ -706,9 +709,10 @@ int main(int argc, char** argv) {
     }
   }
   if (!shot.empty() || !roundtrip.empty()) SetSettingsPersistence(false);
+  PacksStartup();
   if (!roundtrip.empty()) {
     // Headless self-check of project persistence: save -> edit -> load must restore the saved state exactly.
-    auto fail = [](const char* w) { std::fprintf(stderr, "roundtrip FAILED: %s\n", w); return 1; };
+    auto fail = [](const char* w) { PacksShutdown(); std::fprintf(stderr, "roundtrip FAILED: %s\n", w); return 1; };
     std::string err;
     NewProject();
     if (ProjectDirty()) return fail("fresh project reports dirty");
@@ -1682,6 +1686,7 @@ int main(int argc, char** argv) {
       }
       NewProject();
     }
+    PacksShutdown();
     std::printf("roundtrip OK\n"); return 0;
   }
   gAssets = FindAssets(argv[0]);
@@ -1793,6 +1798,13 @@ int main(int argc, char** argv) {
       A.wizard.manualHost = "192.0.2.1"; SensorWizardAddManual();   // TEST-NET: never answers, so the table shows a failing device
       SensorWizardNext();
     }
+  }
+  if (!packsDemo.empty()) {
+    SetPacksDemoMode(packsDemo);
+    if (wizard == 0 && missingPack.empty()) { A.settingsOpen = true; A.setTab = 5; }
+  }
+  if (!missingPack.empty()) if (Device* d = A.curDevice()) {
+    d->needsPack = missingPack; d->enabled = true;
   }
   if (!place.empty()) if (Device* d = A.curDevice()) if (Screen* s = DeviceScreen(*d)) {
     float v[5] = {}; const char* c = place.c_str();
@@ -2049,6 +2061,7 @@ int main(int argc, char** argv) {
   }
   CloseOutput();
   SensorsShutdown();
+  PacksShutdown();
   ImGui_ImplOpenGL3_Shutdown();
   ImGui_ImplGlfw_Shutdown();
   ImGui::DestroyContext();

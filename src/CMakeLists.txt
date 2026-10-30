@@ -25,6 +25,8 @@ set(REPO "${CMAKE_CURRENT_SOURCE_DIR}/..")
 
 option(MIKMAP_CONSOLE "Keep the console window (debugging, Windows only)" OFF)
 option(MIKMAP_WITH_ENGINE "Compile the repo's core/io engine into this target" ON)
+set(MIKMAP_PACK_PUBKEY_HEX "" CACHE STRING "64-hex-char Ed25519 public key for sensor pack verification")
+set(MIKMAP_PACK_CATALOG_URL "" CACHE STRING "URL of the signed sensor pack catalog.json")
 
 include(FetchContent)
 
@@ -73,7 +75,10 @@ add_executable(mikmap ${NEWUI_SOURCES} ${ENGINE_SOURCES} ${IMGUI_SOURCES})
 # be reproducible). The licence check compares it with the entitlement's `updates_until`, so it must be a
 # compile-time constant, never read from the machine clock at run time. Shown in the About message.
 string(TIMESTAMP MIKMAP_BUILD_DATE "%Y-%m-%d" UTC)
-target_compile_definitions(mikmap PRIVATE "BUILD_DATE=\"${MIKMAP_BUILD_DATE}\"")
+target_compile_definitions(mikmap PRIVATE
+  "BUILD_DATE=\"${MIKMAP_BUILD_DATE}\""
+  "MIKMAP_PACK_PUBKEY_HEX=\"${MIKMAP_PACK_PUBKEY_HEX}\""
+  "MIKMAP_PACK_CATALOG_URL=\"${MIKMAP_PACK_CATALOG_URL}\"")
 
 # tests/ is on the include path for FakeScipServer.h: the Hokuyo self-test and --fake-hokuyo drive a
 # real HokuyoSource against it, so the driver is verified without hardware.
@@ -92,7 +97,7 @@ if(WIN32)
   # in output.cpp/clipart.cpp for <GL/gl.h>) otherwise #defines min/max as macros,
   # which breaks std::min/std::max/std::clamp calls under MSVC.
   target_compile_definitions(mikmap PRIVATE NOMINMAX)
-  target_link_libraries(mikmap PRIVATE dwmapi ws2_32 iphlpapi)   # dark titlebar (main.cpp) + UDP socket (OscSource.cpp) + adapter list (NetScan.cpp)
+  target_link_libraries(mikmap PRIVATE dwmapi ws2_32 iphlpapi winhttp)   # dark titlebar (main.cpp) + UDP socket (OscSource.cpp) + adapter list (NetScan.cpp) + packs (HttpGet.cpp)
   # GUI subsystem: no console window. Works for both MSVC (/SUBSYSTEM:WINDOWS)
   # and MinGW (-mwindows), unlike a hardcoded linker flag.
   if(NOT MIKMAP_CONSOLE)
