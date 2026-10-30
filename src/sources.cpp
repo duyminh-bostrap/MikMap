@@ -964,14 +964,25 @@ bool SensorSelfTest(std::string& why) {
     const auto dllHash = mikmap::sha256(dllBytes.data(), dllBytes.size());
     const std::string dllShaHex = mikmap::toHex(dllHash.data(), dllHash.size());
 
+    const std::string modelBytes = "onnx-pose-weights-payload";
+    const auto modelHash = mikmap::sha256(modelBytes.data(), modelBytes.size());
+    const std::string modelShaHex = mikmap::toHex(modelHash.data(), modelHash.size());
+
     mikmap::test::FakeHttpServer srv;
     if (srv.port() == 0) return fail("packs: FakeHttpServer did not bind a port");
     srv.addRoute("/pack_pose_scan.dll", dllBytes, 200);
+    srv.addRoute("/pose_model.onnx", modelBytes, 200);
     const std::string catJson =
-        "{\"packs\":[{\"id\":\"pose-onnx\",\"name\":\"Pose ONNX\",\"version\":\"1.0.0\",\"kind\":\"plugin\","
+        "{\"packs\":["
+        "{\"id\":\"pose-onnx\",\"name\":\"Pose ONNX\",\"version\":\"1.0.0\",\"kind\":\"plugin\","
         "\"sizeBytes\":" + std::to_string(dllBytes.size()) + ","
         "\"files\":[{\"path\":\"pack_pose_scan.dll\",\"sha256\":\"" + dllShaHex + "\","
-        "\"size\":" + std::to_string(dllBytes.size()) + ",\"url\":\"" + srv.url("/pack_pose_scan.dll") + "\"}]}]}";
+        "\"size\":" + std::to_string(dllBytes.size()) + ",\"url\":\"" + srv.url("/pack_pose_scan.dll") + "\"}]},"
+        "{\"id\":\"pose-model\",\"name\":\"Pose Weights\",\"version\":\"1.0.0\",\"kind\":\"model\","
+        "\"sizeBytes\":" + std::to_string(modelBytes.size()) + ","
+        "\"files\":[{\"path\":\"pose_model.onnx\",\"sha256\":\"" + modelShaHex + "\","
+        "\"size\":" + std::to_string(modelBytes.size()) + ",\"url\":\"" + srv.url("/pose_model.onnx") + "\"}]}"
+        "]}";
     uint8_t sig[64]{};
     mikmap::ed25519Sign(sig, reinterpret_cast<const uint8_t*>(catJson.data()), catJson.size(), seed);
     srv.addRoute("/catalog.json", catJson, 200);
@@ -1032,9 +1043,20 @@ bool SensorSelfTest(std::string& why) {
     if (!std::filesystem::exists(installedPackSubdir, tec))
       return fail("packs: pendingRemoval pack files must remain on disk until next startup");
 
-    // Next startup cleans up pendingRemoval directory
+    // Next startup cleans up pendingRemoval directory (test with pose-model so OS LoadLibraryW lock does not block same-process delete on Windows)
+    PackInstall("pose-model");
+    for (double t0 = now(); now() - t0 < kWait && PackStateFor("pose-model") != PackState::Installed;) {
+      SensorsTick(now());
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    const auto modelPackSubdir = packDir / "installed" / "pose-model" / "1.0.0";
+    const std::u8string mpU8 = modelPackSubdir.u8string();
+    MarkPackDirLoaded(std::string(reinterpret_cast<const char*>(mpU8.data()), mpU8.size()));
+    if (!PackRemove("pose-model")) return fail("packs: PackRemove on pose-model must succeed");
+    if (!std::filesystem::exists(modelPackSubdir, tec))
+      return fail("packs: pendingRemoval model pack must remain on disk until next startup");
     PacksResetForTest(packDirStr, pub, srv.url("/catalog.json"), true);
-    if (std::filesystem::exists(installedPackSubdir, tec))
+    if (std::filesystem::exists(modelPackSubdir, tec))
       return fail("packs: PacksStartup must delete pendingRemoval pack directory");
 
     PacksStartup();

@@ -491,20 +491,21 @@ const char* SensorPackHint(const Device& d, PackState st) {
     }
   }
 
-  static thread_local std::string s_buf;
+  static thread_local std::string s_buf[6];
+  std::string& out = s_buf[(unsigned)st % 6u];
   if (st == PackState::Downloading) {
     const int pct = std::clamp((int)std::lround(prog * 100.f), 0, 100);
-    s_buf = "Installing " + name + " " + std::to_string(pct) + "%";
-    return s_buf.c_str();
+    out = "Installing " + name + " " + std::to_string(pct) + "%";
+    return out.c_str();
   }
   if (st == PackState::Failed) {
-    s_buf = "Pack install failed \xE2\x80\x94 Retry";
-    return s_buf.c_str();
+    out = "Pack install failed \xE2\x80\x94 Retry";
+    return out.c_str();
   }
   if (sz > 0) {
-    s_buf = "Needs pack: " + name + " \xE2\x80\x94 Install (" + FormatBytes(sz) + ")";
+    out = "Needs pack: " + name + " \xE2\x80\x94 Install (" + FormatBytes(sz) + ")";
   } else {
-    s_buf = "Needs pack: " + name + " \xE2\x80\x94 Install";
+    out = "Needs pack: " + name + " \xE2\x80\x94 Install";
   }
-  return s_buf.c_str();
+  return out.c_str();
 }
