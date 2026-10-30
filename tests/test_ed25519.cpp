@@ -222,3 +222,36 @@ TEST_CASE("Ed25519: sign -> verify round trip on a fresh seed, nullptr message w
     ed25519Sign(sig, nullptr, 0, seed);
     CHECK(ed25519Verify(sig, nullptr, 0, pub));
 }
+
+// Small-order PUBLIC KEY on its own: R = B + jA (never small order) and S = 1 satisfy
+// [S]B = R + [k]A whenever j + k = 0 mod ord(A). Trying every j makes the forgery succeed
+// for every message unless the public-key small-order check rejects A.
+// R encodings computed with the independent Python RFC reference (B + jA).
+TEST_CASE("Ed25519: small-order public key alone is rejected (universal forgery with R = B + jA, S = 1)") {
+    struct Case { const char* pub; std::vector<const char*> r; };
+    const Case cases[] = {
+        {"0100000000000000000000000000000000000000000000000000000000000000",  // identity
+         {"5866666666666666666666666666666666666666666666666666666666666666"}},
+        {"ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",  // order 2
+         {"5866666666666666666666666666666666666666666666666666666666666666",
+          "9599999999999999999999999999999999999999999999999999999999999999"}},
+        {"0000000000000000000000000000000000000000000000000000000000000000",  // order 4
+         {"5866666666666666666666666666666666666666666666666666666666666666",
+          "5252cc0a7f208133b620acbd4537eba2a4123bf0a8c2e4f980c3b31bb69765ea",
+          "9599999999999999999999999999999999999999999999999999999999999999",
+          "9bad33f580df7ecc49df5342bac8145d5bedc40f573d1b067f3c4ce449689a15"}},
+    };
+    const std::string msgs[] = {"", "abc", "sensor pack", "x"};
+    for (const Case& c : cases) {
+        const auto pub = bytes(c.pub);
+        for (const std::string& m : msgs) {
+            const uint8_t* mp = m.empty() ? nullptr : reinterpret_cast<const uint8_t*>(m.data());
+            for (const char* r : c.r) {
+                uint8_t sig[64] = {};
+                std::memcpy(sig, bytes(r).data(), 32);
+                sig[32] = 1;  // S = 1
+                CHECK(!ed25519Verify(sig, mp, m.size(), pub.data()));
+            }
+        }
+    }
+}

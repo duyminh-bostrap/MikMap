@@ -6,6 +6,10 @@
 //  not canonically encoded (y >= p, or x = 0 with the sign bit set) or has
 //  small order (8P = identity). The check itself is the cofactorless
 //  [S]B == R + [H(R||A||M)]A, compared on the canonical encoding of R.
+//  Cofactorless (RFC 8032 permits it; same policy as libsodium), so a
+//  mixed-order public key is accepted: harmless for a fixed embedded publisher key.
+//  The `y >= p` and `x = 0 with sign bit` decode checks are defence in depth:
+//  not reachable through the public API without the key's discrete log.
 //
 //  Sign/PublicFromSeed exist for the packaging tool (mikmap_packtool) and the
 //  tests, not for general-purpose signing: the scalar multiplication swaps
