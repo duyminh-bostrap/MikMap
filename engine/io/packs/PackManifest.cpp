@@ -191,6 +191,11 @@ bool parsePackInfo(const JsonValue& v, PackInfo& out, std::string& err) {
             out.needs.push_back(std::move(dep));
         }
     }
+    if (v.has("minAppVersion")) {
+        if (!v["minAppVersion"].isString() || !parseVersion(v["minAppVersion"].asString(), ver))
+            return fail(err, who + "bad minAppVersion (need N.N.N)");
+        out.minAppVersion = v["minAppVersion"].asString();
+    }
     if (v.has("provides")) {
         if (!v["provides"].isArray() || v["provides"].size() > kMaxProvides) return fail(err, who + "bad provides");
         for (const JsonValue& p : v["provides"].arrayItems()) {
@@ -199,6 +204,42 @@ bool parsePackInfo(const JsonValue& v, PackInfo& out, std::string& err) {
         }
     }
     return true;
+}
+
+JsonValue toJson(const PackInfo& p) {
+    JsonValue v = JsonValue::object();
+    v.set("id", p.id);
+    v.set("name", p.name);
+    v.set("version", p.version);
+    v.set("kind", p.kind == Kind::Runtime ? "runtime" : (p.kind == Kind::Model ? "model" : "plugin"));
+    v.set("sizeBytes", static_cast<double>(p.sizeBytes));
+    if (!p.minAppVersion.empty()) v.set("minAppVersion", p.minAppVersion);
+    JsonValue files = JsonValue::array();
+    for (const FileEntry& fe : p.files) {
+        JsonValue f = JsonValue::object();
+        f.set("path", fe.path);
+        f.set("sha256", fe.sha256Hex);
+        f.set("size", static_cast<double>(fe.size));
+        if (!fe.url.empty()) f.set("url", fe.url);
+        files.push(std::move(f));
+    }
+    v.set("files", std::move(files));
+    if (!p.needs.empty()) {
+        JsonValue req = JsonValue::array();
+        for (const Dependency& d : p.needs) {
+            JsonValue dv = JsonValue::object();
+            dv.set("id", d.id);
+            dv.set("min", d.minVersion);
+            req.push(std::move(dv));
+        }
+        v.set("requires", std::move(req));
+    }
+    if (!p.provides.empty()) {
+        JsonValue prov = JsonValue::array();
+        for (const std::string& s : p.provides) prov.push(s);
+        v.set("provides", std::move(prov));
+    }
+    return v;
 }
 
 bool parseCatalog(const std::string& text, Catalog& out, std::string& err) {

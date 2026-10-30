@@ -29,6 +29,7 @@ struct PackInfo {
     std::string id, name, version;
     Kind        kind = Kind::Plugin;
     uint64_t    sizeBytes = 0;
+    std::string minAppVersion;          // tuỳ chọn: N.N.N
     std::vector<FileEntry>   files;
     std::vector<Dependency>  needs;     // khoá JSON là "requires" (từ khoá C++20)
     std::vector<std::string> provides;
@@ -44,6 +45,7 @@ constexpr uint64_t kMaxFileBytes    = 2ull * 1024 * 1024 * 1024;
 bool isSafeRelPath(const std::string& p);
 
 bool parsePackInfo(const JsonValue& v, PackInfo& out, std::string& err);
+JsonValue toJson(const PackInfo& p);
 bool parseCatalog(const std::string& text, Catalog& out, std::string& err);
 
 /// -1/0/1, so số từng thành phần (N.N.N; chuỗi sai dạng coi như 0.0.0).
