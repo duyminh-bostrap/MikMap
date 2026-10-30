@@ -48,6 +48,7 @@ inline uint64_t rotr64(uint64_t x, int n) { return (x >> n) | (x << (64 - n)); }
 // Shared buffering: feed bytes, call blk() on every full block.
 template <size_t B, class Blk>
 void feed(uint8_t* buf, size_t& bufLen, uint64_t& total, const void* data, size_t n, Blk blk) {
+    if (n == 0) return;  // data may be nullptr: never memcpy from it
     const uint8_t* p = static_cast<const uint8_t*>(data);
     total += n;
     if (bufLen) {
@@ -102,6 +103,7 @@ Sha256Digest Sha256::finish() {
     Sha256Digest out{};
     for (int i = 0; i < 8; ++i)
         for (int j = 0; j < 4; ++j) out[4 * i + j] = uint8_t(h_[i] >> (24 - 8 * j));
+    *this = Sha256();
     return out;
 }
 
@@ -147,6 +149,7 @@ Sha512Digest Sha512::finish() {
     Sha512Digest out{};
     for (int i = 0; i < 8; ++i)
         for (int j = 0; j < 8; ++j) out[8 * i + j] = uint8_t(h_[i] >> (56 - 8 * j));
+    *this = Sha512();
     return out;
 }
 

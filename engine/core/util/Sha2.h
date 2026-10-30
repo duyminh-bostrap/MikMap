@@ -2,7 +2,8 @@
 //  core/util/Sha2.h — SHA-256 / SHA-512 (FIPS 180-4), STL only
 //
 //  Used to verify downloaded sensor packs against the signed catalog.
-//  Streaming: update() any number of times, then finish() once.
+//  Streaming: update() any number of times, then finish(). finish() resets
+//  the object to a fresh state, so it can be reused for the next message.
 // ════════════════════════════════════════════════════════════════════════
 #pragma once
 
