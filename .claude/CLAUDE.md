@@ -34,13 +34,13 @@ engine/i18n/    bảng chuỗi Tiếng Việt/English (Localization.h/cpp), ch�
 src/            app GLFW + Dear ImGui HIỆN TẠI (đổi tên từ newui/) — CMake riêng
 tests/          unit test cho engine/, chạy trên CI không cần GPU
 architecture.md kiến trúc ĐÍCH (xem ghi chú vị trí vật lý ở đầu file đó)
-features.md     backlog 142 mục, chấm điểm theo code thật của src/
+features.md     backlog 149 mục, chấm điểm theo code thật của src/
 ```
 
 `src/` hiện là struct riêng (`src/app.h` và các file phẳng
-`calib.cpp`/`deck.cpp`/`mapping.cpp`/`sensor.cpp`/`output.cpp`/`clipart.cpp`/`project.cpp`/...), **link `engine/core`+
-`engine/io` vào, nhưng chỉ gọi một phần: `core/util/Json` (ở `project.cpp`), `core/calib/LidarPlacement`,
-`core/math` (EdgeBlend/Triangulate), `io/net` (NetScan/TouchSender), `io/sources` + `io/plugin` (thread sensor);
+`calib.cpp`/`deck.cpp`/`mapping.cpp`/`sensor.cpp`/`output.cpp`/`clipart.cpp`/`project.cpp`/`packs.cpp`/...), **link `engine/core`+
+`engine/io` vào, nhưng chỉ gọi một phần: `core/util/Json` (ở `project.cpp`), `core/util/Sha2` + `Ed25519`, `core/calib/LidarPlacement`,
+`core/math` (EdgeBlend/Triangulate), `io/net` (NetScan/TouchSender), `io/sources` + `io/plugin` + `io/packs` (thread sensor + gói cảm biến tải khi cần);
 model/warp/calib DLT/ProjectIO của engine CHƯA gọi tới** — xem "Việc còn lại để ghép trọn" ở
 `README.md`. Đừng nhầm đây là cây thư mục layered đầy đủ ở `architecture.md`
 §2 (`app/`,`ui/`,`render/`,`io/`,`core/`) — cây đó mô tả bản cũ trên nhánh
@@ -135,9 +135,11 @@ ngoài". Định nghĩa ở `engine/core/model/IWarp.h`; mọi `IWarp` mới ph�
 
 ## `src/` — tình trạng THẬT (theo `features.md`, không theo vẻ ngoài)
 
-71 mục `[x]` (hành vi thật) · 14 mục `[~]` (chỉ UI/một phần — đọc "Ghi chú
+77 mục `[x]` (hành vi thật) · 15 mục `[~]` (chỉ UI/một phần — đọc "Ghi chú
 kiểm tra" cuối `features.md` để biết chính xác cái gì còn giả) · 57 mục `[ ]`,
-trên 142 mục Resolume-parity (đếm lại 2026-10-28 từ các dòng bảng).
+trên 149 mục Resolume-parity (đếm lại 2026-10-30 từ các dòng bảng).
+
+**Gói cảm biến tải khi cần (`P1`–`P7`, 2026-10-30):** `engine/core/util/Sha2.*` + `Ed25519.*` (tự gói, chỉ STL) và `engine/io/packs/*` (`PackManifest`, `PackStore`, `HttpGet`, `PackInstaller`, `MikPack` + CLI `mikmap_packtool`). Trong `src/`: `src/packs.cpp` quản lý vòng đời gói dưới `<ConfigDir>/packs`, `Device::needsPack` lưu trong `.mikmap`, tab thứ 6 **Cài đặt › Gói cảm biến** (`src/settings.cpp`), cài trực tiếp từ thẻ trong popup **Add sensor** (`src/sensor.cpp`), cảnh báo thiếu gói trên dòng sensor (`TreeRow` ở `src/mapping.cpp`) và mục **Connection** (`src/sensor.cpp`). **Quy tắc bất di bất dịch:** (1) không bao giờ tự tải gói khi mở project hay trong `SensorsTick` — chỉ tải khi người dùng bấm; (2) khoá công khai `MIKMAP_PACK_PUBKEY_HEX` rỗng/toàn 0 thì từ chối cài thay vì bỏ qua chữ ký; (3) không bao giờ gọi `FreeLibrary`/`dlclose` trong tiến trình đang chạy — gói plugin đã nạp DLL khi gỡ chỉ đánh dấu `pendingRemoval = true` để `PacksStartup` xoá ở lần khởi động kế tiếp. `P7` đang `[~]` vì URL catalog mặc định để trống và các gói nội dung thật (ONNX pose S1, Orbbec S3, YDLIDAR G23) thuộc các kế hoạch sau.
 
 **Đợt 2026-09-23:** F8/G8/A4 chuyển `[~]` → `[x]`. F8/G8: preset output
 (`Screen`) và calibration profile (điểm + ROI/noise) giờ lưu/nạp được thành

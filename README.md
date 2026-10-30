@@ -22,9 +22,9 @@ còn ở giai đoạn prototype:
 | | |
 |---|---|
 | Giao diện | 2 trang Composition · Mapping (Mapping gộp máy chiếu và sensor; cây chia mỗi screen thành hai phần Slices / Sensors, kéo-thả slice/sensor sang screen khác; thêm sensor là popup trên mọi trang) + cửa sổ Cài đặt, bám bản thiết kế `MikMap Workspace.dc.html` |
-| Engine dùng chung (`engine/core`, `engine/io`) | Đã biên dịch & link vào app; `src/` gọi `core/util/Json` (lưu/mở dự án), `core/calib/LidarPlacement`, `core/math` (EdgeBlend/Triangulate), `io/net`, `io/sources`, `io/plugin` (thread sensor); **chưa gọi model/warp/calib DLT/ProjectIO thật** |
+| Engine dùng chung (`engine/core`, `engine/io`) | Đã biên dịch & link vào app; `src/` gọi `core/util/Json` (lưu/mở dự án), `core/util/Sha2` + `Ed25519` (xác minh gói), `core/calib/LidarPlacement`, `core/math` (EdgeBlend/Triangulate), `io/net`, `io/sources`, `io/plugin`, `io/packs` (thread sensor + gói cảm biến tải khi cần); **chưa gọi model/warp/calib DLT/ProjectIO thật** |
 | Mô hình dữ liệu app hiện tại | Struct riêng trong `src/app.h`, chưa dùng `core/model` thật |
-| Đối chiếu chi tiết | `features.md` — 71 mục `[x]` hành vi thật · 14 mục `[~]` một phần · 57 mục `[ ]`, trên 142 mục Resolume-parity |
+| Đối chiếu chi tiết | `features.md` — 77 mục `[x]` hành vi thật · 15 mục `[~]` một phần · 57 mục `[ ]`, trên 149 mục Resolume-parity |
 | Build đa nền tảng | **Đã kiểm chứng thật**: macOS (2026-09-22, build+chạy trên máy Mac thật) · Linux (2026-09-22, build native + chạy dưới Xvfb, chụp màn hình) · Windows — **hai đường kiểm chứng riêng**: cross-compile MinGW-w64 (2026-09-22, ra `mikmap.exe` PE32+ thật, chạy qua Wine, chụp màn hình) **và MSVC thật trên Windows thật** (2026-09-23, build Debug lẫn Release qua cả dòng lệnh lẫn task/F5 của VS Code, chạy được) — cả 3 OS cùng render đúng giao diện, cùng tiếng Việt có dấu. **Chưa kiểm:** build Linux/macOS của code trang Sensor (2026-10-28: `engine/io/net` NetScan/TouchSender, `src/sources.cpp`) — mới build/chạy trên Windows MSVC |
 
 Xem [`features.md`](features.md) để biết chính xác cái gì thật/cái gì chỉ có
@@ -45,9 +45,10 @@ dần vào.
 engine/     core/ + io/ + i18n — C++20 THUẦN, build bằng CMake gốc, không cần GPU/GLFW
             (dùng chung, không thuộc riêng UI nào)
 src/        App GLFW + Dear ImGui hiện tại — CMake riêng (src/CMakeLists.txt)
+tools/      Công cụ đi kèm (pose_bridge Python, mikmap_packtool đóng gói/ký .mikpack)
 tests/      Unit test cho engine/ — chạy được trên CI, không cần GPU
 architecture.md   Kiến trúc đích: quy tắc phụ thuộc, chuỗi biến đổi toạ độ, mô hình thread
-features.md       Backlog 142 mục kiểu Resolume, chấm điểm theo code thật của src/
+features.md       Backlog 149 mục kiểu Resolume, chấm điểm theo code thật của src/
 ```
 
 ---
