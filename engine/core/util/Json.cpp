@@ -1,5 +1,6 @@
 #include "core/util/Json.h"
 
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -69,8 +70,14 @@ public:
         if (m_pos >= m_text.size()) return fail("het du lieu bat ngo");
 
         switch (m_text[m_pos]) {
-        case '{': return parseObject(out);
-        case '[': return parseArray(out);
+        case '{': case '[': {
+            // Giới hạn độ sâu: file độc hại không được làm tràn stack.
+            if (m_depth >= kMaxDepth) return fail("long nhau qua sau");
+            ++m_depth;
+            const bool ok = m_text[m_pos] == '{' ? parseObject(out) : parseArray(out);
+            --m_depth;
+            return ok;
+        }
         case '"': {
             std::string s;
             if (!parseString(s)) return false;
@@ -150,6 +157,8 @@ private:
             case 'u': {
                 if (m_pos + 4 > m_text.size()) return fail("escape \\u bi cat cut");
                 const std::string hex = m_text.substr(m_pos, 4);
+                for (char h : hex)
+                    if (!std::isxdigit(static_cast<unsigned char>(h))) return fail("escape \\u khong phai hex");
                 m_pos += 4;
                 const auto code = static_cast<unsigned>(std::strtoul(hex.c_str(), nullptr, 16));
                 // Mã hoá UTF-8. Cặp thay thế (surrogate) không xử lý —
@@ -247,6 +256,8 @@ private:
 
     const std::string& m_text;
     size_t m_pos = 0;
+    int m_depth = 0;
+    static constexpr int kMaxDepth = 128;
     std::string m_error;
 };
 

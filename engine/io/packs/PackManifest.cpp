@@ -8,7 +8,7 @@ namespace mikmap::packs {
 
 namespace {
 
-constexpr size_t kMaxPathLen = 240, kMaxComponentLen = 100, kMaxJsonDepth = 64,
+constexpr size_t kMaxPathLen = 240, kMaxComponentLen = 100,
                  kMaxDepChain = 64, kMaxNeeds = 32, kMaxProvides = 32;
 
 std::string lower(std::string s) {
@@ -16,11 +16,14 @@ std::string lower(std::string s) {
     return s;
 }
 
+bool isSafeRelPathFwd(const std::string& p);
+
+// Id là tên thư mục: ngoài bộ ký tự còn phải qua luật tên tệp (chặn "...", "foo.", "con", "nul").
 bool isSafeId(const std::string& s) {
-    if (s.empty() || s.size() > 64 || s == "." || s == "..") return false;
+    if (s.empty() || s.size() > 64) return false;
     for (char c : s)
         if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '.' || c == '_' || c == '-')) return false;
-    return true;
+    return isSafeRelPathFwd(s);
 }
 
 // N.N.N, mỗi N 1-9 chữ số, không số 0 đứng đầu ("01" bị từ chối).
@@ -45,17 +48,39 @@ bool isLowerHex64(const std::string& s) {
 }
 
 bool isReservedDeviceName(const std::string& comp) {
-    const std::string stem = lower(comp.substr(0, comp.find('.')));  // Windows: "con.txt.x" cũng là CON
+    // Windows: "con.txt.x" cũng là CON; dấu cách/chấm cuối của stem bị bỏ ("con .x" = CON).
+    std::string stem = lower(comp.substr(0, comp.find('.')));
+    while (!stem.empty() && (stem.back() == ' ' || stem.back() == '.')) stem.pop_back();
+    if (stem == "conin$" || stem == "conout$" || stem == "clock$") return true;
     if (stem == "con" || stem == "prn" || stem == "aux" || stem == "nul") return true;
     return stem.size() == 4 && (stem.compare(0, 3, "com") == 0 || stem.compare(0, 3, "lpt") == 0)
            && stem[3] >= '1' && stem[3] <= '9';
 }
 
-// Parse để mềm: HTTP layer (Task 5) mới áp chính sách thật.
+// Parse vẫn mềm (chính sách thật ở HTTP layer, Task 5) nhưng không để lọt
+// "http://localhost.evil.com", userinfo ("@") hay ký tự điều khiển.
 bool isSafeUrl(const std::string& u) {
     if (u.empty() || u.size() > 2048) return false;
     for (unsigned char c : u) if (c <= 0x20 || c >= 0x7F) return false;
-    return u.rfind("https://", 0) == 0 || u.rfind("http://127.0.0.1", 0) == 0 || u.rfind("http://localhost", 0) == 0;
+    const bool https = u.rfind("https://", 0) == 0;
+    if (!https && u.rfind("http://", 0) != 0) return false;
+    const size_t hs = https ? 8 : 7;
+    const size_t he = u.find_first_of("/?#", hs);
+    const std::string auth = u.substr(hs, he == std::string::npos ? std::string::npos : he - hs);
+    if (auth.empty() || auth.find('@') != std::string::npos) return false;
+    if (https) return auth[0] != ':';
+    for (const char* host : {"127.0.0.1", "localhost"}) {
+        const std::string h = host;
+        if (auth.compare(0, h.size(), h) != 0) continue;
+        if (auth.size() == h.size()) return true;
+        if (auth[h.size()] != ':') return false;
+        const std::string port = auth.substr(h.size() + 1);
+        if (port.empty() || port.size() > 5) return false;
+        unsigned n = 0;
+        for (char c : port) { if (c < '0' || c > '9') return false; n = n * 10 + static_cast<unsigned>(c - '0'); }
+        return n <= 65535;
+    }
+    return false;
 }
 
 bool readSize(const JsonValue& v, uint64_t& out) {
@@ -68,6 +93,8 @@ bool readSize(const JsonValue& v, uint64_t& out) {
 
 bool fail(std::string& err, const std::string& m) { err = m; return false; }
 
+bool isSafeRelPathFwd(const std::string& p) { return isSafeRelPath(p); }
+
 } // namespace
 
 bool isSafeRelPath(const std::string& p) {
@@ -76,9 +103,13 @@ bool isSafeRelPath(const std::string& p) {
     while (true) {
         const size_t slash = p.find('/', start);
         const std::string comp = p.substr(start, slash == std::string::npos ? std::string::npos : slash - start);
+        // ".." ⊂ trailing-dot rule below, kept explicit as the first line of defence.
         if (comp.empty() || comp == "." || comp == ".." || comp.size() > kMaxComponentLen) return false;
         if (comp.back() == '.' || comp.back() == ' ') return false;
         if (isReservedDeviceName(comp)) return false;
+        // Bí danh 8.3 của Windows ("PROGRA~1"): '~' theo sau là chữ số.
+        for (size_t i = 0; i + 1 < comp.size(); ++i)
+            if (comp[i] == '~' && comp[i + 1] >= '0' && comp[i + 1] <= '9') return false;
         for (unsigned char c : comp)
             // ASCII in được, trừ ký tự cấm của Windows (gồm ':' ADS/ổ đĩa và '\\'); không UTF-8 đa byte.
             if (c < 0x20 || c >= 0x7F || c == '<' || c == '>' || c == ':' || c == '"' || c == '|' ||
@@ -173,16 +204,7 @@ bool parsePackInfo(const JsonValue& v, PackInfo& out, std::string& err) {
 bool parseCatalog(const std::string& text, Catalog& out, std::string& err) {
     out = Catalog{};
     if (text.size() > kMaxCatalogBytes) return fail(err, "catalog: larger than 4 MiB");
-    // Bộ phân tích JSON đệ quy không giới hạn độ sâu: chặn trước khi gọi để không tràn stack.
-    size_t depth = 0;
-    bool inStr = false;
-    for (size_t i = 0; i < text.size(); ++i) {
-        const char c = text[i];
-        if (inStr) { if (c == '\\') ++i; else if (c == '"') inStr = false; }
-        else if (c == '"') inStr = true;
-        else if (c == '[' || c == '{') { if (++depth > kMaxJsonDepth) return fail(err, "catalog: JSON nested too deeply"); }
-        else if ((c == ']' || c == '}') && depth > 0) --depth;
-    }
+    // Độ sâu JSON do chính JsonValue::parse giới hạn.
     JsonValue root;
     std::string jerr;
     if (!JsonValue::parse(text, root, jerr)) return fail(err, "catalog: invalid JSON: " + jerr);

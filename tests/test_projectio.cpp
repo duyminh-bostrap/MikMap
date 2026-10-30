@@ -14,6 +14,39 @@ using namespace mikmap;
 //  JSON toi gian
 // ═══════════════════════════════════════════════════════════════════════
 
+namespace {
+bool parseNested(bool arr, int depth) {
+    std::string t;
+    for (int i = 0; i < depth; ++i) t += arr ? "[" : "{\"a\":";
+    t += "1";
+    for (int i = 0; i < depth; ++i) t += arr ? "]" : "}";
+    JsonValue v; std::string e;
+    return JsonValue::parse(t, v, e);
+}
+} // namespace
+
+TEST_CASE("Json: gioi han do sau long nhau 128") {
+    for (bool arr : {true, false}) {
+        CHECK(parseNested(arr, 127));
+        CHECK(parseNested(arr, 128));
+        CHECK(!parseNested(arr, 129));
+    }
+    JsonValue v; std::string e;
+    CHECK(!JsonValue::parse(std::string(200000, '['), v, e));
+    CHECK(!JsonValue::parse("[\"\\u000\\\"," + std::string(200000, '['), v, e));
+}
+
+TEST_CASE("Json: u-escape phai du 4 chu so hex") {
+    JsonValue v; std::string e;
+    CHECK(!JsonValue::parse("\"\\u00zz\"", v, e));
+    CHECK(!JsonValue::parse("\"\\u000\"", v, e));
+    CHECK(!JsonValue::parse("\"\\u-123\"", v, e));
+    REQUIRE(JsonValue::parse("\"\\u00e9\"", v, e));
+    CHECK(v.asString() == "\xC3\xA9");
+    REQUIRE(JsonValue::parse("{\"a\":[1,2,{\"b\":\"x\"}],\"c\":true}", v, e));
+    CHECK(v["a"].size() == 3);
+}
+
 TEST_CASE("Json: cac kieu co ban round-trip") {
     JsonValue o = JsonValue::object();
     o.set("b", JsonValue(true));

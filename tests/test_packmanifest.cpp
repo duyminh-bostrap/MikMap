@@ -215,14 +215,41 @@ TEST_CASE("packs: parseCatalog size and count limits") {
 
 TEST_CASE("packs: parseCatalog survives deeply nested JSON") {
     Catalog c; std::string err;
-    const std::string deepArr = std::string(200000, '[') + std::string(200000, ']');
-    CHECK(!parseCatalog(deepArr, c, err));
+    CHECK(!parseCatalog(std::string(200000, '[') + std::string(200000, ']'), c, err));
     CHECK(!err.empty());
     std::string deepObj = "{\"packs\":[],\"x\":";
     for (int i = 0; i < 100000; ++i) deepObj += "{\"a\":";
     CHECK(!parseCatalog(deepObj, c, err));
-    // '[' trong chuỗi không tính là lồng nhau
+    // Payload từng qua mặt bộ quét ngoặc: \u000\" nuốt dấu nháy, rồi lồng 200000 tầng.
+    CHECK(!parseCatalog("{\"packs\":[],\"x\":[\"\\u000\\\"," + std::string(200000, '['), c, err));
     CHECK(parseCatalog("{\"packs\":[],\"note\":\"" + std::string(1000, '[') + "\"}", c, err));
+}
+
+TEST_CASE("packs: url authority rules") {
+    for (const char* u : {"http://localhost.evil.com/x", "http://127.0.0.1.evil.com/x", "http://localhost@evil.com/x",
+                          "http://localhost:80@evil.com", "https://user@evil.com/x", "https://user:pw@evil.com/x",
+                          "HTTPS://github.com/x", "http://LOCALHOST/x", "http://localhost:/x", "http://localhost:99999/x",
+                          "http://localhost:80a/x", "http://localhost:123456/x", "https://", "https:///x", "https://:443/x",
+                          "http://example.com/x", "https://a b/x", "https://a/x\nHost: evil", "https://a/\x01"})
+        CHECK_MSG(!parseOne(mutated("https://example.com/p", u)), u);
+    for (const char* u : {"http://127.0.0.1:8080/x", "http://localhost/x", "http://localhost", "http://localhost?a=1",
+                          "http://127.0.0.1:65535/", "https://github.com/o/r/releases/download/v1/a.dll"})
+        CHECK_MSG(parseOne(mutated("https://example.com/p", u)), u);
+}
+
+TEST_CASE("packs: reserved names with spaces, dots and special devices") {
+    for (const char* p : {"con .x", "nul .dll", "CONIN$", "conout$.txt", "clock$.txt", "COM1", "com9.x", "a/aux .b",
+                          "PROGRA~1", "a/progra~1.dll", "x~9"})
+        CHECK_MSG(!isSafeRelPath(p), p);
+    CHECK(isSafeRelPath("a~b.dll"));
+    CHECK(isSafeRelPath("a~"));
+}
+
+TEST_CASE("packs: ids are safe folder names") {
+    for (const char* id : {"...", "foo.", "con", "nul", "aux", "com1", "lpt1", "prn", "a~1"})
+        CHECK_MSG(!parseOne(packJson(id, "1.0.0", "plugin")), id);
+    for (const char* id : {"pose-onnx", "onnx-runtime-cuda", "a.b_c-1"})
+        CHECK_MSG(parseOne(packJson(id, "1.0.0", "plugin")), id);
 }
 
 TEST_CASE("packs: resolveInstallOrder puts dependencies first") {
