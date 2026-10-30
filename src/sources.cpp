@@ -775,6 +775,7 @@ bool SensorSelfTest(std::string& why) {
     if (DeviceSource(dh)) return fail("sensor: Reconnect must drop the live source");
     SensorsTick(now());
     if (!DeviceSource(dh)) return fail("sensor: after Reconnect the next tick must start the source again");
+    hs.realW = 0; hs.realH = 0;
   }
 
   // Add-sensor wizard: the scan thread finds a fake lidar, then step 1 Hokuyo -> step 2 typed 127.0.0.1:<port> -> step 3,
