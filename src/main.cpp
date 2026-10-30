@@ -83,7 +83,7 @@ static void TitleBar(ImRect r) {
   float titleW = TextW(UI_X, 12, "MIKMAP", 0.09f) + 4 + 9, subW = TextW(MONO_M, 9, sub);
   float colW = std::max(titleW, subW);
   bool hot = A.logoHover || A.projectMenu;
-  float gw = 6 + 26 + 6 + colW + 6 + (A.logoHover ? 6 + 8 : 0);
+  float gw = 6 + 26 + 6 + colW + 6 + 8 + 6;
   ImRect lg(x, r.Min.y, x + gw, r.Max.y - 1);
   Hit lh = HitR(lg);
   A.logoHover = lh.hover;
@@ -98,7 +98,7 @@ static void TitleBar(ImRect r) {
   Text(tx, cy - 6.5f, UI_X, 12, fg, "MIKMAP", 0.09f);
   Icon("chevron-down", ImVec2(tx + TextW(UI_X, 12, "MIKMAP", 0.09f) + 4 + 4.5f, cy - 6.5f), 9, fg);
   Text(tx, cy + 7, MONO_M, 9, K(pal::t66), sub);
-  if (A.logoHover) Dot(ImVec2(lg.Max.x - 6 - 4, cy), 8, pal::mint);
+  if (A.projectDirty) Dot(ImVec2(lg.Max.x - 6 - 4, cy), 8, pal::mint);
   if (lh.hover) CursorHand();
   if (lh.click) A.projectMenu = !A.projectMenu;
   x = lg.Max.x + 6;
