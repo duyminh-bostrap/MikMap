@@ -1003,6 +1003,25 @@ bool SensorSelfTest(std::string& why) {
     if (srv.hits("/catalog.json") != 0 || srv.hits("/pack_pose_scan.dll") != 0)
       return fail("packs: SensorsTick must never auto-download a missing pack");
 
+    // SensorProgress and BuildTree when pack is missing vs installed
+    {
+      Device fakeRun = dp;
+      fakeRun.status = (int)mikmap::SourceStatus::Running;
+      fakeRun.error.clear();
+      if (SensorProgress(fakeRun, now()) != 0)
+        return fail("packs: SensorProgress must return 0 when needsPack is missing even if status is Running");
+      const auto treeNodes = BuildTree(false, "");
+      bool foundTreeSensor = false;
+      for (const auto& tn : treeNodes) {
+        if (tn.kind == Node::SensorN && tn.dv == dp.id) {
+          foundTreeSensor = true;
+          if (!tn.missingPack || tn.prog != 0 || tn.needsPack != "pose-onnx")
+            return fail("packs: BuildTree must set missingPack=true and prog=0 for missing-pack device");
+        }
+      }
+      if (!foundTreeSensor) return fail("packs: BuildTree did not include selftest-p");
+    }
+
     // SensorPackHint pure checks
     Device noPackDev = MakeDevice(DevKind::Sim, "np");
     if (SensorPackHint(noPackDev, PackState::NotInstalled) != nullptr) return fail("packs: SensorPackHint must be null when needsPack is empty");

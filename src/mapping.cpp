@@ -1,4 +1,4 @@
-﻿// Advanced Mapping screen: mapping tree · stage canvas · slice/mask/screen properties.
+// Advanced Mapping screen: mapping tree · stage canvas · slice/mask/screen properties.
 #include "app.h"
 #include "core/math/Triangulate.h"
 #include "io/ISensorSource.h"
@@ -1565,20 +1565,46 @@ static void TreeRow(ImRect r, const Node& n, bool railMode) {
   bool chipHit = false;
   if (n.kind == Node::SensorN) {   // setup progress: 4 dots; a click goes to the first step that is missing
     constexpr float kDot = 5.f, kGap = 4.f, kW = 4 * kDot + 3 * kGap;
-    ImRect cr(right - kW - 3, cy - 8, right + 3, cy + 8);
+    float packTagW = 0.f;
+    if (n.missingPack) {
+      packTagW = TextW(MONO_B, 8, "PACK", 0.06f) + 8.f;
+    }
+    ImRect cr(right - kW - (packTagW > 0 ? packTagW + 4.f : 0.f) - 3, cy - 8, right + 3, cy + 8);
     const Hit ch = HitR(cr);
     for (int i = 0; i < 4; ++i) {
       const ImVec2 c(right - kW + i * (kDot + kGap) + kDot * 0.5f, cy);
       if (i < n.prog) ui::Dot(c, kDot, pal::mint, false);
-      else Border(ImRect(c.x - kDot * 0.5f, c.y - kDot * 0.5f, c.x + kDot * 0.5f, c.y + kDot * 0.5f), K(i == n.prog ? (n.err ? pal::red : pal::yellow) : pal::t44), kDot * 0.5f);
+      else {
+        uint32_t ringCol = pal::t44;
+        if (i == n.prog) ringCol = n.missingPack ? pal::coral : (n.err ? pal::red : pal::yellow);
+        Border(ImRect(c.x - kDot * 0.5f, c.y - kDot * 0.5f, c.x + kDot * 0.5f, c.y + kDot * 0.5f), K(ringCol), kDot * 0.5f);
+      }
+    }
+    if (n.missingPack) {
+      ImRect pr(right - kW - 4.f - packTagW, cy - 6.5f, right - kW - 4.f, cy + 6.5f);
+      Box(pr, K(pal::coral, 0.16f), K(pal::coral, 0.7f), 2);
+      TextC((pr.Min.x + pr.Max.x) * 0.5f, cy, MONO_B, 8, K(pal::coral), "PACK", 0.06f);
     }
     if (ch.hover) {
-      static const char* const next[] = {"Next: Connect", "Next: Place", "Next: Align", "Next: Send out", "Ready"};
-      ImGui::SetTooltip("%s%s%s", n.vis ? next[std::clamp(n.prog, 0, 4)] : "Disabled \xE2\x80\x94 enable it from the menu", n.meta.empty() ? "" : "  \xC2\xB7  ", n.meta.c_str());   // vis = enabled
+      if (n.missingPack) {
+        const Device* devPtr = nullptr;
+        for (const auto& d : A.devices) if (d.id == n.dv) { devPtr = &d; break; }
+        const char* ph = devPtr ? SensorPackHint(*devPtr, PackStateFor(n.needsPack)) : nullptr;
+        ImGui::SetTooltip("%s", ph ? ph : ("Needs pack: " + n.needsPack).c_str());
+      } else {
+        static const char* const next[] = {"Next: Connect", "Next: Place", "Next: Align", "Next: Send out", "Ready"};
+        ImGui::SetTooltip("%s%s%s", n.vis ? next[std::clamp(n.prog, 0, 4)] : "Disabled \xE2\x80\x94 enable it from the menu", n.meta.empty() ? "" : "  \xC2\xB7  ", n.meta.c_str());   // vis = enabled
+      }
       CursorHand();
     }
-    if (ch.click) { chipHit = true; if (n.prog < 4) GoToSensorStep(n.dv, n.prog + 1); else SelectDevice(n.dv); A.wizard.step = 0; }
-    right -= kW + 6;
+    if (ch.click) {
+      chipHit = true;
+      if (n.missingPack) { SelectDevice(n.dv); A.settingsOpen = true; A.setTab = 5; }
+      else if (n.prog < 4) GoToSensorStep(n.dv, n.prog + 1);
+      else SelectDevice(n.dv);
+      A.wizard.step = 0;
+    }
+    right -= kW + (packTagW > 0 ? packTagW + 4.f : 0.f) + 6;
   } else if (!n.meta.empty()) { TextR(right, cy, MONO_R, 9, K(pal::t66), n.meta.c_str()); right -= TextW(MONO_R, 9, n.meta.c_str()) + 6; }
   TextEll(x, cy, right - x, n.kind == Node::ScreenN ? UI_B : UI_S, 10, K(fg), n.name.c_str());
   g.alpha = prev;
@@ -1644,7 +1670,8 @@ std::vector<Node> BuildTree(bool onlyScreen, const std::string& only) {
       if (!ds || ds->id != sc.id) continue;
       Node k; k.kind = Node::SensorN; k.sc = sc.id; k.dv = d.id; k.dk = d.kind; k.name = d.name; k.h = onlyScreen ? 24.f : 26.f; k.pad = (onlyScreen ? 6.f : 16.f) + in;
       k.canHide = false; k.vis = d.enabled; k.color = pal::mint;
-      k.prog = SensorProgress(d, g.time); k.err = d.enabled && d.status == (int)mikmap::SourceStatus::Error;
+      k.missingPack = !PackAvailableForDevice(d); k.needsPack = d.needsPack;
+      k.prog = k.missingPack ? 0 : SensorProgress(d, g.time); k.err = d.enabled && d.status == (int)mikmap::SourceStatus::Error;
       if (d.enabled) k.meta = k.err ? (d.error.empty() ? std::string("error") : d.error) : d.status == (int)mikmap::SourceStatus::Running ? std::to_string(d.fps) + " fps" : "";   // tooltip text
       out.push_back(k);
     }

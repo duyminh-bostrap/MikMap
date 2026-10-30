@@ -246,7 +246,7 @@ struct Node {
 };
 // Add-sensor wizard (a modal popup over whatever page is open, while step > 0). Runtime only, never serialized.
 // step 1 type · 2 connect · 3 watch the new devices come up. found/pick: Hokuyo hosts ("ip" or "ip:port") and which are ticked.
-struct SensorWizard { int step = 0; DevKind kind = DevKind::Hokuyo; std::string plugin, screenId, manualHost, config;
+struct SensorWizard { int step = 0; DevKind kind = DevKind::Hokuyo; std::string plugin, needsPack, screenId, manualHost, config;
                       int iface = 0, port = 0; std::vector<std::string> found; std::vector<char> pick; std::vector<std::string> added; bool scanning = false; };
 
 inline uint32_t RoleHex(int r) { return r == 0 ? pal::coral : r == 1 ? pal::mint : pal::cyan; }

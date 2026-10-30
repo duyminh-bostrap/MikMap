@@ -1805,6 +1805,7 @@ int main(int argc, char** argv) {
   }
   if (!missingPack.empty()) if (Device* d = A.curDevice()) {
     d->needsPack = missingPack; d->enabled = true;
+    SelectDevice(d->id); A.mpage = 0;
   }
   if (!place.empty()) if (Device* d = A.curDevice()) if (Screen* s = DeviceScreen(*d)) {
     float v[5] = {}; const char* c = place.c_str();

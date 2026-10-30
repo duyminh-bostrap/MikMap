@@ -1,4 +1,4 @@
-﻿// A sensor selected on the Mapping page (selKind 3): what its stage shows under Mapping's INPUT / OUTPUT bar, and its Properties.
+// A sensor selected on the Mapping page (selKind 3): what its stage shows under Mapping's INPUT / OUTPUT bar, and its Properties.
 // Input = what the sensor sees (a lidar placed in mm on its screen; the Sim radar; the camera skeleton).
 // Output = where its points land on the screen (1920x1080): the 4 calibration targets, edited with Mapping's own quad tools.
 #include "app.h"
@@ -50,6 +50,7 @@ uint32_t SensorSelTone(int page) { return page == 0 ? pal::cyan : pal::coral; }
 static bool IsLidar(const Device& d) { return d.kind == DevKind::Hokuyo || d.kind == DevKind::Plugin; }
 
 int SensorProgress(const Device& d, double now) {
+  if (!PackAvailableForDevice(d)) return 0;
   const bool connected = d.enabled && (d.kind == DevKind::Sim || d.status == (int)mikmap::SourceStatus::Running) && d.error.empty();
   const bool placed = !IsLidar(d) || d.placed || d.calibrated;   // calibrated by hand (Custom 4-point) counts as placed
   const bool sending = d.outOn && d.lastSentAt >= 0 && now - d.lastSentAt <= 2.0;
@@ -552,6 +553,46 @@ static bool Section(float ox, float W, float x, float w, float oy, float& y, con
 }
 
 static void ConnectionSection(Device& d, float x, float w, float oy, float& y) {
+  if (!PackAvailableForDevice(d)) {
+    const PackState pst = PackStateFor(d.needsPack);
+    const char* hint = SensorPackHint(d, pst);
+    PackRow pr{d.needsPack, d.needsPack, "1.0.0", "", "", 0, pst, false, false, false, 0.f};
+    for (const auto& r : PackRows()) {
+      if (r.id == d.needsPack) { pr = r; break; }
+    }
+    ImRect br(x, oy + y, x + w, oy + y + 54);
+    Box(br, K(pal::coral, 0.12f), K(pal::coral, 0.65f), 3);
+    Dot(ImVec2(br.Min.x + 10, br.Min.y + 13), 6, pal::coral, false);
+    TextEll(br.Min.x + 19, br.Min.y + 13, w - 25, UI_B, 9.5f, K(pal::coral),
+            hint ? hint : ("Needs pack: " + d.needsPack).c_str());
+
+    const char* actLab = PackActionLabel(pr);
+    const bool actEn = PackActionEnabled(pr);
+    const char* dispLab = (actLab && actLab[0]) ? actLab : "Install";
+    const float halfW = (w - 18.f) * 0.5f;
+    ImRect actB(br.Min.x + 6, br.Min.y + 26, br.Min.x + 6 + halfW, br.Max.y - 5);
+    ImRect setB(actB.Max.x + 6, br.Min.y + 26, br.Max.x - 6, br.Max.y - 5);
+
+    Hit ah = HitR(actB);
+    Box(actB, !actEn ? K(pal::g16) : (ah.hover ? K(pal::coral, 0.28f) : K(pal::coral, 0.18f)),
+        !actEn ? K(pal::g22) : K(pal::coral, 0.75f), 3);
+    TextC((actB.Min.x + actB.Max.x) * 0.5f, (actB.Min.y + actB.Max.y) * 0.5f, UI_B, 9,
+          K(actEn ? pal::coral : pal::t66), Upper(dispLab).c_str(), 0.08f);
+    if (ah.hover && actEn) CursorHand();
+    if (ah.click && actEn) {
+      if (pst == PackState::Downloading) PackCancel();
+      else PackInstall(d.needsPack);
+    }
+
+    Hit sh = HitR(setB);
+    Box(setB, sh.hover ? K(pal::g22) : K(pal::g1c), K(pal::g2a), 3);
+    TextC((setB.Min.x + setB.Max.x) * 0.5f, (setB.Min.y + setB.Max.y) * 0.5f, UI_B, 9,
+          K(sh.hover ? pal::white : pal::tcc), "SENSOR PACKS", 0.08f);
+    if (sh.hover) CursorHand();
+    if (sh.click) { A.settingsOpen = true; A.setTab = 5; }
+
+    y += 54 + 8;
+  }
   if (d.kind == DevKind::Sim) { PropertyRow(Rc(x - 6, oy + y, w + 12, 24), "Source", "simulated"); y += 24 + 6; return; }
   if (d.kind == DevKind::Hokuyo) {   // applied when the field loses focus so typing does not restart the source on every key
     static std::string hostEdit;
@@ -979,7 +1020,7 @@ void SensorWizardNext() {
     std::string name = w.plugin;
     for (auto& p : SensorPlugins()) if (PluginFile(p) == w.plugin && !p.name.empty()) name = p.name;
     Device& d = add(DevKind::Plugin, Numbered(name));
-    d.plugin = w.plugin; d.config = w.config;
+    d.plugin = w.plugin; d.config = w.config; d.needsPack = w.needsPack;
   } else {
     add(DevKind::Sim, Numbered("Simulated radar"));
   }
@@ -1062,20 +1103,84 @@ void SensorWizardView(ImRect r) {
 
   if (w.step == 1) {
     Text(x, y + 6, UI_B, 11, K(pal::tcc), "What are you connecting?"); y += 26;
-    struct C { DevKind k; std::string plugin, title, sub; const char* icon; bool dim; };
-    std::vector<C> cards = {{DevKind::Skeleton, "", "Camera 2D", "Body skeleton over OSC (pose_bridge)", "camera", false},
-                            {DevKind::Hokuyo, "", "Lidar 2D \xC2\xB7 Hokuyo", "UST-10LX / 20LX over Ethernet", "radar", false}};
-    for (auto& p : SensorPlugins()) cards.push_back({DevKind::Plugin, PluginFile(p), "Lidar 2D \xC2\xB7 " + (p.name.empty() ? PluginFile(p) : p.name), PluginFile(p), "radar", false});
-    cards.push_back({DevKind::Sim, "", "Simulated", "Click a radar to make touches", "activity", false});
-    cards.push_back({DevKind::Sim, "", "Lidar 3D", "Planned", "layers", true});
-    cards.push_back({DevKind::Sim, "", "Depth camera", "Planned", "camera", true});
+    struct C { DevKind k; std::string plugin, title, sub, packId; const char* icon; bool dim; };
+    std::vector<C> cards = {{DevKind::Skeleton, "", "Camera 2D", "Body skeleton over OSC (pose_bridge)", "", "camera", false},
+                            {DevKind::Hokuyo, "", "Lidar 2D \xC2\xB7 Hokuyo", "UST-10LX / 20LX over Ethernet", "", "radar", false}};
+    for (auto& p : SensorPlugins()) cards.push_back({DevKind::Plugin, PluginFile(p), "Lidar 2D \xC2\xB7 " + (p.name.empty() ? PluginFile(p) : p.name), PluginFile(p), "", "radar", false});
+    cards.push_back({DevKind::Plugin, "mikmap_orbbec_plugin.dll", "Depth camera \xC2\xB7 Orbbec", "Femto Bolt / Mega over Orbbec SDK", "orbbec-femto", "camera", false});
+    cards.push_back({DevKind::Plugin, "mikmap_pose_onnx.dll", "Camera 2D \xC2\xB7 Pose ONNX", "In-app MediaPipe Pose + ONNX Runtime", "pose-onnx", "camera", false});
+    cards.push_back({DevKind::Sim, "", "Simulated", "Click a radar to make touches", "", "activity", false});
+    cards.push_back({DevKind::Sim, "", "Lidar 3D", "Planned", "", "layers", true});
+
+    const auto packRows = PackRows();
+    auto findPackRow = [&](const std::string& pid) -> PackRow {
+      for (const auto& pr : packRows) if (pr.id == pid) return pr;
+      return PackRow{pid, pid, "1.0.0", "", "", 18ull * 1024 * 1024, PackStateFor(pid), false, false, false, 0.f};
+    };
+
     const float cw = (colW - 10) * 0.5f, ch = 64;
     for (size_t i = 0; i < cards.size(); ++i) {
       const C& c = cards[i];
       ImRect cr = Rc(x + (i % 2) * (cw + 10), y + (i / 2) * (ch + 10), cw, ch);
+      if (!c.packId.empty()) {
+        const PackRow pr = findPackRow(c.packId);
+        const bool installed = (pr.state == PackState::Installed || pr.state == PackState::UpdateAvailable) && !pr.pendingRemoval;
+        if (!installed) {
+          const char* actLab = PackActionLabel(pr);
+          const bool actEn = PackActionEnabled(pr);
+          const char* btnText = (actLab && actLab[0]) ? actLab : "Packs\xE2\x80\xA6";
+          const float bw = std::max(58.f, ButtonW(btnText, 1) + 6.f);
+          const float ccy = (cr.Min.y + cr.Max.y) * 0.5f;
+          ImRect btnR(cr.Max.x - 8 - bw, ccy - 11, cr.Max.x - 8, ccy + 11);
+          Hit bh = HitR(btnR);
+          Hit chHit = HitR(cr);
+
+          uint32_t bdHex = pr.state == PackState::Downloading ? pal::cyan : (pr.state == PackState::Failed ? pal::red : pal::g2a);
+          Box(cr, K(pal::g14), K(bdHex, bdHex == pal::g2a ? 1.f : 0.65f), 4);
+          Icon(c.icon, ImVec2(cr.Min.x + 24, ccy), 20, K(pr.state == PackState::Downloading ? pal::cyan : pal::yellow));
+          const float textMaxW = btnR.Min.x - 8 - (cr.Min.x + 46);
+          TextEll(cr.Min.x + 46, ccy - 9, textMaxW, UI_B, 11, K(pal::white), c.title.c_str());
+
+          std::string statusLine;
+          uint32_t statusHex = pal::yellow;
+          if (pr.state == PackState::Downloading) {
+            statusLine = "Installing " + std::to_string((int)std::lround(pr.progress * 100.f)) + "% \xC2\xB7 " + FormatBytes(pr.sizeBytes);
+            statusHex = pal::cyan;
+          } else if (pr.state == PackState::Failed) {
+            statusLine = "Install failed \xC2\xB7 " + FormatBytes(pr.sizeBytes);
+            statusHex = pal::red;
+          } else {
+            statusLine = "Not installed \xC2\xB7 " + FormatBytes(pr.sizeBytes);
+            statusHex = pal::yellow;
+          }
+          TextEll(cr.Min.x + 46, ccy + 8, textMaxW, MONO_R, 9, K(statusHex), statusLine.c_str());
+
+          if (pr.state == PackState::Downloading) {
+            ImRect pb(cr.Min.x + 46, cr.Max.y - 8, btnR.Min.x - 10, cr.Max.y - 4);
+            Box(pb, K(pal::g050), K(pal::g22), 2);
+            float fw = std::max(0.f, (pb.GetWidth() - 2.f) * std::clamp(pr.progress, 0.f, 1.f));
+            if (fw > 0.5f) Fill(ImRect(pb.Min.x + 1, pb.Min.y + 1, pb.Min.x + 1 + fw, pb.Max.y - 1), K(pal::cyan), 2);
+          }
+
+          uint32_t btnHex = pr.state == PackState::Downloading ? pal::yellow : (pr.state == PackState::Failed ? pal::red : pal::cyan);
+          Box(btnR, bh.hover ? K(btnHex, 0.25f) : K(btnHex, 0.14f), K(btnHex, 0.75f), 3);
+          TextC((btnR.Min.x + btnR.Max.x) * 0.5f, (btnR.Min.y + btnR.Max.y) * 0.5f, UI_B, 9, K(btnHex), Upper(btnText).c_str(), 0.08f);
+          if (bh.hover || chHit.hover) CursorHand();
+          if (bh.click) {
+            if (pr.state == PackState::Downloading) PackCancel();
+            else if (actEn) PackInstall(c.packId);
+            else { A.settingsOpen = true; A.setTab = 5; }
+            return;
+          }
+          if (chHit.click && !bh.hover) {
+            A.notify("Install the sensor pack first (" + c.title + ")");
+          }
+          continue;
+        }
+      }
       if (!WizCard(cr, c.icon, c.title.c_str(), c.sub.c_str(), c.dim)) continue;
       if (c.dim) { A.notify("Not supported yet \xE2\x80\x94 planned"); continue; }
-      w.kind = c.k; w.plugin = c.plugin; w.config.clear();
+      w.kind = c.k; w.plugin = c.plugin; w.needsPack = c.packId; w.config.clear();
       if (c.k == DevKind::Plugin) for (auto& p : SensorPlugins()) if (PluginFile(p) == c.plugin) w.config = p.defaultConfig;
       SensorWizardNext();
       return;
