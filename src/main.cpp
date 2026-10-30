@@ -80,10 +80,11 @@ static void TitleBar(ImRect r) {
 
   // logo / project menu trigger
   std::string subS = Trunc(A.projectName, 16); const char* sub = subS.c_str();
-  float titleW = TextW(UI_X, 12, "MIKMAP", 0.09f) + 4 + 9, subW = TextW(MONO_M, 9, sub);
+  float mikW = TextW(UI_X, 12, "MIKMAP", 0.09f);
+  float titleW = mikW + 4 + 9 + 6 + 8, subW = TextW(MONO_M, 9, sub);
   float colW = std::max(titleW, subW);
   bool hot = A.logoHover || A.projectMenu;
-  float gw = 6 + 26 + 6 + colW + 6 + 8 + 6;
+  float gw = 6 + 26 + 6 + colW + 6;
   ImRect lg(x, r.Min.y, x + gw, r.Max.y - 1);
   Hit lh = HitR(lg);
   A.logoHover = lh.hover;
@@ -96,9 +97,11 @@ static void TitleBar(ImRect r) {
   float tx = lg.Min.x + 6 + 26 + 6;
   ImU32 fg = K(hot ? pal::coral : pal::tf3);
   Text(tx, cy - 6.5f, UI_X, 12, fg, "MIKMAP", 0.09f);
-  Icon("chevron-down", ImVec2(tx + TextW(UI_X, 12, "MIKMAP", 0.09f) + 4 + 4.5f, cy - 6.5f), 9, fg);
+  float chevX = tx + mikW + 4 + 4.5f;
+  Icon("chevron-down", ImVec2(chevX, cy - 6.5f), 9, fg);
+  if (A.projectDirty) Dot(ImVec2(chevX + 4.5f + 6 + 4, cy - 6.5f), 8, pal::mint);
   Text(tx, cy + 7, MONO_M, 9, K(pal::t66), sub);
-  if (A.projectDirty) Dot(ImVec2(lg.Max.x - 6 - 4, cy), 8, pal::mint);
+
   if (lh.hover) CursorHand();
   if (lh.click) A.projectMenu = !A.projectMenu;
   x = lg.Max.x + 6;
