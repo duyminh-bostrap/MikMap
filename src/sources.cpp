@@ -72,7 +72,7 @@ void SendOut(Device& d, const mikmap::SensorFrame& f, double now) {
   p.port = d.outPort >= 1 && d.outPort <= 65535 ? (uint16_t)d.outPort : 0;   // 0: the sender reports the bad port
   p.proto = (uint8_t)(d.outProto == 1);
   mikmap::setOutDevice(p, d.name.c_str());
-  p.count = (uint8_t)std::min<int>(f.count, mikmap::kMaxTouchPoints);
+  p.count = (uint16_t)std::min<int>(f.count, mikmap::kMaxTouchPoints);
   for (int i = 0; i < p.count; ++i) {
     float ox, oy; ApplyH(H, f.points[i].x, f.points[i].y, ox, oy);
     p.ids[i] = f.points[i].id; p.xy[2 * i] = ox / 1920.f; p.xy[2 * i + 1] = OutY(oy / 1080.f, d.originBottom);

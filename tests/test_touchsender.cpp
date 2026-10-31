@@ -4,9 +4,12 @@
 #include "io/sources/OscSource.h"
 
 #include <chrono>
+#include <cstdio>
 #include <cstring>
+#include <sstream>
 #include <string>
 #include <thread>
+#include <vector>
 
 using namespace mikmap;
 
@@ -20,6 +23,21 @@ OutPacket twoPoints(const char* host = "127.0.0.1", uint16_t port = 7000, uint8_
     p.count = 2;
     p.ids[0] = 3;  p.xy[0] = 0.5f;  p.xy[1] = 0.25f;
     p.ids[1] = 12; p.xy[2] = 1.25f; p.xy[3] = -0.0625f;   // not clamped: off-screen stays off-screen
+    return p;
+}
+
+/// n points; x/y la boi so cua 0.125 nen ca float lan chuoi "%.4f" deu chinh xac.
+OutPacket manyPoints(int n, uint8_t proto = 0) {
+    OutPacket p;
+    std::snprintf(p.host, sizeof p.host, "127.0.0.1");
+    p.port = 7000; p.proto = proto;
+    setOutDevice(p, "dev1");
+    p.count = static_cast<uint16_t>(n);
+    for (int i = 0; i < n; ++i) {
+        p.ids[i] = static_cast<uint32_t>(1000 + i);
+        p.xy[2 * i] = static_cast<float>(i) * 0.5f;
+        p.xy[2 * i + 1] = static_cast<float>(i) * -0.25f + 0.125f;
+    }
     return p;
 }
 
@@ -147,6 +165,175 @@ TEST_CASE("TouchSender: a host that cannot be resolved never starves a good one,
     }
     CHECK(waitFor([&] { return src.frames().consume(); }, 1.0));
     CHECK_MSG(s.lookups() == 1u, "lookups = " + std::to_string(s.lookups()) + " (a bad name in backoff, or an IP literal, must not query DNS)");
+    s.stop();
+    src.stop();
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Chia MOT khung thanh NHIEU datagram (<= kMaxDatagram)
+// ═══════════════════════════════════════════════════════════════════════
+
+TEST_CASE("TouchSender: 510 diem -> OSC chia nhieu datagram <= 1200 byte, OscSource ghep lai du") {
+    const OutPacket p = manyPoints(510);
+    OscConfig cfg; cfg.addressPrefix = "/mikmap/dev1/touch";
+    OscSource src(cfg);
+
+    std::vector<uint8_t> buf(kMaxDatagram);
+    int first = 0;
+    int chunks = 0;
+    while (first < 510) {
+        int next = -1;
+        const size_t n = encodeOscChunk(p, first, buf.data(), buf.size(), next);
+        REQUIRE(n > 0);
+        CHECK(n <= kMaxDatagram);
+        CHECK(n % 4 == 0);                 // bundle OSC luon can 4 byte
+        CHECK(next > first);
+        CHECK(next <= 510);
+        const std::string chunk(reinterpret_cast<const char*>(buf.data()), n);
+        if (chunks == 0) CHECK(chunk.find("/mikmap/dev1/frame") != std::string::npos);
+        else             CHECK(chunk.find("/mikmap/dev1/frame") == std::string::npos);
+        src.feedPacket(buf.data(), n);
+        first = next;
+        ++chunks;
+    }
+    CHECK(chunks >= 2);                    // 510 diem khong lot vao mot datagram 1200 byte
+    CHECK(src.packetsMalformed() == 0u);
+
+    REQUIRE(src.frames().consume());
+    const SensorFrame& f = src.frames().readSlot();
+    REQUIRE(f.count == 510u);
+    int bad = 0;
+    for (int i = 0; i < 510; ++i) {
+        if (f.points[i].id != static_cast<uint32_t>(1000 + i) ||
+            std::abs(f.points[i].x - (static_cast<float>(i) * 0.5f)) > 1e-6f ||
+            std::abs(f.points[i].y - (static_cast<float>(i) * -0.25f + 0.125f)) > 1e-6f) {
+            ++bad;
+        }
+    }
+    CHECK_MSG(bad == 0, std::to_string(bad) + " diem sai khi ghep cac chunk lai");
+}
+
+TEST_CASE("TouchSender: 510 diem -> text chia nhieu datagram <= 1200 byte, doc lai du") {
+    const OutPacket p = manyPoints(510, 1);
+
+    std::vector<uint8_t> buf(kMaxDatagram);
+    std::vector<uint32_t> ids;
+    std::vector<double> xs, ys;
+    int first = 0, chunks = 0, headerCount = -1;
+
+    while (first < 510) {
+        int next = -1;
+        const size_t n = encodeTextChunk(p, first, buf.data(), buf.size(), next);
+        REQUIRE(n > 0);
+        CHECK(n <= kMaxDatagram);
+        CHECK(next > first);
+        const std::string s(reinterpret_cast<const char*>(buf.data()), n);
+        REQUIRE(!s.empty());
+        CHECK(s.back() == '\n');           // khong bao gio cat giua mot dong
+
+        size_t pos = 0;
+        bool headerPending = (chunks == 0);   // chi dong DAU cua chunk DAU la dong "frame"
+        while (pos < s.size()) {
+            const size_t eol = s.find('\n', pos);
+            REQUIRE(eol != std::string::npos);
+            const std::string line = s.substr(pos, eol - pos);
+            pos = eol + 1;
+
+            std::istringstream in(line);
+            std::string dev, word;
+            REQUIRE(static_cast<bool>(in >> dev));
+            CHECK(dev == "dev1");
+            if (headerPending) {
+                headerPending = false;
+                int c = -1;
+                REQUIRE(static_cast<bool>(in >> word >> c));
+                CHECK(word == "frame");
+                CHECK(c == 510);
+                headerCount = c;
+                continue;
+            }
+            unsigned id = 0;
+            double x = 0.0, y = 0.0;
+            REQUIRE(static_cast<bool>(in >> id >> x >> y));
+            ids.push_back(id); xs.push_back(x); ys.push_back(y);
+        }
+        first = next;
+        ++chunks;
+    }
+
+    CHECK(chunks >= 2);
+    CHECK(headerCount == 510);
+    REQUIRE(ids.size() == 510u);
+    int bad = 0;
+    for (size_t i = 0; i < ids.size(); ++i) {
+        if (ids[i] != 1000u + i ||
+            std::abs(xs[i] - (static_cast<double>(i) * 0.5)) > 1e-6 ||
+            std::abs(ys[i] - (static_cast<double>(i) * -0.25 + 0.125)) > 1e-6) {
+            ++bad;
+        }
+    }
+    CHECK_MSG(bad == 0, std::to_string(bad) + " dong text sai khi doc lai");
+}
+
+TEST_CASE("TouchSender: khung rong van gui mot chunk mang 'frame 0'") {
+    OutPacket p; setOutDevice(p, "dev1"); p.count = 0;
+    std::vector<uint8_t> buf(kMaxDatagram);
+
+    int next = -1;
+    const size_t n = encodeOscChunk(p, 0, buf.data(), buf.size(), next);
+    REQUIRE(n > 0);
+    CHECK(next == 0);
+    const std::string s(reinterpret_cast<const char*>(buf.data()), n);
+    CHECK(s.find("/mikmap/dev1/frame") != std::string::npos);
+    REQUIRE(n >= 4);
+    const uint8_t zero[4] = {0, 0, 0, 0};
+    CHECK(std::memcmp(buf.data() + n - 4, zero, 4) == 0);   // count = 0
+
+    OscConfig cfg; cfg.addressPrefix = "/mikmap/dev1/touch";
+    OscSource src(cfg);
+    src.feedPacket(buf.data(), n);
+    REQUIRE(src.frames().consume());
+    CHECK(src.frames().readSlot().count == 0u);
+
+    int nextT = -1;
+    const size_t nt = encodeTextChunk(p, 0, buf.data(), buf.size(), nextT);
+    REQUIRE(nt > 0);
+    CHECK(nextT == 0);
+    CHECK(std::string(reinterpret_cast<const char*>(buf.data()), nt) == "dev1 frame 0\n");
+}
+
+TEST_CASE("TouchSender: chunk tra 0 khi khong lot noi mot diem nao") {
+    const OutPacket p = manyPoints(2);
+    std::vector<uint8_t> buf(kMaxDatagram);
+
+    int next = -1;
+    CHECK(encodeOscChunk(p, 0, buf.data(), 40, next) == 0u);   // header 32 byte lot, diem 44 byte khong
+    CHECK(next == 0);
+
+    int nextT = -1;
+    CHECK(encodeTextChunk(p, 0, buf.data(), 14, nextT) == 0u);  // "dev1 frame 2\n" (13) lot, dong diem khong
+    CHECK(nextT == 0);
+}
+
+TEST_CASE("TouchSender: loopback 510 diem -> sender thread tu chia datagram") {
+    OscConfig cfg; cfg.port = 0; cfg.addressPrefix = "/mikmap/dev1/touch";   // 0: the OS picks a free port
+    OscSource src(cfg);
+    REQUIRE(src.start());
+    REQUIRE(src.boundPort() != 0);
+
+    TouchSender s;
+    REQUIRE(s.start());
+    OutPacket p = manyPoints(510);
+    p.port = src.boundPort();
+    REQUIRE(s.push(p));
+
+    REQUIRE(waitFor([&] { return src.frames().consume() && src.frames().readSlot().count == 510u; }, 2.0));
+    const SensorFrame& f = src.frames().readSlot();
+    CHECK(f.points[0].id == 1000u);
+    CHECK(f.points[509].id == 1509u);
+    CHECK_NEAR(f.points[509].x, 254.5, 1e-6);
+    CHECK(waitFor([&] { return s.sent() == 1u; }, 1.0));   // mot packet (nhieu datagram) = mot lan sent
+    CHECK(s.dropped() == 0u);
     s.stop();
     src.stop();
 }

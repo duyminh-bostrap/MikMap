@@ -30,6 +30,15 @@ static_assert(sizeof(TouchPoint) == 24u, "TouchPoint phai giu kich thuoc co dinh
 static_assert(sizeof(SensorFrame) >= 24u * kMaxTouchPoints,
               "SensorFrame phai chua du kMaxTouchPoints diem");
 
+// 512 = 30 nguoi x 17 khop (COCO-17) + du cho sensor khung hinh.
+static_assert(kMaxTouchPoints == 512, "kMaxTouchPoints phai la 512");
+
+// Kich thuoc la HANG SO LUC BIEN DICH: SensorFrame di qua TripleBuffer bang
+// phep gan, khong cap phat — 24 byte header + dung kMaxTouchPoints diem,
+// khong co padding an phia sau.
+static_assert(sizeof(SensorFrame) == 24u + sizeof(TouchPoint) * kMaxTouchPoints,
+              "SensorFrame: 24 byte header + kMaxTouchPoints diem, khong padding an");
+
 TEST_CASE("SensorFrame: addPoint khong tran khi vuot gioi han") {
     SensorFrame f;
     TouchPoint p;
@@ -39,6 +48,58 @@ TEST_CASE("SensorFrame: addPoint khong tran khi vuot gioi han") {
     REQUIRE(f.count == kMaxTouchPoints);
     REQUIRE(!f.addPoint(p));            // lang le tu choi
     REQUIRE(f.count == kMaxTouchPoints); // khong tang qua gioi han
+}
+
+TEST_CASE("SensorFrame: chua dung 512 diem va tu choi diem thu 513") {
+    SensorFrame f;
+    TouchPoint p;
+    for (int i = 0; i < 512; ++i) {
+        p.id = static_cast<uint32_t>(i + 1);
+        REQUIRE(f.addPoint(p));
+    }
+    REQUIRE(f.count == 512u);
+    CHECK(f.points[511].id == 512u);
+
+    p.id = 9999;
+    CHECK(!f.addPoint(p));   // diem thu 513 bi tu choi
+    CHECK(f.count == 512u);
+
+    f.clear();
+    CHECK(f.count == 0u);
+    CHECK(f.addPoint(p));    // sau clear lai nhan duoc
+}
+
+TEST_CASE("TripleBuffer: chuyen tron 512 diem qua lai khong mat du lieu") {
+    TripleBuffer<SensorFrame> tb;
+
+    SensorFrame f;
+    f.seq = 7;
+    f.sourceId = 3;
+    for (int i = 0; i < kMaxTouchPoints; ++i) {
+        TouchPoint p;
+        p.id = static_cast<uint32_t>(1000 + i);
+        p.x = static_cast<float>(i) * 0.5f;
+        p.y = static_cast<float>(i) * -0.25f;
+        p.z = 0.125f;
+        REQUIRE(f.addPoint(p));
+    }
+
+    tb.write(f);
+    REQUIRE(tb.consume());
+    const SensorFrame& r = tb.readSlot();
+    REQUIRE(r.seq == 7u);
+    REQUIRE(r.sourceId == 3u);
+    REQUIRE(r.count == kMaxTouchPoints);
+
+    int bad = 0;
+    for (int i = 0; i < kMaxTouchPoints; ++i) {
+        if (r.points[i].id != static_cast<uint32_t>(1000 + i) ||
+            r.points[i].x != static_cast<float>(i) * 0.5f ||
+            r.points[i].y != static_cast<float>(i) * -0.25f) {
+            ++bad;
+        }
+    }
+    CHECK_MSG(bad == 0, std::to_string(bad) + " diem sai sau khi qua TripleBuffer");
 }
 
 // ═══════════════════════════════════════════════════════════════════════

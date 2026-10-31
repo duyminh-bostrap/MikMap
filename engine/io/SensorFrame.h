@@ -24,9 +24,9 @@ enum class TouchState : uint8_t {
 };
 
 /// Số điểm chạm tối đa trong một frame.
-/// 64 dư cho mọi trường hợp thực tế (khung IR thường ≤ 40 điểm, Kinect
-/// skeleton ≤ 6 người × ~25 khớp nhưng ta chỉ lấy điểm quan tâm).
-inline constexpr int kMaxTouchPoints = 64;
+/// 512 = 30 người × 17 khớp (COCO-17) của nguồn body, cộng dư cho sensor
+/// khung hình (IR thường ≤ 40 điểm). Đủ chỗ nên `count` phải rộng hơn 8 bit.
+inline constexpr int kMaxTouchPoints = 512;
 
 struct TouchPoint {
     uint32_t   id = 0;            ///< ID bền vững qua các frame
@@ -43,8 +43,8 @@ struct SensorFrame {
     uint64_t   seq = 0;           ///< tăng dần — phát hiện frame bị rơi
     int64_t    tCaptureNs = 0;    ///< ★ steady_clock lúc THU THẬP
     uint16_t   sourceId = 0;
-    uint8_t    count = 0;         ///< số điểm hợp lệ trong points[]
-    uint8_t    _pad = 0;
+    uint16_t   count = 0;         ///< số điểm hợp lệ trong points[] (≥ 8 bit: 512 điểm)
+    uint16_t   _pad = 0;          ///< header đúng 24 byte ⇒ points[] bắt đầu ở offset 24
     TouchPoint points[kMaxTouchPoints]{};
 
     void clear() {
