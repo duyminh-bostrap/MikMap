@@ -11,8 +11,7 @@
 //  nếu copy thẳng sẽ lệch đỏ/xanh so với đường NV12/YUY2.
 //
 //  ── Stride ────────────────────────────────────────────────────────────
-//  pitch dương: hàng y ở base + y*pitch. pitch âm: ảnh bottom-up, hàng y
-//  logic ở base + (h-1-y)*(-pitch).
+//  src luôn trỏ tới hàng logic đầu tiên, như Lock2D; hàng y ở src + y*pitch.
 // ════════════════════════════════════════════════════════════════════════
 #pragma once
 
@@ -28,11 +27,8 @@ inline uint8_t clamp8(int v) {
 }
 
 /// Con trỏ tới hàng logic y. Stride âm = ảnh lưu từ dưới lên.
-inline const uint8_t* rowPtr(const uint8_t* base, long pitch, int y, int h) {
-    if (pitch >= 0) {
-        return base + static_cast<std::ptrdiff_t>(y) * static_cast<std::ptrdiff_t>(pitch);
-    }
-    return base + static_cast<std::ptrdiff_t>(h - 1 - y) * static_cast<std::ptrdiff_t>(-pitch);
+inline const uint8_t* rowPtr(const uint8_t* base, long pitch, int y) {
+    return base + static_cast<std::ptrdiff_t>(y) * static_cast<std::ptrdiff_t>(pitch);
 }
 
 /// Ghi một điểm ảnh theo thứ tự R,G,B từ Y (limited range) và U/V đã trừ 128.
@@ -47,7 +43,7 @@ inline void writePixel(uint8_t* dst, int yRaw, int u, int v) {
 /// CameraFrame::rgb luôn là R-first, giống đường NV12/YUY2 và FakeCamera.
 inline void bgr24ToRgb(const uint8_t* src, long pitch, int w, int h, uint8_t* dst) {
     for (int y = 0; y < h; ++y) {
-        const uint8_t* row = rowPtr(src, pitch, y, h);
+        const uint8_t* row = rowPtr(src, pitch, y);
         uint8_t* out = dst + static_cast<std::size_t>(y) * static_cast<std::size_t>(w) * 3u;
         for (int x = 0; x < w; ++x) {
             const uint8_t* p = row + static_cast<std::size_t>(x) * 3u;
@@ -78,7 +74,7 @@ inline void nv12ToRgb(const uint8_t* src, long pitch, int w, int h, uint8_t* dst
 /// YUY2: mỗi cặp điểm ảnh là 4 byte Y0 U Y1 V.
 inline void yuy2ToRgb(const uint8_t* src, long pitch, int w, int h, uint8_t* dst) {
     for (int y = 0; y < h; ++y) {
-        const uint8_t* row = rowPtr(src, pitch, y, h);
+        const uint8_t* row = rowPtr(src, pitch, y);
         uint8_t* out = dst + static_cast<std::size_t>(y) * static_cast<std::size_t>(w) * 3u;
         for (int x = 0; x + 1 < w; x += 2) {
             const uint8_t* p = row + static_cast<std::size_t>(x) * 2u;

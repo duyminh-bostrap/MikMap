@@ -553,6 +553,8 @@ bool MfCamera::Impl::convert(IMFSample* sample, CameraFrame& out, std::string& e
             err = "Camera: short sample buffer";
             return false;
         }
+        // Lock returns the allocation start; Lock2D already returns scanline 0.
+        if (pitch < 0) data += absPitch * static_cast<size_t>(height - 1);
     }
 
     bool ok = true;
@@ -731,7 +733,7 @@ void MfCamera::Impl::close() {
     // Chờ read() rời reader trước khi giải phóng nó.
     {
         std::unique_lock<std::mutex> lock(mutex);
-        cv.wait_for(lock, std::chrono::milliseconds(2000), [this] { return !readActive; });
+        cv.wait(lock, [this] { return !readActive; });
     }
 
     // Huỷ yêu cầu ReadSample đang treo (async: Flush trả về ngay).
@@ -943,7 +945,12 @@ bool MfCamera::open(const std::string& id, int width, int height, std::string& e
         return false;
     }
 
-    LONG stride = static_cast<LONG>(curW) * 3;
+    LONG stride = 0;
+    hr = ::MFGetStrideForBitmapInfoHeader(subtype.Data1, curW, &stride);
+    if (FAILED(hr)) {
+        err = "Camera \"" + name + "\": cannot determine video stride (" + hrText(hr) + ")";
+        return false;
+    }
     UINT32 strideAttr = 0;
     if (SUCCEEDED(current->GetUINT32(MF_MT_DEFAULT_STRIDE, &strideAttr)) && strideAttr != 0) {
         stride = static_cast<LONG>(static_cast<int32_t>(strideAttr));
@@ -1051,10 +1058,9 @@ MfCamera::MfCamera() : m_impl(std::make_unique<Impl>()) {}
 MfCamera::~MfCamera() = default;
 
 bool MfCamera::open(const std::string& id, int width, int height, std::string& err) {
-    (void)id;
     (void)width;
     (void)height;
-    err = "camera capture is unsupported on this platform";
+    err = "camera capture is unsupported on this platform: " + id;
     return false;
 }
 

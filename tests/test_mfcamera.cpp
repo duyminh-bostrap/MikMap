@@ -72,7 +72,8 @@ TEST_CASE("MfCamera convert: RGB24 bottom-up (stride am) dung thu tu hang") {
     }
 
     std::vector<uint8_t> dst(static_cast<size_t>(w) * h * 3u, 0);
-    camera_detail::bgr24ToRgb(src.data(), -pitch, w, h, dst.data());
+    // Lock2D returns the top logical scanline, even with negative pitch.
+    camera_detail::bgr24ToRgb(src.data() + pitch * (h - 1), -pitch, w, h, dst.data());
 
     for (int i = 0; i < w * h; ++i) {
         const size_t o = static_cast<size_t>(i) * 3u;
@@ -191,15 +192,17 @@ TEST_CASE("MfCamera: doc 10 khung tu webcam that") {
 
     MfCamera cam;
     std::string err;
-    REQUIRE(cam.open(want, 640, 480, err));
+    const bool opened = cam.open(want, 640, 480, err);
+    if (!opened) std::cout << "camera open failed: " << err << "\n";
+    REQUIRE(opened);
     CHECK(err.empty());
 
     // open() chọn cỡ gần nhất >= 640x480 (hoặc lớn nhất nếu không có), và
     // caps() phải mô tả đúng cỡ mà read() trả về.
     const CameraCaps caps = cam.caps();
     REQUIRE(caps.hasColor);
-    CHECK(caps.color.width >= 640);
-    CHECK(caps.color.height >= 480);
+    CHECK(caps.color.width > 0);
+    CHECK(caps.color.height > 0);
 
     CameraFrame f;
     int64_t prevT = -1;
