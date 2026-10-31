@@ -83,7 +83,7 @@ target_compile_definitions(mikmap PRIVATE
 # tests/ is on the include path for FakeScipServer.h: the Hokuyo self-test and --fake-hokuyo drive a
 # real HokuyoSource against it, so the driver is verified without hardware.
 target_include_directories(mikmap PRIVATE
-  ${CMAKE_CURRENT_SOURCE_DIR} ${REPO}/engine ${REPO}/tests ${IMGUI_DIR} ${IMGUI_DIR}/backends third_party/stb)
+  ${CMAKE_CURRENT_SOURCE_DIR} ${REPO}/engine ${REPO}/tests ${IMGUI_DIR} ${IMGUI_DIR}/backends third_party/stb ${REPO}/third_party/onnxruntime)
 
 if(MIKMAP_WITH_ENGINE)
   target_compile_definitions(mikmap PRIVATE MIKMAP_WITH_ENGINE=1)

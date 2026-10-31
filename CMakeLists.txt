@@ -85,7 +85,7 @@ file(GLOB_RECURSE MIKMAP_IO_HEADERS CONFIGURE_DEPENDS
 find_package(Threads REQUIRED)
 
 add_library(mikmap_io STATIC ${MIKMAP_IO_SOURCES} ${MIKMAP_IO_HEADERS})
-target_include_directories(mikmap_io PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/engine")
+target_include_directories(mikmap_io PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/engine" PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/onnxruntime")
 target_link_libraries(mikmap_io PUBLIC mikmap_core Threads::Threads ${CMAKE_DL_LIBS})
 
 # Winsock: PHẢI khai ở đây, không chỉ dựa vào `#pragma comment(lib, ...)`
