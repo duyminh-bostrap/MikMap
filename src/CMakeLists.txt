@@ -98,6 +98,9 @@ if(WIN32)
   # which breaks std::min/std::max/std::clamp calls under MSVC.
   target_compile_definitions(mikmap PRIVATE NOMINMAX)
   target_link_libraries(mikmap PRIVATE dwmapi ws2_32 iphlpapi winhttp)   # dark titlebar (main.cpp) + UDP socket (OscSource.cpp) + adapter list (NetScan.cpp) + packs (HttpGet.cpp)
+  # Media Foundation: the app compiles engine/io directly (see ENGINE_SOURCES), so it
+  # needs the camera backend's libraries even though mikmap_io itself is not linked here.
+  target_link_libraries(mikmap PRIVATE mfplat mfreadwrite mf mfuuid ole32)
   # GUI subsystem: no console window. Works for both MSVC (/SUBSYSTEM:WINDOWS)
   # and MinGW (-mwindows), unlike a hardcoded linker flag.
   if(NOT MIKMAP_CONSOLE)

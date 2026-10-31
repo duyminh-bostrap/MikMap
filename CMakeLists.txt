@@ -94,6 +94,12 @@ target_link_libraries(mikmap_io PUBLIC mikmap_core Threads::Threads ${CMAKE_DL_L
 # PUBLIC vì test_osc.cpp cũng tự mở socket.
 if(WIN32)
     target_link_libraries(mikmap_io PUBLIC ws2_32 iphlpapi winhttp)   # iphlpapi: GetAdaptersAddresses (NetScan.cpp); winhttp: HttpGet.cpp
+    # Media Foundation cho camera 2D (MfCamera.cpp): mfplat = MFStartup/
+    # MFEnumDeviceSources/MFCreateAttributes, mfreadwrite = IMFSourceReader,
+    # mfuuid = các GUID MFVideoFormat_*, mf = bộ giải mã/video processor,
+    # ole32 = CoInitializeEx/CoTaskMemFree. PUBLIC vì test và mikmap_packtool
+    # link mikmap_io; app (src/) tự glob engine/io nên có dòng link riêng.
+    target_link_libraries(mikmap_io PUBLIC mfplat mfreadwrite mf mfuuid ole32)
 endif()
 
 # ── Thư viện i18n: bảng chuỗi giao diện ────────────────────────────────
