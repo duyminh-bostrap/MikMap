@@ -52,6 +52,7 @@ int PersonTracker::update(const PersonPose* people,int n,double tSec,TrackedPers
             const float dt=static_cast<float>(now-track.person.lastSeen);
             const float dx=track.vx*dt,dy=track.vy*dt;
             predicted.x0+=dx; predicted.x1+=dx; predicted.hx+=dx; predicted.y0+=dy; predicted.y1+=dy; predicted.hy+=dy;
+            if(!std::isfinite(predicted.x0) || !std::isfinite(predicted.x1) || !std::isfinite(predicted.y0) || !std::isfinite(predicted.y1) || !std::isfinite(predicted.hx) || !std::isfinite(predicted.hy)) predicted=bounds(track.raw);
             for(int d=0;d<count;++d) if(!used[d]) {
                 const auto b=bounds(people[selected[d]]); const float overlap=iou(predicted,b);
                 const float distance=std::hypot(predicted.hx-b.hx,predicted.hy-b.hy);
@@ -62,7 +63,13 @@ int PersonTracker::update(const PersonPose* people,int n,double tSec,TrackedPers
         if(bestSlot<0) break;
         auto& track=tracks_[bestSlot]; const auto& raw=people[selected[bestDetection]];
         const double dt=now-track.person.lastSeen;
-        if(dt>0) { const auto a=bounds(track.raw),b=bounds(raw); track.vx=static_cast<float>((b.hx-a.hx)/dt); track.vy=static_cast<float>((b.hy-a.hy)/dt); }
+        if(dt>0) {
+            const auto a=bounds(track.raw),b=bounds(raw);
+            const double vx=(double(b.hx)-a.hx)/dt,vy=(double(b.hy)-a.hy)/dt;
+            const double limit=std::numeric_limits<float>::max();
+            const bool finite=std::isfinite(vx) && std::isfinite(vy) && std::abs(vx)<=limit && std::abs(vy)<=limit;
+            track.vx=finite ? static_cast<float>(vx) : 0; track.vy=finite ? static_cast<float>(vy) : 0;
+        }
         auto pose=raw;
         if(params_.smoothing) for(int k=0;k<17;++k) if(raw.kp[k].conf>0 && track.person.pose.kp[k].conf>0) {
             const float alpha=params_.smoothing==1 ? .65f : .35f;

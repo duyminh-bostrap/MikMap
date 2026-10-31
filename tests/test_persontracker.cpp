@@ -57,3 +57,10 @@ TEST_CASE("Person tracker invalid inputs time and smoothing") {
     p.score=std::numeric_limits<float>::quiet_NaN(); CHECK(t.update(&p,1,2,out,30)==0);
 }
 
+TEST_CASE("Person tracker tiny time delta keeps finite motion prediction") {
+    PersonTracker t; TrackedPerson out[30]; PersonPose p=person(.2f);
+    REQUIRE(t.update(&p,1,0,out,30)==1);
+    p=person(.21f); REQUIRE(t.update(&p,1,1e-300,out,30)==1);
+    p=person(.22f); REQUIRE(t.update(&p,1,.1,out,30)==1);
+    CHECK(out[0].slot==0); CHECK(out[0].pose.kp[0].x==p.kp[0].x);
+}
