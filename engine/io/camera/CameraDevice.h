@@ -41,7 +41,10 @@ struct CameraCaps {
 /// Một khung đã giải mã. Bộ đệm thuộc về người gọi và được read() dùng lại.
 struct CameraFrame {
     int width = 0, height = 0;
-    std::vector<uint8_t> rgb;          ///< RGB24, đóng gói liền (width*height*3)
+    /// RGB24, thứ tự byte R,G,B (R-first — KHÔNG phải BGR của DIB), đóng gói
+    /// liền width*height*3. Mọi backend (FakeCamera, MfCamera) phải theo đúng
+    /// thứ tự này; texture upload dùng GL_RGB.
+    std::vector<uint8_t> rgb;
     int depthW = 0, depthH = 0;
     std::vector<uint16_t> depthMm;     ///< rỗng với Camera 2D
     int64_t tCaptureNs = 0;            ///< mốc thời gian lúc thiết bị bắt khung

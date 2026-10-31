@@ -10,6 +10,8 @@
 
 #include "io/camera/MfCamera.h"
 
+#include "io/camera/MfCameraConvert.h"
+
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
@@ -17,6 +19,121 @@
 #include <vector>
 
 using namespace mikmap;
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Chuyển màu trên bộ đệm tổng hợp — không cần webcam
+// ═══════════════════════════════════════════════════════════════════════
+
+TEST_CASE("MfCamera convert: RGB24 cua MF la BGR, doi thanh R-first") {
+    // MFVideoFormat_RGB24 là DIB: byte trong bộ đệm là B,G,R. Đường copy
+    // nhanh phải đảo kênh, nếu không sẽ lệch đỏ/xanh so với NV12/YUY2.
+    const int w = 3, h = 2;
+    const long pitch = 11;   // 3*3 + 2 byte đệm: pitch lẻ, không tight
+    std::vector<uint8_t> src(static_cast<size_t>(pitch) * h, 0xEE);
+    for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+            const int i = y * w + x;
+            uint8_t* p = src.data() + static_cast<size_t>(y) * static_cast<size_t>(pitch) +
+                         static_cast<size_t>(x) * 3u;
+            p[0] = static_cast<uint8_t>(10 + i);    // B
+            p[1] = static_cast<uint8_t>(100 + i);   // G
+            p[2] = static_cast<uint8_t>(200 + i);   // R
+        }
+    }
+
+    std::vector<uint8_t> dst(static_cast<size_t>(w) * h * 3u, 0);
+    camera_detail::bgr24ToRgb(src.data(), pitch, w, h, dst.data());
+
+    for (int i = 0; i < w * h; ++i) {
+        const size_t o = static_cast<size_t>(i) * 3u;
+        const std::string at = "pixel " + std::to_string(i);
+        CHECK_MSG(dst[o + 0] == static_cast<uint8_t>(200 + i), at + " R");
+        CHECK_MSG(dst[o + 1] == static_cast<uint8_t>(100 + i), at + " G");
+        CHECK_MSG(dst[o + 2] == static_cast<uint8_t>(10 + i), at + " B");
+    }
+}
+
+TEST_CASE("MfCamera convert: RGB24 bottom-up (stride am) dung thu tu hang") {
+    // Stride âm: hàng logic y nằm ở cuối bộ đệm. Đảo kênh phải đi kèm đảo
+    // hàng, nếu không ảnh vừa lộn màu vừa lộn trên/dưới.
+    const int w = 2, h = 3;
+    const long pitch = 9;   // 2*3 + 3 byte đệm: pitch lẻ
+    std::vector<uint8_t> src(static_cast<size_t>(pitch) * h, 0xEE);
+    for (int physical = 0; physical < h; ++physical) {
+        const int y = h - 1 - physical;   // hàng vật lý đầu = hàng logic cuối
+        for (int x = 0; x < w; ++x) {
+            const int i = y * w + x;
+            uint8_t* p = src.data() + static_cast<size_t>(physical) * static_cast<size_t>(pitch) +
+                         static_cast<size_t>(x) * 3u;
+            p[0] = static_cast<uint8_t>(10 + i);    // B
+            p[1] = static_cast<uint8_t>(50 + i);    // G
+            p[2] = static_cast<uint8_t>(90 + i);    // R
+        }
+    }
+
+    std::vector<uint8_t> dst(static_cast<size_t>(w) * h * 3u, 0);
+    camera_detail::bgr24ToRgb(src.data(), -pitch, w, h, dst.data());
+
+    for (int i = 0; i < w * h; ++i) {
+        const size_t o = static_cast<size_t>(i) * 3u;
+        const std::string at = "pixel " + std::to_string(i);
+        CHECK_MSG(dst[o + 0] == static_cast<uint8_t>(90 + i), at + " R");
+        CHECK_MSG(dst[o + 1] == static_cast<uint8_t>(50 + i), at + " G");
+        CHECK_MSG(dst[o + 2] == static_cast<uint8_t>(10 + i), at + " B");
+    }
+}
+
+TEST_CASE("MfCamera convert: NV12 BT.601, pitch le, dung R-first") {
+    // Y=81, U=90, V=240 là đỏ BT.601; U/V đảo lại thành xanh dương. Kiểm
+    // đúng cả thứ tự kênh lẫn cách ghép cặp chroma (x/2).
+    const int w = 4, h = 2;
+    const long pitch = 7;   // w + 3 byte đệm
+    const size_t yBytes = static_cast<size_t>(pitch) * h;
+    std::vector<uint8_t> src(yBytes + static_cast<size_t>(pitch) * (h / 2), 0xEE);
+    for (size_t i = 0; i < yBytes; ++i) src[i] = 81;   // Y phẳng
+    uint8_t* uv = src.data() + yBytes;
+    uv[0] = 90;  uv[1] = 240;   // cặp 0: đỏ
+    uv[2] = 240; uv[3] = 90;    // cặp 1: xanh dương
+
+    std::vector<uint8_t> dst(static_cast<size_t>(w) * h * 3u, 0);
+    camera_detail::nv12ToRgb(src.data(), pitch, w, h, dst.data());
+
+    const uint8_t expected[4][3] = {{255, 0, 0}, {255, 0, 0}, {15, 63, 255}, {15, 63, 255}};
+    for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+            const size_t o = (static_cast<size_t>(y) * w + static_cast<size_t>(x)) * 3u;
+            const std::string at = "pixel " + std::to_string(y) + "," + std::to_string(x);
+            CHECK_MSG(dst[o + 0] == expected[x][0], at + " R");
+            CHECK_MSG(dst[o + 1] == expected[x][1], at + " G");
+            CHECK_MSG(dst[o + 2] == expected[x][2], at + " B");
+        }
+    }
+}
+
+TEST_CASE("MfCamera convert: YUY2 ghep cap Y0 U Y1 V, dung R-first") {
+    const int w = 4, h = 2;
+    const long pitch = 13;   // w*2 + 5 byte đệm
+    std::vector<uint8_t> src(static_cast<size_t>(pitch) * h, 0xEE);
+    for (int y = 0; y < h; ++y) {
+        uint8_t* row = src.data() + static_cast<size_t>(y) * static_cast<size_t>(pitch);
+        row[0] = 81; row[1] = 90; row[2] = 81; row[3] = 240;   // cặp 0: đỏ
+        row[4] = 81; row[5] = 240; row[6] = 81; row[7] = 90;   // cặp 1: xanh dương
+    }
+
+    std::vector<uint8_t> dst(static_cast<size_t>(w) * h * 3u, 0);
+    camera_detail::yuy2ToRgb(src.data(), pitch, w, h, dst.data());
+
+    const uint8_t expected[4][3] = {{255, 0, 0}, {255, 0, 0}, {15, 63, 255}, {15, 63, 255}};
+    for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+            const size_t o = (static_cast<size_t>(y) * w + static_cast<size_t>(x)) * 3u;
+            const std::string at = "pixel " + std::to_string(y) + "," + std::to_string(x);
+            CHECK_MSG(dst[o + 0] == expected[x][0], at + " R");
+            CHECK_MSG(dst[o + 1] == expected[x][1], at + " G");
+            CHECK_MSG(dst[o + 2] == expected[x][2], at + " B");
+        }
+    }
+}
 
 // ═══════════════════════════════════════════════════════════════════════
 //  Dò thiết bị + id không tồn tại — không cần webcam

@@ -7,8 +7,9 @@
 //                      trả về ngay, callback báo khung, read() chờ có
 //                      timeout. Nhờ vậy close() đánh thức được read() đang
 //                      chờ và timeout là thật, không phải "chờ may rủi".
-//    · Ảnh ra luôn là RGB24. Nếu thiết bị không nhận RGB24, ta giữ loại
-//      gốc và tự chuyển NV12 / YUY2 trong read().
+//    · Ảnh ra luôn là RGB24, thứ tự byte R,G,B. MFVideoFormat_RGB24 của MF
+//      là BGR (DIB) nên đường copy nhanh đảo kênh; nếu thiết bị không nhận
+//      RGB24, ta giữ loại gốc và tự chuyển NV12 / YUY2 trong read().
 //
 //  Khởi tạo nền tảng:
 //    · COM là chuyện của TỪNG THREAD (CoInitializeEx/CoUninitialize), đếm
@@ -20,6 +21,8 @@
 //      tới close().
 // ════════════════════════════════════════════════════════════════════════
 #include "io/camera/MfCamera.h"
+
+#include "io/camera/MfCameraConvert.h"
 
 #if defined(_WIN32)
 
@@ -38,12 +41,10 @@
 #  include <objbase.h>
 #  include <wrl/client.h>
 
-#  include <algorithm>
 #  include <chrono>
 #  include <cstddef>
 #  include <cstdio>
 #  include <cstdlib>
-#  include <cstring>
 #  include <memory>
 #  include <mutex>
 #  include <utility>
@@ -368,70 +369,6 @@ bool pickMode(const std::vector<ModeInfo>& modes, int wantW, int wantH, ModeInfo
 }
 
 // ────────────────────────────────────────────────────────────────────────
-//  Chuyển ảnh sang RGB24
-// ────────────────────────────────────────────────────────────────────────
-
-uint8_t clamp8(int v) {
-    return static_cast<uint8_t>(v < 0 ? 0 : (v > 255 ? 255 : v));
-}
-
-const uint8_t* rowPtr(const uint8_t* base, LONG pitch, int y, int h) {
-    if (pitch >= 0) {
-        return base + static_cast<ptrdiff_t>(y) * static_cast<ptrdiff_t>(pitch);
-    }
-    // Stride âm = ảnh lưu từ dưới lên.
-    return base + static_cast<ptrdiff_t>(h - 1 - y) * static_cast<ptrdiff_t>(-pitch);
-}
-
-void writePixel(uint8_t* dst, int yRaw, int u, int v) {
-    const int c = std::max(0, yRaw - 16);
-    dst[0] = clamp8((298 * c + 409 * v + 128) >> 8);
-    dst[1] = clamp8((298 * c - 100 * u - 208 * v + 128) >> 8);
-    dst[2] = clamp8((298 * c + 516 * u + 128) >> 8);
-}
-
-void copyRgb24(const uint8_t* src, LONG pitch, int w, int h, uint8_t* dst) {
-    const size_t rowBytes = static_cast<size_t>(w) * 3u;
-    for (int y = 0; y < h; ++y) {
-        std::memcpy(dst + static_cast<size_t>(y) * rowBytes, rowPtr(src, pitch, y, h), rowBytes);
-    }
-}
-
-/// NV12: mặt Y (h hàng) rồi mặt UV xen kẽ (h/2 hàng), BT.601 limited range.
-void nv12ToRgb(const uint8_t* src, LONG pitch, int w, int h, uint8_t* dst) {
-    const uint8_t* uvPlane = src + static_cast<ptrdiff_t>(pitch) * h;
-    for (int y = 0; y < h; ++y) {
-        const uint8_t* yRow = src + static_cast<ptrdiff_t>(y) * pitch;
-        const uint8_t* uvRow = uvPlane + static_cast<ptrdiff_t>(y / 2) * pitch;
-        uint8_t* out = dst + static_cast<size_t>(y) * static_cast<size_t>(w) * 3u;
-        for (int x = 0; x < w; ++x) {
-            const int u = static_cast<int>(uvRow[(x / 2) * 2]) - 128;
-            const int v = static_cast<int>(uvRow[(x / 2) * 2 + 1]) - 128;
-            writePixel(out + static_cast<size_t>(x) * 3u, yRow[x], u, v);
-        }
-    }
-}
-
-/// YUY2: mỗi cặp điểm ảnh là 4 byte Y0 U Y1 V.
-void yuy2ToRgb(const uint8_t* src, LONG pitch, int w, int h, uint8_t* dst) {
-    for (int y = 0; y < h; ++y) {
-        const uint8_t* row = rowPtr(src, pitch, y, h);
-        uint8_t* out = dst + static_cast<size_t>(y) * static_cast<size_t>(w) * 3u;
-        for (int x = 0; x + 1 < w; x += 2) {
-            const uint8_t* p = row + static_cast<size_t>(x) * 2u;
-            const int u = static_cast<int>(p[1]) - 128;
-            const int v = static_cast<int>(p[3]) - 128;
-            writePixel(out + static_cast<size_t>(x) * 3u, p[0], u, v);
-            writePixel(out + static_cast<size_t>(x + 1) * 3u, p[2], u, v);
-        }
-        if (w & 1) {   // chiều rộng lẻ không xảy ra với YUY2; để đen cho an toàn
-            uint8_t* last = out + static_cast<size_t>(w - 1) * 3u;
-            last[0] = last[1] = last[2] = 0;
-        }
-    }
-}
-
-// ────────────────────────────────────────────────────────────────────────
 //  Callback của source reader (async)
 //
 //  Callback chỉ chạm SampleState (shared_ptr), không chạm MfCamera::Impl —
@@ -620,16 +557,16 @@ bool MfCamera::Impl::convert(IMFSample* sample, CameraFrame& out, std::string& e
 
     bool ok = true;
     if (IsEqualGUID(subtype, MFVideoFormat_RGB24)) {
-        copyRgb24(data, pitch, width, height, out.rgb.data());
+        camera_detail::bgr24ToRgb(data, pitch, width, height, out.rgb.data());
     } else if (IsEqualGUID(subtype, MFVideoFormat_NV12)) {
         if (pitch < 0) {
             err = "Camera: unsupported negative stride for NV12";
             ok = false;
         } else {
-            nv12ToRgb(data, pitch, width, height, out.rgb.data());
+            camera_detail::nv12ToRgb(data, pitch, width, height, out.rgb.data());
         }
     } else if (IsEqualGUID(subtype, MFVideoFormat_YUY2)) {
-        yuy2ToRgb(data, pitch, width, height, out.rgb.data());
+        camera_detail::yuy2ToRgb(data, pitch, width, height, out.rgb.data());
     } else {
         err = "Camera: unsupported pixel format";
         ok = false;

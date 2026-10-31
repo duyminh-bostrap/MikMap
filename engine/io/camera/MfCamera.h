@@ -33,6 +33,10 @@ std::vector<CameraInfo> listCameras(std::string& err);
 /// dòng lệnh), hoặc chuỗi rỗng (= camera đầu tiên). Nó chọn cỡ ảnh nhỏ
 /// nhất vẫn ≥ cỡ yêu cầu; nếu không có cỡ nào đủ lớn thì lấy cỡ lớn nhất.
 /// width/height ≤ 0 nghĩa là "không có yêu cầu" — lấy cỡ lớn nhất.
+///
+/// read() trả CameraFrame::rgb theo thứ tự R,G,B (R-first). MFVideoFormat_RGB24
+/// của Media Foundation là BGR (DIB) nên đường copy nhanh phải đảo kênh; đường
+/// NV12/YUY2 tự ghi R-first. Nhờ vậy mọi định dạng cho cùng một thứ tự byte.
 class MfCamera final : public ICameraDevice {
 public:
     MfCamera();
