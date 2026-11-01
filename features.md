@@ -780,7 +780,7 @@ Nay khung input sửa giống khung transform của Preview Cue: **kéo trong kh
 - **Chưa kiểm:** tải gói qua HTTPS thật ngoài mạng Internet (mới kiểm qua `FakeHttpServer` loopback và file `.mikpack` cục bộ); nhánh `curl` của `HttpGet` trên macOS/Linux chưa biên dịch thử trên máy Mac/Linux thật; chưa bấm chuột thật vào tab Gói cảm biến (chỉ kiểm bằng self-test và `--shot`).
 - Đếm mới (đếm lại từ các dòng bảng): 77 `[x]` · 15 `[~]` · 57 `[ ]`, trên 149 dòng.
 
-### Camera 2D native + RTMO Body (2026-11-01)
+### Camera 2D native + RTMO Body (2026-11-01, kiểm Plan A; Plan B bổ sung bên dưới)
 
 - Không đổi điểm bảng: G20 sidecar vẫn chạy; Camera 2D native bổ sung Off/Body,
   không có nghĩa crop/NDI/Spout hoặc Camera3D đã xong. App gọi thật `CameraSource`
@@ -790,12 +790,8 @@ Nay khung input sửa giống khung transform của Preview Cue: **kéo trong kh
   trigger. CPU fallback hiện vàng nhưng vẫn Connected. Replay có nhãn riêng,
   preview xám và điểm ghi sẵn, Off xoá điểm; không phải phép đo GPU/inference.
 - `kMaxTouchPoints` = 512; Camera2D Send out thêm z = confidence (`ifff`), xy của
-  nguồn cũ giữ `iff`. OSC `/mikmap/<device>/frame i:count` là **số điểm**, không phải
-  số thứ tự frame hay số người; chỉ chunk đầu có message này. Touch là
-  `/mikmap/<device>/touch i:id f:x f:y [f:z]`. Text tương ứng `<device> frame <count>`
-  rồi `<device> <id> <x> <y> [<z>]`. Mỗi datagram ≤1200 byte, điểm/line không bị
-  cắt đôi; một frame lớn có nhiều datagram, UDP không bảo đảm nhận đủ/thứ tự.
-  Tọa độ vẫn qua H_s và lựa chọn Origin của thiết bị; z không phải độ sâu.
+  nguồn cũ giữ `iff`. Bytes Body này được giữ nguyên trong Plan B; giao thức hiện
+  tại, nhóm/id và giới hạn chunk/UDP ở [README — giao thức gửi điểm](README.md#giao-thức-gửi-điểm-theo-nhóm-plan-b-tương-thích-body-plan-a).
 - Một worker vòng đời camera, 16 slot live/pending; start/stop/session không chặn
   render. Một camera đóng chậm có thể làm camera khác chờ Connecting. Gói runtime/
   model đang dùng hoặc đã nạp không được thay thế qua online/offline/dependency;
@@ -813,3 +809,49 @@ Nay khung input sửa giống khung transform của Preview Cue: **kéo trong kh
   baseline trước Task1; chi phí P99 riêng của 512 điểm **NOT MEASURED**.
 - Gói mẫu ở `tools/packs/examples/` là template chưa đủ hash/size/license, không
   chứa DLL/model hay catalog dùng được ngay; chưa có phép đo phần cứng để tick thêm.
+
+### Camera Hand · Face · Full và OSC theo nhóm (2026-11-01, Plan B)
+
+- Không tick thêm mục rộng: **G20 vẫn chỉ sidecar MediaPipe**. Native hiện có
+  Off/Body/Hand/Face/Full (mode 0..4); Gesture, crop/NDI/Spout và Camera3D chưa làm.
+  Đã grep đường gọi app: `CameraProps` → `SetCamMode`, `src/sources.cpp::Start`
+  → `modeSpec`/lookup pack → `CameraSource::start/infer` → `TopDownPose::init/infer`
+  (Hand/Face/Full), `clampObjects`, `handSide`, `PersonTracker`, `pointGroupAndId`.
+  Body vẫn `PoseModel` + lookup RTMO s/m cũ; `IsCalibrationPoint` gọi `calibPointId`
+  cho Body/Full/Hand, Face dùng calPoint từ metadata runtime. Không suy ra tích hợp
+  chỉ từ symbol engine hoặc việc link thư viện.
+- Ba gói `hand-rtm`/`face-rtm`/`wholebody-rtmw` cần `onnx-runtime-cuda`, mỗi gói
+  có `detector.onnx` + `keypoints.onnx`. Trần lần lượt Body 30/Hand 24/Face 4/Full 3
+  theo 17/21/106/133 điểm; lọc Full không tăng trần hay giảm số lượt inference.
+  `cam.groups` bitmask thiếu ở project cũ nạp thành 31; mode/groups lưu khứ hồi.
+  Mẫu pack cố ý sai size/hash, chưa cài được; chưa có detector Face RTMDet đã xác
+  minh và chưa xác minh binary mô hình thật. Nguồn/export/giới hạn giấy phép tại
+  [pack examples](tools/packs/examples/README.md).
+- INPUT vẽ thân, xương 21 điểm mỗi tay, chấm mặt/bàn chân riêng màu nhóm. Hand
+  đoán bên bằng tích có hướng điểm 0/5/17, xét Flip, vote năm quan sát (hoà giữ
+  bên cũ); che khuất, lật lòng/mu tay, góc nghiêng hoặc điểm sai vẫn có thể nhầm.
+  Hand độc lập không biết tay thuộc người nào; Full dùng bên theo layout RTMW.
+- Calibration bắt group+id: Body/Full body 16, Hand right 58 (đều slot 0). Tắt Body
+  trong Full vô hiệu Capture; Face thiếu ONNX custom metadata đã xác minh
+  `mikmap.face.nose_tip_index` (chỉ chữ số thập phân 0..105) vô hiệu Capture và
+  gợi ý Body trước. **Chưa biết chỉ số mũi giải phẫu của Face thật**; chỉ số trong
+  test synthetic không phải bằng chứng giải phẫu. Ma trận Body/chỉnh tay có sẵn
+  dùng qua mode trên cùng camera/cấu hình ảnh; không có phép đo phần cứng ở đây.
+- Group 0 body/1 left/2 right/3 face/4 feet theo giao thức README; mặt dùng slot×1000
+  (Face 106, Full 68), các nhóm còn lại slot×100, tay phải cộng 50. `SendOut` giữ group;
+  `OscSource` nhận sibling touch/hand/face/feet, phân biệt (group,id), frame 0 xoá
+  tất cả nhóm. Đổi mode/nhóm hoặc sang gói thiếu gửi empty frame trước luồng mới.
+  UDP vẫn có thể mất/đảo gói và không có sequence/reassembly.
+- **Ghi chú kiểm tra Task 6:** Windows MSVC engine **616 test / 35683 assertion
+  PASS**, app ctest **1/1 PASS**; gồm grouped replay → calibration/SendOut → OSC
+  loopback thật, id trùng giữa nhóm, origin/confidence, lọc Full và reset khi thiếu
+  pack. Fix review thêm so **bytes OSC và text Body qua app thực** với golden
+  trước Plan B, không sửa golden; app ctest PASS. ORT **1.26 CPU** chạy mô hình
+  constant synthetic 21/106/133, kiểm tensor/type/metadata/pipeline; **không phải
+  độ chính xác mô hình trained hay kiểm ORT 1.20.1 CUDA**.
+- Đã mở xem sáu ảnh replay synthetic: Body, Hand, Face, Full, thiếu gói Hand,
+  danh sách mode. Ảnh xác nhận overlay/nhóm/cap/hint và bố cục; nền xám/điểm ghi
+  sẵn, fps replay không phải inference/GPU. Không chạy lại webcam thật trong Plan B.
+  Hand **1/4 tay**, Face **1/4 mặt**, Full **1/3 người** trên camera/GPU thật:
+  **FPS/ms NOT MEASURED**. Linux/macOS chưa build/test; TouchDesigner hay receiver
+  show thật chưa thử. Kết quả/số đo Plan A ở trên giữ theo thời điểm đã ghi.

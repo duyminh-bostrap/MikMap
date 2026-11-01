@@ -1,0 +1,35 @@
+{
+  "id": "wholebody-rtmw",
+  "name": "INCOMPLETE TEMPLATE - wholebody-rtmw",
+  "version": "0.0.0",
+  "kind": "model",
+  "sizeBytes": "REPLACE_WITH_SUM_OF_FILE_SIZES",
+  "files": [
+    {
+      "path": "detector.onnx",
+      "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+      "size": "REPLACE_WITH_BYTES"
+    },
+    {
+      "path": "keypoints.onnx",
+      "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+      "size": "REPLACE_WITH_BYTES"
+    },
+    {
+      "path": "licenses/Apache-2.0-LICENSE.txt",
+      "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+      "size": "REPLACE_WITH_BYTES"
+    },
+    {
+      "path": "licenses/MODEL-NOTICE.txt",
+      "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+      "size": "REPLACE_WITH_BYTES"
+    }
+  ],
+  "requires": [
+    {
+      "id": "onnx-runtime-cuda",
+      "minVersion": "1.20.1"
+    }
+  ]
+}

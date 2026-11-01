@@ -213,7 +213,7 @@ lidar đặt theo mm (`PlacementCalib` → 4 cặp calib, lõi `engine/core/cali
 Output dùng `EditQuad` và mã sân khấu chung `src/stage.cpp` với Mapping; wizard scan IP (`engine/io/net/NetScan`);
 gửi toạ độ OSC/UDP (`engine/io/net/TouchSender`, `SendOut` ở `sources.cpp`, chuẩn hoá 0–1 theo sân khấu 1920×1080 của Screen — không phải canvas `A1`). **Chưa kiểm với phần cứng
 thật** (Hokuyo/YDLIDAR, quét LAN thật, receiver OSC thật như TouchDesigner), và **chưa build Linux/macOS** code mới (`engine/io/net`). Lidar hết chỉnh ROI tay (chỉ ô chọn Count only: Screen — ROI tự theo screen; Zone dự kiến S2, chưa làm;
-Edit ROI còn cho Sim); camera 2D (crop, nhận dạng, preview, NDI/Spout) và lidar 3D/depth CHƯA làm. Chi tiết: "Ghi chú kiểm tra" cuối `features.md`.
+Edit ROI còn cho Sim); tại mốc này camera 2D và lidar 3D/depth chưa làm. Camera2D native nay đã có preview + Body/Hand/Face/Full (xem mục Camera native bên dưới); crop/NDI/Spout và lidar 3D/depth vẫn chưa làm. Chi tiết: "Ghi chú kiểm tra" cuối `features.md`.
 (`A4` thumbnail động đã `[x]` từ 2026-09-23 — giới hạn ≤3 ô vẽ lại/khung, xem đầu mục này.)
 `I2` (lưu/mở dự án) **đã chạy** qua `src/project.cpp` (đọc/ghi `.mikmap` bằng schema
 JSON tự viết riêng của `src/`) nhưng **vẫn chưa gọi `engine/core/model/ProjectIO`** —
@@ -296,12 +296,30 @@ Quy ước build/test/style mặc định ở `.claude/rules/tech-defaults.md`.
 
 ## Camera native (2026-11-01)
 
-Camera2D native Off/Body đã nối `src/sources.cpp` tới CameraSource → MfCamera /
-OrtRuntime / PoseModel / PersonTracker; không còn chỉ là sidecar. Camera3D chưa có
-driver. Body cần gói runtime/model đã xác minh, DLL tại root và basename model
-`rtmo-s*.onnx`/`rtmo-m*.onnx`; xem `tools/packs/examples/README.md`.
+Camera2D native Off/Body/Hand/Face/Full (mode 0..4) đã nối `src/sources.cpp` tới
+CameraSource → MfCamera / OrtRuntime / PoseModel (Body) hoặc TopDownPose dùng chung
+(Hand/Face/Full) / PersonTracker. Trần Body 30/Hand 24/Face 4/Full 3; UI hiện số kẹp.
+Body giữ lookup `rtmo-s*.onnx`/`rtmo-m*.onnx`; ba gói `hand-rtm`/`face-rtm`/
+`wholebody-rtmw` cần `onnx-runtime-cuda` và manifest đã xác minh chứa
+`detector.onnx`/`keypoints.onnx`. DLL runtime tại root. Mẫu cố ý chưa cài được,
+nguồn/ABI/licence ở `tools/packs/examples/README.md`; không suy Apache-2.0 code
+thành quyền phân phối mọi weights/dataset. Camera3D/Gesture/crop/NDI/Spout chưa làm.
+`cam.groups` mặc định 31 khi thiếu trong project cũ, chỉ lọc Full; đổi mode/nhóm
+reset slot, gửi frame 0 xoá mọi nhóm, thiếu pack giữ mode + hint. Group 0 body/
+1 left/2 right/3 face/4 feet; sibling touch/hand/face/feet; mặt slot*1000 (106/68),
+nhóm khác slot*100, tay phải +50. Chi tiết wire ở README; Body OSC/text có golden bất biến
+và so bytes qua app thực. Framecount chỉ chunk đầu, không sequence; UDP có thể mất/đảo.
+Calibration phải khớp group+id: Body/Full body 16, Hand right 58 (slot 0). Full tắt
+Body vô hiệu Capture. Face cần ONNX `mikmap.face.nose_tip_index` đã xác minh,
+chỉ chữ số thập phân 0..105; thiếu/sai vô hiệu Capture + hint Body trước, không đoán
+chỉ số mũi. Ma trận Body/chỉnh tay đã có vẫn dùng qua mode trên cùng camera/cấu hình.
+Hand dùng tích có hướng 0/5/17 + Flip + vote 5 quan sát, có thể nhầm bên do góc/che khuất;
+không gắn tay với người. Full lấy bên theo layout mô hình.
 Một lifecycle worker 16 slot tránh start/stop trên render; camera khác có thể chờ.
 Gói đã nạp chỉ cập nhật sau restart. ORT crash cùng tiến trình làm app tắt: giữ
 Skeleton OSC + pose_bridge cho show cần cách ly lỗi. Replay không inference.
-Không suy diễn engine test/replay thành webcam/GPU đã kiểm; webcam Rapoo bị từ
-chối 0x80070005, hardware inference NOT MEASURED (features.md ghi chi tiết).
+Không suy diễn engine test/replay thành webcam/GPU đã kiểm: Task 6 engine 616/
+35683 assertion + app xanh, ORT 1.26 CPU constant synthetic, sáu ảnh replay đã xem;
+chưa xác minh trained model/ORT 1.20.1 CUDA. Plan A webcam Rapoo bị từ chối
+0x80070005; Plan B Hand 1/4, Face 1/4, Full 1/3 FPS/ms thật NOT MEASURED. Linux/macOS
+và TouchDesigner thật chưa kiểm (`features.md` ghi chi tiết); G20 vẫn là sidecar.

@@ -150,7 +150,7 @@ chuyển sang mô hình thật của `engine/`, làm từng mảng để luôn b
 4. `io/*` → nguồn sensor thật (G3, G14) thay cho radar mô phỏng trong
    `src/sensor.cpp`. OSC/UDP (G4), camera skeleton (G20), Hokuyo 2D lidar
    (G21, SCIP 2.0/TCP) và thiết bị Plugin DLL (G22, ABI C) đã chạy qua
-   `src/sources.cpp`; sensor chọn và chỉnh ngay trên trang Mapping (tab INPUT/OUTPUT), đặt lidar theo mm, scan IP thêm nhiều sensor và gửi toạ độ OSC/UDP (G18, G24–G27) (gốc toạ độ gửi ra mặc định dưới-trái, chọn được trên-trái; project cũ giữ trên-trái) cũng đã chạy; Camera 2D native Off/Body đã nối vào app (xem dưới). Serial/Arduino (G3) chưa làm; YDLIDAR (G23) còn chờ plugin/phần cứng thật, mới kiểm ABI bằng plugin giả; lidar 3D/depth còn chờ.
+   `src/sources.cpp`; sensor chọn và chỉnh ngay trên trang Mapping (tab INPUT/OUTPUT), đặt lidar theo mm, scan IP thêm nhiều sensor và gửi toạ độ OSC/UDP (G18, G24–G27) (gốc toạ độ gửi ra mặc định dưới-trái, chọn được trên-trái; project cũ giữ trên-trái) cũng đã chạy; Camera 2D native Off/Body/Hand/Face/Full đã nối vào app (xem dưới). Serial/Arduino (G3) chưa làm; YDLIDAR (G23) còn chờ plugin/phần cứng thật, mới kiểm ABI bằng plugin giả; lidar 3D/depth còn chờ.
 5. `core/model/Composition` · `Layer` · `Clip` · `Transport` → thay mô hình
    deck trong `src/app.h`.
 
@@ -197,17 +197,51 @@ thật (B1 trong `features.md`), nên chưa áp dụng cho prototype.
 
 Chưa chọn.
 
-## Camera 2D + Body (2026-11-01)
+## Camera 2D: Off · Body · Hand · Face · Full (2026-11-01)
 
-Mapping → + Sensor → **Camera 2D**, bật thiết bị, chọn **INPUT → Mode → Body**.
-Off chỉ preview, không cần model; Body dùng RTMO s/m (17 khớp/người), camera
-Media Foundation trên Windows và hai gói `onnx-runtime-cuda` + `pose-rtmo`.
-Xem [gói mẫu và cách ký](tools/packs/examples/README.md). GPU không dùng được
-thì thử CPU, trạng thái vàng cảnh báo chậm. Camera 3D chưa có driver, không có
-trong popup; các mode tương lai chưa bật. Crop/NDI/Spout chưa làm.
+Mapping → + Sensor → **Camera 2D**, bật thiết bị, chọn **INPUT → Mode**.
+Mỗi camera chỉ chạy một mode; "Pose" là Body. Camera thật dùng Media Foundation
+trên Windows. Mỗi mode nhận dạng cần `onnx-runtime-cuda` cùng gói trong bảng;
+xem [gói mẫu, nguồn mô hình và cách ký](tools/packs/examples/README.md).
 
-CameraSource chạy thật qua `src/sources.cpp` → MfCamera / OrtRuntime / PoseModel /
-PersonTracker. Khởi tạo, đóng camera và session chạy trên một worker 16 slot;
+| Mode (`cam.mode`) | Mô hình / gói | Điểm mỗi đối tượng | Trần đối tượng |
+|---|---|---:|---:|
+| Off (0) | Chỉ preview, không cần model | 0 | 0 |
+| Body (1) | RTMO s/m / `pose-rtmo` | 17 | 30 người |
+| Hand (2) | Detector tay + RTMPose-hand / `hand-rtm` | 21 | 24 bàn tay |
+| Face (3) | Detector mặt + RTMPose-face / `face-rtm` | 106 | 4 mặt |
+| Full (4) | Detector người + RTMW / `wholebody-rtmw` | 133 | 3 người |
+
+Trần tính theo khung 512 điểm, trước khi lọc confidence/nhóm; Properties hiện số
+đối tượng sau khi kẹp. Full gồm 17 thân + 6 bàn chân + 68 mặt + 2×21 tay;
+tắt nhóm chỉ lọc điểm xuất ra, không giảm số lần chạy mô hình điểm theo người.
+Full có năm ô Body/Left hand/Right hand/Face/Feet. Project lưu `cam.mode` 0..4
+và `cam.groups` là bitmask `1 << group`; thiếu `groups` nạp thành 31 (bật cả năm).
+Đổi mode/nhóm khởi động lại nguồn, reset slot và gửi frame 0 trước luồng mới;
+thiếu gói vẫn giữ mode đã chọn, hiện PACK/Cần gói và đường vào Cài đặt.
+
+Body giữ lookup model đã xác minh `rtmo-s*.onnx`/`rtmo-m*.onnx`; ba mode mới dùng
+`detector.onnx` + `keypoints.onnx` từ manifest đã xác minh. App gọi `CameraSource`
+qua `src/sources.cpp`, dùng `PoseModel` cho Body, chung `TopDownPose` cho Hand/Face/Full
+và `PersonTracker` cho slot. Hand độc lập không gắn tay với người: trái/phải là
+heuristic dấu tích có hướng từ cổ tay–gốc ngón trỏ–gốc ngón út (0/5/17), có xét
+Flip và bỏ phiếu cửa sổ năm quan sát; hoà giữ bên cũ. Lật lòng/mu tay, che khuất,
+góc nhìn nghiêng hoặc điểm sai có thể làm nhầm bên; vote chỉ giảm rung. Full lấy
+bên theo layout mô hình. INPUT vẽ xương thân/tay, chấm mặt/bàn chân theo màu nhóm.
+
+OUTPUT giữ calibration/gửi/trigger. Capture chọn **cả group và id**: Body/Full
+là body id 16 (cổ tay phải slot 0), Hand là hand-right id 58 (đầu ngón trỏ slot 0).
+Full tắt Body thì Capture bị vô hiệu cùng gợi ý bật lại. Face chỉ Capture chóp mũi
+khi ONNX `keypoints.onnx` có custom metadata `mikmap.face.nose_tip_index`: chuỗi
+chỉ chữ số thập phân 0..105, do nhà xuất bản xác minh đúng layout và giải phẫu.
+Chưa xác minh được chỉ số chóp mũi của mô hình Face thật; thiếu/sai metadata thì
+Capture bị vô hiệu, gợi ý calibrate bằng Body trước. Ma trận Body hoặc chỉnh tay
+đã có vẫn dùng qua các mode trên cùng camera/cấu hình ảnh chuẩn hoá; kiểm lại khi
+đổi camera, Flip hoặc cách đóng khung ảnh.
+
+GPU không dùng được thì thử CPU, trạng thái vàng cảnh báo chậm. Camera 3D chưa
+có driver, không có trong popup; Gesture còn mờ. Crop/NDI/Spout chưa làm.
+Khởi tạo, đóng camera và session chạy trên một worker 16 slot;
 worker chậm có thể làm camera khác chờ Connecting, không chặn frame render.
 Gói đã nạp được bảo vệ khỏi cập nhật cả khi tắt thiết bị; khởi động lại để cập nhật.
 Mọi đường cài online/offline kiểm bảo vệ gói phụ thuộc. Không suy ra toàn bộ app
@@ -216,6 +250,40 @@ không lock/alloc: snapshot của PackInstaller vẫn có mutex có sẵn.
 ORT chạy trong tiến trình app: crash native có thể làm tắt cả app. Show cần tiếp
 tục khi inference hỏng nên dùng **Skeleton OSC + [pose_bridge](tools/pose_bridge/README.md)**
 ở tiến trình riêng. `--replay <file.mikpose>` kiểm UI/luồng điểm bằng dữ liệu ghi sẵn,
-không chạy inference; `--camera-mode 0|1` chọn Off/Body.
+không chạy inference; `--camera-mode 0|1|2|3|4` chọn Off/Body/Hand/Face/Full.
+Replay `.mikpose`: mỗi dòng `tSec slot joint x y confidence [group]`, thiếu group
+là Body (0); joint là chỉ số cục bộ trong nhóm (tay phải 0..20, chưa cộng 50).
 
 Ghi chú kiểm tra và giới hạn đo đạc ở cuối [features.md](features.md).
+
+### Giao thức gửi điểm theo nhóm (Plan B, tương thích Body Plan A)
+
+OSC gửi bundle; mỗi điểm camera có `i:id f:x f:y f:z`, z là confidence 0–1,
+không phải mét. Nguồn cũ không có z vẫn gửi `i:id f:x f:y`. x/y đi qua `H_s`,
+chuẩn hoá theo sân khấu Screen và Origin đã chọn; có thể ra ngoài 0–1 sau calib.
+Danh tính điểm là **(group, id)**, không dùng id đơn lẻ vì các nhóm có thể trùng id.
+
+| Group | Địa chỉ OSC | Id |
+|---|---|---|
+| 0 body | `/mikmap/<device>/touch` | `slot*100 + i`, i theo MediaPipe (17 khớp COCO ánh xạ sang 0,2,5,7,8,11,12,13,14,15,16,23,24,25,26,27,28) |
+| 1 hand-left | `/mikmap/<device>/hand` | `slot*100 + i`, i = 0..20 |
+| 2 hand-right | `/mikmap/<device>/hand` | `slot*100 + 50 + i`, i = 0..20 |
+| 3 face | `/mikmap/<device>/face` | **`slot*1000 + i`**, i = 0..105 ở Face, 0..67 ở Full |
+| 4 feet | `/mikmap/<device>/feet` | `slot*100 + i`, i = 0..5 (Full) |
+
+Full dùng chung slot người cho mọi nhóm; Hand dùng slot của riêng từng bàn tay,
+Face dùng slot khuôn mặt. Face106 và Full68 là hai layout riêng, không suy ra
+ý nghĩa giải phẫu từ cùng số i. Các địa chỉ hand/face/feet là **sibling** của
+touch, không phải `/touch/hand`. Receiver `OscSource` dùng prefix touch đã cấu
+hình để nhận các sibling này và tách hai bên tay qua `id % 100`.
+
+Chỉ chunk đầu có `/mikmap/<device>/frame i:count`: count là **tổng số điểm**,
+không phải sequence hay số đối tượng. Chunk sau chỉ chứa điểm. `frame 0` xoá
+mọi nhóm của thiết bị (kể cả khi đổi sang mode thiếu gói). Mỗi datagram ≤1200
+byte, không cắt đôi message/line; UDP có thể rơi hoặc đảo gói, **không có sequence
+để ghép/khôi phục frame**. Gửi frame 0 không bảo đảm nó tới nơi qua mạng mất gói.
+
+UDP text giữ `<device> frame <count>` và dòng Body `<device> <id> <x> <y> [<z>]`;
+nhóm khác thêm tên: `<device> hand|face|feet <id> <x> <y> [<z>]`.
+Bytes Body OSC/text không đổi so với Plan A, có golden từ trước Plan B và kiểm
+replay qua `SensorsTick` → `SendOut` → UDP thật so từng byte với golden bất biến.

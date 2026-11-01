@@ -145,8 +145,19 @@ trạng thái một dòng.
 
 ## Camera 2D trong Mapping
 
-INPUT: preview, Off/Body, cấu hình RTMO s/m và overlay; OUTPUT: calib, gửi, trigger.
+INPUT: preview, Off/Body/Hand/Face/Full, cấu hình RTMO s/m chỉ ở Body; mode mới
+hiện tên model/số điểm. Trần Body 30/Hand 24/Face 4/Full 3 và số sau kẹp phải thấy được.
+Full có năm checkbox nhóm (cam.groups, thiếu nạp 31), chỉ lọc điểm xuất, không giảm
+inference. Overlay theo group: thân, xương tay 21, chấm mặt/feet; không nối khác nhóm/slot.
+OUTPUT: calib, gửi, trigger. Capture phải khớp group+id (Body/Full body 16,
+Hand right 58, slot 0); Full tắt Body thì vô hiệu kèm hint. Face chỉ bật khi metadata
+ONNX `mikmap.face.nose_tip_index` đã xác minh, chuỗi số thập phân 0..105; thiếu/sai
+thì vô hiệu và gợi ý calibrate Body trước. Ma trận Body/chỉnh tay có sẵn vẫn dùng
+qua mode trên cùng camera/cấu hình. Không gán ý nghĩa giải phẫu cho index synthetic.
 Hiện rõ Connecting khi worker bận, PACK khi thiếu gói, vàng khi CPU fallback;
-không biến CPU fallback thành mất kết nối. Camera3D chưa hỗ trợ; mode tương lai
-phải mờ. Replay phải có nhãn, không gọi fps replay là inference/GPU fps.
+không biến CPU fallback thành mất kết nối. Thiếu pack giữ mode người dùng chọn
+và hiện đường vào Cài đặt; đổi mode/nhóm gửi frame 0 xoá mọi nhóm trước luồng mới.
+Camera3D chưa hỗ trợ; Gesture tương lai phải mờ. Replay phải có nhãn, không gọi
+fps replay là inference/GPU fps. Hand trái/phải là heuristic + Flip + vote 5 quan sát,
+có thể nhầm do che khuất/góc tay; Full lấy bên theo layout mô hình.
 Giữ Skeleton OSC tách biệt: sidecar cách ly crash inference, ORT native thì không.
