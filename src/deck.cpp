@@ -675,7 +675,7 @@ static void LayerRow(ImRect r, int li, ScrollArea&) {
   if (grp) VLine(r.Min.x, r.Min.y, r.Max.y - 1, K(RoleHex(grp->role)));
   const uint32_t acc = CLIP_COLORS[std::clamp(l.color, 0, 5)];   // Properties > Layer > Color
   if (selected) {
-    for (int k = 3; k >= 1; --k) g.dl->AddRectFilled(ImVec2(r.Min.x - k, r.Min.y), ImVec2(r.Min.x + 3 + k, r.Max.y), Ca(K(acc, 0.08f)));
+    if (kGlowFx) for (int k = 3; k >= 1; --k) g.dl->AddRectFilled(ImVec2(r.Min.x - k, r.Min.y), ImVec2(r.Min.x + 3 + k, r.Max.y), Ca(K(acc, 0.08f)));
     Fill(Rc(r.Min.x, r.Min.y, 3, r.GetHeight()), K(acc));
   } else Fill(Rc(r.Min.x, r.Min.y, 3, r.GetHeight()), K(acc, 0.35f));   // faint, so a layer's colour reads even when it isn't selected
   float padL = 6 + indent * 8 + r.Min.x, padR = r.Max.x - 6;
@@ -1046,7 +1046,6 @@ static void Inspector(ImRect r) {
     ImRect tr(x0 + 6 + i * (tw + 4), ty + 5, x0 + 6 + i * (tw + 4) + tw, ty + 5 + 42);
     bool on = A.tab == i;
     Hit h = HitR(tr);
-    if (on) { Glow(tr, pal::cyan, 0.30f, 12, 3); Fill(tr, K(pal::g16), 3); }
     Box(tr, on ? K(pal::cyan, 0.15f) : 0, on ? K(pal::cyan) : 0, 3);
     ImU32 fg = K(on ? pal::cyan : pal::t66);
     Icon(PROP_TABS[i][1], ImVec2((tr.Min.x + tr.Max.x) * 0.5f, tr.Min.y + 15), 13, fg);
@@ -1076,7 +1075,7 @@ static void Inspector(ImRect r) {
     Text(ox + 8, oy + y + 5, UI_S, 10, K(pal::t88), label);
     TextR(ox + W - 8, oy + y + 5, MONO_B, 10, K(pal::tf3), val);
     y += 10 + 4;
-    bool ch = Slider(sidBase + sid++, Rc(ox + 8, oy + y + 4, W - 16, 6), v, hex, mn, mx);
+    bool ch = Slider(sidBase + sid++, Rc(ox + 8, oy + y + 4, W - 16, 6), v, hex, mn, mx, true);
     y += 14 + 4;
     return ch;
   };
@@ -1210,7 +1209,6 @@ static void Inspector(ImRect r) {
       ImRect br(ox + 8 + i * (sw + 4), oy + y, ox + 8 + i * (sw + 4) + sw, oy + y + 26);
       bool on = *sws[i].v;
       Hit h = HitR(br);
-      if (on) { Glow(br, sws[i].hex, 0.4f, 10, 3); Fill(br, K(pal::g16), 3); }
       Box(br, on ? K(sws[i].hex, 0.14f) : K(pal::g1c), on ? K(sws[i].hex) : K(pal::g22), 3);
       std::string u = Upper(sws[i].n);
       TextC((br.Min.x + br.Max.x) * 0.5f, (br.Min.y + br.Max.y) * 0.5f, UI_B, 10, K(on ? sws[i].hex : pal::t77), u.c_str(), 0.09f);
@@ -1271,7 +1269,6 @@ static void Inspector(ImRect r) {
         ImRect br(ox + 8 + i * (pwid + 4), oy + y, ox + 8 + i * (pwid + 4) + pwid, oy + y + 20);
         bool on = A.canvasW == pres[i].w && A.canvasH == pres[i].h;
         Hit h = HitR(br);
-        if (on) { Glow(br, pal::cyan, 0.3f, 10, 3); Fill(br, K(pal::g16), 3); }
         Box(br, on ? K(pal::cyan, 0.15f) : K(pal::g1c), on ? K(pal::cyan) : K(pal::g22), 3);
         TextC((br.Min.x + br.Max.x) * 0.5f, (br.Min.y + br.Max.y) * 0.5f, MONO_B, 9, K(on ? pal::cyan : pal::t77), pres[i].n, 0.09f);
         if (h.hover) CursorHand();
@@ -1325,7 +1322,6 @@ static void Inspector(ImRect r) {
     const MediaKind mk = MediaKindOf(mc.media);
     auto chip = [&](ImRect br, const char* lab, bool on, uint32_t hex, bool enabled = true) -> bool {
       Hit h = enabled ? HitR(br) : Hit();
-      if (on) { Glow(br, hex, 0.28f, 10, 3); Fill(br, K(pal::g16), 3); }
       Box(br, on ? K(hex, 0.18f) : K(pal::g1c), on ? K(hex) : K(pal::g22), 3);
       TextC((br.Min.x + br.Max.x) * 0.5f, (br.Min.y + br.Max.y) * 0.5f, MONO_B, 9, K(on ? hex : enabled ? pal::t88 : pal::g33), lab, 0.09f);
       if (h.hover) CursorHand();
@@ -1614,7 +1610,7 @@ static void Inspector(ImRect r) {
           Text(ox + 8, oy + y + 5, UI_S, 10, K(pal::t88), d.pl[pi] ? d.pl[pi] : "");
           TextR(ox + W - 8, oy + y + 5, MONO_B, 10, K(pal::tf3), vl.c_str());
           y += 10 + 4;
-          Slider(0x3000 + i * 8 + pi, Rc(ox + 8, oy + y + 4, W - 16, 6), f.p[pi], tn);
+          Slider(0x3000 + i * 8 + pi, Rc(ox + 8, oy + y + 4, W - 16, 6), f.p[pi], tn, 0, 100, true);
           y += 14 + 4;
         }
         if (d.enumLabel) {
@@ -1629,7 +1625,7 @@ static void Inspector(ImRect r) {
         Text(ox + 8, oy + y + 5, UI_S, 10, K(pal::t88), "Dry / Wet");
         TextR(ox + W - 8, oy + y + 5, MONO_B, 10, K(pal::tf3), b1);
         y += 10 + 4;
-        Slider(0x3800 + i, Rc(ox + 8, oy + y + 4, W - 16, 6), f.mix, pal::coral);
+        Slider(0x3800 + i, Rc(ox + 8, oy + y + 4, W - 16, 6), f.mix, pal::coral, 0, 100, true);
         y += 14 + 4;
         float tw3 = (W - 16 - 4) / 2.f;
         if (chip(ImRect(ox + 8, oy + y, ox + 8 + tw3, oy + y + 22), "BEAT", f.beat, pal::yellow)) f.beat = !f.beat;

@@ -1806,6 +1806,15 @@ static void RailPanel(ImRect r) {
     if (h.rclick) A.openCtx(ImGui::GetIO().MousePos, A.screenMenu(sc.id));
     y += 30 + 6;
   }
+  // "+" under the screen tree: with the tree collapsed the rail is the only place a new screen can be added.
+  ImRect nb(cx - 14, y, cx + 14, y + 26);
+  if (nb.Max.y < r.Max.y - 4) {
+    Hit h = HitR(nb);
+    Box(nb, h.hover ? K(pal::coral, 0.12f) : K(pal::g1c), h.hover ? K(pal::coral, 0.45f) : K(pal::g22), 3);
+    Icon("plus", ImVec2(cx, (nb.Min.y + nb.Max.y) * 0.5f), 12, K(h.hover ? pal::coral : pal::t88));
+    if (h.hover) CursorHand();
+    if (h.click) { A.addScreen(); A.railScreen = A.selSc; }   // follow the new screen, so the popover stays in sync
+  }
 }
 
 static void RailPopover(ImRect rail) {
@@ -1837,12 +1846,24 @@ static void RailPopover(ImRect rail) {
   ImRect fr(r.Min.x + 1, r.Max.y - 43, r.Max.x - 1, r.Max.y - 1);
   Fill(fr, K(pal::g14)); HLine(fr.Min.x, fr.Max.x, fr.Min.y, K(pal::g2a));
   {
-    ImRect br(fr.Min.x + 6, fr.Min.y + 9, fr.Max.x - 6, fr.Min.y + 9 + 24);
-    Hit h = HitR(br);
-    Box(br, h.hover ? K(pal::ctrlHover) : K(pal::g1c), K(pal::g22), 3);
-    TextC((br.Min.x + br.Max.x) * 0.5f, (br.Min.y + br.Max.y) * 0.5f, UI_B, 10, K(pal::white), "Slice");
-    if (h.hover) CursorHand();
-    if (h.click) A.openCtx(ImVec2(br.Min.x, br.Max.y + 4), AddSliceMenu());
+    // per-screen add actions: Slice (left) and Sensor (right)
+    const char* labs[2] = {"Slice", "Sensor"};
+    const char* ics[2] = {"plus", "radar"};
+    const uint32_t acc[2] = {0, pal::mint};
+    float bw = (fr.GetWidth() - 12 - 6) * 0.5f;
+    for (int i = 0; i < 2; ++i) {
+      ImRect br(fr.Min.x + 6 + i * (bw + 6), fr.Min.y + 9, fr.Min.x + 6 + i * (bw + 6) + bw, fr.Min.y + 9 + 24);
+      Hit h = HitR(br);
+      Box(br, acc[i] ? K(acc[i], 0.15f) : h.hover ? K(pal::ctrlHover) : K(pal::g1c), acc[i] ? K(acc[i], 0.4f) : K(pal::g22), 3);
+      float tw = TextW(UI_B, 10, labs[i]), cx = (br.Min.x + br.Max.x) * 0.5f, cy = (br.Min.y + br.Max.y) * 0.5f;
+      Icon(ics[i], ImVec2(cx - tw * 0.5f - 8, cy), 11, K(acc[i] ? pal::mint : pal::white));
+      Text(cx - tw * 0.5f + 4, cy, UI_B, 10, K(acc[i] ? pal::mint : pal::white), labs[i]);
+      if (h.hover) CursorHand();
+      if (h.click) {
+        if (i == 0) A.openCtx(ImVec2(br.Min.x, br.Max.y + 4), AddSliceMenu());
+        else OpenSensorWizard(SensorTargetScreen());
+      }
+    }
   }
 }
 

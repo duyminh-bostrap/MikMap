@@ -73,6 +73,60 @@ static std::string Trunc(const std::string& s, size_t n) {
 }
 
 // ───────────────────────── chrome ─────────────────────────
+#ifdef _WIN32
+// The main window is borderless (the native caption is gone; its minimize / maximize / close buttons live in
+// TitleBar(), next to Settings). WS_THICKFRAME is kept so the OS still gives us resize borders and Win+arrow
+// snapping; these messages supply the rest of what a caption used to do.
+static WNDPROC gChromeProc = nullptr;
+
+static LRESULT CALLBACK ChromeWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+  switch (msg) {
+    case WM_NCCALCSIZE:
+      if (wParam) return 0;   // no non-client frame is drawn; the whole window is client area
+      break;
+    case WM_NCHITTEST: {
+      LRESULT hit = CallWindowProcW(gChromeProc, hwnd, msg, wParam, lParam);
+      if (hit != HTCLIENT || IsZoomed(hwnd)) return hit;
+      RECT w; GetWindowRect(hwnd, &w);
+      POINT p{(int)(short)LOWORD(lParam), (int)(short)HIWORD(lParam)};
+      const int b = 6;   // resize grab band, physical px
+      const bool l = p.x < w.left + b, r = p.x >= w.right - b, t = p.y < w.top + b, bo = p.y >= w.bottom - b;
+      if (t && l) return HTTOPLEFT;
+      if (t && r) return HTTOPRIGHT;
+      if (bo && l) return HTBOTTOMLEFT;
+      if (bo && r) return HTBOTTOMRIGHT;
+      if (l) return HTLEFT;
+      if (r) return HTRIGHT;
+      if (t) return HTTOP;
+      if (bo) return HTBOTTOM;
+      return hit;
+    }
+    case WM_GETMINMAXINFO: {
+      LRESULT r = CallWindowProcW(gChromeProc, hwnd, msg, wParam, lParam);
+      MINMAXINFO* mmi = (MINMAXINFO*)lParam;
+      MONITORINFO mi{sizeof mi};
+      HMONITOR mon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+      if (mon && GetMonitorInfoW(mon, &mi)) {   // maximize to the work area, not over the taskbar
+        mmi->ptMaxPosition.x = mi.rcWork.left - mi.rcMonitor.left;
+        mmi->ptMaxPosition.y = mi.rcWork.top - mi.rcMonitor.top;
+        mmi->ptMaxSize.x = mi.rcWork.right - mi.rcWork.left;
+        mmi->ptMaxSize.y = mi.rcWork.bottom - mi.rcWork.top;
+      }
+      return r;
+    }
+  }
+  return CallWindowProcW(gChromeProc, hwnd, msg, wParam, lParam);
+}
+
+static void InstallCustomChrome(HWND hwnd) {
+  LONG_PTR style = GetWindowLongPtrW(hwnd, GWL_STYLE);
+  style |= WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU;
+  SetWindowLongPtrW(hwnd, GWL_STYLE, style);
+  gChromeProc = (WNDPROC)SetWindowLongPtrW(hwnd, GWLP_WNDPROC, (LONG_PTR)ChromeWndProc);
+  SetWindowPos(hwnd, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
+}
+#endif
+
 static void TitleBar(ImRect r) {
   Fill(r, K(pal::g1c));
   HLine(r.Min.x, r.Max.x, r.Max.y - 1, K(pal::g2a));
@@ -130,6 +184,29 @@ static void TitleBar(ImRect r) {
   }
   // right cluster
   float xr = r.Max.x - 8;
+#ifdef _WIN32
+  {
+    // The native caption is gone: these are the window's only minimize / maximize / close controls.
+    const bool maxed = glfwGetWindowAttrib(gWin, GLFW_MAXIMIZED) != 0;
+    const char* wicons[3] = {"minus", maxed ? "restore" : "square", "x"};
+    const float wbw = 22.f, wgap = 2.f;
+    float wx = xr - (3 * wbw + 2 * wgap);
+    for (int i = 0; i < 3; ++i) {
+      ImRect br(wx + i * (wbw + wgap), cy - 10, wx + i * (wbw + wgap) + wbw, cy + 10);
+      Hit h = HitR(br);
+      const bool close = i == 2;
+      Box(br, h.hover ? K(close ? pal::red : pal::g3a) : 0, 0, 3);
+      Icon(wicons[i], ImVec2((br.Min.x + br.Max.x) * 0.5f, cy), 11, K(h.hover ? (close ? pal::white : pal::tf3) : pal::t88));
+      if (h.hover) CursorHand();
+      if (h.click) {
+        if (i == 0) glfwIconifyWindow(gWin);
+        else if (i == 1) { if (maxed) glfwRestoreWindow(gWin); else glfwMaximizeWindow(gWin); }
+        else glfwSetWindowShouldClose(gWin, GLFW_TRUE);   // same path as a caption X: still warns on unsaved edits
+      }
+    }
+    xr -= 3 * wbw + 2 * wgap + 8;
+  }
+#endif
   {
     ImRect gb(xr - 20, cy - 10, xr, cy + 10);
     Hit gh = HitR(gb);
@@ -152,6 +229,19 @@ static void TitleBar(ImRect r) {
   xr -= w2 + 6;
   float w1 = ButtonW("Show TestCard", 1);
   if (Button(ImRect(xr - w1, cy - 10, xr, cy + 10), "Show TestCard", T_AUDIO, A.testCard, 1)) A.testCard = !A.testCard;
+  xr -= w1;
+
+#ifdef _WIN32
+  // Borderless window: the empty stretch of this bar is the caption — press to move, double-click to maximize/restore.
+  ImRect dz(grp.Max.x + 8, r.Min.y, xr - 8, r.Max.y - 1);
+  if (dz.GetWidth() > 16.f) {
+    Hit dh = HitR(dz);
+    if (dh.dbl) { if (glfwGetWindowAttrib(gWin, GLFW_MAXIMIZED)) glfwRestoreWindow(gWin); else glfwMaximizeWindow(gWin); }
+    // Only hand a real OS press to the caption loop: scripted runs feed ImGui synthetic clicks, and a native
+    // move loop waiting for a real button release would hang them.
+    else if (dh.click && (GetKeyState(VK_LBUTTON) & 0x8000)) { ReleaseCapture(); SendMessageW(glfwGetWin32Window(gWin), WM_NCLBUTTONDOWN, HTCAPTION, 0); }
+  }
+#endif
 }
 
 static void StatusBar(ImRect r) {
@@ -216,13 +306,13 @@ static const PMItem PM[] = {
     {"download", 3, "L\xC6\xB0u b\xE1\xBA\xA3n sao", "Th\xC3\xAAm m\xE1\xBB\x99t b\xE1\xBA\xA3n .mikmap c\xC3\xB3 ng\xC3\xA0y gi\xE1\xBB\x9D", "Ctrl+Shift+S", false, false},
     {"eye", 0, "Ch\xE1\xBA\xBF \xC4\x91\xE1\xBB\x99 Show", "Ch\xE1\xBB\x89 hi\xE1\xBB\x87n h\xC3\xACnh ra, \xE1\xBA\xA9n giao di\xE1\xBB\x87n ch\xE1\xBB\x89nh s\xE1\xBB\xAD" "a", "Tab", false, true},
     {"settings", 1, "C\xC3\xA0i \xC4\x91\xE1\xBA\xB7t h\xE1\xBB\x87 th\xE1\xBB\x91ng", "Ng\xC3\xB4n ng\xE1\xBB\xAF, font, m\xC3\xA0u, c\xE1\xBB\xA1 ch\xE1\xBB\xAF", "", true, true},
-    {"circle-help", 3, "Tr\xE1\xBB\xA3 gi\xC3\xBAp & Ph\xC3\xADm t\xE1\xBA\xAFt", "B\xE1\xBA\xA3ng ph\xC3\xADm t\xE1\xBA\xAFt", "", true, false},
-    {"info", 2, "Gi\xE1\xBB\x9Bi thi\xE1\xBB\x87u MikMap", "v1.0.0 Enterprise Engine", "", true, false},
+    {"circle-help", 3, "Tr\xE1\xBB\xA3 gi\xC3\xBAp & Ph\xC3\xADm t\xE1\xBA\xAFt", "", "", true, false},
+    {"info", 2, "Gi\xE1\xBB\x9Bi thi\xE1\xBB\x87u MikMap", "", "", true, false},
     {"rotate-ccw", 4, "N\xE1\xBA\xA1p l\xE1\xBA\xA1i m\xE1\xBA\xABu Demo", "Thay d\xE1\xBB\xB1 \xC3\xA1n hi\xE1\xBB\x87n t\xE1\xBA\xA1i b\xE1\xBA\xB1ng b\xE1\xBA\xA3n m\xE1\xBA\xABu", "", false, true},
 };
 
 static uint32_t PmHex(uint32_t c) { switch (c) { case 1: return pal::red; case 2: return pal::coral; case 3: return pal::cyan; case 4: return pal::mint; default: return pal::t88; } }
-static ImRect ProjectMenuRect() { return Rc(8, 39, 322, 24 + 8 + 28 + 6 + 10 + 8 + 1 + 4 + 10 * 36 + 4 + 28 + 1); }
+static ImRect ProjectMenuRect() { return Rc(8, 39, 322, 24 + 8 + 28 + 6 + 10 + 8 + 1 + 4 + 10 * 30 + 4 + 28 + 1); }
 
 static void GuardedDiscard(const char* what, const std::function<void()>& go) {
   if (A.projectDirty && g.time >= A.discardUntil) { A.discardUntil = g.time + 4; A.notify(std::string("Unsaved changes \xE2\x80\x94 repeat to discard and ") + what, 4); return; }
@@ -245,7 +335,8 @@ static void RunProjectItem(int i) {
 }
 
 static void ProjectMenu() {
-  if (!A.projectMenu) return;
+  static int hintIdx = -1; static float hintSince = 0;   // row whose hint is due, and when the pointer settled on it
+  if (!A.projectMenu) { hintIdx = -1; return; }
   ImRect r = ProjectMenuRect();
   Shadow(r, 4, 40, 0.7f);
   Box(r, K(pal::g12), K(pal::g2a), 4);
@@ -271,29 +362,49 @@ static void ProjectMenu() {
     std::strftime(hm, sizeof hm, "%H:%M", &tmv); TextR(r.Max.x - 9, y + 5, MONO_M, 10, K(pal::t66), hm); }
   y += 10 + 8;
   HLine(r.Min.x + 1, r.Max.x - 1, y, K(pal::g2a)); y += 1 + 4;
+  bool anyHover = false;
   for (int i = 0; i < 10; ++i) {
     const PMItem& it = PM[i];
-    ImRect ir(r.Min.x + 1, y, r.Max.x - 1, y + 36);
+    ImRect ir(r.Min.x + 1, y, r.Max.x - 1, y + 30);
     Hit h; h.hover = Raw(ir); h.click = h.hover && ImGui::IsMouseClicked(0);
-    if (h.hover) Fill(ir, K(pal::layerHover));
+    if (h.hover) {
+      anyHover = true;
+      Fill(ir, K(pal::layerHover));
+      if (hintIdx != i) { hintIdx = i; hintSince = (float)g.time; }
+    }
     if (it.sep && i > 0) HLine(ir.Min.x, ir.Max.x, ir.Min.y, K(pal::g2a));
     float icy = (ir.Min.y + ir.Max.y) * 0.5f;
     Icon(it.icon, ImVec2(ir.Min.x + 8 + 7.5f, icy), 15, K(PmHex(it.tone)));
-    Text(ir.Min.x + 8 + 15 + 8, icy - 6, UI_B, 12, K(pal::te0), it.label);
-    Text(ir.Min.x + 8 + 15 + 8, icy + 7, MONO_M, 9, K(pal::t66), it.sub);
+    Text(ir.Min.x + 8 + 15 + 8, icy, UI_B, 12, K(pal::te0), it.label);
     float xr = ir.Max.x - 8;
     if (it.chev) { Icon("chevron-right", ImVec2(xr - 5.5f, icy), 11, K(pal::t66)); xr -= 11 + 8; }
     if (*it.sc) TextR(xr, icy, MONO_M, 9, K(pal::t66), it.sc);
     if (h.hover) CursorHand();
     if (h.click) { A.projectMenu = false; RunProjectItem(i); }
-    y += 36;
+    y += 30;
   }
+  if (!anyHover) hintIdx = -1;
   y += 4;
   ImRect ft(r.Min.x + 1, y, r.Max.x - 1, r.Max.y - 1);
   Fill(ft, K(pal::g18)); HLine(ft.Min.x, ft.Max.x, ft.Min.y, K(pal::g2a));
   Text(ft.Min.x + 8, (ft.Min.y + ft.Max.y) * 0.5f, MONO_M, 9, K(pal::t66), "MIKMAP PROJECTION ENGINE", 0.09f);
   TextR(ft.Max.x - 8, (ft.Min.y + ft.Max.y) * 0.5f, MONO_M, 9, K(pal::t66), "v1.0.0");
   g.dl->PopClipRect();
+  // The per-row hints used to make every row two lines tall; they now show only once the pointer has rested on a
+  // row for a moment, as a tooltip beside the menu.
+  if (hintIdx >= 0 && PM[hintIdx].sub[0] && (float)g.time - hintSince > 0.55f) {
+    const char* s = PM[hintIdx].sub;
+    float w = TextW(UI_S, 10, s) + 16;
+    ImVec2 mp = ImGui::GetIO().MousePos, ds = ImGui::GetIO().DisplaySize;
+    float x = r.Max.x + 8;
+    if (x + w > ds.x - 6) x = r.Min.x - w - 8;
+    ImRect tb(x, mp.y - 12, x + w, mp.y + 12);
+    ImDrawList* keep = g.dl; g.dl = ImGui::GetForegroundDrawList();   // floats over the menu's own clip rect
+    Shadow(tb, 3, 12, 0.5f);
+    Box(tb, K(pal::g1c), K(pal::g2a), 3);
+    Text(tb.Min.x + 8, (tb.Min.y + tb.Max.y) * 0.5f, UI_S, 10, K(pal::t88), s);
+    g.dl = keep;
+  }
 }
 
 struct PItem { const char* label; const char* icon; const char* sc; int tone; bool disabled, divider; };
@@ -1716,6 +1827,9 @@ int main(int argc, char** argv) {
 #endif
   glfwWindowHint(GLFW_SAMPLES, 4);
   if (!shot.empty()) glfwWindowHint(GLFW_VISIBLE, GLFW_TRUE);
+#ifdef _WIN32
+  glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);   // custom chrome: the window buttons are drawn in TitleBar()
+#endif
   GLFWwindow* win = glfwCreateWindow(W, H, "MikMap Pro \xE2\x80\x94 show_alpha_v3.mikmap", nullptr, nullptr);
   if (!win) return 2;
   gWin = win;
@@ -1724,13 +1838,22 @@ int main(int argc, char** argv) {
   glfwSetWindowSizeLimits(win, 1100, 640, GLFW_DONT_CARE, GLFW_DONT_CARE);
 #ifdef _WIN32
   {
-    // Dark titlebar to match the app's own dark theme — Windows-only DWM
-    // attribute, no equivalent needed on Linux/macOS (window manager already
-    // follows the OS-level dark mode there).
+    // Borderless window: InstallCustomChrome keeps resize borders / snapping / work-area maximize, and the
+    // dark DWM attributes still tint the (now invisible) frame and the window shadow to match the theme.
     HWND hwnd = glfwGetWin32Window(win);
+    InstallCustomChrome(hwnd);
     BOOL dark = TRUE; DwmSetWindowAttribute(hwnd, 20, &dark, sizeof dark);
     COLORREF cap = RGB(0x1c, 0x1c, 0x1c), txt = RGB(0xf3, 0xf3, 0xf3), bd = RGB(0x2a, 0x2a, 0x2a);
     DwmSetWindowAttribute(hwnd, 35, &cap, sizeof cap); DwmSetWindowAttribute(hwnd, 36, &txt, sizeof txt); DwmSetWindowAttribute(hwnd, 34, &bd, sizeof bd);
+    // CW_USEDEFAULT only cascades decorated windows, so a borderless one would open in the top-left corner:
+    // centre it on the work area instead.
+    MONITORINFO mi{sizeof mi};
+    HMONITOR mon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTOPRIMARY);
+    if (mon && GetMonitorInfoW(mon, &mi)) {
+      int ww, wh; glfwGetWindowSize(win, &ww, &wh);
+      glfwSetWindowPos(win, mi.rcWork.left + (mi.rcWork.right - mi.rcWork.left - ww) / 2,
+                            mi.rcWork.top + (mi.rcWork.bottom - mi.rcWork.top - wh) / 2);
+    }
   }
 #endif
 
@@ -1900,13 +2023,14 @@ int main(int argc, char** argv) {
     }
   }
   double last = glfwGetTime(); double progAcc = 0; int frame = 0;
-  while (!glfwWindowShouldClose(win)) {
+  while (true) {
     glfwPollEvents();
     if (!shot.empty() && dropTest.pending && frame == 8) { A.osDrop = dropTest; dropTest.pending = false; }
     if (glfwWindowShouldClose(win) && shot.empty() && A.projectDirty && glfwGetTime() >= A.discardUntil) {
       glfwSetWindowShouldClose(win, GLFW_FALSE);    // unsaved edits: first close request only warns
       A.discardUntil = glfwGetTime() + 4; g.time = glfwGetTime(); A.notify("Unsaved changes \xE2\x80\x94 close again to quit and discard", 4);
     }
+    if (glfwWindowShouldClose(win)) break;
     if (glfwGetWindowAttrib(win, GLFW_ICONIFIED)) { glfwWaitEventsTimeout(0.1); continue; }
     double now = glfwGetTime(), dt = std::min(0.1, now - last); last = now;
     g.time = now;

@@ -133,6 +133,7 @@ void Box(ImRect r, ImU32 bg, ImU32 bd, float rd) {
   if ((bd >> IM_COL32_A_SHIFT) & 255) Border(r, bd, rd);
 }
 void Glow(ImRect r, uint32_t hex, float a, float blur, float rd) {
+  if (!kGlowFx) return;   // see kGlowFx: halos are temporarily off everywhere except the logo
   const int N = 6;
   for (int k = N; k >= 1; --k) {
     float s = blur * k / N;
@@ -167,7 +168,7 @@ void RadialFan(ImVec2 c, float r, ImU32 inner, ImU32 outer, float a0, float a1, 
 }
 
 void Dot(ImVec2 c, float d, uint32_t hex, bool glow, float alpha) {
-  if (glow) for (int k = 3; k >= 1; --k) g.dl->AddCircleFilled(c, d * 0.5f + k * 1.6f, Ca(K(hex, alpha * 0.10f)), 20);
+  if (glow && kGlowFx) for (int k = 3; k >= 1; --k) g.dl->AddCircleFilled(c, d * 0.5f + k * 1.6f, Ca(K(hex, alpha * 0.10f)), 20);
   g.dl->AddCircleFilled(c, d * 0.5f, Ca(K(hex, alpha)), 20);
 }
 
@@ -218,6 +219,8 @@ void Icon(const char* n, ImVec2 c, float sz, ImU32 col) {
   else if (is("chevron-left")) Poly({P(15, 18), P(9, 12), P(15, 6)});
   else if (is("play")) Poly({P(6.5f, 4), P(19.5f, 12), P(6.5f, 20)}, true);
   else if (is("square")) Rect(5.5f, 5.5f, 18.5f, 18.5f, 2.f);
+  else if (is("minus")) Line(5, 12, 19, 12);
+  else if (is("restore")) { Rect(8.5f, 8.5f, 20.5f, 20.5f, 2); Poly({P(16, 4.5f), P(4.5f, 4.5f), P(4.5f, 16)}); }
   else if (is("pause")) { Rect(6, 4.5f, 10, 19.5f, 1.2f); Rect(14, 4.5f, 18, 19.5f, 1.2f); }
   else if (is("skip-back")) { Poly({P(19, 19), P(9, 12), P(19, 5)}, true); Line(5, 18.5f, 5, 5.5f); }
   else if (is("skip-forward")) { Poly({P(5, 5), P(15, 12), P(5, 19)}, true); Line(19, 5.5f, 19, 18.5f); }
@@ -595,7 +598,7 @@ void Badge(float xr, float cy, const char* text, Tone tone, bool dot, float* out
   if (outW) *outW = w;
 }
 
-bool Slider(uint32_t id, ImRect tr, float& v, uint32_t hex, float mn, float mx) {
+bool Slider(uint32_t id, ImRect tr, float& v, uint32_t hex, float mn, float mx, bool neutralIdle) {
   ImRect hit(tr.Min.x - 5, tr.Min.y - 5, tr.Max.x + 5, tr.Max.y + 5);
   Hit h = HitR(hit);
   bool changed = false;
@@ -612,8 +615,13 @@ bool Slider(uint32_t id, ImRect tr, float& v, uint32_t hex, float mn, float mx) 
   float fw = (tr.GetWidth() - 2) * pct;
   if (fw > 0.5f) {
     ImRect fr(tr.Min.x + 1, tr.Min.y + 1, tr.Min.x + 1 + std::max(fw, 4.f), tr.Max.y - 1);
-    for (int k = 3; k >= 1; --k) g.dl->AddRectFilled(ImVec2(fr.Min.x - k, fr.Min.y - k), ImVec2(fr.Max.x + k, fr.Max.y + k), Ca(K(hex, 0.07f)), 999);
-    Fill(fr, K(hex), 999);
+    // neutralIdle bars stay grey (no halo) and only take the caller's accent while the user is dragging them,
+    // so a panel full of sliders reads as one calm control instead of a rainbow.
+    if (neutralIdle && g.active != id) Fill(fr, K(pal::meterFill), 999);
+    else {
+      if (kGlowFx) for (int k = 3; k >= 1; --k) g.dl->AddRectFilled(ImVec2(fr.Min.x - k, fr.Min.y - k), ImVec2(fr.Max.x + k, fr.Max.y + k), Ca(K(hex, 0.07f)), 999);
+      Fill(fr, K(hex), 999);
+    }
   }
   if (h.hover) ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
   return changed;

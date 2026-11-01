@@ -27,12 +27,16 @@ constexpr uint32_t clipLoadedBg = 0x1a0e07, clipLoadedBorder = 0x4a2411, clipLoa
 constexpr uint32_t clipBarLoaded = 0x2e1a0e, clipBodyLoaded = 0x150b05, clipFootLoaded = 0x8a6244;
 constexpr uint32_t clipBarPreview = 0x0e2430, clipBodyPreview = 0x0b141b, clipPreviewText = 0xcfe9f5, clipFootPreview = 0x5d8ba3;
 constexpr uint32_t clipBarLive = 0x8a3c14, clipBodyLive = 0x2a1408, clipLiveText = 0xffcbaa, clipFootLive = 0xffcbaa;
-constexpr uint32_t meterTrack = 0x161616;
+constexpr uint32_t meterTrack = 0x161616, meterFill = 0x555555;   // default (idle) slider bar
 }  // namespace pal
 
 struct WarpMap;  // defined in app.h — kept at global scope so ui:: does not declare a second one
 
 namespace ui {
+
+// TEMPORARY: decorative glows (the soft halos around active buttons, tabs, sliders, chips and live dots) are off.
+// The logo's halo is drawn by hand in main.cpp and is not affected. Flip back to true to restore them.
+constexpr bool kGlowFx = false;
 
 enum FontId { UI_R, UI_S, UI_B, UI_X, MONO_R, MONO_M, MONO_B, FONT_COUNT };
 
@@ -105,7 +109,7 @@ bool ToggleBtn(ImRect r, const char* label, Tone tone, bool on);
 void PanelHeader(ImRect r, const char* title, uint32_t titleHex, ImU32 bg = 0);
 void Badge(float xr, float cy, const char* text, Tone tone, bool dot, float* outW = nullptr);   // right-aligned at xr
 float BadgeW(const char* text, bool dot);
-bool Slider(uint32_t id, ImRect track, float& v, uint32_t hex, float mn = 0, float mx = 100);
+bool Slider(uint32_t id, ImRect track, float& v, uint32_t hex, float mn = 0, float mx = 100, bool neutralIdle = false);   // neutralIdle: grey bar at rest, accent only while dragged
 void PropertyRow(ImRect r, const char* label, const char* value, const char* unit = nullptr, uint32_t hex = pal::tcc);
 bool TextField(const char* id, ImRect r, std::string& v, FontId f = UI_S, float sz = 10.f, ImU32 textCol = 0);
 bool IntField(const char* id, ImRect r, int& v);
