@@ -1,0 +1,6 @@
+# Local interpreter paths and extraction cache are machine-specific.
+.graphify_python
+.graphify_root
+cache/
+.prompt_*.txt
+.graphify_chunk_*.json
