@@ -162,6 +162,27 @@ bool OrtRuntime::createSession(const std::string& model, OrtDevice dev, std::str
 }
 std::vector<OrtTensorInfo> OrtRuntime::inputs() const { return impl_->in; }
 std::vector<OrtTensorInfo> OrtRuntime::outputs() const { return impl_->out; }
+bool OrtRuntime::customMetadata(const std::string& key,std::string& value,std::string& err) const {
+    value.clear(); err.clear(); const auto& r=*impl_;
+    if(!r.session) { err="ONNX session is not created"; return false; }
+    try {
+        if(key.empty() || key.size()>256 || key.find('\0')!=std::string::npos) throw std::runtime_error("Invalid metadata key");
+        Handle<OrtModelMetadata> metadata(r.api->ReleaseModelMetadata);
+        r.check(r.api->SessionGetModelMetadata(r.session,&metadata.p));
+        OrtAllocator* allocator=nullptr; r.check(r.api->GetAllocatorWithDefaultOptions(&allocator));
+        char* raw=nullptr; r.check(r.api->ModelMetadataLookupCustomMetadataMap(metadata.p,allocator,key.c_str(),&raw));
+        const auto freeValue=[allocator](char* p) { if(p) allocator->Free(allocator,p); };
+        std::unique_ptr<char,decltype(freeValue)> owned(raw,freeValue);
+        if(!raw) { err="Metadata key not found"; return false; }
+        size_t size=0; while(size<=4096 && raw[size]) ++size;
+        if(size>4096) throw std::runtime_error("Metadata value exceeds 4096 bytes");
+#ifdef _WIN32
+        if(size && !MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,raw,static_cast<int>(size),nullptr,0))
+            throw std::runtime_error("Metadata value is not valid UTF-8");
+#endif
+        value.assign(raw,size); return true;
+    } catch(const std::exception& e) { err=e.what(); return false; }
+}
 bool OrtRuntime::run(const float* input, const std::vector<int64_t>& shape,
                      std::vector<std::vector<float>>& outputs,
                      std::vector<std::vector<int64_t>>& outShapes, std::string& err) {

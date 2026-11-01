@@ -17,6 +17,8 @@ public:
     bool createSession(const std::string& modelPathUtf8, OrtDevice dev, std::string& err, bool* usedCuda = nullptr);
     std::vector<OrtTensorInfo> inputs() const;
     std::vector<OrtTensorInfo> outputs() const;
+    // Missing keys return false, clear value and report "Metadata key not found".
+    bool customMetadata(const std::string& key, std::string& value, std::string& err) const;
     // Caller supplies at least product(shape) contiguous floats for the entire call.
     // Serialize all access to this instance externally, including load/session/run/destruction.
     bool run(const float* input, const std::vector<int64_t>& shape, std::vector<std::vector<float>>& outputs, std::vector<std::vector<int64_t>>& outShapes, std::string& err);

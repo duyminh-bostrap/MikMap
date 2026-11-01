@@ -1,6 +1,7 @@
 #pragma once
 #include "io/ISensorSource.h"
 #include "io/ai/PersonTracker.h"
+#include "io/ai/ModeModels.h"
 #include <functional>
 #include <memory>
 namespace mikmap {
@@ -10,12 +11,14 @@ struct CameraSourceConfig {
     bool flip=false;
     CamMode mode=CamMode::Off;
     OrtDevice device=OrtDevice::Auto;
-    std::string runtimeDir, modelPath;
+    std::string runtimeDir, modelPath, detectorPath, keypointPath;
+    int maxObjects=10;
+    uint8_t fullGroups=0x1F;
     float personThr=.5f, jointThr=.3f;
     TrackerParams tracker;
     std::string replayPath;
 };
-struct CameraStats { float camFps=0,inferFps=0,inferMs=0,latencyMs=0; int people=0; bool onCpu=false; };
+struct CameraStats { float camFps=0,inferFps=0,inferMs=0,latencyMs=0; int people=0; bool onCpu=false; int objectsCap=0; uint32_t calPoint=kCalibUnavailable; };
 class CameraSource final : public ISensorSource {
 public:
     // Test seam exercises slow inference and loss without installing an ONNX pack.

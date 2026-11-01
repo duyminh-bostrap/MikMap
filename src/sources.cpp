@@ -155,7 +155,7 @@ bool CameraChanged(const Live& live, const Device& d) {
   const auto& c = live.cameraConfig;
   return c.cameraId != d.camId || c.width != d.camW || c.height != d.camH || c.flip != d.camFlip ||
     int(c.mode) != d.camMode || int(c.device) != d.camDevice || live.cameraModel != d.camModel ||
-    c.personThr != d.personThr || c.jointThr != d.jointThr || c.tracker.maxPeople != d.maxPeople ||
+    c.personThr != d.personThr || c.jointThr != d.jointThr || c.maxObjects != d.maxPeople ||
     c.tracker.smoothing != d.smoothing || c.replayPath != d.camReplay;
 }
 
@@ -172,7 +172,7 @@ Live Start(const Device& d, double now) {
     mikmap::CameraSourceConfig c;
     c.cameraId = d.camId; c.width = d.camW; c.height = d.camH; c.flip = d.camFlip;
     c.mode = static_cast<mikmap::CamMode>(d.camMode); c.device = static_cast<mikmap::OrtDevice>(d.camDevice);
-    c.personThr = d.personThr; c.jointThr = d.jointThr; c.tracker.maxPeople = d.maxPeople; c.tracker.smoothing = d.smoothing;
+    c.personThr = d.personThr; c.jointThr = d.jointThr; c.maxObjects = d.maxPeople; c.tracker.smoothing = d.smoothing;
     c.replayPath = d.camReplay;
     L.cameraConfig = c; L.cameraModel = d.camModel;
     if (d.camMode == 1 && d.camReplay.empty()) {

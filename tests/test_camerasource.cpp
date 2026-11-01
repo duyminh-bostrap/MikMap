@@ -4,6 +4,9 @@
 #include <filesystem>
 #include <fstream>
 #include <thread>
+#include <limits>
+#include <cstdlib>
+#include <iostream>
 using namespace mikmap;
 namespace {
 using Clock=std::chrono::steady_clock;
@@ -34,6 +37,19 @@ TEST_CASE("CameraSource Off previews RGB resized and reuses output without ONNX"
     REQUIRE(until([&]{return s.previewLatest(out);})); CHECK(out.width==640); CHECK(out.height==360); CHECK(out.rgb.size()==640*360*3); CHECK(out.rgb[0]==73); CHECK(out.tCaptureNs==123456789);
     auto ptr=out.rgb.data(); REQUIRE(until([&]{return s.previewLatest(out);})); CHECK(out.rgb.data()==ptr);
     REQUIRE(until([&]{return s.frames().consume();})); CHECK(s.frames().readSlot().count==0); CHECK(s.status()==SourceStatus::Running); CHECK(!s.stats().onCpu); CHECK(s.stats().camFps>0);
+}
+TEST_CASE("CameraSource Face retains the four strongest objects") {
+    CameraSourceConfig cfg; cfg.mode=CamMode::Face;
+    CameraSource source(cfg,camera(),[](const CameraFrame&,PoseObject* out,int cap,std::string&) {
+        const int n=std::min(8,cap);
+        for(int i=0;i<n;++i) { out[i]={}; out[i].nkp=106; out[i].score=float(i+1)/8;
+            for(auto& k:out[i].kp) k={float(i+1)/10,.4f,.8f}; }
+        return n;
+    });
+    REQUIRE(source.start()); REQUIRE(until([&]{return source.frames().consume();}));
+    const auto f=source.frames().readSlot(); REQUIRE(f.count==424);
+    for(int i=0;i<f.count;++i) { CHECK(f.points[i].group==kGroupFace); CHECK(f.points[i].x>=.5f); }
+    CHECK(source.stats().people==4); CHECK(source.stats().objectsCap==4); CHECK(source.stats().calPoint==kCalibUnavailable);
 }
 TEST_CASE("CameraSource Body needs runtime pack and load failure remains alive") {
     CameraSourceConfig cfg; cfg.mode=CamMode::Body; CameraSource a(cfg,camera()); CHECK(!a.start()); CHECK(a.status()==SourceStatus::Error); CHECK(a.lastError().find("Needs pack")!=std::string::npos);
@@ -104,4 +120,164 @@ TEST_CASE("CameraSource replay Off clears points and previews matching gray capt
     CHECK(preview.tCaptureNs==source.frames().readSlot().tCaptureNs);
     auto* buffer=preview.rgb.data(); REQUIRE(until([&]{return source.previewLatest(preview);})); CHECK(buffer==preview.rgb.data());
     CHECK(source.stats().camFps>0); CHECK(source.stats().inferMs==0);
+}
+
+TEST_CASE("CameraSource Hand geometry flip and stable slots share tracker") {
+    for(bool flip:{false,true}) {
+        CameraSourceConfig cfg; cfg.mode=CamMode::Hand; cfg.flip=flip;
+        auto dev=camera(); std::atomic<int> calls{0};
+        CameraSource source(cfg,std::move(dev),[&](const CameraFrame&,PoseObject* out,int,std::string&) {
+            const int call=++calls;
+            for(int i=0;i<2;++i) {
+                auto& p=out[i]; p={}; p.nkp=21; p.score=1.f-float(i)*.1f;
+                const float x=.2f+float(i)*.5f;
+                for(int k=0;k<21;++k) p.kp[k]={x+float(k%3)*.03f,.3f+float(k%5)*.02f,.8f};
+                p.kp[0]={x,.3f,.8f}; p.kp[5]={x+.1f,.3f,.8f};
+                // One opposite vote must not flip the established side.
+                const bool right=(i==0)!=(call==4);
+                p.kp[17]={x+.05f,right?.4f:.2f,.8f};
+            }
+            return 2;
+        });
+        REQUIRE(source.start());
+        REQUIRE(until([&]{return calls>=3 && source.frames().consume();}));
+        auto first=source.frames().readSlot(); REQUIRE(first.count==42);
+        CHECK(first.points[0].group==(flip?kGroupHandL:kGroupHandR));
+        CHECK(first.points[0].id==(flip?0u:50u));
+        CHECK(first.points[21].group==(flip?kGroupHandR:kGroupHandL));
+        CHECK(first.points[21].id==(flip?150u:100u));
+        CHECK_NEAR(first.points[0].x,flip?.8:.2,.0001); CHECK_NEAR(first.points[0].z,.8,.0001);
+        REQUIRE(until([&]{return calls>=5 && source.frames().consume();}));
+        CHECK(source.frames().readSlot().points[0].id==first.points[0].id);
+        source.stop(); calls=0; REQUIRE(source.start());
+        REQUIRE(until([&]{return source.frames().consume() && source.frames().readSlot().count==42;}));
+        CHECK(source.frames().readSlot().points[0].id==first.points[0].id);
+    }
+}
+TEST_CASE("CameraSource Full caps before group filtering and keeps strongest objects") {
+    for(uint8_t groups:{uint8_t(31),uint8_t(23),uint8_t(0)}) {
+        CameraSourceConfig cfg; cfg.mode=CamMode::Full; cfg.maxObjects=30; cfg.fullGroups=groups;
+        CameraSource source(cfg,camera(),[](const CameraFrame&,PoseObject* out,int,std::string&) {
+            for(int i=0;i<6;++i) { out[i]={}; out[i].nkp=133; out[i].score=float(i+1)/6;
+                for(auto& k:out[i].kp) k={float(i+1)/10,.4f,.7f}; }
+            return 6;
+        });
+        REQUIRE(source.start()); REQUIRE(until([&]{return source.frames().consume();}));
+        auto f=source.frames().readSlot(); CHECK(f.count==(groups==31?399:groups==23?195:0));
+        CHECK(source.stats().people==3); CHECK(source.stats().objectsCap==3);
+        int counts[5]{};
+        for(int i=0;i<f.count;++i) { REQUIRE(f.points[i].group<5); ++counts[f.points[i].group]; CHECK(f.points[i].x>=.4f); CHECK_NEAR(f.points[i].z,.7,.0001); }
+        if(groups) { CHECK(counts[0]==51); CHECK(counts[1]==63); CHECK(counts[2]==63); CHECK(counts[4]==18); CHECK(counts[3]==(groups==31?204:0)); }
+    }
+}
+TEST_CASE("CameraSource validates injected layout count and finite points") {
+    for(int bad:{0,1,2}) {
+        CameraSourceConfig cfg; cfg.mode=CamMode::Face;
+        CameraSource source(cfg,camera(),[bad](const CameraFrame&,PoseObject* out,int cap,std::string&) {
+            out[0]={}; out[0].score=1; out[0].nkp=bad==0?17:106;
+            for(auto& k:out[0].kp) k={.2f,.4f,.8f};
+            return bad==1?cap+1:bad==2?-1:1;
+        });
+        REQUIRE(source.start()); REQUIRE(until([&]{return source.frames().consume();}));
+        CHECK(source.frames().readSlot().count==0); CHECK(source.status()==SourceStatus::Error);
+    }
+    CameraSourceConfig cfg; cfg.mode=CamMode::Body;
+    CameraSource source(cfg,camera(),[](const CameraFrame& f,PoseObject* out,int cap,std::string& err) {
+        pose(f,out,cap,err); out[0].kp[0]={-2,2,2};
+        out[0].kp[1].conf=std::numeric_limits<float>::quiet_NaN(); out[0].kp[2].x=std::numeric_limits<float>::infinity(); return 1;
+    });
+    REQUIRE(source.start()); REQUIRE(until([&]{return source.frames().consume();})); auto f=source.frames().readSlot();
+    REQUIRE(f.count==15); CHECK(f.points[0].x==0); CHECK(f.points[0].y==1); CHECK(f.points[0].z==1);
+}
+TEST_CASE("CameraSource zero capacity skips inference and Color requirement is enforced") {
+    for(auto mode:{CamMode::Body,CamMode::Hand,CamMode::Face,CamMode::Full}) {
+        CameraSourceConfig cfg; cfg.mode=mode; cfg.maxObjects=0; std::atomic<int> calls{0};
+        CameraSource source(cfg,camera(),[&](const CameraFrame&,PoseObject*,int,std::string&){++calls; return 0;});
+        REQUIRE(source.start()); REQUIRE(until([&]{return source.frames().consume();}));
+        CHECK(source.frames().readSlot().count==0); CHECK(source.stats().objectsCap==0); CHECK(source.stats().people==0); CHECK(calls==0);
+        CameraSource noColor(cfg,std::make_unique<FakeCamera>(CameraCaps{}),pose);
+        REQUIRE(noColor.start()); REQUIRE(until([&]{return noColor.status()==SourceStatus::Error;}));
+        CHECK(noColor.lastError().find("Color")!=std::string::npos);
+    }
+}
+TEST_CASE("CameraSource grouped replay maps local ids filters and counts face slots safely") {
+    CameraSourceConfig cfg; cfg.replayPath=(std::filesystem::path(__FILE__).parent_path()/"data/replay_modes.mikpose").string();
+    cfg.mode=CamMode::Full;
+    { CameraSource source(cfg); REQUIRE(source.start()); REQUIRE(until([&]{return source.frames().consume();}));
+      auto f=source.frames().readSlot(); REQUIRE(f.count==5); CHECK(f.points[1].id==0); CHECK(f.points[2].id==50);
+      CHECK(f.points[3].id==2105); CHECK(f.points[3].group==kGroupFace); CHECK(source.stats().people==2); }
+    cfg.fullGroups=23; cfg.maxObjects=1;
+    { CameraSource source(cfg); REQUIRE(source.start()); REQUIRE(until([&]{return source.frames().consume();}));
+      auto f=source.frames().readSlot(); REQUIRE(f.count==4); for(int i=0;i<f.count;++i) CHECK(f.points[i].group!=kGroupFace); CHECK(source.stats().people==1); }
+    cfg.mode=CamMode::Face; cfg.maxObjects=10;
+    { CameraSource source(cfg); REQUIRE(source.start()); REQUIRE(until([&]{return source.frames().consume();}));
+      auto f=source.frames().readSlot(); REQUIRE(f.count==1); CHECK(f.points[0].id==2105); CHECK(source.stats().people==1); }
+    cfg.mode=CamMode::Hand;
+    { CameraSource source(cfg); REQUIRE(source.start()); REQUIRE(until([&]{return source.frames().consume();})); CHECK(source.frames().readSlot().count==2); }
+}
+TEST_CASE("CameraSource grouped replay rejects invalid group ranges duplicates and trailing tokens") {
+    auto path=std::filesystem::temp_directory_path()/"mikmap_bad_replay_modes.mikpose";
+    CameraSourceConfig cfg; cfg.replayPath=path.string(); cfg.mode=CamMode::Full;
+    for(const auto* lines:{"0 0 0 .2 .3 .8 -1", "0 0 0 .2 .3 .8 5", "0 0 0 .2 .3 .8 1 junk",
+         "0 0 0 .2 .3 .8 1.5", "0 0 21 .2 .3 .8 1", "0 0 50 .2 .3 .8 2", "0 0 106 .2 .3 .8 3",
+         "0 4 0 .2 .3 .8 3", "0 24 0 .2 .3 .8 2", "0 0 6 .2 .3 .8 4", "0 3 0 .2 .3 .8 4",
+         "0 0 0 .2 .3 .8 1\n0 0 0 .2 .3 .8 1"}) {
+        {std::ofstream file(path); file<<lines<<'\n';} CameraSource source(cfg); CHECK(!source.start());
+    }
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("CameraSource optional real CPU top-down sessions and Face metadata") {
+    const auto env=[](const char* name) {
+#ifdef _MSC_VER
+        char* raw=nullptr; size_t len=0; if(_dupenv_s(&raw,&len,name)!=0) return std::string{};
+        std::string value=raw?raw:""; std::free(raw); return value;
+#else
+        const auto* raw=std::getenv(name); return std::string(raw?raw:"");
+#endif
+    };
+    const auto dir=env("MIKMAP_TEST_ORT_DIR"),fixtures=env("MIKMAP_TEST_TOPDOWN_FIXTURES");
+    if(dir.empty() || fixtures.empty()) { std::cout<<"[SKIP] CameraSource real CPU fixtures\n"; return; }
+    CameraSourceConfig cfg; cfg.runtimeDir=dir; cfg.device=OrtDevice::Cpu;
+    cfg.detectorPath=(std::filesystem::path(fixtures)/"detector.onnx").string();
+    for(auto mode:{CamMode::Hand,CamMode::Face,CamMode::Full}) {
+        cfg.mode=mode; cfg.keypointPath=(std::filesystem::path(fixtures)/("keypoints-"+std::to_string(modeSpec(mode).keypointsPerObject)+".onnx")).string();
+        CameraSource source(cfg,camera(640,640)); REQUIRE(source.start());
+        REQUIRE(until([&]{return source.frames().consume();},5000));
+        CHECK(source.status()==SourceStatus::Running); CHECK(source.stats().people==2); CHECK(source.stats().onCpu);
+        CHECK(source.lastError().find("CPU")!=std::string::npos);
+        // Constant coincident hand landmarks have unknown side and are intentionally not emitted.
+        CHECK(source.frames().readSlot().count==(mode==CamMode::Hand?0:mode==CamMode::Face?212:266));
+        if(mode==CamMode::Face) CHECK(source.stats().calPoint==kCalibUnavailable);
+    }
+    cfg.mode=CamMode::Face;
+    for(const auto* suffix:{"metadata","trailing","range","negative","space"}) {
+        cfg.keypointPath=(std::filesystem::path(fixtures)/(std::string("keypoints-106-")+suffix+".onnx")).string();
+        CameraSource source(cfg,camera(640,640)); REQUIRE(source.start());
+        CHECK(source.stats().calPoint==(std::string(suffix)=="metadata"?7u:kCalibUnavailable));
+        REQUIRE(until([&]{return source.frames().consume();},5000)); CHECK(source.frames().readSlot().count==212);
+    }
+    cfg.device=OrtDevice::Auto;
+    {CameraSource source(cfg,camera(640,640)); REQUIRE(source.start()); CHECK(source.stats().onCpu);}
+    cfg.device=OrtDevice::CudaOnly;
+    {CameraSource source(cfg,camera()); CHECK(!source.start()); CHECK(source.status()==SourceStatus::Error); CHECK(!source.lastError().empty());}
+    cfg.device=OrtDevice::Cpu; cfg.keypointPath=(std::filesystem::path(fixtures)/"keypoints-21.onnx").string();
+    {CameraSource source(cfg,camera()); CHECK(!source.start()); CHECK(source.status()==SourceStatus::Error);}
+}
+
+TEST_CASE("CameraSource maximum mode output fits fixed frame and user cap overrides tracker cap") {
+    for(auto mode:{CamMode::Body,CamMode::Hand,CamMode::Face,CamMode::Full}) {
+        CameraSourceConfig cfg; cfg.mode=mode; cfg.maxObjects=30; cfg.tracker.maxPeople=1;
+        CameraSource source(cfg,camera(),[mode](const CameraFrame&,PoseObject* out,int cap,std::string&) {
+            for(int i=0;i<cap;++i) { auto& p=out[i]; p={}; p.nkp=modeSpec(mode).keypointsPerObject; p.score=1;
+                for(auto& k:p.kp) k={.2f,.3f,.8f};
+                if(mode==CamMode::Hand) { p.kp[5].x=.3f; p.kp[17].y=.4f; }
+            }
+            return cap;
+        });
+        REQUIRE(source.start()); REQUIRE(until([&]{return source.frames().consume();}));
+        const auto& spec=modeSpec(mode); CHECK(source.stats().people==spec.objectsCap);
+        CHECK(source.frames().readSlot().count==spec.objectsCap*spec.keypointsPerObject);
+        CHECK(source.frames().readSlot().count<=kMaxTouchPoints);
+    }
 }

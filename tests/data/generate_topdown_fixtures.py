@@ -42,7 +42,14 @@ def main():
         save(directory, f"keypoints-{count}.onnx", [1, 3, 256, 192], [
             ("simcc_x", TensorProto.FLOAT, [1, count, 384], x),
             ("simcc_y", TensorProto.FLOAT, [1, count, 512], y)])
-    print(f"Checked and wrote five constant ONNX fixtures to {directory}")
+    # Synthetic test-only index 7 makes no anatomical claim about LaPa106.
+    for suffix, value in [("metadata", "7"), ("trailing", "7x"), ("range", "106"), ("negative", "-1"), ("space", " 7")]:
+        model = onnx.load(directory / "keypoints-106.onnx")
+        helper.set_model_props(model, {"mikmap.face.nose_tip_index": value,
+                                      "test.unicode": "mũi", "test.long": "x" * 4097})
+        onnx.checker.check_model(model)
+        onnx.save(model, directory / f"keypoints-106-{suffix}.onnx")
+    print(f"Checked and wrote constant ONNX fixtures to {directory}")
 
 
 if __name__ == "__main__":

@@ -70,3 +70,19 @@ TEST_CASE("ORT optional real model Auto and CPU inference") {
         CHECK(!ort.run(zero.data(), {-1}, out, shapes, err));
     }
 }
+
+TEST_CASE("ORT custom metadata clears stale values and validates bounded strings") {
+    OrtRuntime ort; std::string value="stale",err;
+    CHECK(!ort.customMetadata("key",value,err)); CHECK(value.empty()); CHECK(!err.empty());
+    const auto dir=testEnv("MIKMAP_TEST_ORT_DIR"),fixtures=testEnv("MIKMAP_TEST_TOPDOWN_FIXTURES");
+    if(dir.empty() || fixtures.empty()) { std::cout<<"[SKIP] ORT metadata fixtures\n"; return; }
+    REQUIRE(ort.load(dir,err));
+    REQUIRE(ort.createSession((std::filesystem::path(fixtures)/"keypoints-106-metadata.onnx").string(),OrtDevice::Cpu,err));
+    REQUIRE(ort.customMetadata("mikmap.face.nose_tip_index",value,err)); CHECK(value=="7"); CHECK(err.empty());
+    REQUIRE(ort.customMetadata("test.unicode",value,err)); CHECK(value=="mũi");
+    CHECK(!ort.customMetadata("test.long",value,err)); CHECK(value.empty()); CHECK(err.find("4096")!=std::string::npos);
+    value="stale"; CHECK(!ort.customMetadata("missing",value,err)); CHECK(value.empty()); CHECK(err=="Metadata key not found");
+    CHECK(!ort.customMetadata(std::string("x\0y",3),value,err)); CHECK(value.empty());
+    REQUIRE(ort.createSession((std::filesystem::path(fixtures)/"keypoints-106.onnx").string(),OrtDevice::Cpu,err));
+    CHECK(!ort.customMetadata("mikmap.face.nose_tip_index",value,err)); CHECK(value.empty()); CHECK(err=="Metadata key not found");
+}

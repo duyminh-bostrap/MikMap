@@ -1,5 +1,7 @@
 #include "CameraSource.h"
 #include "io/camera/MfCamera.h"
+#include "io/ai/TopDownPose.h"
+#include <charconv>
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -34,14 +36,16 @@ struct CameraSource::Impl {
     CameraSourceConfig cfg;
     std::unique_ptr<ICameraDevice> device;
     Inference inference;
-    OrtRuntime runtime;
+    OrtRuntime runtime, keypointRuntime;
+    TopDownPose topDown;
     PoseModel model;
     PersonTracker tracker;
     TripleBuffer<CameraFrame> captured, previews;
     mutable TripleBuffer<Diagnostic> captureError, inferError;
     std::atomic<bool> running{false},cameraOk{false},captureFailed{false},inferOk{true},onCpu{false};
     std::atomic<float> camFps{0},inferFps{0},inferMs{0},latencyMs{0};
-    std::atomic<int> people{0};
+    std::atomic<int> people{0},objectsCap{0};
+    std::atomic<uint32_t> calPoint{kCalibUnavailable};
     std::thread captureThread,inferThread;
     std::string startError;
     struct Replay { double time=0; SensorFrame frame; };
@@ -77,12 +81,15 @@ struct CameraSource::Impl {
             if(inputBytes>maxInputBytes) { startError="Replay: input limit is 16 MiB"; return false; }
             std::string line(record.data(),size_t(file.gcount())-(file.eof()?0:1));
             if(line.find_first_not_of(" \t\r")==std::string::npos) { if(!finish()) return false; continue; }
-            std::istringstream in(line); double t; int slot,joint; TouchPoint p; std::string extra;
-            if(!(in>>t>>slot>>joint>>p.x>>p.y>>p.z) || (in>>extra) || !std::isfinite(t) || t<0 || t>86400 || slot<0 || slot>=30 || joint<0 || joint>32 ||
+            std::istringstream in(line); double t; int slot,joint,group=0; TouchPoint p;
+            bool parsed=bool(in>>t>>slot>>joint>>p.x>>p.y>>p.z);
+            if(parsed) { in>>std::ws; if(!in.eof()) { parsed=bool(in>>group); if(parsed) { in>>std::ws; parsed=in.eof(); } } }
+            const int jointCaps[]={33,21,21,106,6},slotCaps[]={30,24,24,4,3};
+            if(!parsed || group<0 || group>4 || !std::isfinite(t) || t<0 || t>86400 || slot<0 || slot>=slotCaps[group] || joint<0 || joint>=jointCaps[group] ||
                !std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z) || p.x<0 || p.x>1 || p.y<0 || p.y>1 || p.z<0 || p.z>1 ||
                (active && t!=current.time) || (!active && t<=previous)) { startError="Replay: invalid record or timestamp"; return false; }
-            active=true; current.time=t; p.id=uint32_t(slot*100+joint); p.confidence=p.z; p.state=TouchState::Move;
-            for(uint16_t k=0;k<current.frame.count;++k) if(current.frame.points[k].id==p.id) { startError="Replay: duplicate joint"; return false; }
+            active=true; current.time=t; p.group=static_cast<uint8_t>(group); p.id=uint32_t(slot*(group==kGroupFace?1000:100)+joint+(group==kGroupHandR?50:0)); p.confidence=p.z; p.state=TouchState::Move;
+            for(uint16_t k=0;k<current.frame.count;++k) if(current.frame.points[k].id==p.id && current.frame.points[k].group==p.group) { startError="Replay: duplicate joint"; return false; }
             if(cfg.flip) p.x=1-p.x;
             if(!current.frame.addPoint(p)) { startError="Replay: too many points"; return false; }
 
@@ -96,6 +103,7 @@ struct CameraSource::Impl {
         while(running) {
             if(!opened) {
                 opened=device->open(cfg.cameraId,cfg.width,cfg.height,error);
+                if(opened && !modeSupported(cfg.mode,device->caps(),error)) { device->close(); opened=false; }
                 if(!opened) { message(captureError,"Camera: "+error); cameraOk=false; captureFailed=true; camFps=0; if(!wait(2)) break; continue; }
             }
             auto& f=captured.writeSlot();
@@ -121,16 +129,32 @@ struct CameraSource::Impl {
             }
             const auto& frame=captured.readSlot(); lastArrival=nowNs(); stale=false;
             SensorFrame f; f.tCaptureNs=frame.tCaptureNs;
-            if(cfg.mode==CamMode::Body) {
+            if(cfg.mode!=CamMode::Off && objectsCap>0) {
                 error.clear(); const auto begin=nowNs();
-                int n=inference?inference(frame,poses,30,error):model.infer(frame,cfg.personThr,cfg.jointThr,poses,30,error);
+                const int capacity=inference || cfg.mode==CamMode::Body ? 30 : objectsCap.load();
+                int n=inference ? inference(frame,poses,capacity,error) : cfg.mode==CamMode::Body
+                    ? model.infer(frame,cfg.personThr,cfg.jointThr,poses,capacity,error)
+                    : topDown.infer(frame,cfg.personThr,cfg.jointThr,capacity,poses,error);
+                if(n<0 || n>capacity) error="Invalid inference object count";
+                if(error.empty()) for(int i=0;i<n;++i) {
+                    if(poses[i].nkp!=modeSpec(cfg.mode).keypointsPerObject) { error="Inference keypoint count does not match mode"; break; }
+                    if(cfg.mode==CamMode::Hand) poses[i].side=handSide(poses[i],cfg.flip);
+                    for(int j=0;j<poses[i].nkp;++j) {
+                        auto& k=poses[i].kp[j];
+                        if(!std::isfinite(k.x) || !std::isfinite(k.y) || !std::isfinite(k.conf)) k={};
+                        else { k.x=std::clamp(k.x,0.f,1.f); k.y=std::clamp(k.y,0.f,1.f); k.conf=std::clamp(k.conf,0.f,1.f); }
+                    }
+                }
                 inferMs=float(double(nowNs()-begin)/1e6);
                 if(n<0 || !error.empty()) { message(inferError,"Inference: "+error); inferOk=false; tracker.reset(); n=0; }
                 else inferOk=true;
                 int count=tracker.update(poses,std::clamp(n,0,30),double(lastArrival)*1e-9,tracks,30); people=count;
-                for(int i=0;i<count;++i) for(int j=0;j<std::min(17,tracks[i].pose.nkp);++j) {
+                for(int i=0;i<count;++i) for(int j=0;j<tracks[i].pose.nkp;++j) {
                     const auto& k=tracks[i].pose.kp[j]; if(k.conf<cfg.jointThr || k.conf<=0) continue;
-                    TouchPoint p; p.id=uint32_t(tracks[i].slot*100+kCocoToMediaPipe[j]); p.x=cfg.flip?1-k.x:k.x; p.y=k.y; p.z=p.confidence=k.conf; p.state=TouchState::Move; f.addPoint(p);
+                    TouchPoint p; bool emit=false;
+                    pointGroupAndId(cfg.mode,tracks[i].slot,tracks[i].pose.side,j,p.group,p.id,emit);
+                    if(!emit || (cfg.mode==CamMode::Full && !(cfg.fullGroups & (1u<<p.group)))) continue;
+                    p.x=cfg.flip?1-k.x:k.x; p.y=k.y; p.z=p.confidence=k.conf; p.state=TouchState::Move; f.addPoint(p);
                 }
                 const auto done=nowNs(); if(previous) inferFps=float(1e9/double(done-previous)); previous=done;
                 latencyMs=float(std::max(0.0,double(done-frame.tCaptureNs)/1e6));
@@ -150,12 +174,20 @@ struct CameraSource::Impl {
                 while(running && Clock::now()<due) wait(.002);
                 if(!running) return;
                 auto f=r.frame; f.tCaptureNs=std::chrono::duration_cast<std::chrono::nanoseconds>(due.time_since_epoch()).count();
-                if(cfg.mode==CamMode::Off) f.count=0;
+                uint16_t kept=0;
+                for(uint16_t k=0;k<f.count;++k) {
+                    const auto& point=f.points[k]; const auto slot=point.id/(point.group==kGroupFace?1000u:100u);
+                    const bool groupEnabled=cfg.mode==CamMode::Full ? (cfg.fullGroups & (1u<<point.group))!=0 :
+                        cfg.mode==CamMode::Body ? point.group==kGroupBody : cfg.mode==CamMode::Face ? point.group==kGroupFace :
+                        cfg.mode==CamMode::Hand && (point.group==kGroupHandL || point.group==kGroupHandR);
+                    if(groupEnabled && slot<static_cast<uint32_t>(objectsCap.load())) f.points[kept++]=point;
+                }
+                f.count=kept;
                 auto& preview=previews.writeSlot(); preview.width=640; preview.height=480;
                 preview.rgb.resize(640*480*3,73); preview.tCaptureNs=f.tCaptureNs; preview.index=seq+1;
                 const auto arrival=nowNs(); if(previous) camFps=float(1e9/double(arrival-previous)); previous=arrival;
                 latencyMs=float(double(arrival-f.tCaptureNs)*1e-6);
-                bool slots[30]{}; int count=0; for(uint16_t k=0;k<f.count;++k) { const auto slot=f.points[k].id/100; if(!slots[slot]) { slots[slot]=true; ++count; } }
+                bool slots[30]{}; int count=0; for(uint16_t k=0;k<f.count;++k) { const auto slot=f.points[k].id/(f.points[k].group==kGroupFace?1000u:100u); if(!slots[slot]) { slots[slot]=true; ++count; } }
                 people=count; previews.publish(); publish(f);
             }
             origin+=std::chrono::duration_cast<Clock::duration>(std::chrono::duration<double>(duration));
@@ -168,7 +200,11 @@ bool CameraSource::start() {
     auto& p=*impl_; if(p.running) return true;
     try {
         p.startError.clear(); p.cameraOk=false; p.captureFailed=false;
-        p.captured.consume(); p.previews.consume(); p.captureError.consume(); p.inferError.consume(); m_frames.consume(); p.inferOk=true; p.onCpu=false; p.people=0; p.camFps=0; p.inferFps=0; p.inferMs=0; p.latencyMs=0; p.tracker.reset(); p.tracker.setParams(p.cfg.tracker);
+        p.captured.consume(); p.previews.consume(); p.captureError.consume(); p.inferError.consume(); m_frames.consume(); p.inferOk=true; p.onCpu=false; p.people=0; p.camFps=0; p.inferFps=0; p.inferMs=0; p.latencyMs=0; p.tracker.reset();
+        p.objectsCap=clampObjects(p.cfg.mode,p.cfg.maxObjects); p.calPoint=calibPointId(p.cfg.mode);
+        auto trackerParams=p.cfg.tracker; trackerParams.maxPeople=p.objectsCap.load(); p.tracker.setParams(trackerParams);
+        if(!std::isfinite(p.cfg.personThr) || !std::isfinite(p.cfg.jointThr)) { p.startError="Invalid inference thresholds"; return false; }
+        if(!modeSupported(p.cfg.mode,CameraCaps{true},p.startError)) return false;
         if(!std::isfinite(p.cfg.tracker.keepSec) || p.cfg.tracker.keepSec<0) p.cfg.tracker.keepSec=.5;
         if(!p.cfg.replayPath.empty()) { if(!p.loadReplay()) return false; }
         else {
@@ -177,6 +213,22 @@ bool CameraSource::start() {
                 bool cuda=false;
                 if(!p.runtime.load(p.cfg.runtimeDir,p.startError) || !p.runtime.createSession(p.cfg.modelPath,p.cfg.device,p.startError,&cuda) || !p.model.init(p.runtime,p.startError)) return false;
                 p.onCpu=!cuda;
+            }
+            if(p.cfg.mode!=CamMode::Off && p.cfg.mode!=CamMode::Body && !p.inference) {
+                if(p.cfg.runtimeDir.empty() || p.cfg.detectorPath.empty() || p.cfg.keypointPath.empty()) { p.startError="Needs pack: install camera mode runtime, detector and keypoints"; return false; }
+                bool detectorCuda=false,keypointCuda=false;
+                if(!p.runtime.load(p.cfg.runtimeDir,p.startError) || !p.runtime.createSession(p.cfg.detectorPath,p.cfg.device,p.startError,&detectorCuda) ||
+                   !p.keypointRuntime.load(p.cfg.runtimeDir,p.startError) || !p.keypointRuntime.createSession(p.cfg.keypointPath,p.cfg.device,p.startError,&keypointCuda) ||
+                   !p.topDown.init(p.runtime,p.keypointRuntime,modeSpec(p.cfg.mode).keypointsPerObject,p.startError)) return false;
+                p.onCpu=!detectorCuda || !keypointCuda;
+                if(p.cfg.mode==CamMode::Face) {
+                    std::string value,error; int index=-1;
+                    if(p.keypointRuntime.customMetadata("mikmap.face.nose_tip_index",value,error) && !value.empty() &&
+                       std::all_of(value.begin(),value.end(),[](char c){return c>='0' && c<='9';})) {
+                        const auto result=std::from_chars(value.data(),value.data()+value.size(),index);
+                        if(result.ec==std::errc{} && result.ptr==value.data()+value.size()) p.calPoint=calibPointId(p.cfg.mode,index);
+                    }
+                }
             }
             if(!p.device) p.device=std::make_unique<MfCamera>();
         }
@@ -207,5 +259,5 @@ std::string CameraSource::lastError() const {
     return p.onCpu?"Running on CPU; inference may be slow":std::string{};
 }
 bool CameraSource::previewLatest(CameraFrame& out) { auto& p=*impl_; if(!p.previews.consume()) return false; out=p.previews.readSlot(); return true; }
-CameraStats CameraSource::stats() const { const auto& p=*impl_; return {p.camFps.load(),p.inferFps.load(),p.inferMs.load(),p.latencyMs.load(),p.people.load(),p.onCpu.load()}; }
+CameraStats CameraSource::stats() const { const auto& p=*impl_; return {p.camFps.load(),p.inferFps.load(),p.inferMs.load(),p.latencyMs.load(),p.people.load(),p.onCpu.load(),p.objectsCap.load(),p.calPoint.load()}; }
 }
