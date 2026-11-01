@@ -36,6 +36,33 @@ bool safeChar(char c) {
     return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '.' || c == '_' || c == ':' || c == '-';
 }
 
+/// Writes one OSC element (int32 size + message) into `w`. Rolls the buffer back and
+/// returns false when the element does not fit — the caller then stops the chunk there.
+template <class Body>
+bool element(W& w, Body body) {
+    const size_t at = w.n;
+    w.u32(0);                       // placeholder for the size, patched below
+    body();
+    if (!w.ok) { w.ok = true; w.n = at; return false; }
+    const uint32_t sz = uint32_t(w.n - at - 4);
+    const uint8_t q[4] = {uint8_t(sz >> 24), uint8_t(sz >> 16), uint8_t(sz >> 8), uint8_t(sz)};
+    std::memcpy(w.b + at, q, 4);
+    return true;
+}
+
+/// The point count a chunk encoder works with: OutPacket::count clamped to kMaxTouchPoints.
+int frameCount(const OutPacket& p) {
+    return p.count < kMaxTouchPoints ? int(p.count) : kMaxTouchPoints;
+}
+
+/// Clamps `first` into [0, count] and reports it through `next`.
+int firstPoint(int first, int count, int& next) {
+    int i = first < 0 ? 0 : first;
+    if (i > count) i = count;
+    next = i;
+    return i;
+}
+
 using Clk = std::chrono::steady_clock;
 constexpr auto kRetry = std::chrono::seconds(5);
 
@@ -52,37 +79,72 @@ void setOutDevice(OutPacket& p, const char* name) {
     if (i == 0) std::snprintf(p.device, sizeof p.device, "device");
 }
 
-size_t encodeOsc(const OutPacket& p, uint8_t* buf, size_t cap) {
-    const int count = p.count < kMaxTouchPoints ? p.count : kMaxTouchPoints;
+size_t encodeOscChunk(const OutPacket& p, int first, uint8_t* buf, size_t cap, int& next) {
+    const int count = frameCount(p);
+    int i = firstPoint(first, count, next);
+    const int start = i;
+
     W w{buf, cap};
     w.str("#bundle");
     w.u32(0); w.u32(1);   // timetag 1 = "immediately"
+    if (i == 0) {
+        if (!element(w, [&] { w.addr(p.device, "frame"); w.str(",i"); w.u32(uint32_t(count)); })) {
+            next = 0;
+            return 0;         // even the frame message does not fit
+        }
+    } else if (i == count) {
+        return 0;             // nothing left, and a later chunk carries no frame message
+    }
 
-    // each element: int32 size, then the message; the size is patched in once the message is written
-    auto element = [&](auto body) {
-        const size_t at = w.n;
-        w.u32(0);
-        body();
-        if (!w.ok) return;
-        const uint32_t sz = uint32_t(w.n - at - 4);
-        const uint8_t q[4] = {uint8_t(sz >> 24), uint8_t(sz >> 16), uint8_t(sz >> 8), uint8_t(sz)};
-        std::memcpy(buf + at, q, 4);
-    };
-    element([&] { w.addr(p.device, "frame"); w.str(",i"); w.u32(uint32_t(count)); });
-    for (int i = 0; i < count; ++i)
-        element([&] { w.addr(p.device, "touch"); w.str(",iff"); w.u32(p.ids[i]); w.f32(p.xy[2 * i]); w.f32(p.xy[2 * i + 1]); });
-    return w.ok ? w.n : 0;
+    while (i < count) {
+        if (!element(w, [&] { w.addr(p.device, "touch"); w.str(p.hasZ ? ",ifff" : ",iff"); w.u32(p.ids[i]); w.f32(p.xy[2 * i]); w.f32(p.xy[2 * i + 1]); if (p.hasZ) w.f32(p.z[i]); })) break;
+        ++i;
+    }
+    next = i;
+    if (count > start && i == start) return 0;   // not even one point fits in cap
+    return w.n;
+}
+
+size_t encodeTextChunk(const OutPacket& p, int first, uint8_t* buf, size_t cap, int& next) {
+    const int count = frameCount(p);
+    int i = firstPoint(first, count, next);
+    const int start = i;
+
+    if (cap == 0) { next = i; return 0; }
+    char* out = reinterpret_cast<char*>(buf);
+    size_t n = 0;
+
+    if (i == 0) {
+        const int k = std::snprintf(out, cap, "%s frame %d\n", p.device, count);
+        if (k < 0 || size_t(k) >= cap) { next = 0; return 0; }   // >= : snprintf needs room for its NUL
+        n = size_t(k);
+    } else if (i == count) {
+        return 0;             // nothing left, and a later chunk carries no frame line
+    }
+
+    while (i < count) {
+        const int k = p.hasZ
+            ? std::snprintf(out + n, cap - n, "%s %u %.4f %.4f %.4f\n", p.device, unsigned(p.ids[i]), double(p.xy[2 * i]), double(p.xy[2 * i + 1]), double(p.z[i]))
+            : std::snprintf(out + n, cap - n, "%s %u %.4f %.4f\n", p.device, unsigned(p.ids[i]), double(p.xy[2 * i]), double(p.xy[2 * i + 1]));
+        if (k < 0 || size_t(k) >= cap - n) break;   // never split a line across datagrams
+        n += size_t(k);
+        ++i;
+    }
+    next = i;
+    if (count > start && i == start) return 0;   // not even one point fits in cap
+    return n;
+}
+
+size_t encodeOsc(const OutPacket& p, uint8_t* buf, size_t cap) {
+    int next = 0;
+    const size_t n = encodeOscChunk(p, 0, buf, cap, next);
+    return (n != 0 && next == frameCount(p)) ? n : 0;   // the whole frame must fit in cap
 }
 
 size_t encodeText(const OutPacket& p, uint8_t* buf, size_t cap) {
-    const int count = p.count < kMaxTouchPoints ? p.count : kMaxTouchPoints;
-    char* out = reinterpret_cast<char*>(buf);
-    size_t n = 0;
-    auto line = [&](int k) { if (k < 0 || n + size_t(k) >= cap) return false; n += size_t(k); return true; };   // >= : snprintf needs room for its NUL
-    if (cap == 0 || !line(std::snprintf(out, cap, "%s frame %d\n", p.device, count))) return 0;
-    for (int i = 0; i < count; ++i)
-        if (!line(std::snprintf(out + n, cap - n, "%s %u %.4f %.4f\n", p.device, unsigned(p.ids[i]), double(p.xy[2 * i]), double(p.xy[2 * i + 1])))) return 0;
-    return n;
+    int next = 0;
+    const size_t n = encodeTextChunk(p, 0, buf, cap, next);
+    return (n != 0 && next == frameCount(p)) ? n : 0;   // the whole frame must fit in cap
 }
 
 // ── TouchSender ──
@@ -162,7 +224,7 @@ void TouchSender::threadLoop() {
     std::array<Target, 8> cache;
     size_t nextSlot = 0;
     std::string failKey;   // host:port of the last failure; its next success clears lastError()
-    uint8_t buf[16384];   // 64 points of either format fit (OSC ~4.7 KB, text ~9 KB worst case)
+    uint8_t buf[kMaxDatagram];   // one datagram at a time: a frame is split across as many as it needs
     OutPacket p;
 
     auto fail = [&](int kind, int code, const std::string& key) {
@@ -206,15 +268,23 @@ void TouchSender::threadLoop() {
         }
         if (!t->ok) return fail(1, 0, key);
 
-        const size_t n = p.proto == 1 ? encodeText(p, buf, sizeof buf) : encodeOsc(p, buf, sizeof buf);
-        if (n == 0) return fail(6, 0, key);
-        if (::sendto(sock, reinterpret_cast<const char*>(buf), static_cast<int>(n), 0,
-                     reinterpret_cast<const sockaddr*>(&t->addr), sizeof t->addr) < 0) {
+        const int total = frameCount(p);
+        int first = 0;
+        for (;;) {
+            int next = 0;
+            const size_t n = p.proto == 1 ? encodeTextChunk(p, first, buf, kMaxDatagram, next)
+                                          : encodeOscChunk(p, first, buf, kMaxDatagram, next);
+            if (n == 0) return fail(6, 0, key);   // not even one point fits kMaxDatagram
+            if (::sendto(sock, reinterpret_cast<const char*>(buf), static_cast<int>(n), 0,
+                         reinterpret_cast<const sockaddr*>(&t->addr), sizeof t->addr) < 0) {
 #if defined(_WIN32)
-            return fail(4, ::WSAGetLastError(), key);
+                return fail(4, ::WSAGetLastError(), key);
 #else
-            return fail(4, errno, key);
+                return fail(4, errno, key);
 #endif
+            }
+            if (next >= total) break;   // the whole frame is out (an empty frame sends one chunk)
+            first = next;
         }
         m_sent.fetch_add(1, std::memory_order_relaxed);
         if (key == failKey) { m_errKind.store(0, std::memory_order_release); failKey.clear(); }

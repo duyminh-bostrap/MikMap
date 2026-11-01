@@ -233,6 +233,8 @@ Device MakeDevice(DevKind k, const std::string& id) {
     const float mx[4] = {-0.65f, 0.65f, 0.75f, -0.75f}, my[4] = {-0.55f, -0.55f, 0.65f, 0.65f};
     for (int i = 0; i < 4; ++i) { d.calib[i].mx = mx[i]; d.calib[i].my = my[i]; }
     d.roi[0] = {-0.7f, -0.6f}; d.roi[1] = {0.7f, -0.6f}; d.roi[2] = {0.85f, 0.7f}; d.roi[3] = {-0.85f, 0.7f};
+  } else if (k == DevKind::Camera2D || k == DevKind::Camera3D) {
+    d.name = DevKindName(k);
   } else if (k == DevKind::Skeleton) {
     d.name = "Camera skeleton"; d.port = 9000;
   } else if (k == DevKind::Hokuyo) {

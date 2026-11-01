@@ -110,6 +110,12 @@ TEST_CASE("packinstaller: verified catalog refresh and dependency-ordered instal
     REQUIRE(rprog.state == PackJobState::Done);
     CHECK(inst.catalog().packs.size() == 2);
 
+    store.protectUpdates({"onnx-runtime"});
+    inst.installAsync("pose-plugin");
+    REQUIRE(waitTerminal(inst).state == PackJobState::Failed);
+    CHECK(inst.snapshot().error.find("in use or loaded") != std::string::npos);
+    CHECK(store.list().empty()); CHECK(srv.hits("/rt.dll") == 0); CHECK(srv.hits("/pose.dll") == 0);
+    store.protectUpdates({});
     inst.installAsync("pose-plugin");
     const PackProgress iprog = waitTerminal(inst);
     REQUIRE(iprog.state == PackJobState::Done);

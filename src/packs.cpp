@@ -39,10 +39,15 @@ struct PackManagerState {
   std::string lastError;
   std::string lastFailedPackId;
   std::set<std::string> loadedDirs;
+  std::vector<mikmap::InstalledPack> installed; // refreshed only at startup and completed mutations
   std::string demoMode;
 };
 
 PackManagerState g_pm;
+const mikmap::InstalledPack* FindInstalled(const std::string& id) {
+  for (const auto& p : g_pm.installed) if (p.entry.id == id) return &p;
+  return nullptr;
+}
 
 bool ParseCompileTimePubKey(uint8_t out[32]) {
   std::memset(out, 0, 32);
@@ -77,7 +82,7 @@ bool PathStartsWithDir(const std::string& path, const std::string& dir) {
 bool PackInUseByDevices(const std::string& id, const mikmap::InstalledPack* inst) {
   for (const auto& d : A.devices) {
     if (!d.enabled) continue;
-    if (d.needsPack == id) return true;
+    if (d.needsPack == id || (d.kind == DevKind::Camera2D && d.camMode == 1 && id == "onnx-runtime-cuda")) return true;
     if (inst && d.kind == DevKind::Plugin && !d.plugin.empty()) {
       for (const auto& f : inst->entry.files) {
         if (BaseNameOf(f.path) == d.plugin) return true;
@@ -123,6 +128,7 @@ void StartWithConfig(const std::string& rootDir, const uint8_t pubKey[32],
     }
   }
 
+  g_pm.installed = g_pm.store->list();
   g_pm.installer = std::make_unique<mikmap::PackInstaller>(
       *g_pm.store, g_pm.pubKey, g_pm.catalogUrl, "1.0.0", g_pm.allowLoopbackHttp);
   RescanSensorPlugins();
@@ -139,7 +145,7 @@ void PacksStartup() {
 void PacksShutdown() {
   g_pm.installer.reset();
   g_pm.store.reset();
-  g_pm.loadedDirs.clear();
+  g_pm.loadedDirs.clear(); g_pm.installed.clear();
 }
 
 void PacksResetForTest(const std::string& rootDir, const uint8_t pubKey[32],
@@ -172,7 +178,7 @@ bool IsPackDirLoaded(const std::string& dir) {
 std::vector<std::string> InstalledPluginPackDirs() {
   std::vector<std::string> dirs;
   if (!g_pm.store) return dirs;
-  for (const auto& p : g_pm.store->list()) {
+  for (const auto& p : g_pm.installed) {
     if (p.pendingRemoval) continue;
     if (p.entry.kind == mikmap::PackKind::Plugin || p.entry.kind == mikmap::PackKind::Runtime) {
       dirs.push_back(p.dir);
@@ -184,6 +190,7 @@ std::vector<std::string> InstalledPluginPackDirs() {
 void PacksTick() {
   if (!g_pm.installer) return;
   const mikmap::PackProgress snap = g_pm.installer->snapshot();
+  if (snap.state == mikmap::PackJobState::Done && g_pm.installer->busy()) return;
   if (snap.state != g_pm.lastState) {
     const bool wasBusy = (g_pm.lastState == mikmap::PackJobState::RefreshingCatalog ||
                           g_pm.lastState == mikmap::PackJobState::Downloading ||
@@ -192,6 +199,7 @@ void PacksTick() {
     if (wasBusy && snap.state == mikmap::PackJobState::Done) {
       g_pm.lastError.clear();
       g_pm.lastFailedPackId.clear();
+      g_pm.installed = g_pm.store->list();
       RescanSensorPlugins();
       if (!snap.packId.empty()) A.notify("Pack installed: " + snap.packId);
       else A.notify("Sensor pack catalog updated");
@@ -205,6 +213,7 @@ void PacksTick() {
 
 void PackRefreshCatalog() {
   if (!g_pm.installer) return;
+  if (g_pm.installer->busy()) { A.notify("Another pack operation is already in progress"); return; }
   const auto snap = g_pm.installer->snapshot();
   if (snap.state == mikmap::PackJobState::RefreshingCatalog ||
       snap.state == mikmap::PackJobState::Downloading ||
@@ -214,11 +223,23 @@ void PackRefreshCatalog() {
   }
   g_pm.lastError.clear();
   g_pm.lastFailedPackId.clear();
+  g_pm.lastState = mikmap::PackJobState::RefreshingCatalog;
   g_pm.installer->refreshCatalogAsync();
 }
 
+bool CameraPackMutationBusy() { return g_pm.installer && g_pm.installer->busy(); }
+static void ProtectPackJob() {
+  std::vector<std::string> protectedIds;
+  for (const auto& p : g_pm.installed)
+    if (PackInUseByDevices(p.entry.id, &p) || IsPackDirLoaded(p.dir)) protectedIds.push_back(p.entry.id);
+  g_pm.store->protectUpdates(std::move(protectedIds));
+}
 void PackInstall(const std::string& id) {
   if (!g_pm.installer) return;
+  if (g_pm.store && FindInstalled(id) && PackInUseByDevices(id, FindInstalled(id))) {
+    A.notify("Turn the sensor off first"); return;
+  }
+  if (g_pm.installer->busy()) { A.notify("Another pack operation is already in progress"); return; }
   const auto snap = g_pm.installer->snapshot();
   if (snap.state == mikmap::PackJobState::RefreshingCatalog ||
       snap.state == mikmap::PackJobState::Downloading ||
@@ -228,6 +249,8 @@ void PackInstall(const std::string& id) {
   }
   g_pm.lastError.clear();
   g_pm.lastFailedPackId = id;
+  ProtectPackJob();
+  g_pm.lastState = mikmap::PackJobState::Downloading;
   g_pm.installer->installAsync(id);
 }
 
@@ -237,6 +260,7 @@ void PackInstallFromFile(const std::string& path) {
     A.notify("Enter a .mikpack file path first");
     return;
   }
+  if (g_pm.installer->busy()) { A.notify("Another pack operation is already in progress"); return; }
   const auto snap = g_pm.installer->snapshot();
   if (snap.state == mikmap::PackJobState::RefreshingCatalog ||
       snap.state == mikmap::PackJobState::Downloading ||
@@ -246,6 +270,8 @@ void PackInstallFromFile(const std::string& path) {
   }
   g_pm.lastError.clear();
   g_pm.lastFailedPackId.clear();
+  ProtectPackJob();
+  g_pm.lastState = mikmap::PackJobState::Verifying;
   g_pm.installer->installFromFileAsync(path);
 }
 
@@ -254,8 +280,9 @@ void PackCancel() {
 }
 
 bool PackRemove(const std::string& id) {
+  if (CameraPackMutationBusy()) { A.notify("Another pack operation is already in progress"); return false; }
   if (!g_pm.store) return false;
-  const mikmap::InstalledPack* inst = g_pm.store->find(id);
+  const mikmap::InstalledPack* inst = FindInstalled(id);
   if (!inst) return false;
   if (PackInUseByDevices(id, inst)) {
     A.notify("Turn the sensor off first");
@@ -267,6 +294,7 @@ bool PackRemove(const std::string& id) {
     A.notify("Cannot remove pack: " + err);
     return false;
   }
+  g_pm.installed = g_pm.store->list();
   if (loaded) A.notify("Pack '" + id + "' will be removed when MikMap restarts");
   else A.notify("Pack removed: " + id);
   return true;
@@ -299,26 +327,27 @@ std::vector<PackRow> PackRows() {
     std::vector<PackRow> rows;
     if (g_pm.demoMode == "empty") {
       rows.push_back({"orbbec-femto", "Orbbec Femto Bolt / Mega Depth", "1.2.0", "", "", 18ull * 1024 * 1024, PackState::NotInstalled, false, false, false, 0.f});
-      rows.push_back({"pose-onnx", "MediaPipe Pose + ONNX Runtime", "1.4.0", "", "", 180ull * 1024 * 1024, PackState::NotInstalled, false, false, false, 0.f});
+      rows.push_back({"pose-rtmo", "Body tracking (RTMO) - demo", "1.4.0", "", "", 180ull * 1024 * 1024, PackState::NotInstalled, false, false, false, 0.f});
       rows.push_back({"realsense-d435", "Intel RealSense D435 / D455", "1.1.0", "", "signature check failed: catalog.json.sig", 24ull * 1024 * 1024, PackState::Failed, false, false, false, 0.f});
     } else if (g_pm.demoMode == "installed") {
       rows.push_back({"orbbec-femto", "Orbbec Femto Bolt / Mega Depth", "1.2.0", "1.2.0", "", 18ull * 1024 * 1024, PackState::Installed, true, true, false, 1.f});
-      rows.push_back({"pose-onnx", "MediaPipe Pose + ONNX Runtime", "1.4.0", "1.3.0", "", 180ull * 1024 * 1024, PackState::UpdateAvailable, false, false, false, 0.f});
+      rows.push_back({"pose-rtmo", "Body tracking (RTMO) - demo", "1.4.0", "1.3.0", "", 180ull * 1024 * 1024, PackState::UpdateAvailable, false, false, false, 0.f});
       rows.push_back({"realsense-d435", "Intel RealSense D435 / D455", "1.1.0", "1.1.0", "", 24ull * 1024 * 1024, PackState::Installed, false, true, true, 0.f});
     } else if (g_pm.demoMode == "downloading") {
       rows.push_back({"orbbec-femto", "Orbbec Femto Bolt / Mega Depth", "1.2.0", "", "", 18ull * 1024 * 1024, PackState::Downloading, false, false, false, 0.42f});
-      rows.push_back({"pose-onnx", "MediaPipe Pose + ONNX Runtime", "1.4.0", "", "", 180ull * 1024 * 1024, PackState::NotInstalled, false, false, false, 0.f});
+      rows.push_back({"pose-rtmo", "Body tracking (RTMO) - demo", "1.4.0", "", "", 180ull * 1024 * 1024, PackState::NotInstalled, false, false, false, 0.f});
       rows.push_back({"realsense-d435", "Intel RealSense D435 / D455", "1.1.0", "1.1.0", "", 24ull * 1024 * 1024, PackState::Installed, false, false, false, 1.f});
     } else {
       rows.push_back({"orbbec-femto", "Orbbec Femto Bolt / Mega Depth", "1.2.0", "", "", 18ull * 1024 * 1024, PackState::Unavailable, false, false, false, 0.f});
     }
+    rows.push_back({"onnx-runtime-cuda", "ONNX Runtime (CUDA) - demo", "", "", "", 0, PackState::NotInstalled, false, false, false, 0.f});
     return rows;
   }
 
   std::vector<PackRow> out;
   if (!g_pm.store || !g_pm.installer) return out;
 
-  const auto installed = g_pm.store->list();
+  const auto& installed = g_pm.installed;
   const auto cat = g_pm.installer->catalog();
   const auto snap = g_pm.installer->snapshot();
   const bool keyOk = PackKeyConfigured();
@@ -381,7 +410,8 @@ std::vector<PackRow> PackRows() {
   struct BuiltinPackMeta { const char* id; const char* name; const char* ver; uint64_t sizeBytes; };
   static const BuiltinPackMeta kKnown[] = {
     {"orbbec-femto", "Orbbec Femto Bolt / Mega Depth", "1.2.0", 18ull * 1024 * 1024},
-    {"pose-onnx", "MediaPipe Pose + ONNX Runtime", "1.4.0", 180ull * 1024 * 1024},
+    {"pose-rtmo", "Body tracking (RTMO)", "", 0},
+    {"onnx-runtime-cuda", "ONNX Runtime (CUDA)", "", 0},
     {"realsense-d435", "Intel RealSense D435 / D455", "1.1.0", 24ull * 1024 * 1024},
   };
   for (const auto& km : kKnown) {
@@ -406,7 +436,27 @@ std::vector<PackRow> PackRows() {
   return out;
 }
 
+std::string CameraPackPath(const std::string& id, int model) {
+  if (!g_pm.store) return {};
+  const auto* p = FindInstalled(id);
+  if (!p || p->pendingRemoval) return {};
+  if (model < 0) return p->dir;
+  const std::string wanted = model == 1 ? "rtmo-m" : "rtmo-s";
+  for (const auto& f : p->entry.files)
+    if (BaseNameOf(f.path).starts_with(wanted) && f.path.ends_with(".onnx")) return p->dir + "/" + f.path;
+  return {};
+}
+std::string MissingCameraPack(const Device& d) {
+  if (d.kind != DevKind::Camera2D || d.camMode == 0 || !d.camReplay.empty()) return {};
+  for (const char* id : {"pose-rtmo", "onnx-runtime-cuda"}) {
+    const auto* p = g_pm.store ? FindInstalled(id) : nullptr;
+    if (!p || p->pendingRemoval) return id;
+  }
+  return {};
+}
 bool PackAvailableForDevice(const Device& d) {
+  if (d.kind == DevKind::Camera3D) return true; // unsupported driver, not an installable pack
+  if (d.kind == DevKind::Camera2D) return MissingCameraPack(d).empty();
   if (d.needsPack.empty()) return true;
   if (!g_pm.demoMode.empty()) {
     for (const auto& r : PackRows()) {
@@ -417,7 +467,7 @@ bool PackAvailableForDevice(const Device& d) {
     return false;
   }
   if (!g_pm.store) return false;
-  const mikmap::InstalledPack* ip = g_pm.store->find(d.needsPack);
+  const mikmap::InstalledPack* ip = FindInstalled(d.needsPack);
   return ip != nullptr && !ip->pendingRemoval;
 }
 
@@ -427,7 +477,7 @@ PackState PackStateFor(const std::string& id) {
     if (r.id == id) return r.state;
   }
   if (g_pm.store) {
-    const mikmap::InstalledPack* ip = g_pm.store->find(id);
+    const mikmap::InstalledPack* ip = FindInstalled(id);
     if (ip && !ip->pendingRemoval) return PackState::Installed;
   }
   return PackKeyConfigured() ? PackState::NotInstalled : PackState::Unavailable;
@@ -479,11 +529,12 @@ const char* SensorPackHint(const Device& d, PackState st) {
   if (d.needsPack.empty() || st == PackState::Installed || st == PackState::UpdateAvailable)
     return nullptr;
 
-  std::string name = d.needsPack;
+  const std::string pack = d.kind == DevKind::Camera2D ? MissingCameraPack(d) : d.needsPack;
+  std::string name = pack;
   uint64_t sz = 0;
   float prog = 0.f;
   for (const auto& r : PackRows()) {
-    if (r.id == d.needsPack) {
+    if (r.id == pack) {
       if (!r.name.empty()) name = r.name;
       sz = r.sizeBytes;
       prog = r.progress;

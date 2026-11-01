@@ -779,3 +779,37 @@ Nay khung input sửa giống khung transform của Preview Cue: **kéo trong kh
 - **Kiểm hình:** 6 ảnh `--shot` (`--packs-demo empty|installed|downloading`, `--wizard 1`, `--missing-pack orbbec-femto --screen 1`).
 - **Chưa kiểm:** tải gói qua HTTPS thật ngoài mạng Internet (mới kiểm qua `FakeHttpServer` loopback và file `.mikpack` cục bộ); nhánh `curl` của `HttpGet` trên macOS/Linux chưa biên dịch thử trên máy Mac/Linux thật; chưa bấm chuột thật vào tab Gói cảm biến (chỉ kiểm bằng self-test và `--shot`).
 - Đếm mới (đếm lại từ các dòng bảng): 77 `[x]` · 15 `[~]` · 57 `[ ]`, trên 149 dòng.
+
+### Camera 2D native + RTMO Body (2026-11-01)
+
+- Không đổi điểm bảng: G20 sidecar vẫn chạy; Camera 2D native bổ sung Off/Body,
+  không có nghĩa crop/NDI/Spout hoặc Camera3D đã xong. App gọi thật `CameraSource`
+  (`src/sources.cpp`) → `MfCamera`, `OrtRuntime::load/createSession`, `PoseModel::init/infer`,
+  `PersonTracker`; `SetCamMode` được UI gọi và lưu cùng cấu hình camera/model s/m.
+- INPUT có RGB preview, mode, thông số người/khớp và overlay; OUTPUT giữ calib/gửi/
+  trigger. CPU fallback hiện vàng nhưng vẫn Connected. Replay có nhãn riêng,
+  preview xám và điểm ghi sẵn, Off xoá điểm; không phải phép đo GPU/inference.
+- `kMaxTouchPoints` = 512; Camera2D Send out thêm z = confidence (`ifff`), xy của
+  nguồn cũ giữ `iff`. OSC `/mikmap/<device>/frame i:count` là **số điểm**, không phải
+  số thứ tự frame hay số người; chỉ chunk đầu có message này. Touch là
+  `/mikmap/<device>/touch i:id f:x f:y [f:z]`. Text tương ứng `<device> frame <count>`
+  rồi `<device> <id> <x> <y> [<z>]`. Mỗi datagram ≤1200 byte, điểm/line không bị
+  cắt đôi; một frame lớn có nhiều datagram, UDP không bảo đảm nhận đủ/thứ tự.
+  Tọa độ vẫn qua H_s và lựa chọn Origin của thiết bị; z không phải độ sâu.
+- Một worker vòng đời camera, 16 slot live/pending; start/stop/session không chặn
+  render. Một camera đóng chậm có thể làm camera khác chờ Connecting. Gói runtime/
+  model đang dùng hoặc đã nạp không được thay thế qua online/offline/dependency;
+  đã nạp thì cập nhật sau restart. Snapshot PackInstaller cũ vẫn có mutex, không
+  tuyên bố toàn app không lock/alloc. ORT crash có thể kéo app xuống; giữ sidecar
+  cho show cần cách ly lỗi inference.
+- **Ghi chú kiểm tra:** engine 581 test PASS / 12812 assertion; app ctest 1/1 PASS,
+  gồm replay + calibration + confidence OSC loopback, mode Off, thiếu gói, worker
+  backlog và bảo vệ gói. Rapoo webcam thật thử lại vẫn lỗi `0x80070005` (access denied).
+  Chưa cài runtime/model/CUDA thật; FPS/ms inference 1/5/10 người, GPU fallback thật,
+  RGB webcam và TouchDesigner thật: **NOT MEASURED / chưa kiểm**.
+- Đã đo synthetic 4 nguồn (Sim + Hokuyo SCIP giả + Skeleton OSC chỉ nghe + Camera2D
+  replay 2 người): 60 FPS, P99 17.1 ms, DROP 0. Số này đo **trước bản sửa worker
+  async cuối**, không phải benchmark bản cuối hay inference/GPU thật. Không có
+  baseline trước Task1; chi phí P99 riêng của 512 điểm **NOT MEASURED**.
+- Gói mẫu ở `tools/packs/examples/` là template chưa đủ hash/size/license, không
+  chứa DLL/model hay catalog dùng được ngay; chưa có phép đo phần cứng để tick thêm.

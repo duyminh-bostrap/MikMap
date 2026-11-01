@@ -1,0 +1,2 @@
+# Preserve the downloaded bytes so README SHA-256 also holds after Windows checkout.
+onnxruntime_c_api.h -text

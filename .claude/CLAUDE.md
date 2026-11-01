@@ -293,3 +293,15 @@ Quy ước build/test/style mặc định ở `.claude/rules/tech-defaults.md`.
 - `.claude/agents/reviewer.md` — review diff theo checklist riêng của dự án.
 - `.claude/hooks/pre-commit.sh` / `pre-push.sh` — chạy tự động qua
   `.claude/settings.json` trước `git commit`/`git push`, có thể chặn.
+
+## Camera native (2026-11-01)
+
+Camera2D native Off/Body đã nối `src/sources.cpp` tới CameraSource → MfCamera /
+OrtRuntime / PoseModel / PersonTracker; không còn chỉ là sidecar. Camera3D chưa có
+driver. Body cần gói runtime/model đã xác minh, DLL tại root và basename model
+`rtmo-s*.onnx`/`rtmo-m*.onnx`; xem `tools/packs/examples/README.md`.
+Một lifecycle worker 16 slot tránh start/stop trên render; camera khác có thể chờ.
+Gói đã nạp chỉ cập nhật sau restart. ORT crash cùng tiến trình làm app tắt: giữ
+Skeleton OSC + pose_bridge cho show cần cách ly lỗi. Replay không inference.
+Không suy diễn engine test/replay thành webcam/GPU đã kiểm; webcam Rapoo bị từ
+chối 0x80070005, hardware inference NOT MEASURED (features.md ghi chi tiết).

@@ -234,6 +234,14 @@ std::string PackStore::stagingDir(const std::string& id, const std::string& vers
     return toUtf8(stage);
 }
 
+void PackStore::protectUpdates(std::vector<std::string> ids) {
+    std::lock_guard<std::recursive_mutex> lock(m_mu); m_protected = std::move(ids);
+}
+bool PackStore::canUpdate(const std::string& id, std::string& errOut) const {
+    std::lock_guard<std::recursive_mutex> lock(m_mu);
+    if (std::find(m_protected.begin(), m_protected.end(), id) == m_protected.end()) return true;
+    return fail(errOut, "Pack '" + id + "' is in use or loaded; turn sensors off and restart before updating");
+}
 bool PackStore::commit(const PackInfo& entry, std::string& errOut) {
     errOut.clear();
     // Kiểm lại entry thông qua parsePackInfo(toJson(entry)) để bảo đảm mọi bất biến
@@ -292,6 +300,7 @@ bool PackStore::commit(const PackInfo& entry, std::string& errOut) {
 
     // Đổi tên nguyên tử sang installed/<id>/<version>
     std::lock_guard<std::recursive_mutex> lk(m_mu);
+    if (!canUpdate(entry.id, errOut)) { cleanupStage(); return false; }
     const fs::path installedBase = root / "installed" / fromUtf8(entry.id);
     const fs::path dst = installedBase / fromUtf8(entry.version);
     fs::create_directories(installedBase, ec);

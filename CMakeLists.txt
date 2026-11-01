@@ -85,7 +85,7 @@ file(GLOB_RECURSE MIKMAP_IO_HEADERS CONFIGURE_DEPENDS
 find_package(Threads REQUIRED)
 
 add_library(mikmap_io STATIC ${MIKMAP_IO_SOURCES} ${MIKMAP_IO_HEADERS})
-target_include_directories(mikmap_io PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/engine")
+target_include_directories(mikmap_io PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/engine" PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/onnxruntime")
 target_link_libraries(mikmap_io PUBLIC mikmap_core Threads::Threads ${CMAKE_DL_LIBS})
 
 # Winsock: PHẢI khai ở đây, không chỉ dựa vào `#pragma comment(lib, ...)`
@@ -94,6 +94,12 @@ target_link_libraries(mikmap_io PUBLIC mikmap_core Threads::Threads ${CMAKE_DL_L
 # PUBLIC vì test_osc.cpp cũng tự mở socket.
 if(WIN32)
     target_link_libraries(mikmap_io PUBLIC ws2_32 iphlpapi winhttp)   # iphlpapi: GetAdaptersAddresses (NetScan.cpp); winhttp: HttpGet.cpp
+    # Media Foundation cho camera 2D (MfCamera.cpp): mfplat = MFStartup/
+    # MFEnumDeviceSources/MFCreateAttributes, mfreadwrite = IMFSourceReader,
+    # mfuuid = các GUID MFVideoFormat_*, mf = bộ giải mã/video processor,
+    # ole32 = CoInitializeEx/CoTaskMemFree. PUBLIC vì test và mikmap_packtool
+    # link mikmap_io; app (src/) tự glob engine/io nên có dòng link riêng.
+    target_link_libraries(mikmap_io PUBLIC mfplat mfreadwrite mf mfuuid ole32)
 endif()
 
 # ── Thư viện i18n: bảng chuỗi giao diện ────────────────────────────────

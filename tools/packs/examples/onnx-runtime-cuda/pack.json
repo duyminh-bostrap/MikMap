@@ -1,0 +1,29 @@
+{
+  "id": "onnx-runtime-cuda",
+  "name": "INCOMPLETE TEMPLATE - onnx-runtime-cuda",
+  "version": "1.20.1",
+  "kind": "runtime",
+  "sizeBytes": "REPLACE_WITH_SUM_OF_FILE_SIZES",
+  "files": [
+    {
+      "path": "onnxruntime.dll",
+      "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+      "size": "REPLACE_WITH_BYTES"
+    },
+    {
+      "path": "onnxruntime_providers_shared.dll",
+      "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+      "size": "REPLACE_WITH_BYTES"
+    },
+    {
+      "path": "onnxruntime_providers_cuda.dll",
+      "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+      "size": "REPLACE_WITH_BYTES"
+    },
+    {
+      "path": "licenses/onnxruntime-LICENSE.txt",
+      "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+      "size": "REPLACE_WITH_BYTES"
+    }
+  ]
+}

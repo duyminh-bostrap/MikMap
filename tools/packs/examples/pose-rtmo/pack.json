@@ -1,0 +1,30 @@
+{
+  "id": "pose-rtmo",
+  "name": "INCOMPLETE TEMPLATE - pose-rtmo",
+  "version": "0.0.0",
+  "kind": "model",
+  "sizeBytes": "REPLACE_WITH_SUM_OF_FILE_SIZES",
+  "files": [
+    {
+      "path": "models/rtmo-s.onnx",
+      "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+      "size": "REPLACE_WITH_BYTES"
+    },
+    {
+      "path": "models/rtmo-m.onnx",
+      "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+      "size": "REPLACE_WITH_BYTES"
+    },
+    {
+      "path": "licenses/RTMO-LICENSE.txt",
+      "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+      "size": "REPLACE_WITH_BYTES"
+    }
+  ],
+  "requires": [
+    {
+      "id": "onnx-runtime-cuda",
+      "minVersion": "1.20.1"
+    }
+  ]
+}
