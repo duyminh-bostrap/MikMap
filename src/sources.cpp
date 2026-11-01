@@ -135,6 +135,7 @@ void SendOut(Device& d, const mikmap::SensorFrame& f, double now) {
   for (int i = 0; i < p.count; ++i) {
     float ox, oy; ApplyH(H, f.points[i].x, f.points[i].y, ox, oy);
     p.z[i] = f.points[i].z;
+    p.groups[i] = f.points[i].group;
     p.ids[i] = f.points[i].id; p.xy[2 * i] = ox / 1920.f; p.xy[2 * i + 1] = OutY(oy / 1080.f, d.originBottom);
   }
   if (g_out.push(p)) d.lastSentAt = now;

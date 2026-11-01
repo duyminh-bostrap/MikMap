@@ -72,6 +72,15 @@ struct Target { std::string host; uint16_t port = 0; sockaddr_in addr{}; bool ok
 
 } // namespace
 
+const char* groupAddressSuffix(uint8_t group) {
+    switch (group) {
+    case kGroupHandL: case kGroupHandR: return "hand";
+    case kGroupFace: return "face";
+    case kGroupFeet: return "feet";
+    default: return "touch";
+    }
+}
+
 void setOutDevice(OutPacket& p, const char* name) {
     size_t i = 0;
     if (name) for (; name[i] && i < sizeof p.device - 1; ++i) p.device[i] = safeChar(name[i]) ? name[i] : '_';
@@ -97,7 +106,7 @@ size_t encodeOscChunk(const OutPacket& p, int first, uint8_t* buf, size_t cap, i
     }
 
     while (i < count) {
-        if (!element(w, [&] { w.addr(p.device, "touch"); w.str(p.hasZ ? ",ifff" : ",iff"); w.u32(p.ids[i]); w.f32(p.xy[2 * i]); w.f32(p.xy[2 * i + 1]); if (p.hasZ) w.f32(p.z[i]); })) break;
+        if (!element(w, [&] { w.addr(p.device, groupAddressSuffix(p.groups[i])); w.str(p.hasZ ? ",ifff" : ",iff"); w.u32(p.ids[i]); w.f32(p.xy[2 * i]); w.f32(p.xy[2 * i + 1]); if (p.hasZ) w.f32(p.z[i]); })) break;
         ++i;
     }
     next = i;
@@ -123,9 +132,12 @@ size_t encodeTextChunk(const OutPacket& p, int first, uint8_t* buf, size_t cap, 
     }
 
     while (i < count) {
+        const bool grouped = p.groups[i] >= kGroupHandL && p.groups[i] <= kGroupFeet;
+        const char* separator = grouped ? " " : "";
+        const char* suffix = grouped ? groupAddressSuffix(p.groups[i]) : "";
         const int k = p.hasZ
-            ? std::snprintf(out + n, cap - n, "%s %u %.4f %.4f %.4f\n", p.device, unsigned(p.ids[i]), double(p.xy[2 * i]), double(p.xy[2 * i + 1]), double(p.z[i]))
-            : std::snprintf(out + n, cap - n, "%s %u %.4f %.4f\n", p.device, unsigned(p.ids[i]), double(p.xy[2 * i]), double(p.xy[2 * i + 1]));
+            ? std::snprintf(out + n, cap - n, "%s%s%s %u %.4f %.4f %.4f\n", p.device, separator, suffix, unsigned(p.ids[i]), double(p.xy[2 * i]), double(p.xy[2 * i + 1]), double(p.z[i]))
+            : std::snprintf(out + n, cap - n, "%s%s%s %u %.4f %.4f\n", p.device, separator, suffix, unsigned(p.ids[i]), double(p.xy[2 * i]), double(p.xy[2 * i + 1]));
         if (k < 0 || size_t(k) >= cap - n) break;   // never split a line across datagrams
         n += size_t(k);
         ++i;

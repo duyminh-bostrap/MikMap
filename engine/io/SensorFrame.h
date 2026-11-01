@@ -28,6 +28,8 @@ enum class TouchState : uint8_t {
 /// khung hình (IR thường ≤ 40 điểm). Đủ chỗ nên `count` phải rộng hơn 8 bit.
 inline constexpr int kMaxTouchPoints = 512;
 
+enum PointGroup : uint8_t { kGroupBody = 0, kGroupHandL = 1, kGroupHandR = 2, kGroupFace = 3, kGroupFeet = 4 };
+
 struct TouchPoint {
     uint32_t   id = 0;            ///< ID bền vững qua các frame
     float      x = 0.0f;          ///< ★ TOẠ ĐỘ SENSOR THÔ
@@ -35,7 +37,8 @@ struct TouchPoint {
     float      z = 0.0f;          ///< độ sâu hoặc áp lực; 0 nếu không có
     float      confidence = 1.0f; ///< [0,1]
     TouchState state = TouchState::None;
-    uint8_t    _pad[3] = {0, 0, 0};
+    uint8_t    group = kGroupBody;
+    uint8_t    _pad[2] = {0, 0};
 };
 static_assert(sizeof(TouchPoint) == 24, "TouchPoint phai giu kich thuoc co dinh");
 

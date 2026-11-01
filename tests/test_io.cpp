@@ -26,8 +26,9 @@ static_assert(std::is_trivially_copyable_v<SensorFrame>,
 static_assert(std::is_trivially_copyable_v<TouchEvent>,
               "TouchEvent phai POD — SpscRingBuffer phu thuoc dieu nay");
 
+// Pre-B TouchPoint occupied 24 bytes; group reuses one padding byte.
 static_assert(sizeof(TouchPoint) == 24u, "TouchPoint phai giu kich thuoc co dinh");
-static_assert(sizeof(SensorFrame) >= 24u * kMaxTouchPoints,
+static_assert(sizeof(SensorFrame) == 12312u, // pre-B frame size including header
               "SensorFrame phai chua du kMaxTouchPoints diem");
 
 // 512 = 30 nguoi x 17 khop (COCO-17) + du cho sensor khung hinh.
@@ -457,4 +458,14 @@ TEST_CASE("MockSource: dropoutRate = 1.0 thi khong phat gi") {
     src.stop();
 
     REQUIRE(src.frames().publishedCount() == 0u);
+}
+
+TEST_CASE("SensorFrame: point groups survive the existing thread handoff") {
+    TouchPoint p; CHECK(p.group == kGroupBody);
+    const uint8_t groups[] = {kGroupBody, kGroupHandL, kGroupHandR, kGroupFace, kGroupFeet};
+    SensorFrame frame;
+    for (auto group : groups) { p.group = group; REQUIRE(frame.addPoint(p)); }
+    TripleBuffer<SensorFrame> buffer; buffer.write(frame); REQUIRE(buffer.consume());
+    const auto& received = buffer.readSlot(); REQUIRE(received.count == 5);
+    for (int i = 0; i < 5; ++i) CHECK(received.points[i].group == groups[i]);
 }
