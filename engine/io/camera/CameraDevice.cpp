@@ -24,9 +24,13 @@ bool modeSupported(CamMode m, const CameraCaps& c, std::string& why) {
         return true;
 
     case CamMode::Body:
+    case CamMode::Hand:
+    case CamMode::Face:
+    case CamMode::Full:
         // Mô hình thân người ăn ảnh RGB; Depth chỉ là tuỳ chọn (z theo mét).
         if (!c.hasColor) {
-            why = "Body mode needs a Color stream";
+            const char* name = m == CamMode::Body ? "Body" : m == CamMode::Hand ? "Hand" : m == CamMode::Face ? "Face" : "Full";
+            why = std::string(name) + " mode needs a Color stream";
             return false;
         }
         why.clear();

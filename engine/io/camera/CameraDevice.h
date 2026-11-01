@@ -75,10 +75,13 @@ public:
     virtual bool read(CameraFrame& out, int timeoutMs, std::string& err) = 0;
 };
 
-/// Chế độ xử lý của một camera. Plan B thêm Hand/Face/Full/Gesture.
+/// Chế độ xử lý của một camera.
 enum class CamMode {
     Off = 0,    ///< chỉ xem trước, không suy luận
     Body = 1,   ///< nhận dạng thân người (cần luồng Color)
+    Hand = 2,
+    Face = 3,
+    Full = 4,
 };
 
 /// Bảng khả năng: chế độ m có dùng được với caps c không? Nếu không, why

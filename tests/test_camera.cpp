@@ -10,6 +10,17 @@
 
 using namespace mikmap;
 
+TEST_CASE("Camera new modes require Color and reject unknown modes") {
+    for(CamMode m:{CamMode::Hand,CamMode::Face,CamMode::Full}) {
+        CameraCaps caps; std::string why;
+        CHECK(!modeSupported(m,caps,why)); CHECK(why.find("Color")!=std::string::npos);
+        caps.hasDepth=true; CHECK(!modeSupported(m,caps,why));
+        caps.hasColor=true; CHECK(modeSupported(m,caps,why)); CHECK(why.empty());
+    }
+    std::string why; CHECK(!modeSupported(static_cast<CamMode>(99),CameraCaps{},why)); CHECK(!why.empty());
+    static_assert(static_cast<int>(CamMode::Hand)==2 && static_cast<int>(CamMode::Face)==3 && static_cast<int>(CamMode::Full)==4);
+}
+
 static_assert(std::is_base_of_v<ICameraDevice, FakeCamera>,
               "FakeCamera phai cai ICameraDevice de CameraSource inject duoc");
 
