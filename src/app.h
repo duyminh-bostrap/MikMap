@@ -199,7 +199,7 @@ Slice ReadSlice(const mikmap::JsonValue& o);
 
 // ───────────── sensor model ─────────────
 struct Route { std::string id, source, target; bool active; };
-struct Touch { int id; float x, y; };
+struct Touch { int id; float x, y; uint8_t group = 0; };
 struct Calib { float tx, ty, mx, my; };
 // A sensor and its OWN calibration: a camera reports [0,1], a lidar reports mm, so they can never share one H_s.
 enum class DevKind { Sim = 0, Skeleton = 1, Hokuyo = 2, Plugin = 3, Camera2D = 4, Camera3D = 5 };
@@ -213,6 +213,7 @@ struct Device {
   std::string plugin;                // Plugin: file name inside SensorPluginDir(), never an absolute path (portable projects)
   std::string config;                // Plugin: raw JSON handed to mikmap_sensor_create()
   std::string needsPack;             // optional sensor pack id required by this device (empty = built-in)
+  uint8_t camGroups = 0x1F;
   std::string camId; int camW = 640, camH = 480, camMode = 0, camModel = 0, camDevice = 0;
   bool camFlip = false; int maxPeople = 10, smoothing = 0; float personThr = .5f, jointThr = .3f;
   std::string camReplay;             // runtime-only CLI/self-test fixture, never project data
@@ -745,11 +746,14 @@ enum class PropSection { Connection, ScreenSize, Placement, Blobs, Calibration, 
 std::vector<PropSection> SensorPropSections(DevKind k, int page);
 std::string NeedsPackForMode(DevKind k, int mode);
 void SetCamMode(Device& d, int mode);
+const char* CalibHintForMode(int camMode);
+const char* CameraCaptureUnavailable(const Device& d);
+bool IsCalibrationPoint(const Device& d, const Touch& t);
 namespace mikmap { struct CameraFrame; struct CameraStats; struct SensorFrame; }
 const mikmap::CameraFrame* DevicePreview(const Device& d);
 const mikmap::SensorFrame* DevicePreviewPoints(const Device& d);
 mikmap::CameraStats DeviceCameraStats(const Device& d);
-std::string CameraPackPath(const std::string& id, int model = -1);
+std::string CameraPackPath(const std::string& id, int model = -1, const char* file = nullptr);
 std::string MissingCameraPack(const Device& d);
 bool CameraPackMutationBusy();
 Device MakeDevice(DevKind k, const std::string& id);   // per-kind defaults (name, address, ROI, calibration targets)

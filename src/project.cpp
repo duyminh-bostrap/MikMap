@@ -345,7 +345,7 @@ JsonValue Serialize(const App& a) {
     if (d.kind == DevKind::Camera2D || d.kind == DevKind::Camera3D) {
       JsonValue cam = JsonValue::object();
       cam.set("id", d.camId); cam.set("w", d.camW); cam.set("h", d.camH); cam.set("flip", d.camFlip);
-      cam.set("mode", d.camMode); cam.set("model", d.camModel); cam.set("device", d.camDevice);
+      cam.set("mode", d.camMode); cam.set("groups", int(d.camGroups)); cam.set("model", d.camModel); cam.set("device", d.camDevice);
       cam.set("maxPeople", d.maxPeople); cam.set("personThr", d.personThr); cam.set("jointThr", d.jointThr); cam.set("smooth", d.smoothing);
       dob.set("cam", cam);
     }
@@ -484,6 +484,7 @@ bool Deserialize(const JsonValue& root, App& out, std::string& err) {
         if (v.kind == DevKind::Camera2D || v.kind == DevKind::Camera3D) {
           const auto& cam = d["cam"];
           v.camId = cam["id"].asString(); v.camW = cam["w"].asInt(640) == 1280 ? 1280 : 640; v.camH = v.camW == 1280 ? 720 : 480;
+          v.camGroups = uint8_t(cam["groups"].asInt(0x1F) & 0x1F);
           v.camFlip = cam["flip"].asBool(false); v.camModel = std::clamp(cam["model"].asInt(0), 0, 1);
           v.camDevice = std::clamp(cam["device"].asInt(0), 0, 2); v.maxPeople = std::clamp(cam["maxPeople"].asInt(10), 1, 30);
           v.personThr = std::clamp(F(cam, "personThr", .5f), 0.f, 1.f); v.jointThr = std::clamp(F(cam, "jointThr", .3f), 0.f, 1.f);

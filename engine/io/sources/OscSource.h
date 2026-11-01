@@ -127,7 +127,7 @@ private:
 
     // Chỉ thread OSC chạm vào các trường dưới đây (hoặc feedPacket khi
     // đang dừng, trong test). Không cần khoá.
-    std::map<uint32_t, LivePoint> m_points;
+    std::map<uint64_t, LivePoint> m_points;
 
     /// G14 — chỉ dùng khi protocol == Tuio.
     TuioDecoder m_tuio;

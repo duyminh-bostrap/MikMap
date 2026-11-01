@@ -72,7 +72,7 @@ struct TouchEvent {
     float      y = 0.0f;
     TouchState state = TouchState::None;
     uint16_t   sourceId = 0;
-    uint8_t    _pad = 0;
+    uint8_t    group = kGroupBody;
     int64_t    tCaptureNs = 0;
 };
 

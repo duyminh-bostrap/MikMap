@@ -501,3 +501,23 @@ TEST_CASE("G4: stop khi chua start khong gay loi") {
     src.stop();
     REQUIRE(src.status() == SourceStatus::Stopped);
 }
+
+TEST_CASE("OSC: grouped siblings preserve colliding IDs and frame zero clears configured device") {
+    OscConfig cfg; cfg.addressPrefix = "/mikmap/Cam/touch";
+    OscSource src(cfg);
+    for (const char* suffix : {"touch", "hand", "face", "feet"}) {
+        auto b = makeMessage(std::string("/mikmap/Cam/") + suffix, "ifff");
+        b.i32(0); b.f32(.2f); b.f32(.3f); b.f32(.9f); src.feedPacket(b.ptr(), b.size());
+    }
+    REQUIRE(src.frames().consume());
+    REQUIRE(src.frames().readSlot().count == 4);
+    const uint8_t groups[] = {0,1,3,4};
+    for (int i=0;i<4;++i) { CHECK(src.frames().readSlot().points[i].id == 0u); CHECK(src.frames().readSlot().points[i].group == groups[i]); }
+    auto clear = makeMessage("/mikmap/Other/frame", "i"); clear.i32(0); src.feedPacket(clear.ptr(), clear.size());
+    REQUIRE(src.frames().consume()); CHECK(src.frames().readSlot().count == 4);
+    TouchEvent event; while (src.events().pop(event)) {}
+    clear = makeMessage("/mikmap/Cam/frame", "i"); clear.i32(0); src.feedPacket(clear.ptr(), clear.size());
+    REQUIRE(src.frames().consume()); CHECK(src.frames().readSlot().count == 0);
+    for (const auto group : groups) { REQUIRE(src.events().pop(event)); CHECK(event.state == TouchState::Up); CHECK(event.group == group); }
+    CHECK(src.events().empty());
+}

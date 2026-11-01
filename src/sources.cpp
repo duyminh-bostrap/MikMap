@@ -123,7 +123,7 @@ mikmap::TouchSender g_out;
 // A new frame of a calibrated device, through its H_s, as 0..1 of the 1920x1080 stage (not clamped). No allocation: render thread.
 void SendOut(Device& d, const mikmap::SensorFrame& f, double now) {
   float H[9];
-  if (!d.outOn || !DeviceH(d, H)) return;
+  if (!d.outOn || (f.count && !DeviceH(d, H))) return;
   if (!g_out.running()) g_out.start();
   mikmap::OutPacket p;
   p.hasZ = d.kind == DevKind::Camera2D;
@@ -156,7 +156,7 @@ bool CameraChanged(const Live& live, const Device& d) {
   return c.cameraId != d.camId || c.width != d.camW || c.height != d.camH || c.flip != d.camFlip ||
     int(c.mode) != d.camMode || int(c.device) != d.camDevice || live.cameraModel != d.camModel ||
     c.personThr != d.personThr || c.jointThr != d.jointThr || c.maxObjects != d.maxPeople ||
-    c.tracker.smoothing != d.smoothing || c.replayPath != d.camReplay;
+    c.tracker.smoothing != d.smoothing || c.replayPath != d.camReplay || c.fullGroups != d.camGroups;
 }
 
 std::string FileName(const std::string& path) {
@@ -173,12 +173,20 @@ Live Start(const Device& d, double now) {
     c.cameraId = d.camId; c.width = d.camW; c.height = d.camH; c.flip = d.camFlip;
     c.mode = static_cast<mikmap::CamMode>(d.camMode); c.device = static_cast<mikmap::OrtDevice>(d.camDevice);
     c.personThr = d.personThr; c.jointThr = d.jointThr; c.maxObjects = d.maxPeople; c.tracker.smoothing = d.smoothing;
-    c.replayPath = d.camReplay;
+    c.replayPath = d.camReplay; c.fullGroups = d.camGroups;
     L.cameraConfig = c; L.cameraModel = d.camModel;
-    if (d.camMode == 1 && d.camReplay.empty()) {
-      c.runtimeDir = CameraPackPath("onnx-runtime-cuda"); c.modelPath = CameraPackPath("pose-rtmo", d.camModel);
-      if (c.modelPath.empty()) { L.failed = true; L.err = "Model not found in pose-rtmo pack"; return L; }
-      MarkPackDirLoaded(c.runtimeDir); MarkPackDirLoaded(CameraPackPath("pose-rtmo"));
+    if (d.camMode != 0 && d.camReplay.empty()) {
+      const auto& spec = mikmap::modeSpec(c.mode);
+      c.runtimeDir = CameraPackPath("onnx-runtime-cuda");
+      if (c.mode == mikmap::CamMode::Body) c.modelPath = CameraPackPath(spec.pack, d.camModel);
+      else {
+        c.detectorPath = CameraPackPath(spec.pack, -1, spec.detectorFile);
+        c.keypointPath = CameraPackPath(spec.pack, -1, spec.keypointFile);
+      }
+      if (c.runtimeDir.empty() || (c.mode == mikmap::CamMode::Body ? c.modelPath.empty() : c.detectorPath.empty() || c.keypointPath.empty())) {
+        L.failed = true; L.err = std::string("Model/runtime files missing in pack: ") + spec.pack; return L;
+      }
+      MarkPackDirLoaded(c.runtimeDir); MarkPackDirLoaded(CameraPackPath(spec.pack));
     }
     L.preview.rgb.reserve(640 * 480 * 3);
     L.cameraConfig = c; L.cameraJob = g_cameras.submit(c);
@@ -226,7 +234,7 @@ void CaptureFrame(Device& d, double now) {
   // A lidar blob has no joint id: every touch of a ScanSource is a candidate. Skeleton keeps the wrist filter.
   const bool lidar = dynamic_cast<mikmap::ScanSource*>(DeviceSource(d)) != nullptr;
   int seen = 0; const Touch* pt = nullptr;
-  for (auto& t : d.touches) if (lidar || t.id == kCalibJoint) { ++seen; pt = &t; }
+  for (auto& t : d.touches) if (lidar || IsCalibrationPoint(d, t)) { ++seen; pt = &t; }
   if (seen != 1) { g_cap.on = false; A.notify("Need exactly one point \xE2\x80\x94 seen " + std::to_string(seen)); return; }
   g_cap.sx += pt->x; g_cap.sy += pt->y; g_cap.lastFrame = now;
   if (++g_cap.n < kCaptureFrames) return;
@@ -322,8 +330,14 @@ void SensorsTick(double now) {
   PacksTick();
   SensorPlugins();   // scan the plugin folder once on the first tick (a missing folder is not an error)
   for (auto it = g_live.begin(); it != g_live.end();) {   // a removed or disabled device, a missing pack, or a changed address stops its source
-    const Device* d = nullptr; for (auto& x : A.devices) if (x.id == it->first) { d = &x; break; }
-    if (!d || !d->enabled || !PackAvailableForDevice(*d) || d->kind == DevKind::Sim || it->second.sig != Sig(*d) || CameraChanged(it->second, *d)) it = g_live.erase(it); else ++it;
+    Device* d = nullptr; for (auto& x : A.devices) if (x.id == it->first) { d = &x; break; }
+    if (!d || !d->enabled || !PackAvailableForDevice(*d) || d->kind == DevKind::Sim || it->second.sig != Sig(*d) || CameraChanged(it->second, *d)) {
+      if (d && d->kind == DevKind::Camera2D) {
+        mikmap::SensorFrame empty; SendOut(*d, empty, now);
+        d->touches.clear(); if (g_cap.dev == d->id) g_cap.on = false;
+      }
+      it = g_live.erase(it);
+    } else ++it;
   }
   if (g_cap.on && A.wizardStep != g_cap.step) g_cap.on = false;   // wizard cancelled, or another device selected
   bool fire = false;
@@ -365,7 +379,7 @@ void SensorsTick(double now) {
       const mikmap::SensorFrame& f = S.frames().readSlot();
       if (L.camera) L.points = f;
       d.touches.clear();
-      for (int i = 0; i < f.count; ++i) d.touches.push_back(Touch{(int)f.points[i].id, f.points[i].x, f.points[i].y});
+      for (int i = 0; i < f.count; ++i) d.touches.push_back(Touch{(int)f.points[i].id, f.points[i].x, f.points[i].y, f.points[i].group});
       L.latencyMs = (float)mikmap::Clock::nsToMs(mikmap::Clock::nowNs() - f.tCaptureNs) + (L.osc ? L.osc->senderLatencyMs() : 0.f);
       SendOut(d, f, now);
     }
@@ -387,12 +401,32 @@ void SensorsTick(double now) {
 }
 
 std::string NeedsPackForMode(DevKind k, int mode) {
-  return (k == DevKind::Camera2D || k == DevKind::Camera3D) && mode == 1 ? "pose-rtmo" : "";
+  return (k == DevKind::Camera2D || k == DevKind::Camera3D) && mode >= 0 && mode <= 4 ? mikmap::modeSpec(static_cast<mikmap::CamMode>(mode)).pack : "";
 }
 void SetCamMode(Device& d, int mode) {
-  mikmap::CameraCaps caps; caps.hasColor = true; std::string reason;
-  d.camMode = mode == 1 && mikmap::modeSupported(mikmap::CamMode::Body, caps, reason) ? 1 : 0;
+  d.camMode = mode >= 0 && mode <= 4 ? mode : 0;
   d.needsPack = NeedsPackForMode(d.kind, d.camMode);
+}
+const char* CalibHintForMode(int mode) {
+  if (mode == 2) return "Point your right index finger at the target, then Capture";
+  if (mode == 3) return "Put the tip of your nose on the target, then Capture";
+  if (mode == 0) return "Choose a tracking mode to capture";
+  return "Hold your right wrist on the target, then Capture";
+}
+const char* CameraCaptureUnavailable(const Device& d) {
+  if (d.kind != DevKind::Camera2D) return nullptr;
+  if (!d.camMode) return CalibHintForMode(0);
+  if (d.camMode == 4 && !(d.camGroups & 1)) return "Enable Body in Full mode to capture the right wrist";
+  if (d.camMode == 3 && DeviceCameraStats(d).calPoint == mikmap::kCalibUnavailable)
+    return "Face nose-tip metadata unavailable; calibrate in Body mode first";
+  return nullptr;
+}
+bool IsCalibrationPoint(const Device& d, const Touch& t) {
+  if (d.kind != DevKind::Camera2D) return t.group == 0 && t.id == kCalibJoint;
+  if (CameraCaptureUnavailable(d)) return false;
+  const uint32_t id = d.camMode == 3 ? DeviceCameraStats(d).calPoint : mikmap::calibPointId(static_cast<mikmap::CamMode>(d.camMode));
+  const uint8_t group = d.camMode == 2 ? mikmap::kGroupHandR : d.camMode == 3 ? mikmap::kGroupFace : mikmap::kGroupBody;
+  return t.group == group && uint32_t(t.id) == id;
 }
 const mikmap::CameraFrame* DevicePreview(const Device& d) {
   auto it = g_live.find(d.id);
@@ -432,6 +466,7 @@ void StartCapture(int step) {
   Device* d = A.curDevice();
   if (!d || d->kind == DevKind::Sim || step < 1 || step > 4) return;
   if (!DeviceSource(*d)) { A.notify("Connect the sensor first"); return; }
+  if (const char* reason = CameraCaptureUnavailable(*d)) { A.notify(reason); return; }
   g_cap = Capture{true, d->id, step, 0, 0, 0, -1};
 }
 
@@ -468,6 +503,36 @@ bool SensorSelfTest(std::string& why) {
   auto dev = [](const char* id) -> Device& { for (auto& d : A.devices) if (d.id == id) return d; return A.devices.back(); };
   auto fail = [&](const std::string& w) { why = w; SensorsShutdown(); return false; };
 
+  {
+    const auto path = std::filesystem::temp_directory_path() / "mikmap-modes-selftest.mikmap";
+    std::string err;
+    for (int mode = 0; mode <= 4; ++mode) {
+      Device d = MakeDevice(DevKind::Camera2D, "mode-check"); SetCamMode(d, mode); d.camGroups = uint8_t(31 - mode);
+      const char* packs[] = {"", "pose-rtmo", "hand-rtm", "face-rtm", "wholebody-rtmw"};
+      if (d.camMode != mode || d.needsPack != packs[mode]) return fail("camera: mode/pack routing");
+      A.devices.push_back(d);
+      if (!SaveProject(path.string(), err) || !LoadProject(path.string(), err)) return fail("camera: mode roundtrip " + err);
+      if (dev("mode-check").camMode != mode || dev("mode-check").camGroups != 31 - mode) return fail("camera: mode/groups roundtrip");
+      A.devices.pop_back();
+    }
+    std::error_code ec; std::filesystem::remove(path, ec);
+    Device d = MakeDevice(DevKind::Camera2D, "capture-check");
+    SetCamMode(d, 2);
+    if (!IsCalibrationPoint(d, Touch{58,.2f,.3f,mikmap::kGroupHandR}) || IsCalibrationPoint(d, Touch{58,.2f,.3f,mikmap::kGroupFace}) ||
+        IsCalibrationPoint(d, Touch{16,.2f,.3f,mikmap::kGroupBody})) return fail("camera: Hand capture must use right index 58 only");
+    d.touches = {{58,.2f,.3f,mikmap::kGroupHandR}, {58,.9f,.8f,mikmap::kGroupFace}, {16,.7f,.6f,mikmap::kGroupBody}};
+    g_cap = Capture{true, d.id, 1};
+    for (int frame=0;frame<kCaptureFrames;++frame) CaptureFrame(d, now());
+    if (g_cap.on || std::abs(d.calib[0].mx-.2f) > .001f || std::abs(d.calib[0].my-.3f) > .001f) return fail("camera: Hand capture averages only group-right id58");
+    A.wizardStep = 0;
+    SetCamMode(d, 4);
+    if (!IsCalibrationPoint(d, Touch{16,.2f,.3f,mikmap::kGroupBody}) || IsCalibrationPoint(d, Touch{16,.2f,.3f,mikmap::kGroupFace})) return fail("camera: Full capture group collision");
+    d.camGroups &= ~1u;
+    if (!CameraCaptureUnavailable(d) || IsCalibrationPoint(d, Touch{16,.2f,.3f,0})) return fail("camera: Full without Body capture");
+    SetCamMode(d, 3);
+    if (!CameraCaptureUnavailable(d) || IsCalibrationPoint(d, Touch{0,.2f,.3f,mikmap::kGroupFace})) return fail("camera: missing Face metadata capture");
+  }
+
   // Camera configuration is project state; replay exercises the real capture/calibration/send path.
   {
     Device cam = MakeDevice(DevKind::Camera2D, "camera-test");
@@ -499,7 +564,7 @@ bool SensorSelfTest(std::string& why) {
       input.close(); { std::ofstream output(path); output << root.dump(); }
       if (!LoadProject(path.string(), err)) return fail("camera: absent camera settings must load");
       const auto& defaults = dev("camera-test");
-      if (defaults.camMode || defaults.camW != 640 || defaults.camH != 480 || defaults.maxPeople != 10 || !defaults.needsPack.empty()) return fail("camera: absent settings defaults");
+      if (defaults.camMode || defaults.camW != 640 || defaults.camH != 480 || defaults.maxPeople != 10 || defaults.camGroups != 31 || !defaults.needsPack.empty()) return fail("camera: absent settings defaults");
       dev("camera-test") = cam;
     }
     std::error_code ec; std::filesystem::remove(path, ec);
@@ -557,6 +622,94 @@ bool SensorSelfTest(std::string& why) {
     SensorsTick(now());
     if (dev("camera3d-test").error != "No driver for this sensor yet") return fail("camera: 3D must report no driver");
     SensorsShutdown(); NewProject(); A.routes.clear();
+  }
+
+  // Body replay traverses the app's H_s/origin/output path and must retain the immutable pre-B wire bytes.
+  {
+    const auto dir = std::filesystem::path(__FILE__).parent_path().parent_path() / "tests/data";
+    const auto path = std::filesystem::temp_directory_path() / "mikmap-body-golden-selftest.mikpose";
+    { std::ofstream out(path); out << "0 10 0 0 0 .75\n0 10 1 .5 .25 .75\n"; }
+    auto sock = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    auto close = [&] {
+#if defined(_WIN32)
+      closesocket(sock);
+#else
+      ::close(sock);
+#endif
+    };
+    sockaddr_in address{}; address.sin_family = AF_INET; address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    if (::bind(sock, reinterpret_cast<sockaddr*>(&address), sizeof address) != 0) { close(); return fail("camera: golden UDP bind"); }
+#if defined(_WIN32)
+    int length = sizeof address; DWORD timeout = 10;
+    if (::setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&timeout), sizeof timeout) != 0) { close(); return fail("camera: golden UDP timeout"); }
+#else
+    socklen_t length = sizeof address; timeval timeout{0,10000};
+    if (::setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof timeout) != 0) { close(); return fail("camera: golden UDP timeout"); }
+#endif
+    if (::getsockname(sock, reinterpret_cast<sockaddr*>(&address), &length) != 0) { close(); return fail("camera: golden UDP port"); }
+    Device d = MakeDevice(DevKind::Camera2D, "body-golden"); d.name = "dev1"; d.enabled = true; SetCamMode(d, 1);
+    d.camReplay = path.string(); d.maxPeople = 30; d.originBottom = true; d.outOn = true; d.outPort = ntohs(address.sin_port);
+    // Raw y=0/.25 -> output y=.125/-.125 after originBottom; negative output must stay unclamped.
+    d.calib = {{0,945,0,0},{1920,945,1,0},{1920,2025,1,1},{0,2025,0,1}}; d.calibrated = true;
+    A.devices.push_back(d);
+    bool matched = true;
+    for (int proto : {0,1}) {
+      dev("body-golden").outProto = proto;
+      std::ifstream golden(dir / (proto ? "body_pre_b_z_2.text.hex" : "body_pre_b_z_2.osc.hex"));
+      std::string expected; if (!std::getline(golden, expected)) { matched = false; break; }
+      bool got = false;
+      for (double start = now(); now() - start < kWait && !got;) {
+        SensorsTick(now()); char packet[mikmap::kMaxDatagram];
+        const auto n = ::recvfrom(sock, packet, sizeof packet, 0, nullptr, nullptr);
+        std::string actual;
+        for (int i=0;i<n;++i) { char hex[3]; std::snprintf(hex,sizeof hex,"%02x",unsigned(static_cast<uint8_t>(packet[i]))); actual += hex; }
+        got = actual == expected;
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+      }
+      matched = matched && got;
+    }
+    close(); SensorsShutdown(); NewProject(); A.routes.clear(); std::error_code ec; std::filesystem::remove(path, ec);
+    if (!matched) return fail("camera: Body replay OSC/text differs from pre-B golden bytes");
+  }
+
+  // Real grouped replay -> app calibration/output -> UDP OscSource, including intentional cross-group ID collisions.
+  {
+    const auto path = std::filesystem::temp_directory_path() / "mikmap-groups-selftest.mikpose";
+    { std::ofstream out(path); for (double t : {0., .05}) {
+      out << t << " 0 16 0.2 0.3 0.8 0\n" << t << " 0 0 0.3 0.4 0.9 1\n"
+          << t << " 0 8 0.4 0.5 0.7 2\n" << t << " 0 16 0.5 0.6 0.6 3\n" << t << " 0 0 0.6 0.7 0.5 4\n\n";
+    } }
+    Device cam = MakeDevice(DevKind::Camera2D, "group-test"); cam.enabled = true; SetCamMode(cam, 4);
+    cam.camReplay = path.string(); cam.originBottom = true;
+    cam.calib = {{0,0,0,0},{1920,0,1,0},{1920,1080,1,1},{0,1080,0,1}}; cam.calibrated = true;
+    mikmap::OscConfig cfg; cfg.port = 0; cfg.addressPrefix = "/mikmap/Camera_2D/touch"; cfg.pointTimeoutSec = 10;
+    mikmap::OscSource receiver(cfg); if (!receiver.start()) return fail("camera: grouped UDP bind");
+    cam.outOn = true; cam.outPort = receiver.boundPort(); A.devices.push_back(cam);
+    auto waitCount = [&](int count, int forbiddenGroup) {
+      for (double start = now(); now() - start < kWait;) {
+        SensorsTick(now());
+        if (receiver.frames().consume()) {
+          const auto& f = receiver.frames().readSlot(); bool ok = f.count == count;
+          for (int i=0;i<f.count;++i) ok = ok && f.points[i].group != forbiddenGroup;
+          if (ok) return true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+      }
+      return false;
+    };
+    if (!waitCount(5, -1)) return fail("camera: grouped replay live UDP");
+    const auto& f = receiver.frames().readSlot();
+    const uint32_t ids[] = {16,0,58,16,0};
+    for (int i=0;i<5;++i) if (f.points[i].group != i || f.points[i].id != ids[i] ||
+      std::abs(f.points[i].y - (.7f-.1f*i)) > .001f || std::abs(f.points[i].z - (i==0?.8f:i==1?.9f:.9f-.1f*i)) > .001f)
+      return fail("camera: grouped IDs/origin/confidence");
+    dev("group-test").camGroups &= ~(1u << mikmap::kGroupFace);
+    if (!waitCount(4, mikmap::kGroupFace)) return fail("camera: Full filtering must clear previous Face points");
+    MarkSaved(); SensorsTick(now()); SensorsTick(now()); if (ProjectDirty()) return fail("camera: grouped ticks dirty project");
+    auto& d = dev("group-test"); d.camReplay.clear(); SetCamMode(d, 2);
+    if (!waitCount(0, -1)) return fail("camera: missing Hand pack must clear live receiver immediately");
+    if (d.camMode != 2 || DeviceSource(d) || d.error.find("Needs pack:") != 0) return fail("camera: missing Hand pack must preserve Mode without source");
+    SensorsShutdown(); NewProject(); A.routes.clear(); std::error_code ec; std::filesystem::remove(path, ec);
   }
 
   // Setup progress: the chip in the tree counts steps in order; a step only counts when every earlier one does.

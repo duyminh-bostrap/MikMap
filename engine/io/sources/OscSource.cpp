@@ -4,6 +4,8 @@
 #include "io/net/Socket.h"
 
 #include <algorithm>
+#include <cmath>
+#include <limits>
 #include <vector>
 
 namespace mikmap {
@@ -74,7 +76,8 @@ void OscSource::stop() {
     // Phát Up cho mọi điểm còn sống. Thiếu một Up = hiệu ứng kẹt vĩnh viễn.
     for (const auto& kv : m_points) {
         TouchEvent ev;
-        ev.id = kv.first;
+        ev.id = static_cast<uint32_t>(kv.first);
+                ev.group = static_cast<uint8_t>(kv.first >> 32);
         ev.x = kv.second.x;
         ev.y = kv.second.y;
         ev.state = TouchState::Up;
@@ -240,6 +243,7 @@ void OscSource::handleMessages(const std::vector<OscMessage>& msgs) {
     }
 
     const std::string& prefix = m_cfg.addressPrefix;
+    const std::string base = prefix.substr(0, prefix.find_last_of('/') + 1);
     const double now = nowSec();
 
     for (const OscMessage& m : msgs) {
@@ -247,10 +251,13 @@ void OscSource::handleMessages(const std::vector<OscMessage>& msgs) {
             m_senderLatencyMs.store(static_cast<float>(m.argDouble(1, 0.0)), std::memory_order_relaxed);
             continue;
         }
-        if (m.address == prefix + "/clear") {
+        if (m.address == prefix + "/clear" ||
+            (m.address == base + "frame" && m.args.size() == 1 &&
+             m.args[0].type == OscArg::Type::Int32 && m.args[0].i == 0)) {
             for (const auto& kv : m_points) {
                 TouchEvent ev;
-                ev.id = kv.first;
+                ev.id = static_cast<uint32_t>(kv.first);
+                ev.group = static_cast<uint8_t>(kv.first >> 32);
                 ev.state = TouchState::Up;
                 ev.sourceId = m_sourceId;
                 ev.tCaptureNs = Clock::nowNs();
@@ -262,18 +269,35 @@ void OscSource::handleMessages(const std::vector<OscMessage>& msgs) {
 
         const bool isUp   = (m.address == prefix + "/up");
         const bool isDown = (m.address == prefix + "/down");
-        const bool isMove = (m.address == prefix);
+        const bool hand = m.address == base + "hand";
+        const bool face = m.address == base + "face";
+        const bool feet = m.address == base + "feet";
+        const bool isMove = (m.address == prefix) || hand || face || feet;
 
         if (!isUp && !isDown && !isMove) continue;
 
-        const auto id = static_cast<uint32_t>(m.argInt(0, -1));
-        if (m.args.empty()) continue;
+        if (m.args.empty() || m.args[0].type != OscArg::Type::Int32) continue;
+        const auto id = static_cast<uint32_t>(m.args[0].i);
+        uint8_t group = kGroupBody;
+        if (hand) {
+            const auto local = id % 100;
+            if (m.args[0].i < 0 || id / 100 >= 24 || (local > 20 && (local < 50 || local > 70))) continue;
+            group = local >= 50 ? kGroupHandR : kGroupHandL;
+        } else if (face) {
+            if (m.args[0].i < 0 || id / 1000 >= 4 || id % 1000 >= 106) continue;
+            group = kGroupFace;
+        } else if (feet) {
+            if (m.args[0].i < 0 || id / 100 >= 3 || id % 100 >= 6) continue;
+            group = kGroupFeet;
+        }
+        const uint64_t key = (uint64_t(group) << 32) | id;
 
         if (isUp) {
-            const auto it = m_points.find(id);
+            const auto it = m_points.find(key);
             if (it != m_points.end()) {
                 TouchEvent ev;
                 ev.id = id;
+            ev.group = group;
                 ev.x = it->second.x;
                 ev.y = it->second.y;
                 ev.state = TouchState::Up;
@@ -285,6 +309,11 @@ void OscSource::handleMessages(const std::vector<OscMessage>& msgs) {
             continue;
         }
 
+        if (m.args.size() < 3 || m.args.size() > 4) continue;
+        bool numeric = true;
+        for (size_t i = 1; i < m.args.size(); ++i)
+            numeric = numeric && m.args[i].type != OscArg::Type::String && std::isfinite(m.args[i].asDouble());
+        if (!numeric) continue;
         double x = m.argDouble(1, 0.0);
         double y = m.argDouble(2, 0.0);
         const double z = m.argDouble(3, 0.0);
@@ -294,9 +323,12 @@ void OscSource::handleMessages(const std::vector<OscMessage>& msgs) {
             y *= m_cfg.sensorRange.y;
         }
 
-        const bool existed = (m_points.find(id) != m_points.end());
+        if (!std::isfinite(x) || !std::isfinite(y) || std::abs(x) > std::numeric_limits<float>::max() ||
+            std::abs(y) > std::numeric_limits<float>::max()) continue;
+        if (m_points.find(key) == m_points.end() && m_points.size() >= kMaxTouchPoints) continue;
+        const bool existed = (m_points.find(key) != m_points.end());
 
-        LivePoint& p = m_points[id];
+        LivePoint& p = m_points[key];
         p.x = static_cast<float>(x);
         p.y = static_cast<float>(y);
         p.z = static_cast<float>(z);
@@ -309,6 +341,7 @@ void OscSource::handleMessages(const std::vector<OscMessage>& msgs) {
             p.isNew = false;
             TouchEvent ev;
             ev.id = id;
+            ev.group = group;
             ev.x = p.x;
             ev.y = p.y;
             ev.state = TouchState::Down;
@@ -334,7 +367,8 @@ void OscSource::expireStalePoints() {
         // UDP không đảm bảo giao hàng: một message /up bị rớt sẽ làm điểm
         // kẹt lại vĩnh viễn. Hết hạn theo thời gian là lưới an toàn.
         TouchEvent ev;
-        ev.id = it->first;
+        ev.id = static_cast<uint32_t>(it->first);
+        ev.group = static_cast<uint8_t>(it->first >> 32);
         ev.x = it->second.x;
         ev.y = it->second.y;
         ev.state = TouchState::Up;
@@ -358,7 +392,8 @@ void OscSource::publishFrame() {
 
     for (const auto& kv : m_points) {
         TouchPoint tp;
-        tp.id = kv.first;
+        tp.id = static_cast<uint32_t>(kv.first);
+        tp.group = static_cast<uint8_t>(kv.first >> 32);
         tp.x = kv.second.x;
         tp.y = kv.second.y;
         tp.z = kv.second.z;

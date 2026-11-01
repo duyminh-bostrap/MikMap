@@ -82,7 +82,7 @@ bool PathStartsWithDir(const std::string& path, const std::string& dir) {
 bool PackInUseByDevices(const std::string& id, const mikmap::InstalledPack* inst) {
   for (const auto& d : A.devices) {
     if (!d.enabled) continue;
-    if (d.needsPack == id || (d.kind == DevKind::Camera2D && d.camMode == 1 && id == "onnx-runtime-cuda")) return true;
+    if (d.needsPack == id || (d.kind == DevKind::Camera2D && d.camMode != 0 && id == "onnx-runtime-cuda")) return true;
     if (inst && d.kind == DevKind::Plugin && !d.plugin.empty()) {
       for (const auto& f : inst->entry.files) {
         if (BaseNameOf(f.path) == d.plugin) return true;
@@ -411,6 +411,9 @@ std::vector<PackRow> PackRows() {
   static const BuiltinPackMeta kKnown[] = {
     {"orbbec-femto", "Orbbec Femto Bolt / Mega Depth", "1.2.0", 18ull * 1024 * 1024},
     {"pose-rtmo", "Body tracking (RTMO)", "", 0},
+    {"hand-rtm", "Hand tracking (RTM)", "", 0},
+    {"face-rtm", "Face tracking (RTM)", "", 0},
+    {"wholebody-rtmw", "Whole-body tracking (RTMW)", "", 0},
     {"onnx-runtime-cuda", "ONNX Runtime (CUDA)", "", 0},
     {"realsense-d435", "Intel RealSense D435 / D455", "1.1.0", 24ull * 1024 * 1024},
   };
@@ -436,10 +439,14 @@ std::vector<PackRow> PackRows() {
   return out;
 }
 
-std::string CameraPackPath(const std::string& id, int model) {
+std::string CameraPackPath(const std::string& id, int model, const char* file) {
   if (!g_pm.store) return {};
   const auto* p = FindInstalled(id);
   if (!p || p->pendingRemoval) return {};
+  if (file) {
+    for (const auto& f : p->entry.files) if (f.path == file) return p->dir + "/" + f.path;
+    return {};
+  }
   if (model < 0) return p->dir;
   const std::string wanted = model == 1 ? "rtmo-m" : "rtmo-s";
   for (const auto& f : p->entry.files)
@@ -448,7 +455,7 @@ std::string CameraPackPath(const std::string& id, int model) {
 }
 std::string MissingCameraPack(const Device& d) {
   if (d.kind != DevKind::Camera2D || d.camMode == 0 || !d.camReplay.empty()) return {};
-  for (const char* id : {"pose-rtmo", "onnx-runtime-cuda"}) {
+  for (const auto& id : {NeedsPackForMode(d.kind, d.camMode), std::string("onnx-runtime-cuda")}) {
     const auto* p = g_pm.store ? FindInstalled(id) : nullptr;
     if (!p || p->pendingRemoval) return id;
   }

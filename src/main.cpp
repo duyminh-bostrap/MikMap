@@ -195,7 +195,7 @@ static void StatusBar(ImRect r) {
   char cameraPerf[160];
   if (const auto* d = A.curDevice(); A.selKind == 3 && d && d->kind == DevKind::Camera2D) {
     const auto s = DeviceCameraStats(*d);
-    snprintf(cameraPerf, sizeof cameraPerf, "%s %.1f FPS / INFER %.1f FPS %.1f MS / LAT %.1f MS / %d PEOPLE", d->camReplay.empty() ? "CAM" : "REPLAY", s.camFps, s.inferFps, s.inferMs, s.latencyMs, s.people);
+    snprintf(cameraPerf, sizeof cameraPerf, "%s %.1f FPS / INFER %.1f FPS %.1f MS / LAT %.1f MS / %d OBJECTS", d->camReplay.empty() ? "CAM" : "REPLAY", s.camFps, s.inferFps, s.inferMs, s.latencyMs, s.people);
     const float right = r.Max.x - 8 - TextW(MONO_M, 10, tc) - 8;
     TextEll(x, cy, std::max(0.f, right - x), MONO_M, 10, K(pal::t88), cameraPerf);
   } else TextR(r.Max.x - 8 - TextW(MONO_M, 10, tc) - 8, cy, MONO_M, 10, K(pal::t88), hint);
@@ -674,7 +674,7 @@ int main(int argc, char** argv) {
     else if (a == "--fake-hokuyo") fakeHokuyo = true;   // test aid: point the Hokuyo device at an in-process fake SCIP server
     else if (a == "--fake-plugin") fakePlugin = true;   // test aid: add a Plugin device backed by the fake DLL this build wrote
     else if (a == "--replay" && i + 1 < argc) replay = argv[++i];
-    else if (a == "--camera-mode" && i + 1 < argc) cameraMode = std::clamp(atoi(argv[++i]), 0, 1);
+    else if (a == "--camera-mode" && i + 1 < argc) cameraMode = std::clamp(atoi(argv[++i]), 0, 4);
     else if (a == "--packs-demo" && i + 1 < argc) packsDemo = argv[++i];   // test aid: seed PackRows with empty / installed / downloading / unconfigured
     else if (a == "--missing-pack" && i + 1 < argc) missingPack = argv[++i];   // test aid: set needsPack on the selected sensor device
     else if (a == "--wheel" && i + 1 < argc) {   // test aid: mouse wheel notch(es) at x,y,amount
