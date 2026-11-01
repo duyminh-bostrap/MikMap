@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .codex/hooks/post-edit-layering.sh",
+            "timeout": 10,
+            "statusMessage": "Kiểm tra quy tắc phụ thuộc engine/core, engine/io..."
+          }
+        ]
+      }
+    ]
+  }
+}

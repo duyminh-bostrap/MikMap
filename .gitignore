@@ -1,5 +1,6 @@
 # ── Build outputs ────────────────────────────────────────────────
 build/
+build*/
 out/
 [Dd]ebug/
 [Rr]elease/
@@ -81,6 +82,10 @@ bin/data/settings.json
 # (duong dan cuc bo, thiet bi sensor test tai cho, override rieng).
 .claude/CLAUDE.local.md
 .claude/settings.local.json
+
+# .claude-flow/ : trang thai phien lam viec cua cong cu agent (session, status,
+# insights) - thay doi moi lan chay, khong phai cau hinh chung cua du an.
+.claude-flow/
 
 # pose_bridge: model tai ve luc chay lan dau + venv cua nguoi dung
 tools/pose_bridge/*.task
