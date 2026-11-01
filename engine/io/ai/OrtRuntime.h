@@ -5,7 +5,8 @@
 #include <vector>
 namespace mikmap {
 enum class OrtDevice { Auto, CudaOnly, Cpu };
-struct OrtTensorInfo { std::string name; std::vector<int64_t> shape; };
+enum class OrtTensorType { Float32, Int64 };
+struct OrtTensorInfo { std::string name; std::vector<int64_t> shape; OrtTensorType type=OrtTensorType::Float32; };
 class OrtRuntime {
 public:
     OrtRuntime();
@@ -19,7 +20,10 @@ public:
     // Caller supplies at least product(shape) contiguous floats for the entire call.
     // Serialize all access to this instance externally, including load/session/run/destruction.
     bool run(const float* input, const std::vector<int64_t>& shape, std::vector<std::vector<float>>& outputs, std::vector<std::vector<int64_t>>& outShapes, std::string& err);
+    // Buffers share output indices; only the vector matching the tensor type is populated.
+    bool run(const float* input, const std::vector<int64_t>& shape, std::vector<std::vector<float>>& outputs, std::vector<std::vector<int64_t>>& integerOutputs, std::vector<std::vector<int64_t>>& outShapes, std::string& err);
 private:
+    bool runImpl(const float*, const std::vector<int64_t>&, std::vector<std::vector<float>>&, std::vector<std::vector<int64_t>>*, std::vector<std::vector<int64_t>>&, std::string&);
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };

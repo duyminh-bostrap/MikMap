@@ -40,6 +40,13 @@ TEST_CASE("ORT session and run require initialization") {
     std::vector<std::vector<float>> out; std::vector<std::vector<int64_t>> shapes;
     CHECK(!ort.run(nullptr, {}, out, shapes, err));
 }
+TEST_CASE("ORT typed run requires session and metadata defaults to float") {
+    OrtTensorInfo info; CHECK(info.type==OrtTensorType::Float32);
+    OrtRuntime ort; std::string err;
+    std::vector<std::vector<float>> out;
+    std::vector<std::vector<int64_t>> integers,shapes;
+    CHECK(!ort.run(nullptr,{},out,integers,shapes,err)); CHECK(!err.empty());
+}
 TEST_CASE("ORT optional real model Auto and CPU inference") {
     const auto dir = testEnv("MIKMAP_TEST_ORT_DIR");
     const auto model = testEnv("MIKMAP_TEST_POSE_MODEL");

@@ -57,10 +57,14 @@ struct OrtRuntime::Impl {
         api->ReleaseStatus(status);
         throw std::runtime_error(message);
     }
-    std::vector<int64_t> dimensions(const OrtTensorTypeAndShapeInfo* info) const {
+    OrtTensorType tensorType(const OrtTensorTypeAndShapeInfo* info) const {
         ONNXTensorElementDataType type{};
         check(api->GetTensorElementType(info, &type));
-        if (type != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT) throw std::runtime_error("Only float32 tensors are supported");
+        if (type == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT) return OrtTensorType::Float32;
+        if (type == ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64) return OrtTensorType::Int64;
+        throw std::runtime_error("Only float32 and int64 output tensors are supported");
+    }
+    std::vector<int64_t> dimensions(const OrtTensorTypeAndShapeInfo* info) const {
         size_t rank = 0; check(api->GetDimensionsCount(info, &rank));
         std::vector<int64_t> shape(rank); check(api->GetDimensions(info, shape.data(), rank));
         return shape;
@@ -81,7 +85,9 @@ struct OrtRuntime::Impl {
             const OrtTensorTypeAndShapeInfo* tensor = nullptr;
             check(api->CastTypeInfoToTensorInfo(type.p, &tensor));
             if (!tensor) throw std::runtime_error("Expected tensor input/output");
-            result.push_back({name.get(), dimensions(tensor)});
+            const auto elementType = tensorType(tensor);
+            if (input && elementType != OrtTensorType::Float32) throw std::runtime_error("Only float32 inputs are supported");
+            result.push_back({name.get(), dimensions(tensor), elementType});
         }
         return result;
     }
@@ -159,9 +165,21 @@ std::vector<OrtTensorInfo> OrtRuntime::outputs() const { return impl_->out; }
 bool OrtRuntime::run(const float* input, const std::vector<int64_t>& shape,
                      std::vector<std::vector<float>>& outputs,
                      std::vector<std::vector<int64_t>>& outShapes, std::string& err) {
+    return runImpl(input, shape, outputs, nullptr, outShapes, err);
+}
+bool OrtRuntime::run(const float* input, const std::vector<int64_t>& shape,
+                     std::vector<std::vector<float>>& outputs, std::vector<std::vector<int64_t>>& integers,
+                     std::vector<std::vector<int64_t>>& outShapes, std::string& err) {
+    return runImpl(input, shape, outputs, &integers, outShapes, err);
+}
+bool OrtRuntime::runImpl(const float* input, const std::vector<int64_t>& shape,
+                     std::vector<std::vector<float>>& outputs, std::vector<std::vector<int64_t>>* integers,
+                     std::vector<std::vector<int64_t>>& outShapes, std::string& err) {
     err.clear(); auto& r = *impl_;
     if (!r.session) { err = "ONNX session is not created"; return false; }
     try {
+        if (!integers) for (const auto& output : r.out)
+            if (output.type != OrtTensorType::Float32) throw std::runtime_error("Integer outputs require the typed run overload");
         if (!input) throw std::runtime_error("Input tensor is null");
         if (shape.size() != r.in[0].shape.size()) throw std::runtime_error("Input tensor rank mismatch");
         for (size_t i = 0; i < shape.size(); ++i)
@@ -179,15 +197,27 @@ bool OrtRuntime::run(const float* input, const std::vector<int64_t>& shape,
         const OrtValue* inValue = value.p;
         r.check(r.api->Run(r.session, nullptr, r.inNames.data(), &inValue, 1, r.outNames.data(), r.outNames.size(), result.values.data()));
         outputs.resize(result.values.size()); outShapes.resize(result.values.size());
+        if (integers) integers->resize(result.values.size());
         for (size_t i = 0; i < result.values.size(); ++i) {
             Handle<OrtTensorTypeAndShapeInfo> type(r.api->ReleaseTensorTypeAndShapeInfo);
             r.check(r.api->GetTensorTypeAndShape(result.values[i], &type.p));
             outShapes[i] = r.dimensions(type.p);
+            const auto elementType = r.tensorType(type.p);
+            if (elementType != r.out[i].type) throw std::runtime_error("Output tensor type mismatch");
             size_t size = 0; r.check(r.api->GetTensorShapeElementCount(type.p, &size));
-            if (size > std::numeric_limits<size_t>::max() / sizeof(float)) throw std::runtime_error("Output tensor byte size overflow");
-            float* data = nullptr; r.check(r.api->GetTensorMutableData(result.values[i], reinterpret_cast<void**>(&data)));
-            outputs[i].resize(size);
-            if (size) std::memcpy(outputs[i].data(), data, size * sizeof(float));
+            const size_t bytes = elementType == OrtTensorType::Float32 ? sizeof(float) : sizeof(int64_t);
+            if (size > std::numeric_limits<size_t>::max() / bytes) throw std::runtime_error("Output tensor byte size overflow");
+            void* data = nullptr; r.check(r.api->GetTensorMutableData(result.values[i], &data));
+            if (size && !data) throw std::runtime_error("Output tensor data is null");
+            if (elementType == OrtTensorType::Float32) {
+                outputs[i].resize(size);
+                if (size) std::memcpy(outputs[i].data(), data, size * bytes);
+                if (integers) (*integers)[i].clear();
+            } else {
+                if (!integers) throw std::runtime_error("Integer outputs require the typed run overload");
+                (*integers)[i].resize(size); outputs[i].clear();
+                if (size) std::memcpy((*integers)[i].data(), data, size * bytes);
+            }
         }
         return true;
     } catch (const std::exception& e) { err = e.what(); return false; }
