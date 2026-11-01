@@ -3,6 +3,7 @@
 #include "core/util/Json.h"
 #include "FakeScipServer.h"
 #include "io/plugin/PluginLoader.h"
+#include "io/sources/CameraSource.h"
 
 #include <GLFW/glfw3.h>
 #ifdef _WIN32
@@ -191,7 +192,13 @@ static void StatusBar(ImRect r) {
   const char* tc = perf;
   TextR(r.Max.x - 8, cy, MONO_M, 10, K(PerfP99() > 20.f ? pal::yellow : pal::t66), tc);
   const char* hint = (!A.toast.empty() && g.time < A.toastUntil) ? A.toast.c_str() : A.blackout ? "OUTPUT MUTED \xE2\x80\x94 PRESS BLACKOUT TO RESUME" : "CLICK NAME TO CUE \xC2\xB7 CLICK ART TO PLAY \xC2\xB7 RIGHT-CLICK NAME FOR ACTIONS";
-  TextR(r.Max.x - 8 - TextW(MONO_M, 10, tc) - 8, cy, MONO_M, 10, K(pal::t88), hint);
+  char cameraPerf[160];
+  if (const auto* d = A.curDevice(); A.selKind == 3 && d && d->kind == DevKind::Camera2D) {
+    const auto s = DeviceCameraStats(*d);
+    snprintf(cameraPerf, sizeof cameraPerf, "%s %.1f FPS / INFER %.1f FPS %.1f MS / LAT %.1f MS / %d PEOPLE", d->camReplay.empty() ? "CAM" : "REPLAY", s.camFps, s.inferFps, s.inferMs, s.latencyMs, s.people);
+    const float right = r.Max.x - 8 - TextW(MONO_M, 10, tc) - 8;
+    TextEll(x, cy, std::max(0.f, right - x), MONO_M, 10, K(pal::t88), cameraPerf);
+  } else TextR(r.Max.x - 8 - TextW(MONO_M, 10, tc) - 8, cy, MONO_M, 10, K(pal::t88), hint);
 }
 
 // ───────────────────────── overlays ─────────────────────────
@@ -642,7 +649,7 @@ int main(int argc, char** argv) {
   std::string shot; bool screenGiven = false; int startScreen = 0, frames = 12, W = 1440, H = 900, tab = -1, page = -1;
   bool sel = false, scaleGiven = false; int selLi = 0, selCi = 0, ctxTest = 0, cliScale = 100;
   bool fakeHokuyo = false, fakePlugin = false, secondLidar = false;
-  std::string packsDemo, missingPack;
+  std::string packsDemo, missingPack, replay; int cameraMode = -1;
   int spage = -1, stool = -1, wizard = 0; std::string place, sendOut;   // spage / stool: the old Sensor page's flags, now Mapping's page / Output tool
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
@@ -666,6 +673,8 @@ int main(int argc, char** argv) {
     else if (a == "--second-lidar") secondLidar = true;   // test aid (with --fake-hokuyo): a second lidar on the same fake server and screen, placed elsewhere
     else if (a == "--fake-hokuyo") fakeHokuyo = true;   // test aid: point the Hokuyo device at an in-process fake SCIP server
     else if (a == "--fake-plugin") fakePlugin = true;   // test aid: add a Plugin device backed by the fake DLL this build wrote
+    else if (a == "--replay" && i + 1 < argc) replay = argv[++i];
+    else if (a == "--camera-mode" && i + 1 < argc) cameraMode = std::clamp(atoi(argv[++i]), 0, 1);
     else if (a == "--packs-demo" && i + 1 < argc) packsDemo = argv[++i];   // test aid: seed PackRows with empty / installed / downloading / unconfigured
     else if (a == "--missing-pack" && i + 1 < argc) missingPack = argv[++i];   // test aid: set needsPack on the selected sensor device
     else if (a == "--wheel" && i + 1 < argc) {   // test aid: mouse wheel notch(es) at x,y,amount
@@ -1801,6 +1810,10 @@ int main(int argc, char** argv) {
       A.wizard.manualHost = "192.0.2.1"; SensorWizardAddManual();   // TEST-NET: never answers, so the table shows a failing device
       SensorWizardNext();
     }
+  }
+  if (!replay.empty() || cameraMode >= 0) {
+    Device d = MakeDevice(DevKind::Camera2D, "camera-cli"); d.enabled = true; d.camReplay = replay;
+    SetCamMode(d, cameraMode >= 0 ? cameraMode : 1); A.devices.push_back(d); SelectDevice(d.id); A.mpage = 0;
   }
   if (!packsDemo.empty()) {
     SetPacksDemoMode(packsDemo);

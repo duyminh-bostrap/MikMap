@@ -6,6 +6,9 @@
 #include "io/net/NetScan.h"
 #include "io/plugin/PluginLoader.h"
 #include "io/sources/ScanSource.h"
+#include "io/sources/CameraSource.h"
+#include "io/camera/MfCamera.h"
+#include <GLFW/glfw3.h>
 #include <cmath>
 #include <cstdlib>
 #include <algorithm>
@@ -67,6 +70,7 @@ void GoToSensorStep(const std::string& id, int step) {
 }
 
 static std::string Endpoint(const Device& d) {
+  if (d.kind == DevKind::Camera2D) return d.camMode ? "Body" : "Off";
   if (d.kind == DevKind::Sim) return "simulated";
   if (d.kind == DevKind::Plugin) return d.plugin.empty() ? "plugin" : d.plugin;   // the file inside plugins/sensors, not a path
   return (d.kind == DevKind::Skeleton ? "OSC :" : d.host + ":") + std::to_string(d.port);
@@ -107,19 +111,43 @@ static int People(const Device& d, int slots[64]) {
   return n;
 }
 static void SkeletonView(ImRect area, const Device& d) {
-  int slots[64]; const int nsl = People(d, slots);
+  const bool camera = d.kind == DevKind::Camera2D;
+  const auto* preview = camera ? DevicePreview(d) : nullptr;
+  const auto* points = camera ? DevicePreviewPoints(d) : nullptr;
+  auto each = [&](auto visit) {
+    if (camera) { if (points) for (int i = 0; i < points->count; ++i) visit(Touch{int(points->points[i].id), points->points[i].x, points->points[i].y}); }
+    else for (const auto& t : d.touches) visit(t);
+  };
+  int slots[64], nsl = 0;
+  each([&](const Touch& t) { int slot = t.id / 100; if (nsl < 64 && std::find(slots, slots + nsl, slot) == slots + nsl) slots[nsl++] = slot; });
   float avW = area.GetWidth() - 48, avH = area.GetHeight() - 48;
   if (avW < 40 || avH < 30) return;
   // shortcut: 4:3 matches the bridge's default 640x480 capture; if the bridge changes resolution,
   // it has to send the size in /mikmap/meta.
-  float w = std::min(avW, avH * 4.f / 3.f), h = w * 3.f / 4.f;
+  const float aspect = preview ? float(preview->width) / float(preview->height) : camera ? float(d.camW) / float(d.camH) : 4.f / 3.f;
+  float w = std::min(avW, avH * aspect), h = w / aspect;
   float cx = (area.Min.x + area.Max.x) * 0.5f, cyc = (area.Min.y + area.Max.y) * 0.5f;
   ImRect fr(cx - w * 0.5f, cyc - h * 0.5f, cx + w * 0.5f, cyc + h * 0.5f);
   float k = w / 640.f;
   Box(fr, K(0x070707), K(SensorSelTone(0), 0.6f), 4);
+  if (preview) {
+    static GLuint texture = 0; static int tw = 0, th = 0; static int64_t timestamp = 0;
+    if (!texture) { glGenTextures(1, &texture); glBindTexture(GL_TEXTURE_2D, texture); glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR); glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR); }
+    glBindTexture(GL_TEXTURE_2D, texture); glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    if (tw != preview->width || th != preview->height) {
+      tw = preview->width; th = preview->height;
+      glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, tw, th, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr); timestamp = 0;
+    }
+    if (timestamp != preview->tCaptureNs) {
+      glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, tw, th, GL_RGB, GL_UNSIGNED_BYTE, preview->rgb.data()); timestamp = preview->tCaptureNs;
+    }
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 4); glBindTexture(GL_TEXTURE_2D, 0);
+    g.dl->AddImage((ImTextureID)(intptr_t)texture, fr.Min, fr.Max);
+  }
   auto at = [&](int id, ImVec2& p) {
-    for (auto& t : d.touches) if (t.id == id) { p = ImVec2(fr.Min.x + t.x * w, fr.Min.y + t.y * h); return true; }
-    return false;
+    bool found = false;
+    each([&](const Touch& t) { if (t.id == id) { p = ImVec2(fr.Min.x + t.x * w, fr.Min.y + t.y * h); found = true; } });
+    return found;
   };
   static const int kBones[35][2] = {{0,1},{1,2},{2,3},{3,7},{0,4},{4,5},{5,6},{6,8},{9,10},{11,12},{11,13},{13,15},{15,17},{15,19},{15,21},{17,19},{12,14},{14,16},{16,18},{16,20},{16,22},{18,20},{11,23},{12,24},{23,24},{23,25},{24,26},{25,27},{26,28},{27,29},{28,30},{29,31},{30,32},{27,31},{28,32}};
   for (int si = 0; si < nsl; ++si) {
@@ -128,15 +156,16 @@ static void SkeletonView(ImRect area, const Device& d) {
       ImVec2 p0, p1;
       if (at(slots[si] * 100 + b[0], p0) && at(slots[si] * 100 + b[1], p1)) g.dl->AddLine(p0, p1, col, std::max(1.f, 3.f * k));
     }
-    for (auto& t : d.touches) {
-      if (t.id / 100 != slots[si]) continue;
+    each([&](const Touch& t) {
+      if (t.id / 100 != slots[si]) return;
       ImVec2 p(fr.Min.x + t.x * w, fr.Min.y + t.y * h);
       g.dl->AddCircleFilled(p, std::max(2.f, 3.5f * k), col, 16);
       if (t.id == kCalibJoint && A.wizardStep >= 1 && A.wizardStep <= 4)
         g.dl->AddCircle(p, std::max(6.f, 10.f * k), Ca(K(pal::yellow)), 24, std::max(1.f, 2.f * k));
-    }
+    });
   }
-  if (d.touches.empty()) TextC(cx, (fr.Max.y + area.Max.y) * 0.5f, MONO_R, 10, K(pal::t66), "No camera data \xE2\x80\x94 run pose_bridge.py");
+  if (camera && !preview) TextC(cx, (fr.Max.y + area.Max.y) * .5f, MONO_R, 10, K(pal::t66), "No camera preview");
+  if (!camera && d.touches.empty()) TextC(cx, (fr.Max.y + area.Max.y) * 0.5f, MONO_R, 10, K(pal::t66), "No camera data \xE2\x80\x94 run pose_bridge.py");
 }
 
 // ───────────────────────── Input: simulated radar ─────────────────────────
@@ -502,7 +531,7 @@ void SensorStageBody(ImRect area, Device& d) {
   if (A.mpage != 0 || d.kind != DevKind::Sim) A.editRoi = false;
   if (A.mpage != 0) SensorOutputView(area, d);
   else if (IsLidar(d)) LidarPlacementView(area, d);
-  else if (d.kind == DevKind::Skeleton) SkeletonView(area, d);
+  else if (d.kind == DevKind::Skeleton || d.kind == DevKind::Camera2D) SkeletonView(area, d);
   else Radar(area, d);
 }
 
@@ -552,13 +581,56 @@ static bool Section(float ox, float W, float x, float w, float oy, float& y, con
   return open;
 }
 
+static void CameraChoice(Device& d, float x, float w, float oy, float& y, const char* label,
+                         const std::string& value, const std::vector<std::string>& choices, std::function<void(Device&, int)> apply, int enabled = 100) {
+  Text(x, oy + y + 12, MONO_R, 9, K(pal::t66), label);
+  ImRect r = Rc(x + 104, oy + y, w - 104, 24); Hit hit = HitR(r);
+  Box(r, K(pal::g1c), K(pal::g22), 3); TextEll(r.Min.x + 6, r.Min.y + 12, r.GetWidth() - 20, MONO_R, 9, K(pal::tcc), value.c_str());
+  Icon("chevron-down", ImVec2(r.Max.x - 8, r.Min.y + 12), 10, K(pal::t88));
+  if (hit.click) {
+    std::vector<MenuItem> items;
+    for (int i = 0; i < (int)choices.size(); ++i) {
+      MenuItem item; item.label = choices[i]; item.disabled = i >= enabled;
+      item.run = [id = d.id, i, apply] { for (auto& device : A.devices) if (device.id == id) { apply(device, i); A.pushHist(); break; } };
+      items.push_back(std::move(item));
+    }
+    A.openCtx(ImVec2(r.Min.x, r.Max.y + 3), items);
+  }
+  y += 28;
+}
+static void CameraSection(Device& d, float x, float w, float oy, float& y) {
+  static std::vector<mikmap::CameraInfo> cameras; static std::string error; static bool listed = false;
+  if (!listed) { cameras = mikmap::listCameras(error); listed = true; }
+  std::vector<std::string> names{"Default camera"}, ids{""}; std::string name = d.camId.empty() ? names[0] : d.camId;
+  for (const auto& c : cameras) { names.push_back(c.name); ids.push_back(c.id); if (d.camId == c.id) name = c.name; }
+  CameraChoice(d,x,w,oy,y,"Camera",name,names,[ids](Device& v,int i){v.camId=ids[i];});
+  if (WideButton(x,oy+y,w,"Refresh cameras","rotate-ccw",pal::mint)) { cameras = mikmap::listCameras(error); }
+  y += 32;
+  if (!error.empty()) { TextEll(x,oy+y+6,w,MONO_R,9,K(pal::yellow),error.c_str()); y += 18; }
+  CameraChoice(d,x,w,oy,y,"Resolution",d.camW == 1280 ? "1280 x 720" : "640 x 480",{"640 x 480","1280 x 720"},[](Device& v,int i){v.camW=i?1280:640;v.camH=i?720:480;});
+  CheckRow(x,oy+y,"Flip horizontally",d.camFlip); y += 28;
+  CameraChoice(d,x,w,oy,y,"Mode",d.camMode?"Body":"Off",{"Off","Body","Hand (coming soon)","Face (coming soon)","Full (coming soon)","Gesture (coming soon)"},[](Device& v,int i){SetCamMode(v,i);},2);
+  if (!d.camMode) return;
+  CameraChoice(d,x,w,oy,y,"Model",d.camModel?"RTMO m":"RTMO s",{"RTMO s","RTMO m"},[](Device& v,int i){v.camModel=i;});
+  const std::vector<std::string> devices{"Auto (CUDA / CPU)","CUDA only","CPU"};
+  CameraChoice(d,x,w,oy,y,"Compute",devices[d.camDevice],devices,[](Device& v,int i){v.camDevice=i;});
+  float people = float(d.maxPeople);
+  if (NumRow(x,oy+y,w,"Max people","##campeople",people)) d.maxPeople=std::clamp(int(people),1,30); y += 28;
+  if (NumRow(x,oy+y,w,"Person threshold","##camperson",d.personThr,2)) d.personThr=std::clamp(d.personThr,0.f,1.f); y += 28;
+  if (NumRow(x,oy+y,w,"Joint threshold","##camjoint",d.jointThr,2)) d.jointThr=std::clamp(d.jointThr,0.f,1.f); y += 28;
+  const std::vector<std::string> smooth{"Off","Light","Medium"};
+  CameraChoice(d,x,w,oy,y,"Smoothing",smooth[d.smoothing],smooth,[](Device& v,int i){v.smoothing=i;});
+}
+
 static void ConnectionSection(Device& d, float x, float w, float oy, float& y) {
+  if (d.kind == DevKind::Camera2D) CameraSection(d, x, w, oy, y);
+  const std::string missing = d.kind == DevKind::Camera2D ? MissingCameraPack(d) : d.needsPack;
   if (!PackAvailableForDevice(d)) {
-    const PackState pst = PackStateFor(d.needsPack);
+    const PackState pst = PackStateFor(missing);
     const char* hint = SensorPackHint(d, pst);
-    PackRow pr{d.needsPack, d.needsPack, "1.0.0", "", "", 0, pst, false, false, false, 0.f};
+    PackRow pr{missing, missing, "1.0.0", "", "", 0, pst, false, false, false, 0.f};
     for (const auto& r : PackRows()) {
-      if (r.id == d.needsPack) { pr = r; break; }
+      if (r.id == missing) { pr = r; break; }
     }
     ImRect br(x, oy + y, x + w, oy + y + 54);
     Box(br, K(pal::coral, 0.12f), K(pal::coral, 0.65f), 3);
@@ -581,7 +653,7 @@ static void ConnectionSection(Device& d, float x, float w, float oy, float& y) {
     if (ah.hover && actEn) CursorHand();
     if (ah.click && actEn) {
       if (pst == PackState::Downloading) PackCancel();
-      else PackInstall(d.needsPack);
+      else PackInstall(missing);
     }
 
     Hit sh = HitR(setB);
@@ -593,6 +665,7 @@ static void ConnectionSection(Device& d, float x, float w, float oy, float& y) {
 
     y += 54 + 8;
   }
+  if (d.kind == DevKind::Camera2D) return;
   if (d.kind == DevKind::Sim) { PropertyRow(Rc(x - 6, oy + y, w + 12, 24), "Source", "simulated"); y += 24 + 6; return; }
   if (d.kind == DevKind::Hokuyo) {   // applied when the field loses focus so typing does not restart the source on every key
     static std::string hostEdit;
@@ -745,7 +818,7 @@ static void CalibrationSection(Device& d, float x, float w, float oy, float& y) 
     Text(br.Min.x + 7, br.Min.y + 6 + 6.5f, MONO_B, 11, K(pal::yellow), st);
     TextR(br.Max.x - 7, br.Min.y + 6 + 6.5f, MONO_R, 10, K(pal::t88), WN[A.wizardStep - 1]);
     const bool live = d.kind != DevKind::Sim;   // a real sensor reports where the target stands: Capture averages 30 frames of it
-    TextEll(br.Min.x + 7, br.Min.y + 6 + 13 + 4 + 7.5f, w - 14, UI_S, 10, K(pal::te0), live ? (d.kind == DevKind::Skeleton ? "Hold your right wrist on the target, then Capture" : "Stand alone on the target, then Capture") : "Click the target on the Input radar");
+    TextEll(br.Min.x + 7, br.Min.y + 6 + 13 + 4 + 7.5f, w - 14, UI_S, 10, K(pal::te0), live ? ((d.kind == DevKind::Skeleton || d.kind == DevKind::Camera2D) ? "Hold your right wrist on the target, then Capture" : "Stand alone on the target, then Capture") : "Click the target on the Input radar");
     ImRect cr(br.Min.x + 7, br.Max.y - 6 - 24, br.Max.x - 7, br.Max.y - 6);
     if (live) {
       const float half = (cr.GetWidth() - 6) * 0.5f;
@@ -903,6 +976,17 @@ void SensorProps(ImRect r, Device* d) {
     CheckRow(x + w - aw, oy + y, "Active", d->enabled);
     y += 24 + 2;
     if (d->enabled && !d->error.empty()) { TextEll(x, oy + y + 6, w, MONO_R, 9, K(pal::red), d->error.c_str()); y += 12 + 4; }
+    if (d->kind == DevKind::Camera2D) {
+      const auto stc = DeviceCameraStats(*d); char line[128];
+      snprintf(line,sizeof line,"Camera %.1f fps / Body %.1f fps",stc.camFps,stc.inferFps);
+      TextEll(x,oy+y+6,w,MONO_R,9,K(pal::tcc),line); y += 18;
+      snprintf(line,sizeof line,"Infer %.1f ms / latency %.1f ms / %d people",stc.inferMs,stc.latencyMs,stc.people);
+      TextEll(x,oy+y+6,w,MONO_R,9,K(pal::tcc),line); y += 18;
+      if (st == (int)mikmap::SourceStatus::Running && d->camMode) {
+        const char* compute = !d->camReplay.empty() ? "Replay fixture (no inference)" : stc.onCpu ? "CPU - inference may be slow" : "CUDA";
+        TextEll(x,oy+y+6,w,MONO_R,9,K(stc.onCpu ? pal::yellow : pal::t88),compute); y += 18;
+      }
+    }
     y += 4;
   }
   {   // the screen is changed from the tree's right-click menu (Move to screen); here only the fallback warning
@@ -989,7 +1073,7 @@ void SensorWizardMergeScan(const std::vector<std::string>& res) { for (auto& h :
 
 void SensorWizardNext() {
   SensorWizard& w = A.wizard;
-  if (w.step == 1 && w.kind != DevKind::Sim) {
+  if (w.step == 1 && w.kind != DevKind::Sim && w.kind != DevKind::Camera2D) {
     w.step = 2; w.found.clear(); w.pick.clear(); w.added.clear(); w.scanning = false;
     if (w.kind == DevKind::Skeleton) w.port = FreeOscPort();
     return;
@@ -1014,6 +1098,8 @@ void SensorWizardNext() {
       d.host = host; d.port = port;
     }
     if (w.added.empty()) { A.notify("Tick at least one lidar, or type its IP and Add"); return; }
+  } else if (w.kind == DevKind::Camera2D) {
+    add(DevKind::Camera2D, Numbered("Camera 2D"));
   } else if (w.kind == DevKind::Skeleton) {
     add(DevKind::Skeleton, "Camera :" + std::to_string(w.port)).port = w.port;
   } else if (w.kind == DevKind::Plugin) {
@@ -1104,11 +1190,11 @@ void SensorWizardView(ImRect r) {
   if (w.step == 1) {
     Text(x, y + 6, UI_B, 11, K(pal::tcc), "What are you connecting?"); y += 26;
     struct C { DevKind k; std::string plugin, title, sub, packId; const char* icon; bool dim; };
-    std::vector<C> cards = {{DevKind::Skeleton, "", "Camera 2D", "Body skeleton over OSC (pose_bridge)", "", "camera", false},
+    std::vector<C> cards = {{DevKind::Camera2D, "", "Camera 2D", "USB camera - Off / Body tracking", "", "camera", false},
+                            {DevKind::Skeleton, "", "Skeleton (OSC)", "External pose_bridge fallback", "", "camera", false},
                             {DevKind::Hokuyo, "", "Lidar 2D \xC2\xB7 Hokuyo", "UST-10LX / 20LX over Ethernet", "", "radar", false}};
     for (auto& p : SensorPlugins()) cards.push_back({DevKind::Plugin, PluginFile(p), "Lidar 2D \xC2\xB7 " + (p.name.empty() ? PluginFile(p) : p.name), PluginFile(p), "", "radar", false});
     cards.push_back({DevKind::Plugin, "mikmap_orbbec_plugin.dll", "Depth camera \xC2\xB7 Orbbec", "Femto Bolt / Mega over Orbbec SDK", "orbbec-femto", "camera", false});
-    cards.push_back({DevKind::Plugin, "mikmap_pose_onnx.dll", "Camera 2D \xC2\xB7 Pose ONNX", "In-app MediaPipe Pose + ONNX Runtime", "pose-onnx", "camera", false});
     cards.push_back({DevKind::Sim, "", "Simulated", "Click a radar to make touches", "", "activity", false});
     cards.push_back({DevKind::Sim, "", "Lidar 3D", "Planned", "", "layers", true});
 

@@ -57,6 +57,7 @@ public:
     void cancel();
 
     PackProgress snapshot() const;
+    bool busy() const { return m_busy.load(std::memory_order_acquire); }
 
 private:
     bool prepareWorker();
@@ -75,6 +76,7 @@ private:
     PackCatalog        m_catalog;
     PackProgress       m_progress;
     std::atomic<bool>  m_cancel{false};
+    std::atomic<bool>  m_busy{false};
     std::thread        m_worker;
 };
 

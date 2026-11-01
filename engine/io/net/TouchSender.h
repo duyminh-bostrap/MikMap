@@ -15,6 +15,8 @@
 //    text one or more datagrams, each at most kMaxDatagram bytes:
 //           first:  "<device> frame <count>\n" then "<device> <id> <x> <y>\n" per point, x/y with 4 decimals
 //           later:  only "<device> <id> <x> <y>\n" lines
+//  hasZ appends f:z to each OSC touch and a fourth numeric field to each text point.
+//  Camera2D uses z for joint confidence; default false keeps both legacy formats.
 //  A frame with more points than fit in one datagram is therefore split; the receiver
 //  concatenates the points of the bundles in order. <device> is OutPacket::device as
 //  given; setOutDevice() makes any name safe for both formats.
@@ -43,6 +45,8 @@ struct OutPacket {                                   // POD, memcpy-able
     uint16_t count = 0;                              // up to kMaxTouchPoints (≥ 8 bit: 512 points)
     uint32_t ids[kMaxTouchPoints] = {};
     float    xy[kMaxTouchPoints * 2] = {};
+    bool     hasZ = false; // Camera2D confidence; false preserves the legacy wire format.
+    float    z[kMaxTouchPoints] = {};
 };
 
 /// Copies `name` into p.device: every char outside [A-Za-z0-9._:-] becomes '_' (OSC address

@@ -337,3 +337,34 @@ TEST_CASE("TouchSender: loopback 510 diem -> sender thread tu chia datagram") {
     s.stop();
     src.stop();
 }
+
+TEST_CASE("TouchSender: confidence survives bounded chunks and real loopback") {
+    auto p = manyPoints(510); p.hasZ = true;
+    for (int i = 0; i < p.count; ++i) p.z[i] = .75f;
+    OscConfig cfg; cfg.port = 0; cfg.addressPrefix = "/mikmap/dev1/touch";
+    OscSource receiver(cfg); uint8_t buf[kMaxDatagram];
+    for (int first = 0; first < p.count;) {
+        int next = first; auto n = encodeOscChunk(p, first, buf, sizeof buf, next);
+        REQUIRE(n > 0); CHECK(n <= kMaxDatagram); REQUIRE(next > first);
+        receiver.feedPacket(buf, n); first = next;
+    }
+    REQUIRE(receiver.frames().consume());
+    const auto& f = receiver.frames().readSlot(); REQUIRE(f.count == 510);
+    for (int i = 0; i < f.count; ++i) CHECK_NEAR(f.points[i].z, .75, 1e-6);
+    for (int first = 0; first < p.count;) {
+        int next = first; auto n = encodeTextChunk(p, first, buf, sizeof buf, next);
+        REQUIRE(n > 0); CHECK(n <= kMaxDatagram); REQUIRE(next > first);
+        std::istringstream lines(std::string(reinterpret_cast<char*>(buf), n)); std::string line;
+        while (std::getline(lines, line)) if (line.find(" frame ") == std::string::npos) {
+            std::istringstream row(line); std::string name; unsigned id; float x,y,z;
+            REQUIRE(bool(row >> name >> id >> x >> y >> z)); CHECK_NEAR(z, .75, 1e-6);
+        }
+        first = next;
+    }
+    OscSource live(cfg); REQUIRE(live.start()); TouchSender sender; REQUIRE(sender.start());
+    p = twoPoints("127.0.0.1", live.boundPort()); p.hasZ = true; p.z[0] = .8f; p.z[1] = .6f;
+    REQUIRE(sender.push(p));
+    REQUIRE(waitFor([&] { return live.frames().consume() && live.frames().readSlot().count == 2; }, 1));
+    CHECK_NEAR(live.frames().readSlot().points[0].z, .8, 1e-6);
+    CHECK_NEAR(live.frames().readSlot().points[1].z, .6, 1e-6);
+}

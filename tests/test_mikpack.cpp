@@ -122,6 +122,12 @@ TEST_CASE("mikpack: write and install via PackInstaller::installFromFileAsync") 
     REQUIRE(inst.snapshot().state == PackJobState::Done);
     CHECK(store.isInstalled("orbbec-femto", "1.0.0"));
     CHECK(store.deepVerify("orbbec-femto", err));
+    store.protectUpdates({"orbbec-femto"});
+    inst.installFromFileAsync(toUtf8(packFile));
+    while (inst.busy()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    CHECK(inst.snapshot().state == PackJobState::Failed);
+    CHECK(inst.snapshot().error.find("in use or loaded") != std::string::npos);
+    CHECK(store.deepVerify("orbbec-femto", err));
 }
 
 TEST_CASE("mikpack: rejects corrupted signature or payload byte") {

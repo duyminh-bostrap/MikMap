@@ -342,6 +342,13 @@ JsonValue Serialize(const App& a) {
     dob.set("screen", d.screenId);
     dob.set("plugin", d.plugin); dob.set("config", d.config);   // plugin file name + JSON; empty for every other kind
     dob.set("needsPack", d.needsPack);
+    if (d.kind == DevKind::Camera2D || d.kind == DevKind::Camera3D) {
+      JsonValue cam = JsonValue::object();
+      cam.set("id", d.camId); cam.set("w", d.camW); cam.set("h", d.camH); cam.set("flip", d.camFlip);
+      cam.set("mode", d.camMode); cam.set("model", d.camModel); cam.set("device", d.camDevice);
+      cam.set("maxPeople", d.maxPeople); cam.set("personThr", d.personThr); cam.set("jointThr", d.jointThr); cam.set("smooth", d.smoothing);
+      dob.set("cam", cam);
+    }
     JsonValue cal = JsonValue::array(); for (auto& c : d.calib) cal.push(CalibJ(c));
     dob.set("calib", cal);
     JsonValue roi = JsonValue::array(); for (int i = 0; i < 4; ++i) roi.push(V2(d.roi[i]));
@@ -467,13 +474,21 @@ bool Deserialize(const JsonValue& root, App& out, std::string& err) {
       if (o["roi"].isArray() && o["roi"].size() == 4) for (int i = 0; i < 4; ++i) v.roi[i] = ReadV2(o["roi"].at(i));
     };
     for (auto& d : sn["devices"].arrayItems()) {
-      Device v = MakeDevice(DevKind(std::clamp(d["kind"].asInt(0), 0, 3)), d["id"].asString());
+      Device v = MakeDevice(DevKind(std::clamp(d["kind"].asInt(0), 0, 5)), d["id"].asString());
       v.name = d["name"].asString(v.name);
       v.screenId = d["screen"].asString(out.screens[0].id);   // files from before sensors belonged to a screen: the first one, as it always was
       if (d.has("kind")) {
         v.host = d["host"].asString(v.host); v.port = d["port"].asInt(v.port);
         v.plugin = d["plugin"].asString(v.plugin); v.config = d["config"].asString(v.config);
         v.needsPack = d["needsPack"].asString(v.needsPack);
+        if (v.kind == DevKind::Camera2D || v.kind == DevKind::Camera3D) {
+          const auto& cam = d["cam"];
+          v.camId = cam["id"].asString(); v.camW = cam["w"].asInt(640) == 1280 ? 1280 : 640; v.camH = v.camW == 1280 ? 720 : 480;
+          v.camFlip = cam["flip"].asBool(false); v.camModel = std::clamp(cam["model"].asInt(0), 0, 1);
+          v.camDevice = std::clamp(cam["device"].asInt(0), 0, 2); v.maxPeople = std::clamp(cam["maxPeople"].asInt(10), 1, 30);
+          v.personThr = std::clamp(F(cam, "personThr", .5f), 0.f, 1.f); v.jointThr = std::clamp(F(cam, "jointThr", .3f), 0.f, 1.f);
+          v.smoothing = std::clamp(cam["smooth"].asInt(0), 0, 2); SetCamMode(v, cam["mode"].asInt(0));
+        }
         v.enabled = d["enabled"].asBool(); v.calibrated = d["calibrated"].asBool();
         readCal(d, v);
         v.roiAuto = d["roiAuto"].asBool(false);   // a file from before the Screen/Zone selector keeps its saved ROI
@@ -695,7 +710,7 @@ bool LoadCalibProfile(const std::string& path, Device& d, float& noise, float& b
   if (!root["calib"].isArray() || root["calib"].size() != 4) { err = "not a MikMap calibration profile"; return false; }
   if (root.has("kind")) {   // refuse before touching `d`
     int pk = root["kind"].asInt(-1);
-    if (pk != (int)d.kind) { err = std::string("profile is for a ") + DevKindName(DevKind(std::clamp(pk, 0, 3))) + " sensor"; return false; }
+    if (pk != (int)d.kind) { err = std::string("profile is for a ") + DevKindName(DevKind(std::clamp(pk, 0, 5))) + " sensor"; return false; }
   } else if (d.kind != DevKind::Sim) { err = "profile has no sensor kind, only a simulated sensor accepts it"; return false; }   // saved before kinds existed
   d.calib.clear(); for (auto& co : root["calib"].arrayItems()) d.calib.push_back(ReadCalibPoint(co));
   if (root["roi"].isArray() && root["roi"].size() == 4) for (int i = 0; i < 4; ++i) d.roi[i] = ReadV2(root["roi"].at(i));
@@ -765,7 +780,7 @@ static bool UndoApply(const std::string& snap) {
       if (n.st != Clip::Empty && n.name == o.name) { n.st = o.st; n.progress = o.progress; }
     }
   for (auto& nd : tmp.devices) for (const auto& od : A.devices) if (od.id == nd.id) {   // device runtime state (live touches, counters) is not part of the snapshot: carry it across
-    nd.touches = od.touches; nd.status = od.status; nd.error = od.error; nd.fps = od.fps; nd.latencyMs = od.latencyMs; nd.packets = od.packets; nd.lastSentAt = od.lastSentAt;
+    nd.touches = od.touches; nd.status = od.status; nd.error = od.error; nd.fps = od.fps; nd.latencyMs = od.latencyMs; nd.packets = od.packets; nd.lastSentAt = od.lastSentAt; nd.camReplay = od.camReplay;
     break;
   }
   for (auto& l : tmp.layers) { l.live = false; for (auto& c : l.clips) if (c.isLive()) l.live = true; }

@@ -46,6 +46,9 @@ public:
     /// Kiểm tra kích thước + SHA-256 từng file trong staging/<id>-<ver>, ghi pack.json,
     /// đổi tên nguyên tử sang installed/<id>/<ver> và cập nhật installed.json.
     bool commit(const PackInfo& entry, std::string& errOut);
+    // Control thread sets a frozen guard before starting a job; never clears it while that job is active.
+    void protectUpdates(std::vector<std::string> ids);
+    bool canUpdate(const std::string& id, std::string& errOut) const;
 
     /// loadedInProcess=false: thử xoá ngay; nếu lỗi (file đang bị giữ) hoặc
     /// loadedInProcess=true: ghi vào pending.json và đánh dấu pendingRemoval.
@@ -63,6 +66,7 @@ private:
     bool saveInstalledLocked(std::string& errOut) const;
     bool savePendingLocked(std::string& errOut) const;
 
+    std::vector<std::string> m_protected;
     std::string                m_root;
     std::vector<InstalledPack> m_installed;
     std::vector<std::string>   m_pendingDirs;   // đường dẫn UTF-8 cần xoá ở lần startup sau

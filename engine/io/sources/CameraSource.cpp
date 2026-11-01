@@ -115,7 +115,7 @@ struct CameraSource::Impl {
         while(running) {
             if(!captured.consume()) {
                 if(lastArrival && !stale && double(nowNs()-lastArrival)*1e-9>=cfg.tracker.keepSec && !cameraOk) {
-                    SensorFrame f; f.tCaptureNs=captured.readSlot().tCaptureNs; publish(f); tracker.reset(); people=0; inferFps=0; stale=true;
+                    SensorFrame f; f.tCaptureNs=captured.readSlot().tCaptureNs; tracker.reset(); people=0; inferFps=0; publish(f); stale=true;
                 }
                 wait(.002); continue;
             }
@@ -143,15 +143,20 @@ struct CameraSource::Impl {
         if(seq) { SensorFrame reset; publish(reset); }
         cameraOk=true; const double step=replay.size()>1?replay.back().time-replay[replay.size()-2].time:1.0/30;
         const double duration=replay.back().time+step;
-        auto origin=Clock::now();
+        auto origin=Clock::now(); int64_t previous=0;
         while(running) {
             for(const auto& r:replay) {
                 auto due=origin+std::chrono::duration_cast<Clock::duration>(std::chrono::duration<double>(r.time));
                 while(running && Clock::now()<due) wait(.002);
                 if(!running) return;
                 auto f=r.frame; f.tCaptureNs=std::chrono::duration_cast<std::chrono::nanoseconds>(due.time_since_epoch()).count();
+                if(cfg.mode==CamMode::Off) f.count=0;
+                auto& preview=previews.writeSlot(); preview.width=640; preview.height=480;
+                preview.rgb.resize(640*480*3,73); preview.tCaptureNs=f.tCaptureNs; preview.index=seq+1;
+                const auto arrival=nowNs(); if(previous) camFps=float(1e9/double(arrival-previous)); previous=arrival;
+                latencyMs=float(double(arrival-f.tCaptureNs)*1e-6);
                 bool slots[30]{}; int count=0; for(uint16_t k=0;k<f.count;++k) { const auto slot=f.points[k].id/100; if(!slots[slot]) { slots[slot]=true; ++count; } }
-                people=count; publish(f);
+                people=count; previews.publish(); publish(f);
             }
             origin+=std::chrono::duration_cast<Clock::duration>(std::chrono::duration<double>(duration));
         }

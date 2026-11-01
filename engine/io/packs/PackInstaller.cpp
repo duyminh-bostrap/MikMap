@@ -62,6 +62,7 @@ PackInstaller::~PackInstaller() {
 }
 
 bool PackInstaller::prepareWorker() {
+    if (m_busy.load(std::memory_order_acquire)) return false;
     {
         std::lock_guard<std::mutex> lk(m_mu);
         if (m_progress.state == PackJobState::RefreshingCatalog ||
@@ -82,7 +83,8 @@ void PackInstaller::refreshCatalogAsync() {
         m_progress = PackProgress{};
         m_progress.state = PackJobState::RefreshingCatalog;
     }
-    m_worker = std::thread([this]() { runRefreshCatalog(); });
+    m_busy.store(true, std::memory_order_release);
+    m_worker = std::thread([this]() { runRefreshCatalog(); m_busy.store(false, std::memory_order_release); });
 }
 
 PackCatalog PackInstaller::catalog() const {
@@ -98,7 +100,8 @@ void PackInstaller::installAsync(const std::string& packId) {
         m_progress.state  = PackJobState::Downloading;
         m_progress.packId = packId;
     }
-    m_worker = std::thread([this, packId]() { runInstall(packId); });
+    m_busy.store(true, std::memory_order_release);
+    m_worker = std::thread([this, packId]() { runInstall(packId); m_busy.store(false, std::memory_order_release); });
 }
 
 void PackInstaller::installFromFileAsync(const std::string& mikpackPathUtf8) {
@@ -109,7 +112,8 @@ void PackInstaller::installFromFileAsync(const std::string& mikpackPathUtf8) {
         m_progress.state    = PackJobState::Verifying;
         m_progress.fileName = mikpackPathUtf8;
     }
-    m_worker = std::thread([this, mikpackPathUtf8]() { runInstallFromFile(mikpackPathUtf8); });
+    m_busy.store(true, std::memory_order_release);
+    m_worker = std::thread([this, mikpackPathUtf8]() { runInstallFromFile(mikpackPathUtf8); m_busy.store(false, std::memory_order_release); });
 }
 
 void PackInstaller::cancel() {
@@ -118,7 +122,9 @@ void PackInstaller::cancel() {
 
 PackProgress PackInstaller::snapshot() const {
     std::lock_guard<std::mutex> lk(m_mu);
-    return m_progress;
+    auto result = m_progress;
+    if (m_busy.load(std::memory_order_acquire) && (result.state == PackJobState::Done || result.state == PackJobState::Failed || result.state == PackJobState::Cancelled)) result.state = PackJobState::Verifying;
+    return result;
 }
 
 void PackInstaller::runRefreshCatalog() {
@@ -214,6 +220,7 @@ void PackInstaller::runInstall(std::string packId) {
             return;
         }
         if (m_store.isInstalled(id, e->version)) continue;
+        if (!m_store.canUpdate(id, err)) { setTerminal(PackJobState::Failed, err); return; }
         if (!e->minAppVersion.empty() && packs::compareVersions(m_appVersion, e->minAppVersion) < 0) {
             setTerminal(PackJobState::Failed,
                         "pack '" + e->id + "' requires app >= " + e->minAppVersion + " (current " + m_appVersion + ")");

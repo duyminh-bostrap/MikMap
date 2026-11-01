@@ -27,6 +27,7 @@
 #include "io/net/TouchSender.h"
 #include "io/plugin/PluginLoader.h"
 #include "io/sources/HokuyoSource.h"
+#include "io/sources/CameraSource.h"
 #include "io/sources/OscSource.h"
 #include "io/sources/PluginSource.h"
 #include "io/sources/ScanSource.h"
@@ -48,6 +49,58 @@
 
 namespace {
 
+// Worker owns every camera from construction through final join. Slots are bounded; render only submits/retire flags.
+struct CameraJob {
+  enum State { Free, Queued, Ready, Retire };
+  std::atomic<int> state{Free};
+  mikmap::CameraSourceConfig config;
+  std::unique_ptr<mikmap::CameraSource> source;
+};
+struct RetireCamera { void operator()(CameraJob* job) const { job->state.store(CameraJob::Retire, std::memory_order_release); } };
+using CameraHandle = std::unique_ptr<CameraJob, RetireCamera>;
+class CameraWorker {
+public:
+  std::array<CameraJob, 16> jobs;
+  std::atomic<bool> quit{false};
+  std::atomic<int> testGate{0}, testEntered{0}; // self-test pauses actual ownership transitions
+  std::thread thread;
+  ~CameraWorker() { shutdown(); }
+  void gate(int phase) {
+    if (testGate.load() != phase) return;
+    testEntered = phase;
+    while (testGate.load() == phase && !quit.load()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  CameraHandle submit(const mikmap::CameraSourceConfig& config) {
+    if (!thread.joinable()) { quit = false; thread = std::thread([this] { run(); }); }
+    for (auto& job : jobs) if (job.state.load(std::memory_order_acquire) == CameraJob::Free) {
+      job.config = config;
+      job.state.store(CameraJob::Queued, std::memory_order_release);
+      return CameraHandle(&job);
+    }
+    return {};
+  }
+  void run() {
+    while (!quit.load()) {
+      for (auto& job : jobs) {
+        const int state = job.state.load(std::memory_order_acquire);
+        if (state == CameraJob::Queued) {
+          gate(1);
+          job.source = std::make_unique<mikmap::CameraSource>(job.config);
+          job.source->start();
+          int queued = CameraJob::Queued;
+          job.state.compare_exchange_strong(queued, CameraJob::Ready, std::memory_order_release, std::memory_order_relaxed);
+        }
+        if (job.state.load(std::memory_order_acquire) == CameraJob::Retire) {
+          gate(2); job.source.reset(); job.state.store(CameraJob::Free, std::memory_order_release);
+        }
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    for (auto& job : jobs) { job.source.reset(); job.state.store(CameraJob::Free, std::memory_order_release); }
+  }
+  void shutdown() { quit = true; if (thread.joinable()) thread.join(); testGate = 0; testEntered = 0; }
+} g_cameras;
+
 struct Live {
   std::unique_ptr<mikmap::ISensorSource> src;   // null when the source could not start
   mikmap::OscSource* osc = nullptr;             // the same object, for the OSC-only counters
@@ -56,6 +109,11 @@ struct Live {
   bool failed = false;                          // start() refused (port taken, bad port, no driver): kept so it is not retried every frame
   double winStart = 0; int winFrames = 0, fps = 0;
   float latencyMs = 0;
+  mikmap::CameraSource* camera = nullptr;
+  CameraHandle cameraJob;
+  mikmap::CameraSourceConfig cameraConfig; int cameraModel = 0;
+  mikmap::CameraFrame preview;
+  mikmap::SensorFrame points;
 };
 std::map<std::string, Live> g_live;   // keyed by Device::id
 
@@ -68,6 +126,7 @@ void SendOut(Device& d, const mikmap::SensorFrame& f, double now) {
   if (!d.outOn || !DeviceH(d, H)) return;
   if (!g_out.running()) g_out.start();
   mikmap::OutPacket p;
+  p.hasZ = d.kind == DevKind::Camera2D;
   if (d.outHost.size() < sizeof p.host) std::memcpy(p.host, d.outHost.c_str(), d.outHost.size() + 1);   // too long = empty: the sender says "Host is empty"
   p.port = d.outPort >= 1 && d.outPort <= 65535 ? (uint16_t)d.outPort : 0;   // 0: the sender reports the bad port
   p.proto = (uint8_t)(d.outProto == 1);
@@ -75,6 +134,7 @@ void SendOut(Device& d, const mikmap::SensorFrame& f, double now) {
   p.count = (uint16_t)std::min<int>(f.count, mikmap::kMaxTouchPoints);
   for (int i = 0; i < p.count; ++i) {
     float ox, oy; ApplyH(H, f.points[i].x, f.points[i].y, ox, oy);
+    p.z[i] = f.points[i].z;
     p.ids[i] = f.points[i].id; p.xy[2 * i] = ox / 1920.f; p.xy[2 * i + 1] = OutY(oy / 1080.f, d.originBottom);
   }
   if (g_out.push(p)) d.lastSentAt = now;
@@ -89,6 +149,15 @@ std::string Sig(const Device& d) {
   return std::to_string((int)d.kind) + "|" + d.host + "|" + std::to_string(d.port) + "|" + d.plugin + "|" + d.config + "|" + d.needsPack;
 }
 
+bool CameraChanged(const Live& live, const Device& d) {
+  if (d.kind != DevKind::Camera2D) return false;
+  const auto& c = live.cameraConfig;
+  return c.cameraId != d.camId || c.width != d.camW || c.height != d.camH || c.flip != d.camFlip ||
+    int(c.mode) != d.camMode || int(c.device) != d.camDevice || live.cameraModel != d.camModel ||
+    c.personThr != d.personThr || c.jointThr != d.jointThr || c.tracker.maxPeople != d.maxPeople ||
+    c.tracker.smoothing != d.smoothing || c.replayPath != d.camReplay;
+}
+
 std::string FileName(const std::string& path) {
   const size_t k = path.find_last_of("/\\");
   return k == std::string::npos ? path : path.substr(k + 1);
@@ -97,6 +166,23 @@ std::string FileName(const std::string& path) {
 Live Start(const Device& d, double now) {
   Live L; L.sig = Sig(d); L.winStart = now;
 
+  if (d.kind == DevKind::Camera3D) { L.failed = true; L.err = "No driver for this sensor yet"; return L; }
+  if (d.kind == DevKind::Camera2D) {
+    mikmap::CameraSourceConfig c;
+    c.cameraId = d.camId; c.width = d.camW; c.height = d.camH; c.flip = d.camFlip;
+    c.mode = static_cast<mikmap::CamMode>(d.camMode); c.device = static_cast<mikmap::OrtDevice>(d.camDevice);
+    c.personThr = d.personThr; c.jointThr = d.jointThr; c.tracker.maxPeople = d.maxPeople; c.tracker.smoothing = d.smoothing;
+    c.replayPath = d.camReplay;
+    L.cameraConfig = c; L.cameraModel = d.camModel;
+    if (d.camMode == 1 && d.camReplay.empty()) {
+      c.runtimeDir = CameraPackPath("onnx-runtime-cuda"); c.modelPath = CameraPackPath("pose-rtmo", d.camModel);
+      if (c.modelPath.empty()) { L.failed = true; L.err = "Model not found in pose-rtmo pack"; return L; }
+      MarkPackDirLoaded(c.runtimeDir); MarkPackDirLoaded(CameraPackPath("pose-rtmo"));
+    }
+    L.preview.rgb.reserve(640 * 480 * 3);
+    L.cameraConfig = c; L.cameraJob = g_cameras.submit(c);
+    return L;
+  }
   if (d.kind == DevKind::Plugin) {
     const mikmap::SensorPlugin* found = nullptr;
     for (auto& p : SensorPlugins()) if (FileName(p.path) == d.plugin) { found = &p; break; }
@@ -236,7 +322,7 @@ void SensorsTick(double now) {
   SensorPlugins();   // scan the plugin folder once on the first tick (a missing folder is not an error)
   for (auto it = g_live.begin(); it != g_live.end();) {   // a removed or disabled device, a missing pack, or a changed address stops its source
     const Device* d = nullptr; for (auto& x : A.devices) if (x.id == it->first) { d = &x; break; }
-    if (!d || !d->enabled || !PackAvailableForDevice(*d) || d->kind == DevKind::Sim || it->second.sig != Sig(*d)) it = g_live.erase(it); else ++it;
+    if (!d || !d->enabled || !PackAvailableForDevice(*d) || d->kind == DevKind::Sim || it->second.sig != Sig(*d) || CameraChanged(it->second, *d)) it = g_live.erase(it); else ++it;
   }
   if (g_cap.on && A.wizardStep != g_cap.step) g_cap.on = false;   // wizard cancelled, or another device selected
   bool fire = false;
@@ -246,7 +332,7 @@ void SensorsTick(double now) {
     if (!PackAvailableForDevice(d)) {
       d.fps = 0; d.latencyMs = 0; d.packets = 0;
       d.status = (int)mikmap::SourceStatus::Error;
-      d.error = "Needs pack: " + d.needsPack;
+      d.error = "Needs pack: " + (d.kind == DevKind::Camera2D ? MissingCameraPack(d) : d.needsPack);
       d.touches.clear();
       continue;
     }
@@ -254,10 +340,18 @@ void SensorsTick(double now) {
     d.fps = 0; d.latencyMs = 0; d.packets = 0;
     if (!d.enabled) { d.status = (int)mikmap::SourceStatus::Stopped; d.error.clear(); d.touches.clear(); continue; }
     auto it = g_live.find(d.id);
-    if (it == g_live.end()) it = g_live.emplace(d.id, Start(d, now)).first;
+    if (it == g_live.end() && d.kind == DevKind::Camera2D && d.camMode && d.camReplay.empty() && CameraPackMutationBusy()) {
+      d.status = (int)mikmap::SourceStatus::Connecting; d.error = "Waiting for pack operation"; d.touches.clear(); continue;
+    }
+    if (it == g_live.end()) { d.touches.reserve(mikmap::kMaxTouchPoints); it = g_live.emplace(d.id, Start(d, now)).first; }
     Live& L = it->second;
-    if (!L.src) { d.status = (int)mikmap::SourceStatus::Error; d.error = L.err; d.touches.clear(); continue; }
-    mikmap::ISensorSource& S = *L.src;
+    if (d.kind == DevKind::Camera2D && !L.failed) {
+      if (!L.cameraJob) L.cameraJob = g_cameras.submit(L.cameraConfig);
+      if (L.cameraJob && L.cameraJob->state.load(std::memory_order_acquire) == CameraJob::Ready) L.camera = L.cameraJob->source.get();
+      if (!L.camera) { d.status = (int)mikmap::SourceStatus::Connecting; d.error.clear(); d.touches.clear(); continue; }
+    }
+    if (!L.src && !L.camera) { d.status = (int)mikmap::SourceStatus::Error; d.error = L.err; d.touches.clear(); continue; }
+    mikmap::ISensorSource& S = L.camera ? *L.camera : *L.src;
     if (L.scan) {   // the ROI/blob sliders live in the app; the source picks up the latest copy on its next scan
       mikmap::LidarParams p;
       p.trackBlobs = d.blobOn; p.minBlobMm = d.blobMinMm; p.maxBlobMm = d.blobMaxMm; p.maxGapMm = d.blobGapMm; p.maxRangeMm = d.rangeMm;
@@ -268,11 +362,13 @@ void SensorsTick(double now) {
     if (S.frames().consume()) {
       got = true; ++L.winFrames;
       const mikmap::SensorFrame& f = S.frames().readSlot();
+      if (L.camera) L.points = f;
       d.touches.clear();
       for (int i = 0; i < f.count; ++i) d.touches.push_back(Touch{(int)f.points[i].id, f.points[i].x, f.points[i].y});
       L.latencyMs = (float)mikmap::Clock::nsToMs(mikmap::Clock::nowNs() - f.tCaptureNs) + (L.osc ? L.osc->senderLatencyMs() : 0.f);
       SendOut(d, f, now);
     }
+    if (L.camera) L.camera->previewLatest(L.preview);
     mikmap::TouchEvent ev;
     while (S.events().pop(ev)) if (ev.state == mikmap::TouchState::Down) fire = true;
     double dt = now - L.winStart;
@@ -289,7 +385,28 @@ void SensorsTick(double now) {
   if (fire) FireTouchRoutes();
 }
 
-void SensorsShutdown() { g_live.clear(); g_cap.on = false; JoinIpScan(); g_out.stop(); }
+std::string NeedsPackForMode(DevKind k, int mode) {
+  return (k == DevKind::Camera2D || k == DevKind::Camera3D) && mode == 1 ? "pose-rtmo" : "";
+}
+void SetCamMode(Device& d, int mode) {
+  mikmap::CameraCaps caps; caps.hasColor = true; std::string reason;
+  d.camMode = mode == 1 && mikmap::modeSupported(mikmap::CamMode::Body, caps, reason) ? 1 : 0;
+  d.needsPack = NeedsPackForMode(d.kind, d.camMode);
+}
+const mikmap::CameraFrame* DevicePreview(const Device& d) {
+  auto it = g_live.find(d.id);
+  return it != g_live.end() && it->second.camera && !it->second.preview.rgb.empty() ? &it->second.preview : nullptr;
+}
+const mikmap::SensorFrame* DevicePreviewPoints(const Device& d) {
+  auto it = g_live.find(d.id);
+  if (it == g_live.end() || !it->second.camera || it->second.preview.tCaptureNs != it->second.points.tCaptureNs) return nullptr;
+  return &it->second.points;
+}
+mikmap::CameraStats DeviceCameraStats(const Device& d) {
+  auto it = g_live.find(d.id);
+  return it != g_live.end() && it->second.camera ? it->second.camera->stats() : mikmap::CameraStats{};
+}
+void SensorsShutdown() { g_live.clear(); g_cameras.shutdown(); g_cap.on = false; JoinIpScan(); g_out.stop(); }
 void SendOutStats(uint64_t& sent, uint64_t& dropped, std::string& error) {
   sent = g_out.sent(); dropped = g_out.dropped();
   error = g_out.lastError();   // lock-free (error code -> text)
@@ -298,7 +415,7 @@ void RestartSource(const std::string& deviceId) { g_live.erase(deviceId); }
 
 mikmap::ISensorSource* DeviceSource(const Device& d) {
   auto it = g_live.find(d.id);
-  return it == g_live.end() ? nullptr : it->second.src.get();
+  return it == g_live.end() ? nullptr : it->second.camera ? it->second.camera : it->second.src.get();
 }
 
 // Latest raw scan of any lidar source (Hokuyo today, plugin in Task 10). Kept in the app, not the engine,
@@ -349,6 +466,97 @@ bool SensorSelfTest(std::string& why) {
   auto now = [] { return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); };
   auto dev = [](const char* id) -> Device& { for (auto& d : A.devices) if (d.id == id) return d; return A.devices.back(); };
   auto fail = [&](const std::string& w) { why = w; SensorsShutdown(); return false; };
+
+  // Camera configuration is project state; replay exercises the real capture/calibration/send path.
+  {
+    Device cam = MakeDevice(DevKind::Camera2D, "camera-test");
+    SetCamMode(cam, 1);
+    if (cam.needsPack != "pose-rtmo") return fail("camera: Body needs pose-rtmo");
+    cam.enabled = true; cam.camModel = 1; cam.camW = 1280; cam.camH = 720;
+    cam.camId = "camera-id"; cam.camDevice = 2; cam.camFlip = true;
+    cam.maxPeople = 23; cam.personThr = .7f; cam.jointThr = .4f; cam.smoothing = 2;
+    A.devices.push_back(cam);
+    const auto path = std::filesystem::temp_directory_path() / "mikmap-camera-selftest.mikmap";
+    std::string err;
+    if (!SaveProject(path.string(), err) || !LoadProject(path.string(), err)) return fail("camera: roundtrip " + err);
+    const Device& loaded = dev("camera-test");
+    if (loaded.kind != DevKind::Camera2D || loaded.camMode != 1 || loaded.camModel != 1 || loaded.camW != 1280 || loaded.camH != 720 ||
+        loaded.camId != "camera-id" || loaded.camDevice != 2 || !loaded.camFlip || loaded.maxPeople != 23 || loaded.smoothing != 2 ||
+        std::abs(loaded.personThr - .7f) > .0001f || std::abs(loaded.jointThr - .4f) > .0001f)
+      return fail("camera: settings did not roundtrip");
+    {
+      std::ifstream input(path); std::stringstream content; content << input.rdbuf();
+      mikmap::JsonValue root; if (!mikmap::JsonValue::parse(content.str(), root, err)) return fail("camera: saved JSON parse");
+      mikmap::JsonValue devices = mikmap::JsonValue::array(), sensor = mikmap::JsonValue::object();
+      for (const auto& old : root["sensor"]["devices"].arrayItems()) {
+        mikmap::JsonValue obj = mikmap::JsonValue::object();
+        for (const auto& kv : old.objectItems()) if (kv.first != "cam") obj.set(kv.first, kv.second);
+        devices.push(obj);
+      }
+      for (const auto& kv : root["sensor"].objectItems()) sensor.set(kv.first, kv.first == "devices" ? devices : kv.second);
+      root.set("sensor", sensor);
+      input.close(); { std::ofstream output(path); output << root.dump(); }
+      if (!LoadProject(path.string(), err)) return fail("camera: absent camera settings must load");
+      const auto& defaults = dev("camera-test");
+      if (defaults.camMode || defaults.camW != 640 || defaults.camH != 480 || defaults.maxPeople != 10 || !defaults.needsPack.empty()) return fail("camera: absent settings defaults");
+      dev("camera-test") = cam;
+    }
+    std::error_code ec; std::filesystem::remove(path, ec);
+    MarkSaved(); SensorsTick(now()); SensorsTick(now());
+    if (ProjectDirty()) return fail("camera: missing pack ticks dirtied project");
+    if (DeviceSource(dev("camera-test")) || dev("camera-test").error.find("Needs pack:") != 0) return fail("camera: missing pack started a source");
+    Device& d = dev("camera-test");
+    d.camFlip = false; d.camW = 640; d.camH = 480;
+    d.camReplay = (std::filesystem::path(__FILE__).parent_path().parent_path() / "tests/data/replay_two_people.mikpose").string();
+    d.calib = {{0,0,0,0},{1920,0,1,0},{1920,1080,1,1},{0,1080,0,1}}; d.calibrated = true;
+    mikmap::OscConfig cfg; cfg.port = 0; cfg.addressPrefix = "/mikmap/Camera_2D/touch"; cfg.pointTimeoutSec = .25;
+    mikmap::OscSource receiver(cfg); if (!receiver.start()) return fail("camera: loopback bind");
+    d.outOn = true; d.outPort = receiver.boundPort(); d.originBottom = true;
+    bool got = false;
+    for (double t0 = now(); now() - t0 < kWait && !got;) {
+      SensorsTick(now());
+      if (receiver.frames().consume()) {
+        const auto& f = receiver.frames().readSlot();
+        if (f.count == 2 && f.points[0].id == 16 && f.points[1].id == 116) {
+          got = std::abs(f.points[0].y - .7f) < .001f && std::abs(f.points[0].z - .8f) < .001f;
+        }
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    if (!got) return fail("camera: replay calibration/origin/confidence loopback");
+    g_cameras.testGate = 2;
+    d.enabled = false; SensorsTick(now());
+    for (double t0 = now(); now() - t0 < 1 && g_cameras.testEntered != 2;) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    if (g_cameras.testEntered != 2) return fail("camera lifecycle: retirement did not reach worker");
+    double tickStart = now(); for (int i = 0; i < 20; ++i) SensorsTick(now());
+    if (now() - tickStart > .1 || DeviceSource(d)) return fail("camera lifecycle: retirement blocks ticks or exposes retired source");
+    g_cameras.testGate = 0; SensorsShutdown();
+    g_cameras.testGate = 1; d.enabled = true; SensorsTick(now());
+    for (double t0 = now(); now() - t0 < 1 && g_cameras.testEntered != 1;) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    tickStart = now(); for (int i = 0; i < 20; ++i) SensorsTick(now());
+    if (g_cameras.testEntered != 1 || now() - tickStart > .1 || DeviceSource(d)) return fail("camera lifecycle: initialization blocks ticks or exposes partial source");
+    tickStart = now();
+    for (int i = 0; i < 32; ++i) { d.camFlip = !d.camFlip; SensorsTick(now()); }
+    int occupied = 0; for (const auto& job : g_cameras.jobs) occupied += job.state.load() != CameraJob::Free;
+    if (occupied != 16 || now() - tickStart > .1) return fail("camera lifecycle: retire backlog unbounded or blocking");
+    d.enabled = false; SensorsTick(now());
+    if (DeviceSource(d)) return fail("camera lifecycle: changed initializing source leaked");
+    g_cameras.testGate = 0; SensorsShutdown(); d.camFlip = false; d.enabled = true;
+    SetCamMode(d, 0); if (!d.needsPack.empty()) return fail("camera: Off must need no pack");
+    MarkSaved(); SensorsTick(now()); SensorsTick(now());
+    if (ProjectDirty()) return fail("camera: restart ticks dirtied project");
+    bool cleared = false;
+    for (double t0 = now(); now() - t0 < 1 && !cleared;) {
+      SensorsTick(now());
+      cleared = receiver.frames().consume() && receiver.frames().readSlot().count == 0 && d.touches.empty();
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    if (!cleared) return fail("camera: Off did not clear points within 1s");
+    Device placeholder = MakeDevice(DevKind::Camera3D, "camera3d-test"); placeholder.enabled = true; SetCamMode(placeholder, 1); A.devices.push_back(placeholder);
+    SensorsTick(now());
+    if (dev("camera3d-test").error != "No driver for this sensor yet") return fail("camera: 3D must report no driver");
+    SensorsShutdown(); NewProject(); A.routes.clear();
+  }
 
   // Setup progress: the chip in the tree counts steps in order; a step only counts when every earlier one does.
   {
@@ -775,7 +983,7 @@ bool SensorSelfTest(std::string& why) {
     if (DeviceSource(dh)) return fail("sensor: Reconnect must drop the live source");
     SensorsTick(now());
     if (!DeviceSource(dh)) return fail("sensor: after Reconnect the next tick must start the source again");
-    hs.realW = 0; hs.realH = 0;
+    DeviceScreen(dh)->realW = 0; DeviceScreen(dh)->realH = 0;
   }
 
   // Add-sensor wizard: the scan thread finds a fake lidar, then step 1 Hokuyo -> step 2 typed 127.0.0.1:<port> -> step 3,
@@ -974,7 +1182,7 @@ bool SensorSelfTest(std::string& why) {
     if (srv.port() == 0) return fail("packs: FakeHttpServer did not bind a port");
     srv.addRoute("/pack_pose_scan.dll", dllBytes, 200);
     srv.addRoute("/pose_model.onnx", modelBytes, 200);
-    const std::string catJson =
+    std::string catJson =
         "{\"packs\":["
         "{\"id\":\"pose-onnx\",\"name\":\"Pose ONNX\",\"version\":\"1.0.0\",\"kind\":\"plugin\","
         "\"sizeBytes\":" + std::to_string(dllBytes.size()) + ","
@@ -985,6 +1193,19 @@ bool SensorSelfTest(std::string& why) {
         "\"files\":[{\"path\":\"pose_model.onnx\",\"sha256\":\"" + modelShaHex + "\","
         "\"size\":" + std::to_string(modelBytes.size()) + ",\"url\":\"" + srv.url("/pose_model.onnx") + "\"}]}"
         "]}";
+    {
+      mikmap::JsonValue catalog; std::string error;
+      if (!mikmap::JsonValue::parse(catJson, catalog, error)) return fail("camera packs: catalog fixture parse");
+      auto entries = catalog["packs"];
+      for (const char* id : {"pose-rtmo", "onnx-runtime-cuda"}) {
+        mikmap::JsonValue entry = mikmap::JsonValue::object(), files = mikmap::JsonValue::array(), file = mikmap::JsonValue::object();
+        entry.set("id", id); entry.set("name", id); entry.set("version", "1.0.0"); entry.set("kind", std::string(id) == "pose-rtmo" ? "model" : "runtime");
+        entry.set("sizeBytes", (int)modelBytes.size()); file.set("path", std::string(id) == "pose-rtmo" ? "rtmo-s.onnx" : "runtime-test.bin");
+        file.set("sha256", modelShaHex); file.set("size", (int)modelBytes.size()); file.set("url", srv.url("/pose_model.onnx"));
+        files.push(file); entry.set("files", files); entries.push(entry);
+      }
+      catalog.set("packs", entries); catJson = catalog.dump();
+    }
     uint8_t sig[64]{};
     mikmap::ed25519Sign(sig, reinterpret_cast<const uint8_t*>(catJson.data()), catJson.size(), seed);
     srv.addRoute("/catalog.json", catJson, 200);
@@ -1080,6 +1301,44 @@ bool SensorSelfTest(std::string& why) {
     if (std::filesystem::exists(modelPackSubdir, tec))
       return fail("packs: PacksStartup must delete pendingRemoval pack directory");
 
+    // Both verified metadata dependencies are guarded even though the fake files are never loaded as ONNX/DLLs.
+    for (const char* id : {"pose-rtmo", "onnx-runtime-cuda"}) {
+      PackInstall(id);
+      for (double t0 = now(); now() - t0 < kWait && CameraPackPath(id).empty();) { PacksTick(); std::this_thread::sleep_for(std::chrono::milliseconds(5)); }
+      if (CameraPackPath(id).empty()) return fail("camera packs: install did not refresh metadata cache");
+    }
+    {
+      mikmap::test::FakeHttpServer::Response delayed; delayed.body = modelBytes; delayed.chunkSize = 1; delayed.chunkDelayMs = 30;
+      srv.addRoute("/pose_model.onnx", delayed);
+      PackInstall("pose-model");
+      if (!CameraPackMutationBusy()) return fail("camera packs: worker reservation missing at submission");
+      Device waiting = MakeDevice(DevKind::Camera2D, "camera-install-wait"); SetCamMode(waiting, 1); waiting.enabled = true; A.devices.push_back(waiting);
+      const double begin = now();
+      for (int i = 0; i < 10; ++i) SensorsTick(now());
+      if (!CameraPackMutationBusy() || g_live.count("camera-install-wait") != 0 || DeviceSource(dev("camera-install-wait")) || dev("camera-install-wait").status != (int)mikmap::SourceStatus::Connecting || now() - begin > .1)
+        return fail("camera packs: enabling during job must wait without loading or blocking");
+      dev("camera-install-wait").enabled = false;
+      for (double t0 = now(); now() - t0 < kWait && CameraPackMutationBusy();) { PacksTick(); std::this_thread::sleep_for(std::chrono::milliseconds(5)); }
+      PacksTick();
+      if (CameraPackMutationBusy() || PackStateFor("pose-model") != PackState::Installed) return fail("camera packs: job reservation did not release after commit");
+    }
+    if (CameraPackPath("pose-rtmo", 0).find("rtmo-s.onnx") == std::string::npos || !CameraPackPath("pose-rtmo", 1).empty())
+      return fail("camera packs: model selector must use verified matching filename");
+    Device guarded = MakeDevice(DevKind::Camera2D, "camera-pack-guard"); SetCamMode(guarded, 1); guarded.enabled = true; A.devices.push_back(guarded);
+    if (!PackAvailableForDevice(guarded)) return fail("camera packs: installed dependencies unavailable");
+    const int hits = srv.hits("/pose_model.onnx");
+    for (const char* id : {"pose-rtmo", "onnx-runtime-cuda"}) {
+      if (PackRemove(id)) return fail("camera packs: removal accepted while enabled");
+      PackInstall(id);
+    }
+    if (srv.hits("/pose_model.onnx") != hits) return fail("camera packs: update started while enabled");
+    dev("camera-pack-guard").enabled = false;
+    for (const char* id : {"pose-rtmo", "onnx-runtime-cuda"}) {
+      MarkPackDirLoaded(CameraPackPath(id));
+      if (!PackRemove(id) || !CameraPackPath(id).empty()) return fail("camera packs: pending removal still available");
+      bool pending = false; for (const auto& row : PackRows()) if (row.id == id) pending = row.pendingRemoval;
+      if (!pending) return fail("camera packs: loaded dependency must defer removal");
+    }
     PacksStartup();
     std::filesystem::remove_all(packDir, tec);
   }

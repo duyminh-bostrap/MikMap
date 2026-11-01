@@ -97,7 +97,7 @@ size_t encodeOscChunk(const OutPacket& p, int first, uint8_t* buf, size_t cap, i
     }
 
     while (i < count) {
-        if (!element(w, [&] { w.addr(p.device, "touch"); w.str(",iff"); w.u32(p.ids[i]); w.f32(p.xy[2 * i]); w.f32(p.xy[2 * i + 1]); })) break;
+        if (!element(w, [&] { w.addr(p.device, "touch"); w.str(p.hasZ ? ",ifff" : ",iff"); w.u32(p.ids[i]); w.f32(p.xy[2 * i]); w.f32(p.xy[2 * i + 1]); if (p.hasZ) w.f32(p.z[i]); })) break;
         ++i;
     }
     next = i;
@@ -123,8 +123,9 @@ size_t encodeTextChunk(const OutPacket& p, int first, uint8_t* buf, size_t cap, 
     }
 
     while (i < count) {
-        const int k = std::snprintf(out + n, cap - n, "%s %u %.4f %.4f\n", p.device, unsigned(p.ids[i]),
-                                    double(p.xy[2 * i]), double(p.xy[2 * i + 1]));
+        const int k = p.hasZ
+            ? std::snprintf(out + n, cap - n, "%s %u %.4f %.4f %.4f\n", p.device, unsigned(p.ids[i]), double(p.xy[2 * i]), double(p.xy[2 * i + 1]), double(p.z[i]))
+            : std::snprintf(out + n, cap - n, "%s %u %.4f %.4f\n", p.device, unsigned(p.ids[i]), double(p.xy[2 * i]), double(p.xy[2 * i + 1]));
         if (k < 0 || size_t(k) >= cap - n) break;   // never split a line across datagrams
         n += size_t(k);
         ++i;

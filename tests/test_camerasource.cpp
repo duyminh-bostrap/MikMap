@@ -92,3 +92,16 @@ TEST_CASE("CameraSource replay bounds line input and stored frame bytes") {
     {CameraSource s(cfg); CHECK(!s.start()); CHECK(s.lastError().find("limit")!=std::string::npos);}
     std::filesystem::remove(path);
 }
+
+TEST_CASE("CameraSource replay Off clears points and previews matching gray capture") {
+    CameraSourceConfig cfg; cfg.replayPath=(std::filesystem::path(__FILE__).parent_path()/"data/replay_two_people.mikpose").string();
+    CameraSource source(cfg); REQUIRE(source.start());
+    REQUIRE(until([&]{return source.frames().consume();}));
+    CHECK(source.frames().readSlot().count==0); CHECK(source.stats().people==0);
+    CameraFrame preview; preview.rgb.reserve(640*480*3);
+    REQUIRE(until([&]{return source.previewLatest(preview);}));
+    CHECK(preview.width==640); CHECK(preview.height==480); CHECK(preview.rgb.size()==640*480*3);
+    CHECK(preview.tCaptureNs==source.frames().readSlot().tCaptureNs);
+    auto* buffer=preview.rgb.data(); REQUIRE(until([&]{return source.previewLatest(preview);})); CHECK(buffer==preview.rgb.data());
+    CHECK(source.stats().camFps>0); CHECK(source.stats().inferMs==0);
+}
