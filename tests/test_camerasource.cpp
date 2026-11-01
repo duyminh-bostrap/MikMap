@@ -239,11 +239,13 @@ TEST_CASE("CameraSource optional real CPU top-down sessions and Face metadata") 
     const auto dir=env("MIKMAP_TEST_ORT_DIR"),fixtures=env("MIKMAP_TEST_TOPDOWN_FIXTURES");
     if(dir.empty() || fixtures.empty()) { std::cout<<"[SKIP] CameraSource real CPU fixtures\n"; return; }
     CameraSourceConfig cfg; cfg.runtimeDir=dir; cfg.device=OrtDevice::Cpu;
+    // Coincident fixture landmarks cannot match by IoU; cap tracks to the two detector objects.
+    cfg.maxObjects=2;
     cfg.detectorPath=(std::filesystem::path(fixtures)/"detector.onnx").string();
     for(auto mode:{CamMode::Hand,CamMode::Face,CamMode::Full}) {
         cfg.mode=mode; cfg.keypointPath=(std::filesystem::path(fixtures)/("keypoints-"+std::to_string(modeSpec(mode).keypointsPerObject)+".onnx")).string();
         CameraSource source(cfg,camera(640,640)); REQUIRE(source.start());
-        REQUIRE(until([&]{return source.frames().consume();},5000));
+        REQUIRE(until([&]{return source.frames().publishedCount()>=2 && source.frames().consume();},5000));
         CHECK(source.status()==SourceStatus::Running); CHECK(source.stats().people==2); CHECK(source.stats().onCpu);
         CHECK(source.lastError().find("CPU")!=std::string::npos);
         // Constant coincident hand landmarks have unknown side and are intentionally not emitted.
@@ -255,7 +257,7 @@ TEST_CASE("CameraSource optional real CPU top-down sessions and Face metadata") 
         cfg.keypointPath=(std::filesystem::path(fixtures)/(std::string("keypoints-106-")+suffix+".onnx")).string();
         CameraSource source(cfg,camera(640,640)); REQUIRE(source.start());
         CHECK(source.stats().calPoint==(std::string(suffix)=="metadata"?7u:kCalibUnavailable));
-        REQUIRE(until([&]{return source.frames().consume();},5000)); CHECK(source.frames().readSlot().count==212);
+        REQUIRE(until([&]{return source.frames().publishedCount()>=2 && source.frames().consume();},5000)); CHECK(source.frames().readSlot().count==212);
     }
     cfg.device=OrtDevice::Auto;
     {CameraSource source(cfg,camera(640,640)); REQUIRE(source.start()); CHECK(source.stats().onCpu);}
