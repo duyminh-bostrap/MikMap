@@ -54,7 +54,7 @@ int decodeRtmo(const float* dets,const float* kps,int n,const Letterbox& lb,int 
         }
         if(best<0) break;
         previous=score; previousIndex=best;
-        const float* d=dets+static_cast<size_t>(best)*5; PersonPose p; p.score=score;
+        const float* d=dets+static_cast<size_t>(best)*5; PersonPose p; p.nkp=17; p.score=score;
         for(int j=0;j<4;++j) p.box[j]=coord(d[j],j%2?lb.padY:lb.padX,lb.scale,j%2?imgH:imgW);
         bool suppressed=false; for(int j=0;j<count;++j) if(iou(d,dets+static_cast<size_t>(selected[static_cast<size_t>(j)])*5)>.45f) { suppressed=true; break; }
         if(suppressed) continue;

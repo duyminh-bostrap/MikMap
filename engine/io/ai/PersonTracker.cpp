@@ -7,12 +7,12 @@ namespace {
 struct Bounds { float x0=0,y0=0,x1=0,y1=0,hx=0,hy=0; bool valid=false; };
 Bounds bounds(const PersonPose& p) {
     Bounds b;
-    for(const auto& k:p.kp) if(k.conf>0 && std::isfinite(k.x) && std::isfinite(k.y)) {
+    for(int i=0;i<p.nkp;++i) if(const auto& k=p.kp[i]; k.conf>0 && std::isfinite(k.x) && std::isfinite(k.y)) {
         if(!b.valid) { b.x0=b.x1=k.x; b.y0=b.y1=k.y; b.valid=true; }
         else { b.x0=std::min(b.x0,k.x); b.x1=std::max(b.x1,k.x); b.y0=std::min(b.y0,k.y); b.y1=std::max(b.y1,k.y); }
     }
     b.hx=(b.x0+b.x1)*.5f; b.hy=(b.y0+b.y1)*.5f;
-    if(p.kp[11].conf>0 && p.kp[12].conf>0 && std::isfinite(p.kp[11].x) && std::isfinite(p.kp[12].x) && std::isfinite(p.kp[11].y) && std::isfinite(p.kp[12].y)) {
+    if((p.nkp==17 || p.nkp==133) && p.kp[11].conf>0 && p.kp[12].conf>0 && std::isfinite(p.kp[11].x) && std::isfinite(p.kp[12].x) && std::isfinite(p.kp[11].y) && std::isfinite(p.kp[12].y)) {
         b.hx=(p.kp[11].x+p.kp[12].x)*.5f; b.hy=(p.kp[11].y+p.kp[12].y)*.5f;
     }
     return b;
@@ -22,6 +22,16 @@ float iou(Bounds a,Bounds b) {
     const float area=(a.x1-a.x0)*(a.y1-a.y0)+(b.x1-b.x0)*(b.y1-b.y0)-overlap;
     return area>0 ? overlap/area : 0;
 }
+}
+void PersonTracker::Track::updateSide(int8_t side) {
+    if(person.pose.nkp!=21) return;
+    sides[sideNext]=side==0 || side==1 ? side : int8_t(-1);
+    sideNext=(sideNext+1)%5;
+    int left=0,right=0;
+    for(auto vote:sides) { left+=vote==0; right+=vote==1; }
+    // Unknown frames age out votes; ties (including no votes) retain the assigned side.
+    if(left!=right) stableSide=left>right ? int8_t(0) : int8_t(1);
+    person.pose.side=stableSide;
 }
 void PersonTracker::setParams(const TrackerParams& p) {
     params_=p; params_.maxPeople=std::clamp(p.maxPeople,1,30);
@@ -36,7 +46,7 @@ int PersonTracker::update(const PersonPose* people,int n,double tSec,TrackedPers
     const double now=std::max(time_,tSec); time_=now;
     std::array<int,30> selected{}; int count=0;
     for(int i=0;people && i<n;++i) {
-        if(!std::isfinite(people[i].score) || !bounds(people[i]).valid) continue;
+        if(people[i].nkp<=0 || people[i].nkp>kMaxKeypoints || !std::isfinite(people[i].score) || !bounds(people[i]).valid) continue;
         int at=0; while(at<count && people[selected[at]].score>=people[i].score) ++at;
         if(at>=params_.maxPeople) continue;
         count=std::min(count+1,params_.maxPeople);
@@ -53,7 +63,7 @@ int PersonTracker::update(const PersonPose* people,int n,double tSec,TrackedPers
             const float dx=track.vx*dt,dy=track.vy*dt;
             predicted.x0+=dx; predicted.x1+=dx; predicted.hx+=dx; predicted.y0+=dy; predicted.y1+=dy; predicted.hy+=dy;
             if(!std::isfinite(predicted.x0) || !std::isfinite(predicted.x1) || !std::isfinite(predicted.y0) || !std::isfinite(predicted.y1) || !std::isfinite(predicted.hx) || !std::isfinite(predicted.hy)) predicted=bounds(track.raw);
-            for(int d=0;d<count;++d) if(!used[d]) {
+            for(int d=0;d<count;++d) if(!used[d] && people[selected[d]].nkp==track.raw.nkp) {
                 const auto b=bounds(people[selected[d]]); const float overlap=iou(predicted,b);
                 const float distance=std::hypot(predicted.hx-b.hx,predicted.hy-b.hy);
                 if(overlap<params_.matchIou) continue;
@@ -71,12 +81,12 @@ int PersonTracker::update(const PersonPose* people,int n,double tSec,TrackedPers
             track.vx=finite ? static_cast<float>(vx) : 0; track.vy=finite ? static_cast<float>(vy) : 0;
         }
         auto pose=raw;
-        if(params_.smoothing) for(int k=0;k<17;++k) if(raw.kp[k].conf>0 && track.person.pose.kp[k].conf>0) {
+        if(params_.smoothing) for(int k=0;k<raw.nkp;++k) if(raw.kp[k].conf>0 && track.person.pose.kp[k].conf>0) {
             const float alpha=params_.smoothing==1 ? .65f : .35f;
             pose.kp[k].x=track.person.pose.kp[k].x*(1-alpha)+raw.kp[k].x*alpha;
             pose.kp[k].y=track.person.pose.kp[k].y*(1-alpha)+raw.kp[k].y*alpha;
         }
-        track.raw=raw; track.person={bestSlot,pose,now}; matched[bestSlot]=true; used[bestDetection]=true;
+        track.raw=raw; track.person={bestSlot,pose,now}; track.updateSide(raw.side); matched[bestSlot]=true; used[bestDetection]=true;
     }
     for(int d=0;d<count;++d) if(!used[d]) {
         int slot=0; while(slot<params_.maxPeople && tracks_[slot].active) ++slot;
@@ -84,7 +94,7 @@ int PersonTracker::update(const PersonPose* people,int n,double tSec,TrackedPers
             for(int s=0;s<params_.maxPeople;++s) if(!matched[s] && (slot==params_.maxPeople || tracks_[s].person.pose.score<tracks_[slot].person.pose.score)) slot=s;
             if(slot==params_.maxPeople || tracks_[slot].person.pose.score>=people[selected[d]].score) continue;
         }
-        tracks_[slot]={true,{slot,people[selected[d]],now},people[selected[d]],0,0}; matched[slot]=true;
+        tracks_[slot]={true,{slot,people[selected[d]],now},people[selected[d]],0,0}; tracks_[slot].updateSide(people[selected[d]].side); matched[slot]=true;
     }
     int written=0;
     for(int s=0;s<params_.maxPeople && written<maxOut;++s) if(tracks_[s].active) out[written++]=tracks_[s].person;

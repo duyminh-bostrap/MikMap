@@ -19,7 +19,7 @@ struct CameraStats { float camFps=0,inferFps=0,inferMs=0,latencyMs=0; int people
 class CameraSource final : public ISensorSource {
 public:
     // Test seam exercises slow inference and loss without installing an ONNX pack.
-    using Inference=std::function<int(const CameraFrame&,PersonPose*,int,std::string&)>;
+    using Inference=std::function<int(const CameraFrame&,PoseObject*,int,std::string&)>;
     explicit CameraSource(CameraSourceConfig, std::unique_ptr<ICameraDevice> dev=nullptr, Inference infer={});
     ~CameraSource() override;
     const char* typeName() const override { return "Camera"; }

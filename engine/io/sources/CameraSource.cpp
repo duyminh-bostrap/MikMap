@@ -128,7 +128,7 @@ struct CameraSource::Impl {
                 if(n<0 || !error.empty()) { message(inferError,"Inference: "+error); inferOk=false; tracker.reset(); n=0; }
                 else inferOk=true;
                 int count=tracker.update(poses,std::clamp(n,0,30),double(lastArrival)*1e-9,tracks,30); people=count;
-                for(int i=0;i<count;++i) for(int j=0;j<17;++j) {
+                for(int i=0;i<count;++i) for(int j=0;j<std::min(17,tracks[i].pose.nkp);++j) {
                     const auto& k=tracks[i].pose.kp[j]; if(k.conf<cfg.jointThr || k.conf<=0) continue;
                     TouchPoint p; p.id=uint32_t(tracks[i].slot*100+kCocoToMediaPipe[j]); p.x=cfg.flip?1-k.x:k.x; p.y=k.y; p.z=p.confidence=k.conf; p.state=TouchState::Move; f.addPoint(p);
                 }

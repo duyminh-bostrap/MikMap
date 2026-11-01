@@ -12,7 +12,11 @@ public:
     int update(const PersonPose* people,int n,double tSec,TrackedPerson* out,int maxOut);
     void reset();
 private:
-    struct Track { bool active=false; TrackedPerson person; PersonPose raw; float vx=0,vy=0; };
+    struct Track {
+        bool active=false; TrackedPerson person; PersonPose raw; float vx=0,vy=0;
+        std::array<int8_t,5> sides{{-1,-1,-1,-1,-1}}; int sideNext=0; int8_t stableSide=-1;
+        void updateSide(int8_t side);
+    };
     TrackerParams params_;
     std::array<Track,30> tracks_{};
     double time_=0;
