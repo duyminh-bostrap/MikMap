@@ -142,3 +142,11 @@ Grep `src/*.cpp` để xác nhận widget/hàm thật tồn tại và chạy đ�
 `features.md` chấm điểm nghiêm khắc, `[~]` nghĩa là còn giả một phần, không
 phải "gần xong". Xem mục "Ghi chú kiểm tra" cuối `features.md` trước khi đổi
 trạng thái một dòng.
+
+## Camera 2D trong Mapping
+
+INPUT: preview, Off/Body, cấu hình RTMO s/m và overlay; OUTPUT: calib, gửi, trigger.
+Hiện rõ Connecting khi worker bận, PACK khi thiếu gói, vàng khi CPU fallback;
+không biến CPU fallback thành mất kết nối. Camera3D chưa hỗ trợ; mode tương lai
+phải mờ. Replay phải có nhãn, không gọi fps replay là inference/GPU fps.
+Giữ Skeleton OSC tách biệt: sidecar cách ly crash inference, ORT native thì không.

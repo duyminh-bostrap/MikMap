@@ -150,7 +150,7 @@ chuyển sang mô hình thật của `engine/`, làm từng mảng để luôn b
 4. `io/*` → nguồn sensor thật (G3, G14) thay cho radar mô phỏng trong
    `src/sensor.cpp`. OSC/UDP (G4), camera skeleton (G20), Hokuyo 2D lidar
    (G21, SCIP 2.0/TCP) và thiết bị Plugin DLL (G22, ABI C) đã chạy qua
-   `src/sources.cpp`; sensor chọn và chỉnh ngay trên trang Mapping (tab INPUT/OUTPUT), đặt lidar theo mm, scan IP thêm nhiều sensor và gửi toạ độ OSC/UDP (G18, G24–G27) (gốc toạ độ gửi ra mặc định dưới-trái, chọn được trên-trái; project cũ giữ trên-trái) cũng đã chạy; Serial/Arduino (G3), YDLIDAR (G23, plugin), camera 2D và lidar 3D/depth còn chờ.
+   `src/sources.cpp`; sensor chọn và chỉnh ngay trên trang Mapping (tab INPUT/OUTPUT), đặt lidar theo mm, scan IP thêm nhiều sensor và gửi toạ độ OSC/UDP (G18, G24–G27) (gốc toạ độ gửi ra mặc định dưới-trái, chọn được trên-trái; project cũ giữ trên-trái) cũng đã chạy; Camera 2D native Off/Body đã nối vào app (xem dưới). Serial/Arduino (G3) chưa làm; YDLIDAR (G23) còn chờ plugin/phần cứng thật, mới kiểm ABI bằng plugin giả; lidar 3D/depth còn chờ.
 5. `core/model/Composition` · `Layer` · `Clip` · `Transport` → thay mô hình
    deck trong `src/app.h`.
 
@@ -196,3 +196,26 @@ thật (B1 trong `features.md`), nên chưa áp dụng cho prototype.
 ## Giấy phép
 
 Chưa chọn.
+
+## Camera 2D + Body (2026-11-01)
+
+Mapping → + Sensor → **Camera 2D**, bật thiết bị, chọn **INPUT → Mode → Body**.
+Off chỉ preview, không cần model; Body dùng RTMO s/m (17 khớp/người), camera
+Media Foundation trên Windows và hai gói `onnx-runtime-cuda` + `pose-rtmo`.
+Xem [gói mẫu và cách ký](tools/packs/examples/README.md). GPU không dùng được
+thì thử CPU, trạng thái vàng cảnh báo chậm. Camera 3D chưa có driver, không có
+trong popup; các mode tương lai chưa bật. Crop/NDI/Spout chưa làm.
+
+CameraSource chạy thật qua `src/sources.cpp` → MfCamera / OrtRuntime / PoseModel /
+PersonTracker. Khởi tạo, đóng camera và session chạy trên một worker 16 slot;
+worker chậm có thể làm camera khác chờ Connecting, không chặn frame render.
+Gói đã nạp được bảo vệ khỏi cập nhật cả khi tắt thiết bị; khởi động lại để cập nhật.
+Mọi đường cài online/offline kiểm bảo vệ gói phụ thuộc. Không suy ra toàn bộ app
+không lock/alloc: snapshot của PackInstaller vẫn có mutex có sẵn.
+
+ORT chạy trong tiến trình app: crash native có thể làm tắt cả app. Show cần tiếp
+tục khi inference hỏng nên dùng **Skeleton OSC + [pose_bridge](tools/pose_bridge/README.md)**
+ở tiến trình riêng. `--replay <file.mikpose>` kiểm UI/luồng điểm bằng dữ liệu ghi sẵn,
+không chạy inference; `--camera-mode 0|1` chọn Off/Body.
+
+Ghi chú kiểm tra và giới hạn đo đạc ở cuối [features.md](features.md).
