@@ -15,6 +15,8 @@
 //    text one or more datagrams, each at most kMaxDatagram bytes:
 //           first:  "<device> frame <count>\n" then "<device> <id> <x> <y>\n" per point, x/y with 4 decimals
 //           later:  only "<device> <id> <x> <y>\n" lines
+//  Non-body groups use /hand (left/right), /face or /feet instead of /touch;
+//  text inserts that suffix before id. Unknown groups retain the Body format.
 //  hasZ appends f:z to each OSC touch and a fourth numeric field to each text point.
 //  Camera2D uses z for joint confidence; default false keeps both legacy formats.
 //  A frame with more points than fit in one datagram is therefore split; the receiver
@@ -47,11 +49,15 @@ struct OutPacket {                                   // POD, memcpy-able
     float    xy[kMaxTouchPoints * 2] = {};
     bool     hasZ = false; // Camera2D confidence; false preserves the legacy wire format.
     float    z[kMaxTouchPoints] = {};
+    uint8_t  groups[kMaxTouchPoints] = {};
 };
 
 /// Copies `name` into p.device: every char outside [A-Za-z0-9._:-] becomes '_' (OSC address
 /// specials, spaces, UTF-8 bytes), truncated to 31 bytes; empty -> "device". No allocation.
 void setOutDevice(OutPacket& p, const char* name);
+
+/// Body and unknown groups use the legacy touch address. Both hands use hand.
+const char* groupAddressSuffix(uint8_t group);
 
 /// Encodes points [first, count) of `p` into ONE datagram, never above `cap` bytes.
 /// The chunk starting at 0 carries the "/frame i:count" message; later chunks carry only

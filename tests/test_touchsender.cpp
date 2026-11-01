@@ -4,6 +4,9 @@
 #include "io/sources/OscSource.h"
 
 #include <chrono>
+#include <filesystem>
+#include <fstream>
+#include "io/proto/OscMessage.h"
 #include <cstdio>
 #include <cstring>
 #include <sstream>
@@ -367,4 +370,75 @@ TEST_CASE("TouchSender: confidence survives bounded chunks and real loopback") {
     REQUIRE(waitFor([&] { return live.frames().consume() && live.frames().readSlot().count == 2; }, 1));
     CHECK_NEAR(live.frames().readSlot().points[0].z, .8, 1e-6);
     CHECK_NEAR(live.frames().readSlot().points[1].z, .6, 1e-6);
+}
+
+
+// Fixtures captured by the unmodified 6d8d079 encoder, including chunk boundaries.
+TEST_CASE("TouchSender: Body bytes match pre-B goldens with optional confidence") {
+    const auto dir = std::filesystem::path(__FILE__).parent_path() / "data";
+    for (bool z : {false, true}) for (int count : {0, 2, 32}) for (bool text : {false, true}) {
+        auto p = manyPoints(count); p.hasZ = z;
+        for (int i = 0; i < count; ++i) p.z[i] = .75f;
+        std::ifstream file(dir / (std::string("body_pre_b_") + (z ? "z_" : "xy_") + std::to_string(count) + (text ? ".text.hex" : ".osc.hex")));
+        REQUIRE(file.good());
+        int first = 0;
+        do {
+            uint8_t buf[kMaxDatagram]; int next = -1;
+            auto n = text ? encodeTextChunk(p, first, buf, sizeof buf, next) : encodeOscChunk(p, first, buf, sizeof buf, next);
+            REQUIRE(n > 0); CHECK(n <= kMaxDatagram);
+            std::string expected; REQUIRE(bool(std::getline(file, expected)));
+            std::string actual;
+            for (size_t i = 0; i < n; ++i) { char h[3]; std::snprintf(h, sizeof h, "%02x", unsigned(buf[i])); actual += h; }
+            CHECK(actual == expected); first = next;
+        } while (first < count);
+        std::string extra; CHECK(!std::getline(file, extra));
+    }
+}
+
+TEST_CASE("TouchSender: mixed groups preserve all point fields across bounded OSC and text chunks") {
+    const uint8_t groups[] = {0, 1, 2, 3, 4, 9};
+    const char* suffixes[] = {"touch", "hand", "hand", "face", "feet", "touch"};
+    for (bool z : {false, true}) {
+        auto p = manyPoints(kMaxTouchPoints); p.hasZ = z;
+        for (int i = 0; i < p.count; ++i) { p.groups[i] = groups[i % 6]; p.z[i] = .75f; }
+        for (int i = 0; i < 6; ++i) CHECK(std::string(groupAddressSuffix(groups[i])) == suffixes[i]);
+        for (bool text : {false, true}) {
+            int first = 0, chunks = 0;
+            while (first < p.count) {
+                uint8_t buf[kMaxDatagram]; int next = -1;
+                const auto n = text ? encodeTextChunk(p, first, buf, sizeof buf, next) : encodeOscChunk(p, first, buf, sizeof buf, next);
+                REQUIRE(n > 0); CHECK(n <= kMaxDatagram); REQUIRE(next > first);
+                int point = first;
+                if (text) {
+                    std::istringstream lines(std::string(reinterpret_cast<char*>(buf), n));
+                    std::string line;
+                    if (first == 0) { REQUIRE(bool(std::getline(lines, line))); CHECK(line == "dev1 frame 512"); }
+                    while (std::getline(lines, line)) {
+                        std::istringstream row(line); std::string dev, suffix; unsigned id; float x, y, confidence;
+                        REQUIRE(bool(row >> dev)); CHECK(dev == "dev1");
+                        if (point % 6 >= 1 && point % 6 <= 4) { REQUIRE(bool(row >> suffix)); CHECK(suffix == suffixes[point % 6]); }
+                        REQUIRE(bool(row >> id >> x >> y));
+                        CHECK(id == p.ids[point]); CHECK_NEAR(x, p.xy[2 * point], 1e-6); CHECK_NEAR(y, p.xy[2 * point + 1], 1e-6);
+                        if (z) { REQUIRE(bool(row >> confidence)); CHECK_NEAR(confidence, .75, 1e-6); }
+                        std::string extra; CHECK(!(row >> extra)); ++point;
+                    }
+                } else {
+                    std::vector<OscMessage> messages; REQUIRE(parseOscPacket(buf, n, messages));
+                    size_t m = 0;
+                    if (first == 0) { REQUIRE(!messages.empty()); CHECK(messages[0].address == "/mikmap/dev1/frame"); REQUIRE(messages[0].args.size() == 1u); CHECK(messages[0].argInt(0) == 512); ++m; }
+                    for (; m < messages.size(); ++m, ++point) {
+                        const auto& msg = messages[m];
+                        CHECK(msg.address == std::string("/mikmap/dev1/") + suffixes[point % 6]);
+                        REQUIRE(msg.args.size() == (z ? 4u : 3u));
+                        CHECK(msg.args[0].type == OscArg::Type::Int32);
+                        for (size_t a = 1; a < msg.args.size(); ++a) CHECK(msg.args[a].type == OscArg::Type::Float32);
+                        CHECK(msg.argInt(0) == int(p.ids[point])); CHECK_NEAR(msg.argDouble(1), p.xy[2 * point], 1e-6); CHECK_NEAR(msg.argDouble(2), p.xy[2 * point + 1], 1e-6);
+                        if (z) CHECK_NEAR(msg.argDouble(3), .75, 1e-6);
+                    }
+                }
+                CHECK(point == next); first = next; ++chunks;
+            }
+            CHECK(chunks > 1);
+        }
+    }
 }
